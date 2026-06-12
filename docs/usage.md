@@ -1,0 +1,288 @@
+# szx_core 使用文档
+
+本文档说明如何把 szx_core 集成到你自己的工程里，包括 CMake 集成方式、SDK 配置、运行时 DLL、典型代码示例。模块级 API 细节看：
+
+- [camera_core_usage.md](camera_core_usage.md)
+- [plc_core_usage.md](plc_core_usage.md)
+
+## 1. 集成方式
+
+### 1.1 方式 A：作为子目录（推荐）
+
+把 szx_core 仓库放在你工程的 `third_party/szx_core/`（或 git submodule、或 CMake FetchContent 拉下来），然后：
+
+```cmake
+add_subdirectory(third_party/szx_core)
+
+target_link_libraries(my_app PRIVATE
+    szx_core::camera_core
+    szx_core::plc_core         # 可选
+    szx_core::common_support   # camera_core 已经 PUBLIC 它，单独写也行
+)
+```
+
+### 1.2 方式 B：install 后 find_package
+
+```bash
+cd szx_core
+cmake -S . -B build -DCMAKE_INSTALL_PREFIX=C:/my_libs/szx_core
+cmake --build build --config Release
+cmake --install build --config Release
+```
+
+在消费方：
+
+```cmake
+list(APPEND CMAKE_PREFIX_PATH "C:/my_libs/szx_core")
+find_package(szx_core CONFIG REQUIRED)
+target_link_libraries(my_app PRIVATE szx_core::camera_core)
+```
+
+### 1.3 方式 C：FetchContent
+
+```cmake
+include(FetchContent)
+FetchContent_Declare(szx_core
+    GIT_REPOSITORY <your-repo-url>
+    GIT_TAG        v0.1.0
+)
+FetchContent_MakeAvailable(szx_core)
+target_link_libraries(my_app PRIVATE szx_core::camera_core)
+```
+
+## 2. CMake 选项
+
+| 选项 | 默认 | 说明 |
+|---|---|---|
+| `SZX_CORE_BUILD_EXAMPLES` | ON | 编译 `examples/` 下的示例程序 |
+| `SZX_CORE_BUILD_TESTS` | ON | 编译 `tests/` 下的 smoke 测试，注册到 CTest |
+| `SZX_CORE_BUILD_SHARED` | OFF | 切到 DLL 输出（与 `BUILD_SHARED_LIBS=ON` 等价） |
+| `SZX_CORE_FETCH_SPDLOG` | ON | 找不到本地 spdlog 时通过 FetchContent 下载 |
+| `IKAP_ROOT` | 默认装机路径 | IKap SDK 根目录，找不到则不编译 IKap 适配器 |
+| `HUARAY_ROOT` | 默认装机路径 | HuarayTech MV Viewer Development 目录 |
+| `HUARAY_APP_ROOT` | 默认装机路径 | HuarayTech MV Viewer Application 目录（运行时 DLL） |
+| `LIBMODBUS_ROOT` | `third_party/libmodbus` | libmodbus 根目录；找不到则 `plc_core` 不编译 |
+
+例如：
+
+```bash
+cmake -S . -B build \
+    -DIKAP_ROOT="D:/sdks/IKap" \
+    -DHUARAY_ROOT="D:/sdks/HuarayMV/Development" \
+    -DLIBMODBUS_ROOT="D:/sdks/libmodbus" \
+    -DSZX_CORE_BUILD_EXAMPLES=ON
+```
+
+Configure 完会打印一个 summary，告诉你哪些适配器被启用、哪些跳过。
+
+## 3. SDK 安装与路径
+
+### 3.1 IKap
+
+- 默认探测路径：`C:/Program Files/I-TEK OptoElectronics/IKapLibrary`
+- 需要：`Include/IKapC.h`、`Lib/x64/IKapC.lib`、`Lib/x64/IKapBoard.lib`
+- 运行时 DLL：`Dll/C/x64/IKapC.dll`、`IKapBoard.dll`，运行时需在 `PATH` 中
+
+### 3.2 Huaray（华睿科技 MV Viewer）
+
+- 默认 Development 路径：`D:/HuarayTech/MV Viewer/Development`
+- 默认 Application 路径：`D:/HuarayTech/MV Viewer/Application`
+- 需要：
+  - `Development/Include/IMVFG/IMVFGApi.h`（帧采集卡 API）
+  - `Development/Include/IMV/IMVApi.h`（USB/GigE 直连 API）
+  - `Development/Lib/x64/MVSDKmd.lib`
+- 运行时 DLL：`Application/x64/MVSDKmd.dll`，运行时需在 `PATH` 中
+
+### 3.3 libmodbus
+
+需要标准的 include/lib/bin 三件套布局：
+
+```
+${LIBMODBUS_ROOT}/
+    include/  → modbus 头
+    lib/      → libmodbus.lib, libmodbusd.lib
+    bin/      → libmodbus.dll, libmodbusd.dll
+```
+
+PLC 应用运行时需要 `libmodbus.dll` 在 PATH 中。
+
+## 4. 运行时 DLL
+
+Windows + DLL 的厂商 SDK 需要运行时 DLL 在 `PATH` 里。两种处理方式：
+
+**方式 A：用 PowerShell/cmd 设置 PATH 后启动**
+
+```powershell
+$env:PATH = "D:\HuarayTech\MV Viewer\Application\x64;C:\Program Files\I-TEK OptoElectronics\IKapLibrary\Dll\C\x64;" + $env:PATH
+.\my_app.exe
+```
+
+**方式 B：在你的 CMake 里加 POST_BUILD 拷 DLL**
+
+参考下面这个片段（按需选 SDK）：
+
+```cmake
+if (TARGET Huaray::IMVFG)
+    add_custom_command(TARGET my_app POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "$<TARGET_FILE:Huaray::IMVFG>"
+            "$<TARGET_FILE_DIR:my_app>"
+    )
+endif ()
+```
+
+**注意**：华睿 SDK 还会运行时加载 GenTL Provider（在 `D:/HuarayTech/MV Viewer/Runtime/x64`）以及一堆 GenICam DLL，光拷 `MVSDKmd.dll` 不够。最稳的还是把 `Application/x64` 目录加到 PATH。
+
+## 5. 典型使用：FileImage 假相机（不需要任何 SDK）
+
+```cpp
+#include "camera/core/camera_service.h"
+#include "camera/filecamera/camera_fileimage_sdk_adapter.h"
+#include "common/log/log_manager.h"
+
+using namespace SZXCamera;
+
+int main() {
+    LogOptions logOpts{};
+    logOpts.consoleEnabled = true;
+    LogManager::instance().init(logOpts, nullptr);
+
+    auto factory = std::make_shared<FileImageCameraSdkFactory>(
+        "camera_images",  // 根目录，里面有 camera_0/ camera_1/ 子目录
+        /*fps=*/5,
+        /*loop=*/true,
+        /*maxFrames=*/0
+    );
+    auto service = std::make_shared<CameraService>(factory);
+
+    std::string err;
+    service->discover(&err);
+    service->initialize(&err);
+
+    std::unordered_map<std::string, CameraConfig> configs;
+    for (const auto &c : service->cameras()) {
+        CameraConfig cfg{};
+        cfg.triggerMode = TriggerMode::Continuous;
+        cfg.bufferCount = 8;
+        configs.emplace(c.serialNumber, cfg);
+    }
+    service->applyCameraConfigs(configs, &err);
+
+    // 注册自定义 sink
+    class MySink : public IFrameSink {
+        void consume(const FramePtr &f) override {
+            // 拿到一帧，处理你的业务
+        }
+    };
+    service->addFrameSink(std::make_shared<MySink>());
+
+    std::vector<std::string> serials;
+    for (const auto &c : service->cameras()) serials.push_back(c.serialNumber);
+    service->startCamerasBySerialNumbers(serials, &err);
+
+    // ... 业务运行 ...
+
+    service->stopCamerasBySerialNumbers(serials, nullptr);
+    service->shutdown(nullptr);
+}
+```
+
+## 6. 切换厂商：只换一行
+
+```cpp
+// 改这一行即可：
+auto factory = std::make_shared<FileImageCameraSdkFactory>("camera_images", 5, true, 0);  // 假相机
+// auto factory = std::make_shared<IkapCameraSdkFactory>();           // IKap 帧采集卡
+// auto factory = std::make_shared<HuarayCameraSdkFactory>();         // 华睿帧采集卡
+// auto factory = std::make_shared<HuarayUsbCameraSdkFactory>();      // 华睿 USB/GigE 直连
+
+auto service = std::make_shared<CameraService>(factory);
+// 其余代码完全一致
+```
+
+应用层通常用环境变量在运行时选 factory：
+
+```cpp
+std::shared_ptr<ICameraSdkFactory> buildFactory() {
+    const std::string mode = std::getenv("CAMERA_MODE") ? std::getenv("CAMERA_MODE") : "file";
+#if SZX_CORE_HAS_HUARAY
+    if (mode == "huaray_usb") return std::make_shared<HuarayUsbCameraSdkFactory>();
+    if (mode == "huaray")     return std::make_shared<HuarayCameraSdkFactory>();
+#endif
+#if SZX_CORE_HAS_IKAP
+    if (mode == "ikap")       return std::make_shared<IkapCameraSdkFactory>();
+#endif
+    return std::make_shared<FileImageCameraSdkFactory>("camera_images", 5, true, 0);
+}
+```
+
+CMake 探测到 SDK 时会自动定义 `SZX_CORE_HAS_IKAP=1` / `SZX_CORE_HAS_HUARAY=1`，你可以用它做条件编译。
+
+## 7. 日志初始化
+
+camera_core 和 plc_core 内部都通过 `LOG_INFO` 系列宏写日志。**必须先调 `LogManager::instance().init(...)`，否则日志全部输出到 stderr 的默认 sink**。
+
+```cpp
+LogOptions opts{};
+opts.loggerName = "my_app";       // 显示在日志行里
+opts.logDir = "logs";              // 日志文件目录
+opts.logFile = "my_app.log";       // 文件名
+opts.consoleEnabled = true;        // 是否同时打 console
+LogManager::instance().init(opts, &err);
+
+// 进程退出前
+LogManager::instance().shutdown();
+```
+
+## 8. PLC 用法（简要）
+
+详见 [plc_core_usage.md](plc_core_usage.md)。
+
+```cpp
+#include "plc/plccontrol.h"
+
+PlcController plc;
+plc.connectTcp("192.168.1.10", 502);
+plc.writeHoldingRegister(0x100, 42);
+auto val = plc.readHoldingRegister(0x100);
+plc.disconnect();
+```
+
+## 9. 常见问题
+
+| 问题 | 解决 |
+|---|---|
+| Configure 时报"no IKap detected" / "no Huaray detected" | 没装对应 SDK，或路径不在默认位置，用 `-DIKAP_ROOT=...` / `-DHUARAY_ROOT=...` 指定 |
+| 运行时报"找不到 IKapC.dll / MVSDKmd.dll" | DLL 没在 PATH 里，参考 §4 |
+| FileImage 启动后没收到帧 | 检查 `camera_images/camera_0/` 下是否有 `.png` `.jpg` `.bmp` 文件 |
+| 链接时报 `undefined reference to spdlog::...` | 没 PUBLIC 链 `common_support`，或者 spdlog 没装；CMake 的 `target_link_libraries(... szx_core::camera_core)` 应该会自动带上 |
+| Linux 上没法用厂商 SDK | 是的，厂商 SDK 只有 Windows 版；Linux 下只能用 FileImage |
+| 想自己加新厂商 | 看 [camera_vendor_extension_guide.md](camera_vendor_extension_guide.md) |
+
+## 10. 验证安装
+
+最简验证（没有任何 SDK 也能跑）：
+
+```bash
+cmake -S . -B build
+cmake --build build --config Release
+ctest --test-dir build -C Release
+```
+
+跑示例：
+
+```bash
+mkdir -p test_images/camera_0
+# 放几张 .jpg 进去
+./build/examples/Release/camera_fileimage_demo test_images
+```
+
+应该看到类似输出：
+
+```
+Discovered 1 cameras:
+  serial=fake_camera_0 logical=camera_0 model=FileImage
+[sink] frame received camera=camera_0 frame_id=1 640x480 ch=3 ...
+Streaming for 3 seconds...
+Done. Sink received 15 frames.
+```

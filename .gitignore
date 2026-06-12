@@ -1,0 +1,20 @@
+build/
+build-*/
+cmake-build-*/
+out/
+.vs/
+.vscode/
+.idea/
+CMakeUserPresets.json
+*.user
+
+# spdlog FetchContent extracted source
+_deps/
+
+# Test artifacts
+test_logs/
+Testing/
+
+# OS junk
+.DS_Store
+Thumbs.db
