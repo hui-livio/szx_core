@@ -1,6 +1,35 @@
 @PACKAGE_INIT@
 
+include(CMakeFindDependencyMacro)
+find_dependency(Threads)
 include("${CMAKE_CURRENT_LIST_DIR}/SZXComponentsTargets.cmake")
 
-check_required_components(SZXComponents)
+# The package export uses the szx:: namespace for every target.  Keep the
+# dependency name expected by szx_logger's private link interface available
+# to consumers without requiring a second package lookup.
+if (TARGET szx::spdlog AND NOT TARGET spdlog::spdlog)
+    add_library(spdlog::spdlog ALIAS szx::spdlog)
+endif()
 
+set(SZXComponents_Common_FOUND FALSE)
+set(SZXComponents_Crypto_FOUND FALSE)
+set(SZXComponents_Logger_FOUND FALSE)
+set(SZXComponents_Camera_FOUND FALSE)
+set(SZXComponents_Plc_FOUND FALSE)
+if (TARGET szx::common)
+    set(SZXComponents_Common_FOUND TRUE)
+endif()
+if (TARGET szx::crypto)
+    set(SZXComponents_Crypto_FOUND TRUE)
+endif()
+if (TARGET szx::logger)
+    set(SZXComponents_Logger_FOUND TRUE)
+endif()
+if (TARGET szx::camera)
+    set(SZXComponents_Camera_FOUND TRUE)
+endif()
+if (TARGET szx::plc)
+    set(SZXComponents_Plc_FOUND TRUE)
+endif()
+
+check_required_components(SZXComponents)

@@ -1,0 +1,48 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 21, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "windows-msvc",
+      "displayName": "Windows MSVC x64",
+      "generator": "Visual Studio 17 2022",
+      "architecture": "x64",
+      "binaryDir": "${sourceDir}/build/msvc",
+      "cacheVariables": {
+        "CMAKE_INSTALL_PREFIX": "${sourceDir}/build/stage",
+        "SZX_COMPONENTS_BUILD_TESTS": "ON",
+        "SZX_COMPONENTS_INSTALL": "ON",
+        "SZX_COMPONENTS_BUILD_IKAP": "OFF"
+      }
+    },
+    {
+      "name": "windows-msvc-no-tests",
+      "inherits": "windows-msvc",
+      "displayName": "Windows MSVC x64 (no tests)",
+      "binaryDir": "${sourceDir}/build/msvc-no-tests",
+      "cacheVariables": {
+        "SZX_COMPONENTS_BUILD_TESTS": "OFF"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "windows-release",
+      "configurePreset": "windows-msvc",
+      "configuration": "Release"
+    },
+    {
+      "name": "windows-debug",
+      "configurePreset": "windows-msvc",
+      "configuration": "Debug"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "windows-release",
+      "configurePreset": "windows-msvc",
+      "configuration": "Release",
+      "output": { "outputOnFailure": true }
+    }
+  ]
+}

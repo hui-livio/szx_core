@@ -42,12 +42,12 @@ if (SZX_COMPONENTS_BUILD_PLC)
 endif()
 
 if (SZX_COMPONENTS_INSTALL)
-    set(SZX_COMPONENTS_INSTALL_TARGETS szx_common szx_logger szx_crypto)
-    if (TARGET szx_camera)
-        list(APPEND SZX_COMPONENTS_INSTALL_TARGETS szx_camera)
+    set(SZX_COMPONENTS_INSTALL_TARGETS common logger crypto)
+    if (TARGET camera)
+        list(APPEND SZX_COMPONENTS_INSTALL_TARGETS camera)
     endif()
-    if (TARGET szx_plc)
-        list(APPEND SZX_COMPONENTS_INSTALL_TARGETS szx_plc)
+    if (TARGET plc)
+        list(APPEND SZX_COMPONENTS_INSTALL_TARGETS plc)
     endif()
 
     install(TARGETS ${SZX_COMPONENTS_INSTALL_TARGETS}
@@ -57,6 +57,17 @@ if (SZX_COMPONENTS_INSTALL)
         ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
         INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 
+    # spdlog is part of the self-contained component package because the
+    # logger implementation links it through the exported target graph.
+    install(TARGETS spdlog spdlog_header_only
+        EXPORT SZXComponentsTargets
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
+    install(DIRECTORY third_party/spdlog/include/
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+        FILES_MATCHING PATTERN "*.h" PATTERN "*.inl")
+
     install(DIRECTORY components/common/
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/szx/common
         FILES_MATCHING PATTERN "*.hpp")
@@ -64,11 +75,10 @@ if (SZX_COMPONENTS_INSTALL)
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/szx/common/ext
         FILES_MATCHING PATTERN "*.h" PATTERN "*.hpp")
     install(DIRECTORY components/crypto/include/
-        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/SzxCrypto
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
         FILES_MATCHING PATTERN "*.h")
-    install(DIRECTORY components/logger/
-        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/szx/logger
-        FILES_MATCHING PATTERN "Logger.h")
+    install(FILES components/logger/Logger.h
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/szx/logger)
     if (TARGET szx_camera)
         install(DIRECTORY components/camera/include/
             DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/szx/camera
@@ -103,5 +113,6 @@ if (SZX_COMPONENTS_BUILD_TESTS)
     add_executable(szx_components_smoke_test tests/smoke.cpp)
     target_link_libraries(szx_components_smoke_test PRIVATE szx::common szx::crypto szx::logger)
     add_test(NAME szx_components_smoke_test COMMAND szx_components_smoke_test)
+    set_tests_properties(szx_components_smoke_test PROPERTIES
+        ENVIRONMENT "PATH=$<TARGET_FILE_DIR:crypto>;$<TARGET_FILE_DIR:logger>;$<TARGET_FILE_DIR:spdlog>")
 endif()
-
