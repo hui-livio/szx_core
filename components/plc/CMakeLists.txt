@@ -30,3 +30,7 @@ else()
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/szx/plc>)
 endif()
+
+if (TARGET szx_plc AND COMMAND szx_copy_runtime_dlls)
+    szx_copy_runtime_dlls(szx_plc)
+endif()

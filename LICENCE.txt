@@ -1,0 +1,35 @@
+SZX Components Software Licence Agreement
+
+Copyright (C) 2026 SZX AOI Team. All rights reserved.
+
+This software, including its source code, binaries, documentation, and related
+resources, is proprietary software of SZX AOI Team ("SZX").
+
+You may not copy, modify, reverse engineer, decompile, disassemble, sublicense,
+rent, sell, or redistribute this software without prior written permission from
+SZX, except where applicable law expressly permits otherwise.
+
+This software is provided for authorized use only. SZX makes no
+warranty beyond the terms separately agreed in writing. To the maximum extent
+permitted by law, SZX shall not be liable for indirect, incidental, or
+consequential damages arising from the use of this software.
+
+Installing, accessing, or using this software means that you accept this licence
+agreement. This agreement does not grant rights to SZX trademarks, patents, or
+third-party software.
+
+Third-party and open-source software
+
+This software may include or link to third-party open-source software. Such
+components are excluded from the proprietary licence above. Their copyrights
+remain with their respective owners, and each component is governed by its own
+licence. If this agreement conflicts with a third-party licence as applied to
+that component, the third-party licence controls for that component.
+
+You may use, copy, modify, or distribute a third-party component only as its
+licence permits. Those permissions do not grant any rights to other proprietary
+parts of this software. The original third-party licence texts are installed in
+the `licenses` directory of the SDK/package. The bundled spdlog licence is also
+available at `third_party/spdlog/LICENSE` in the source distribution. Optional
+dependencies such as OpenCV, IKap, and libmodbus are governed by their
+respective licences.

@@ -22,12 +22,14 @@ option(SZX_COMPONENTS_INSTALL "Generate install tree and package config" ON)
 option(SZX_COMPONENTS_BUILD_CAMERA "Build camera component" ON)
 option(SZX_COMPONENTS_BUILD_PLC "Build PLC component when libmodbus is available" ON)
 option(SZX_COMPONENTS_BUILD_IKAP "Build IKap adapter when SDK is available" OFF)
+option(SZX_COMPONENTS_ENABLE_CPACK "Enable CPack package generation" OFF)
 
 set(SZX_IKAP_ROOT "" CACHE PATH "IKap SDK root (optional)")
 set(SZX_OPENCV_DIR "" CACHE PATH "OpenCV package directory (optional)")
 set(SZX_LIBMODBUS_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/third_party/libmodbus" CACHE PATH "libmodbus root")
 szx_check_target_arch()
 szx_setup_git_hooks()
+szx_global_output_settings()
 
 if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/spdlog/CMakeLists.txt")
     set(SPDLOG_BUILD_EXAMPLE OFF CACHE BOOL "" FORCE)
@@ -116,6 +118,14 @@ if (SZX_COMPONENTS_INSTALL)
         ${CMAKE_CURRENT_BINARY_DIR}/SZXComponentsConfig.cmake
         ${CMAKE_CURRENT_BINARY_DIR}/SZXComponentsConfigVersion.cmake
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/SZXComponents)
+    install(FILES
+        ${CMAKE_CURRENT_SOURCE_DIR}/LICENCE.txt
+        ${CMAKE_CURRENT_SOURCE_DIR}/LICENCE.zh-CN.txt
+        DESTINATION licenses)
+    if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/spdlog/LICENSE")
+        install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/third_party/spdlog/LICENSE"
+            DESTINATION licenses/spdlog)
+    endif()
 endif()
 
 if (SZX_COMPONENTS_BUILD_TESTS)
@@ -130,6 +140,10 @@ if (SZX_COMPONENTS_BUILD_TESTS)
         SOURCES tests/gtest_smoke.cpp
         LIBS szx::crypto
         LABELS unit component)
+endif()
+
+if (SZX_COMPONENTS_ENABLE_CPACK AND SZX_COMPONENTS_INSTALL)
+    szx_setup_packaging(VENDOR "SZX" DESCRIPTION "SZX Components SDK" COMPONENTS runtime devel)
 endif()
 
 szx_print_config_summary()

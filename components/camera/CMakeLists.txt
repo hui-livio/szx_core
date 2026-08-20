@@ -34,3 +34,10 @@ if (SZX_COMPONENTS_BUILD_IKAP AND WIN32 AND EXISTS "${SZX_IKAP_ROOT}/Include/IKa
     target_include_directories(szx_camera PRIVATE "${SZX_IKAP_ROOT}/Include" src/ikap)
     target_compile_definitions(szx_camera PRIVATE AOI_HAS_IKAP=1)
 endif()
+
+if (COMMAND szx_copy_runtime_dlls)
+    szx_copy_runtime_dlls(szx_camera)
+endif()
+if (SZX_COMPONENTS_BUILD_IKAP)
+    szx_ikap_copy_dlls(szx_camera)
+endif()
