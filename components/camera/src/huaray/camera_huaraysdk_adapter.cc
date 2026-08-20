@@ -3,11 +3,12 @@
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <cstring>
-#include <deque>
 #include <limits>
 #include <memory>
+#include <mutex>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -18,12 +19,7 @@
     namespace
     {
 
-    const char *persistHuarayString(const std::string &value)
-    {
-        static std::deque<std::string> values;
-        values.push_back(value);
-        return values.back().c_str();
-    }
+    thread_local const void *g_huarayFgCallbackImpl = nullptr;
 
     void clearError(std::string *errorMessage)
     {
@@ -206,11 +202,16 @@
             }
 
             CameraInfo cameraInfo;
-            cameraInfo.deviceId     = persistHuarayString(d.cameraKey);
-            cameraInfo.serialNumber = persistHuarayString(d.serialNumber);
-            cameraInfo.logicalName  = persistHuarayString("camera_" + std::to_string(i));
-            cameraInfo.vendor       = persistHuarayString(d.vendorName);
-            cameraInfo.model        = persistHuarayString(d.modelName);
+            deviceIds_.push_back(safeStr(d.cameraKey));
+            serialNumbers_.push_back(safeStr(d.serialNumber));
+            logicalNames_.push_back("camera_" + std::to_string(i));
+            vendors_.push_back(safeStr(d.vendorName));
+            models_.push_back(safeStr(d.modelName));
+            cameraInfo.deviceId     = deviceIds_.back().c_str();
+            cameraInfo.serialNumber = serialNumbers_.back().c_str();
+            cameraInfo.logicalName  = logicalNames_.back().c_str();
+            cameraInfo.vendor       = vendors_.back().c_str();
+            cameraInfo.model        = models_.back().c_str();
             cameraInfo.role         = CameraRole::Unknown;
             devices.push_back(std::move(cameraInfo));
         }
@@ -305,6 +306,10 @@
         int bufferCount{8};
         std::atomic_bool cb_installed{false};
         FrameCallback frameCallback{nullptr};
+        std::mutex callbackMutex;
+        std::condition_variable callbackCv;
+        std::size_t activeCallbacks{0};
+        bool callbacksEnabled{false};
         std::atomic<CameraState> state{CameraState::Created};
         CameraHuaraySdkAdapter *owner{nullptr};
         DeviceContext ctx{};
@@ -373,6 +378,10 @@
 
         void cleanup()
         {
+            {
+                std::lock_guard<std::mutex> lock(callbackMutex);
+                callbacksEnabled = false;
+            }
             if (ctx.devHandle)
             {
                 if (IMV_FG_IsGrabbing(ctx.devHandle))
@@ -386,6 +395,12 @@
             {
                 IMV_FG_CloseInterface(ctx.ifHandle);
                 ctx.ifHandle = nullptr;
+            }
+            {
+                std::unique_lock<std::mutex> lock(callbackMutex);
+                callbackCv.wait(lock, [this] {
+                    return activeCallbacks == (g_huarayFgCallbackImpl == this ? 1u : 0u);
+                });
             }
             cb_installed = false;
             state.store(CameraState::Stopped, std::memory_order_relaxed);
@@ -545,9 +560,16 @@
                 }
             }
 
+            {
+                std::lock_guard<std::mutex> lock(callbackMutex);
+                callbacksEnabled = true;
+            }
+
             const int nReg = IMV_FG_AttachGrabbing(ctx.devHandle, &CameraHuaraySdkAdapter::Impl::on_frame, this);
             if (nReg != IMV_FG_OK)
             {
+                std::lock_guard<std::mutex> lock(callbackMutex);
+                callbacksEnabled = false;
                 if (errorMessage)
                 {
                     *errorMessage = makeErrorMessage("IMV_FG_AttachGrabbing", nReg);
@@ -559,6 +581,12 @@
             const int nSt = IMV_FG_StartGrabbing(ctx.devHandle);
             if (nSt != IMV_FG_OK)
             {
+                IMV_FG_StopGrabbing(ctx.devHandle);
+                {
+                    std::lock_guard<std::mutex> lock(callbackMutex);
+                    callbacksEnabled = false;
+                }
+                cb_installed = false;
                 if (errorMessage)
                 {
                     *errorMessage = makeErrorMessage("IMV_FG_StartGrabbing", nSt);
@@ -630,10 +658,37 @@
 
         void dispatch(const IMV_FG_Frame &f)
         {
-            if (!frameCallback)
+            FrameCallback callback;
+            {
+                std::lock_guard<std::mutex> lock(callbackMutex);
+                if (!callbacksEnabled)
+                {
+                    return;
+                }
+                callback = frameCallback;
+                if (callback)
+                {
+                    ++activeCallbacks;
+                }
+            }
+            if (!callback)
             {
                 return;
             }
+            struct CallbackGuard
+            {
+                Impl *impl;
+                ~CallbackGuard()
+                {
+                    std::lock_guard<std::mutex> lock(impl->callbackMutex);
+                    if (--impl->activeCallbacks == 0)
+                    {
+                        impl->callbackCv.notify_all();
+                    }
+                    g_huarayFgCallbackImpl = nullptr;
+                }
+            } guard{this};
+            g_huarayFgCallbackImpl = this;
 
             auto envelope = std::make_shared<FrameEnvelope>();
             if (!makeFrame(f, *envelope))
@@ -641,7 +696,7 @@
                 return;
             }
             auto shared = std::shared_ptr<const FramePacket>(envelope, &envelope->packet);
-            frameCallback(shared);
+            callback(shared);
         }
 
         bool makeFrame(const IMV_FG_Frame &src, FrameEnvelope &envelope)
@@ -829,6 +884,7 @@
 
     void CameraHuaraySdkAdapter::setFrameCallback(FrameCallback callback)
     {
+        std::lock_guard<std::mutex> lock(impl_->callbackMutex);
         impl_->frameCallback = std::move(callback);
     }
 

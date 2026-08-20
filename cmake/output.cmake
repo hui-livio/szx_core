@@ -210,6 +210,7 @@ function(szx_install_components_package)
     if(TARGET szx_camera)
         szx_install_headers(camera HEADER_DIR "${CMAKE_SOURCE_DIR}/components/camera/include"
             DESTINATION szx/camera FILE_PATTERN "*.h")
+        szx_install_runtime_deps(szx_camera)
     endif()
     if(TARGET szx_plc)
         install(FILES "${CMAKE_SOURCE_DIR}/components/plc/PlcControl.h"

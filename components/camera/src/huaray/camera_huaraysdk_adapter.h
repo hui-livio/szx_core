@@ -6,6 +6,10 @@
 #include "IMVFGApi.h"
 #include "IMVFGDefines.h"
 
+#include <deque>
+#include <string>
+#include <vector>
+
 namespace SZXCamera
 {
 inline bool isHuaraySuccess(int errc)
@@ -65,5 +69,12 @@ public:
     std::unique_ptr<ICameraSdkAdapter> createAdapter(const CameraInfo &info, std::string *errorMessage = nullptr) override;
 
     std::vector<std::unique_ptr<ICameraSdkAdapter>> createAllAdapters();
+
+private:
+    std::deque<std::string> deviceIds_;
+    std::deque<std::string> serialNumbers_;
+    std::deque<std::string> logicalNames_;
+    std::deque<std::string> vendors_;
+    std::deque<std::string> models_;
 };
 } // namespace SZXCamera

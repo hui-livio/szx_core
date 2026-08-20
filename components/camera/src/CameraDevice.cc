@@ -51,10 +51,10 @@ CameraDevice::~CameraDevice()
 {
     if (adapter_)
     {
-        adapter_->setFrameCallback(nullptr);
         std::string ignored;
         stop(&ignored);
         close(&ignored);
+        adapter_->setFrameCallback(nullptr);
     }
 }
 

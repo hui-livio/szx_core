@@ -2,10 +2,11 @@
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <cstring>
-#include <deque>
 #include <memory>
+#include <mutex>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -17,12 +18,7 @@ namespace SZXCamera
 namespace
 {
 
-const char *persistHuarayString(const std::string &value)
-{
-    static std::deque<std::string> values;
-    values.push_back(value);
-    return values.back().c_str();
-}
+thread_local const void *g_huarayUsbCallbackImpl = nullptr;
 
 void clearError(std::string *errorMessage)
 {
@@ -181,11 +177,16 @@ std::vector<CameraInfo> HuarayUsbCameraSdkFactory::enumerateDevices(std::string 
         }
 
         CameraInfo cameraInfo;
-        cameraInfo.deviceId     = persistHuarayString(d.cameraKey);
-        cameraInfo.serialNumber = persistHuarayString(d.serialNumber);
-        cameraInfo.logicalName  = persistHuarayString("camera_" + std::to_string(i));
-        cameraInfo.vendor       = persistHuarayString(d.vendorName);
-        cameraInfo.model        = persistHuarayString(d.modelName);
+        deviceIds_.push_back(safeStr(d.cameraKey));
+        serialNumbers_.push_back(safeStr(d.serialNumber));
+        logicalNames_.push_back("camera_" + std::to_string(i));
+        vendors_.push_back(safeStr(d.vendorName));
+        models_.push_back(safeStr(d.modelName));
+        cameraInfo.deviceId     = deviceIds_.back().c_str();
+        cameraInfo.serialNumber = serialNumbers_.back().c_str();
+        cameraInfo.logicalName  = logicalNames_.back().c_str();
+        cameraInfo.vendor       = vendors_.back().c_str();
+        cameraInfo.model        = models_.back().c_str();
         cameraInfo.role         = CameraRole::Unknown;
         devices.push_back(std::move(cameraInfo));
     }
@@ -267,6 +268,10 @@ struct CameraHuarayUsbSdkAdapter::Impl
     int bufferCount{8};
     std::atomic_bool cb_installed{false};
     FrameCallback frameCallback{nullptr};
+    std::mutex callbackMutex;
+    std::condition_variable callbackCv;
+    std::size_t activeCallbacks{0};
+    bool callbacksEnabled{false};
     std::atomic<CameraState> state{CameraState::Created};
     CameraHuarayUsbSdkAdapter *owner{nullptr};
     DeviceContext ctx{};
@@ -332,6 +337,10 @@ struct CameraHuarayUsbSdkAdapter::Impl
 
     void cleanup()
     {
+        {
+            std::lock_guard<std::mutex> lock(callbackMutex);
+            callbacksEnabled = false;
+        }
         if (ctx.handle)
         {
             if (IMV_IsGrabbing(ctx.handle))
@@ -344,6 +353,12 @@ struct CameraHuarayUsbSdkAdapter::Impl
             }
             IMV_DestroyHandle(ctx.handle);
             ctx.handle = nullptr;
+        }
+        {
+            std::unique_lock<std::mutex> lock(callbackMutex);
+            callbackCv.wait(lock, [this] {
+                return activeCallbacks == (g_huarayUsbCallbackImpl == this ? 1u : 0u);
+            });
         }
         cb_installed = false;
         state.store(CameraState::Stopped, std::memory_order_relaxed);
@@ -493,9 +508,16 @@ struct CameraHuarayUsbSdkAdapter::Impl
             }
         }
 
+        {
+            std::lock_guard<std::mutex> lock(callbackMutex);
+            callbacksEnabled = true;
+        }
+
         const int nReg = IMV_AttachGrabbing(ctx.handle, &CameraHuarayUsbSdkAdapter::Impl::on_frame, this);
         if (nReg != IMV_OK)
         {
+            std::lock_guard<std::mutex> lock(callbackMutex);
+            callbacksEnabled = false;
             if (errorMessage)
             {
                 *errorMessage = makeErrorMessage("IMV_AttachGrabbing", nReg);
@@ -507,6 +529,12 @@ struct CameraHuarayUsbSdkAdapter::Impl
         const int nSt = IMV_StartGrabbing(ctx.handle);
         if (nSt != IMV_OK)
         {
+            IMV_StopGrabbing(ctx.handle);
+            {
+                std::lock_guard<std::mutex> lock(callbackMutex);
+                callbacksEnabled = false;
+            }
+            cb_installed = false;
             if (errorMessage)
             {
                 *errorMessage = makeErrorMessage("IMV_StartGrabbing", nSt);
@@ -572,13 +600,34 @@ struct CameraHuarayUsbSdkAdapter::Impl
 
     void dispatch(const IMV_Frame &f)
     {
-        if (!frameCallback)
+        FrameCallback callback;
+        {
+            std::lock_guard<std::mutex> lock(callbackMutex);
+            if (!callbacksEnabled)
+                return;
+            callback = frameCallback;
+            if (callback)
+                ++activeCallbacks;
+        }
+        if (!callback)
             return;
+        struct CallbackGuard
+        {
+            Impl *impl;
+            ~CallbackGuard()
+            {
+                std::lock_guard<std::mutex> lock(impl->callbackMutex);
+                if (--impl->activeCallbacks == 0)
+                    impl->callbackCv.notify_all();
+                g_huarayUsbCallbackImpl = nullptr;
+            }
+        } guard{this};
+        g_huarayUsbCallbackImpl = this;
         auto envelope = std::make_shared<FrameEnvelope>();
         if (!makeFrame(f, *envelope))
             return;
         auto shared = std::shared_ptr<const FramePacket>(envelope, &envelope->packet);
-        frameCallback(shared);
+        callback(shared);
     }
 
     bool makeFrame(const IMV_Frame &src, FrameEnvelope &envelope)
@@ -754,6 +803,7 @@ bool CameraHuarayUsbSdkAdapter::executeSoftwareTrigger(std::string *errorMessage
 
 void CameraHuarayUsbSdkAdapter::setFrameCallback(FrameCallback callback)
 {
+    std::lock_guard<std::mutex> lock(impl_->callbackMutex);
     impl_->frameCallback = std::move(callback);
 }
 
