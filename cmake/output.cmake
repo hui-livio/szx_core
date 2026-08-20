@@ -129,6 +129,9 @@ function(szx_install_headers)
     if(NOT ARG_DESTINATION)
         set(ARG_DESTINATION ".")
     endif()
+    if(ARG_DESTINATION STREQUAL ".")
+        set(ARG_DESTINATION "")
+    endif()
     if(NOT ARG_FILE_PATTERN)
         set(ARG_FILE_PATTERN "*.h;*.hpp")
     endif()
@@ -166,4 +169,73 @@ function(szx_setup_packaging)
         set(CPACK_COMPONENTS_ALL ${ARG_COMPONENTS})
     endif()
     include(CPack)
+endfunction()
+
+function(szx_install_components_package)
+    if(NOT SZX_COMPONENTS_INSTALL)
+        return()
+    endif()
+
+    set(_targets szx_common szx_logger szx_crypto)
+    if(TARGET szx_camera)
+        list(APPEND _targets szx_camera)
+    endif()
+    if(TARGET szx_plc)
+        list(APPEND _targets szx_plc)
+    endif()
+
+    install(TARGETS ${_targets}
+        EXPORT SZXComponentsTargets
+        RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
+        LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+        ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+        INCLUDES DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
+    install(TARGETS spdlog spdlog_header_only
+        EXPORT SZXComponentsTargets
+        RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
+        LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+        ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}")
+    install(DIRECTORY "${CMAKE_SOURCE_DIR}/third_party/spdlog/include/"
+        DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
+        FILES_MATCHING PATTERN "*.h" PATTERN "*.inl")
+
+    szx_install_headers(common HEADER_DIR "${CMAKE_SOURCE_DIR}/components/common"
+        DESTINATION szx/common FILE_PATTERN "*.hpp")
+    szx_install_headers(common HEADER_DIR "${CMAKE_SOURCE_DIR}/components/common/ext"
+        DESTINATION szx/common/ext FILE_PATTERN "*.h" "*.hpp")
+    szx_install_headers(crypto HEADER_DIR "${CMAKE_SOURCE_DIR}/components/crypto/include"
+        DESTINATION . FILE_PATTERN "*.h")
+    install(FILES "${CMAKE_SOURCE_DIR}/components/logger/Logger.h"
+        DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/szx/logger")
+    if(TARGET szx_camera)
+        szx_install_headers(camera HEADER_DIR "${CMAKE_SOURCE_DIR}/components/camera/include"
+            DESTINATION szx/camera FILE_PATTERN "*.h")
+    endif()
+    if(TARGET szx_plc)
+        install(FILES "${CMAKE_SOURCE_DIR}/components/plc/PlcControl.h"
+            DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/szx/plc")
+    endif()
+
+    install(EXPORT SZXComponentsTargets
+        FILE SZXComponentsTargets.cmake NAMESPACE szx::
+        DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/SZXComponents")
+    configure_package_config_file(
+        "${CMAKE_SOURCE_DIR}/cmake/SZXComponentsConfig.cmake.in"
+        "${CMAKE_CURRENT_BINARY_DIR}/SZXComponentsConfig.cmake"
+        INSTALL_DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/SZXComponents")
+    write_basic_package_version_file(
+        "${CMAKE_CURRENT_BINARY_DIR}/SZXComponentsConfigVersion.cmake"
+        VERSION "${PROJECT_VERSION}" COMPATIBILITY SameMajorVersion)
+    install(FILES
+        "${CMAKE_CURRENT_BINARY_DIR}/SZXComponentsConfig.cmake"
+        "${CMAKE_CURRENT_BINARY_DIR}/SZXComponentsConfigVersion.cmake"
+        DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/SZXComponents")
+    install(FILES
+        "${CMAKE_SOURCE_DIR}/LICENCE.txt"
+        "${CMAKE_SOURCE_DIR}/LICENCE.zh-CN.txt"
+        DESTINATION licenses)
+    if(EXISTS "${CMAKE_SOURCE_DIR}/third_party/spdlog/LICENSE")
+        install(FILES "${CMAKE_SOURCE_DIR}/third_party/spdlog/LICENSE"
+            DESTINATION licenses/spdlog)
+    endif()
 endfunction()
