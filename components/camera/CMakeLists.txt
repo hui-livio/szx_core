@@ -21,6 +21,19 @@ endif()
 if (SZX_OPENCV_DIR)
     set(OpenCV_DIR "${SZX_OPENCV_DIR}")
 endif()
+
+if (SZX_COMPONENTS_BUILD_HUARAY)
+    szx_find_huaray()
+endif()
+
+if (SZX_HAS_HUARAY)
+    target_sources(szx_camera PRIVATE
+        src/huaray/camera_huaray_usb_adapter.cc
+        src/huaray/camera_huaraysdk_adapter.cc)
+    target_include_directories(szx_camera PRIVATE src/huaray)
+    target_link_libraries(szx_camera PRIVATE Huaray::IMVFG)
+    target_compile_definitions(szx_camera PRIVATE SZX_HAS_HUARAY=1)
+endif()
 find_package(OpenCV CONFIG QUIET COMPONENTS core imgcodecs imgproc)
 if (OpenCV_FOUND)
     target_sources(szx_camera PRIVATE src/cv/camera_cv_adapter.cc)
