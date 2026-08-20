@@ -1,8 +1,3 @@
-Set-PSReadLineOption: C:\Users\Administrator\Documents\PowerShell\Microsoft.PowerShell_profile.ps1:4
-Line |
-   4 |  Set-PSReadLineOption -PredictionViewStyle ListView
-     |  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-     | 句柄无效。
 #pragma once
 
 #include "CameraExport.h"
@@ -11,13 +6,15 @@ Line |
 #include "IMVApi.h"
 #include "IMVDefines.h"
 
-namespace SZXCamera {
+namespace SZXCamera
+{
 
-    inline bool isHuarayImvSuccess(int errc) {
-        return errc == IMV_OK;
-    }
+inline bool isHuarayImvSuccess(int errc)
+{
+    return errc == IMV_OK;
+}
 
-    /**
+/**
      * 华睿 (HuarayTech) USB / GigE 直连相机适配器（基于 IMV SDK）。
      *
      * 适用范围：
@@ -35,48 +32,46 @@ namespace SZXCamera {
      * 3. 帧通过 IMV_AttachGrabbing 回调送达；回调里 pData 的生命周期仅限本次回调，
      *    必须 memcpy 出来再交给上层。
      */
-    class AOI_CAMERA_API CameraHuarayUsbSdkAdapter final : public ICameraSdkAdapter
-    {
-    public:
-        explicit CameraHuarayUsbSdkAdapter(CameraInfo info);
-        ~CameraHuarayUsbSdkAdapter() override;
+class AOI_CAMERA_API CameraHuarayUsbSdkAdapter final : public ICameraSdkAdapter
+{
+public:
+    explicit CameraHuarayUsbSdkAdapter(CameraInfo info);
+    ~CameraHuarayUsbSdkAdapter() override;
 
-        std::vector<CameraInfo> enumerateDevices(std::string *errorMessage = nullptr) override;
-        bool open(std::string *errorMessage = nullptr) override;
-        bool close(std::string *errorMessage = nullptr) override;
-        bool applyConfig(const CameraConfig &config, std::string *errorMessage = nullptr) override;
-        bool startGrabbing(std::string *errorMessage = nullptr) override;
-        bool stopGrabbing(std::string *errorMessage = nullptr) override;
-        bool executeSoftwareTrigger(std::string *errorMessage = nullptr) override;
-        void setFrameCallback(FrameCallback callback) override;
-        CameraInfo info() const override;
+    std::vector<CameraInfo> enumerateDevices(std::string *errorMessage = nullptr) override;
+    bool open(std::string *errorMessage = nullptr) override;
+    bool close(std::string *errorMessage = nullptr) override;
+    bool applyConfig(const CameraConfig &config, std::string *errorMessage = nullptr) override;
+    bool startGrabbing(std::string *errorMessage = nullptr) override;
+    bool stopGrabbing(std::string *errorMessage = nullptr) override;
+    bool executeSoftwareTrigger(std::string *errorMessage = nullptr) override;
+    void setFrameCallback(FrameCallback callback) override;
+    CameraInfo info() const override;
 
-    private:
-        struct Impl;
+private:
+    struct Impl;
 
-    private:
-        CameraInfo info_;
-        std::unique_ptr<Impl> impl_;
-    };
+private:
+    CameraInfo info_;
+    std::unique_ptr<Impl> impl_;
+};
 
-    /**
+/**
      * 华睿 USB/GigE 直连相机工厂（基于 IMV SDK）。
      *
      * 通过 IMV_EnumDevices(interfaceTypeAll) 完成全局枚举，
      * 然后为每台相机创建 CameraHuarayUsbSdkAdapter。
      */
-    class AOI_CAMERA_API HuarayUsbCameraSdkFactory : public ICameraSdkFactory
-    {
-    public:
-        HuarayUsbCameraSdkFactory() = default;
-        ~HuarayUsbCameraSdkFactory() override = default;
+class AOI_CAMERA_API HuarayUsbCameraSdkFactory : public ICameraSdkFactory
+{
+public:
+    HuarayUsbCameraSdkFactory()           = default;
+    ~HuarayUsbCameraSdkFactory() override = default;
 
-        std::vector<CameraInfo> enumerateDevices(std::string *errorMessage = nullptr) override;
-        std::unique_ptr<ICameraSdkAdapter> createAdapter(const CameraInfo &info,
-                                                        std::string *errorMessage = nullptr) override;
+    std::vector<CameraInfo> enumerateDevices(std::string *errorMessage = nullptr) override;
+    std::unique_ptr<ICameraSdkAdapter> createAdapter(const CameraInfo &info, std::string *errorMessage = nullptr) override;
 
-        std::vector<std::unique_ptr<ICameraSdkAdapter>> createAllAdapters();
-    };
+    std::vector<std::unique_ptr<ICameraSdkAdapter>> createAllAdapters();
+};
 
-}
-
+} // namespace SZXCamera
