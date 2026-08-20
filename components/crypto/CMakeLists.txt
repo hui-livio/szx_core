@@ -11,6 +11,7 @@ target_include_directories(crypto PUBLIC
 target_link_libraries(crypto PUBLIC szx::common)
 target_compile_definitions(crypto PRIVATE SZX_CRYPTO_EXPORTS)
 target_compile_features(crypto PUBLIC cxx_std_20)
+szx_apply_default_compile_policy(crypto)
 if (WIN32)
     target_link_libraries(crypto PRIVATE Bcrypt)
 endif()

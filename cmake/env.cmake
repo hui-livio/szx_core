@@ -1,0 +1,21 @@
+include_guard(GLOBAL)
+
+function(szx_check_target_arch)
+    if(WIN32 AND MSVC AND NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
+        message(FATAL_ERROR "SZXComponents requires a 64-bit MSVC toolchain")
+    endif()
+endfunction()
+
+function(szx_find_python)
+    cmake_parse_arguments(ARG "" "PATH" "" ${ARGN})
+    if(ARG_PATH)
+        set(SZX_PYTHON "${ARG_PATH}" CACHE FILEPATH "Python interpreter")
+    else()
+        find_program(SZX_PYTHON NAMES python3 python)
+    endif()
+    if(SZX_PYTHON)
+        execute_process(COMMAND "${SZX_PYTHON}" --version OUTPUT_VARIABLE _version ERROR_VARIABLE _version OUTPUT_STRIP_TRAILING_WHITESPACE)
+        message(STATUS "Python: ${SZX_PYTHON} (${_version})")
+    endif()
+endfunction()
+

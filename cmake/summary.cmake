@@ -1,0 +1,16 @@
+include_guard(GLOBAL)
+
+function(szx_print_config_summary)
+    message(STATUS "")
+    message(STATUS "========== SZXComponents summary ==========")
+    message(STATUS "Version:       ${PROJECT_VERSION}")
+    message(STATUS "Generator:     ${CMAKE_GENERATOR}")
+    message(STATUS "C++ compiler:  ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
+    message(STATUS "C++ standard:  ${CMAKE_CXX_STANDARD}")
+    message(STATUS "Tests:         ${SZX_COMPONENTS_BUILD_TESTS}")
+    message(STATUS "Install:       ${SZX_COMPONENTS_INSTALL}")
+    message(STATUS "Camera:        ${SZX_COMPONENTS_BUILD_CAMERA}")
+    message(STATUS "PLC:           ${SZX_COMPONENTS_BUILD_PLC}")
+    message(STATUS "===========================================")
+endfunction()
+

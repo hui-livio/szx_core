@@ -19,6 +19,7 @@ if (WIN32 AND EXISTS "${_modbus_include}/modbus.h" AND EXISTS "${_modbus_implib}
         PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     target_link_libraries(plc PRIVATE szx::common szx::logger libmodbus::modbus)
     target_compile_features(plc PUBLIC cxx_std_20)
+    szx_apply_default_compile_policy(plc)
 else()
     add_library(plc INTERFACE)
     target_include_directories(plc INTERFACE

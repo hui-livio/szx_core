@@ -6,3 +6,4 @@ target_include_directories(logger PUBLIC
 target_link_libraries(logger PRIVATE spdlog::spdlog)
 target_compile_definitions(logger PRIVATE SZX_LOG_EXPORTS)
 target_compile_features(logger PUBLIC cxx_std_20)
+szx_apply_default_compile_policy(logger)

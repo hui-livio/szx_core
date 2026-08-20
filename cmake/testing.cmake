@@ -1,0 +1,32 @@
+include_guard(GLOBAL)
+include(CTest)
+
+option(SZX_TEST_COPY_RUNTIME_DLLS "Copy target runtime DLLs beside tests" ON)
+
+function(szx_add_test)
+    cmake_parse_arguments(ARG "" "NAME;WORKING_DIRECTORY" "SOURCES;LIBS;DEFINES;LABELS" ${ARGN})
+    if(NOT ARG_NAME OR NOT ARG_SOURCES)
+        message(FATAL_ERROR "szx_add_test requires NAME and SOURCES")
+    endif()
+    add_executable(${ARG_NAME} ${ARG_SOURCES})
+    target_link_libraries(${ARG_NAME} PRIVATE ${ARG_LIBS})
+    if(ARG_DEFINES)
+        target_compile_definitions(${ARG_NAME} PRIVATE ${ARG_DEFINES})
+    endif()
+    if(COMMAND szx_apply_default_compile_policy)
+        szx_apply_default_compile_policy(${ARG_NAME})
+    endif()
+    add_test(NAME ${ARG_NAME} COMMAND $<TARGET_FILE:${ARG_NAME}>)
+    if(ARG_WORKING_DIRECTORY)
+        set_tests_properties(${ARG_NAME} PROPERTIES WORKING_DIRECTORY "${ARG_WORKING_DIRECTORY}")
+    endif()
+    if(ARG_LABELS)
+        set_tests_properties(${ARG_NAME} PROPERTIES LABELS "${ARG_LABELS}")
+    endif()
+    if(WIN32 AND SZX_TEST_COPY_RUNTIME_DLLS)
+        add_custom_command(TARGET ${ARG_NAME} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy -t "$<TARGET_FILE_DIR:${ARG_NAME}>" $<TARGET_RUNTIME_DLLS:${ARG_NAME}>
+            COMMAND_EXPAND_LISTS)
+    endif()
+endfunction()
+

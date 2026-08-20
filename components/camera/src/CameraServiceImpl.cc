@@ -85,19 +85,19 @@ bool runOnSelectedCameras(const std::shared_ptr<CameraManager> &manager, const s
 
 std::shared_ptr<ICameraSdkFactory> CameraService::Impl::createFactory(const CameraServiceConfig &config)
 {
-    switch (config.backend)
+    if (config.backend == CameraBackend::CV)
     {
 #if defined(SZX_HAS_OPENCV)
-    case CameraBackend::CV:
         return std::make_shared<CvCameraSdkFactory>(config.cvImageDirectory);
+#else
+        return nullptr;
 #endif
+    }
 #if defined(AOI_HAS_IKAP)
-    case CameraBackend::IKAP:
+    if (config.backend == CameraBackend::IKAP)
         return std::make_shared<IkapCameraSdkFactory>();
 #endif
-    default:
-        return nullptr;
-    }
+    return nullptr;
 }
 
 CameraService::Impl::Impl(const CameraServiceConfig &config) :
