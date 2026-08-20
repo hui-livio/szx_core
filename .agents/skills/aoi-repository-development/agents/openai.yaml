@@ -1,0 +1,4 @@
+interface:
+  display_name: "AOI Repository Development"
+  short_description: "优先复用 common 与 UIToolkits，并执行仓库格式化门禁"
+  default_prompt: "Use $aoi-repository-development to implement this change by reusing common utilities and UIToolkits first, then run repository formatting before commit."

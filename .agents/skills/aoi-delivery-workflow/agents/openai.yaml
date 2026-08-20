@@ -1,0 +1,4 @@
+interface:
+  display_name: "AOI Delivery Workflow"
+  short_description: "Drive AOI changes from requirement through verified release closure"
+  default_prompt: "Guide this AOI change through intake, design, implementation, verification, acceptance, documentation, and closure with explicit evidence at each handoff."

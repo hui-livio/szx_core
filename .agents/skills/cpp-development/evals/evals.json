@@ -1,0 +1,35 @@
+{
+  "skill_name": "cpp-development",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "实现一个调用第三方模型解析器的 ModelService::load 接口。解析器可能抛 std::runtime_error，接口供另一个模块调用。",
+      "expected_output": "识别模块边界，在内部捕获异常，映射为稳定的模块错误枚举并通过 Result<T> 返回，同时补充异常映射 UT。",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "审查一个线程池任务：lambda 内调用 OpenCV，异常会直接离开 worker；future 当前只返回 Output。",
+      "expected_output": "指出线程入口是强制异常边界，建议 future 返回 Result<Output>，捕获标准和未知异常并保留取消等独立错误码。",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "给导出的 C API 增加数据库查询功能，失败时想直接 throw DatabaseException 给调用方。",
+      "expected_output": "禁止 C++ 异常跨 C ABI，改为稳定状态码和显式输出参数，内部记录诊断，并覆盖异常不逃逸与输出所有权测试。",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "在 modules/common 增加一个通用配置解析函数，非法格式时应该返回业务错误码还是抛异常？业务服务会调用它。",
+      "expected_output": "允许 common 采用标准库风格抛出有文档的运行异常，不让 common 依赖业务错误枚举；要求业务服务在稳定边界捕获并映射为自己的错误码和 Result<T>。",
+      "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "下面代码先 mutex.lock()，再打开 SDK handle 并调用可能抛异常的 read，catch 里尝试 close 和 unlock。请按项目 C++ 规范修改并设计测试。",
+      "expected_output": "不能依赖 catch 手工清理；用 unique_lock 和带自定义 deleter 的 move-only RAII handle 在抛异常前接管资源，边界 catch 只转换错误码，并测试成功及各异常路径均恰好释放一次、锁可再次获取且无部分提交。",
+      "files": []
+    }
+  ]
+}

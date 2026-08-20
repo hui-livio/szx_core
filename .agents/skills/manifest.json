@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "collection": "szx-core-project-skills",
+  "generated_from": [
+    {
+      "kind": "project",
+      "path": "D:/work/PCB/AOI_PCB/.agents/skills",
+      "policy": "copy-selected-relevant"
+    },
+    {
+      "kind": "global",
+      "path": "C:/Users/Administrator/.codex/skills",
+      "policy": "copy-selected-non-duplicate"
+    }
+  ],
+  "precedence": "project-copy-wins-for-duplicate-skill-names",
+  "skills": {
+    "project": [
+      "aoi-delivery-workflow",
+      "aoi-module-error-contract",
+      "aoi-repository-development",
+      "api-stability-inline-namespace",
+      "cmake-cpp-build",
+      "cpp-development",
+      "cpp-native-performance",
+      "cpp-unit-testing",
+      "define-goal",
+      "doc-coauthoring",
+      "opencv-cpp-aoi",
+      "performance-concurrency-advisor",
+      "qt-cpp-review",
+      "qt-project",
+      "qt-qml",
+      "qt-qml-profiler",
+      "qt-qml-review"
+    ],
+    "global_only": [
+      "cpp-api-documentation",
+      "cpp-benchmark-testing",
+      "cpp-fuzz-testing",
+      "cpp-mock-testing"
+    ]
+  }
+}

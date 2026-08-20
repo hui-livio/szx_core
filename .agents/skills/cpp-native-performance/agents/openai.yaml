@@ -1,0 +1,4 @@
+interface:
+  display_name: "C++ Native Performance"
+  short_description: "Profile and optimize C++ Qt OpenCV AOI workloads"
+  default_prompt: "Profile this C++ Qt OpenCV AOI workload, identify the measured bottleneck, and propose a verifiable optimization."
