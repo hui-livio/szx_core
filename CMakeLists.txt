@@ -52,12 +52,12 @@ if (SZX_COMPONENTS_BUILD_PLC)
 endif()
 
 if (SZX_COMPONENTS_INSTALL)
-    set(SZX_COMPONENTS_INSTALL_TARGETS common logger crypto)
-    if (TARGET camera)
-        list(APPEND SZX_COMPONENTS_INSTALL_TARGETS camera)
+    set(SZX_COMPONENTS_INSTALL_TARGETS szx_common szx_logger szx_crypto)
+    if (TARGET szx_camera)
+        list(APPEND SZX_COMPONENTS_INSTALL_TARGETS szx_camera)
     endif()
-    if (TARGET plc)
-        list(APPEND SZX_COMPONENTS_INSTALL_TARGETS plc)
+    if (TARGET szx_plc)
+        list(APPEND SZX_COMPONENTS_INSTALL_TARGETS szx_plc)
     endif()
 
     install(TARGETS ${SZX_COMPONENTS_INSTALL_TARGETS}
@@ -124,7 +124,12 @@ if (SZX_COMPONENTS_BUILD_TESTS)
     target_link_libraries(szx_components_smoke_test PRIVATE szx::common szx::crypto szx::logger)
     add_test(NAME szx_components_smoke_test COMMAND szx_components_smoke_test)
     set_tests_properties(szx_components_smoke_test PROPERTIES
-        ENVIRONMENT "PATH=$<TARGET_FILE_DIR:crypto>;$<TARGET_FILE_DIR:logger>;$<TARGET_FILE_DIR:spdlog>")
+        ENVIRONMENT "PATH=$<TARGET_FILE_DIR:szx_crypto>;$<TARGET_FILE_DIR:szx_logger>;$<TARGET_FILE_DIR:spdlog>")
+    szx_find_gtest()
+    szx_add_test(NAME szx_components_gtest
+        SOURCES tests/gtest_smoke.cpp
+        LIBS szx::crypto
+        LABELS unit component)
 endif()
 
 szx_print_config_summary()
