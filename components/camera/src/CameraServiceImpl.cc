@@ -19,6 +19,11 @@
     #include "ikap/camera_ikapsdk_adapter.h"
 #endif
 
+#if defined(SZX_HAS_HUARAY)
+    #include "huaray/camera_huaray_usb_adapter.h"
+    #include "huaray/camera_huaraysdk_adapter.h"
+#endif
+
 using namespace SZX::LOGGER;
 
 namespace
@@ -96,6 +101,12 @@ std::shared_ptr<ICameraSdkFactory> CameraService::Impl::createFactory(const Came
 #if defined(AOI_HAS_IKAP)
     if (config.backend == CameraBackend::IKAP)
         return std::make_shared<IkapCameraSdkFactory>();
+#endif
+#if defined(SZX_HAS_HUARAY)
+    if (config.backend == CameraBackend::HUARAY)
+        return std::make_shared<HuarayCameraSdkFactory>();
+    if (config.backend == CameraBackend::HUARAY_USB)
+        return std::make_shared<HuarayUsbCameraSdkFactory>();
 #endif
     return nullptr;
 }

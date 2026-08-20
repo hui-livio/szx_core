@@ -23,6 +23,8 @@ enum class CameraBackend
 {
     CV,   ///< OpenCV 模拟相机
     IKAP, ///< IKAP 相机
+    HUARAY,     ///< Huaray IMVFG frame-grabber cameras
+    HUARAY_USB, ///< Huaray IMV USB/GigE cameras
 };
 
 struct CameraServiceConfig
