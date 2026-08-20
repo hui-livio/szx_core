@@ -1,0 +1,179 @@
+/**
+ * @file FileHelper.hpp
+ * @brief 常用文件处理工具。
+ *
+ * @author livliu(yuanfeng1897@outlook.com)
+ * @date 2026-07-09
+ */
+
+#pragma once
+
+#include "FolderHelper.hpp"
+#include "StringHelper.hpp"
+
+#include <algorithm>
+#include <cstdint>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <system_error>
+#include <vector>
+
+namespace SZX::COMMON
+{
+
+/**
+ * @class FileHelper
+ * @brief 提供文件存在性判断、读写、扩展名判断等无状态工具函数。
+ */
+class FileHelper final
+{
+public:
+    static auto Exists(const std::filesystem::path &path) -> bool
+    {
+        std::error_code error;
+        return std::filesystem::exists(path, error) && std::filesystem::is_regular_file(path, error);
+    }
+
+    static auto IsRegularFile(const std::filesystem::path &path) -> bool
+    {
+        return Exists(path);
+    }
+
+    static auto Size(const std::filesystem::path &path) -> std::optional<std::uintmax_t>
+    {
+        std::error_code error;
+        const auto size = std::filesystem::file_size(path, error);
+        if (error)
+            return std::nullopt;
+        return size;
+    }
+
+    static auto Extension(const std::filesystem::path &path, bool lowerCase = true) -> std::string
+    {
+        auto extension = path.extension().string();
+        if (lowerCase)
+            extension = StringHelper::ToLower(extension);
+        return extension;
+    }
+
+    static auto HasExtension(const std::filesystem::path &path, std::string_view extension, bool caseInsensitive = true) -> bool
+    {
+        auto actual   = path.extension().string();
+        auto expected = NormalizeExtension(extension);
+        if (caseInsensitive)
+        {
+            actual   = StringHelper::ToLower(actual);
+            expected = StringHelper::ToLower(expected);
+        }
+        return actual == expected;
+    }
+
+    static auto HasExtension(const std::filesystem::path &path, const std::vector<std::string> &extensions,
+                             bool caseInsensitive = true) -> bool
+    {
+        return std::any_of(extensions.begin(), extensions.end(),
+                           [&](const auto &extension) { return HasExtension(path, extension, caseInsensitive); });
+    }
+
+    static auto ReadText(const std::filesystem::path &path) -> std::optional<std::string>
+    {
+        std::ifstream input(path, std::ios::in | std::ios::binary);
+        if (!input.is_open())
+            return std::nullopt;
+
+        auto content = std::string(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
+        if (input.bad())
+            return std::nullopt;
+        return content;
+    }
+
+    static auto WriteText(const std::filesystem::path &path, std::string_view content, bool createParents = true) -> bool
+    {
+        if (createParents && !FolderHelper::EnsureParentExists(path))
+            return false;
+
+        std::ofstream output(path, std::ios::out | std::ios::binary | std::ios::trunc);
+        if (!output.is_open())
+            return false;
+
+        output.write(content.data(), static_cast<std::streamsize>(content.size()));
+        return output.good();
+    }
+
+    static auto AppendText(const std::filesystem::path &path, std::string_view content, bool createParents = true) -> bool
+    {
+        if (createParents && !FolderHelper::EnsureParentExists(path))
+            return false;
+
+        std::ofstream output(path, std::ios::out | std::ios::binary | std::ios::app);
+        if (!output.is_open())
+            return false;
+
+        output.write(content.data(), static_cast<std::streamsize>(content.size()));
+        return output.good();
+    }
+
+    static auto ReadBytes(const std::filesystem::path &path) -> std::optional<std::vector<std::uint8_t>>
+    {
+        std::ifstream input(path, std::ios::in | std::ios::binary);
+        if (!input.is_open())
+            return std::nullopt;
+
+        auto content = std::vector<std::uint8_t>(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
+        if (input.bad())
+            return std::nullopt;
+        return content;
+    }
+
+    static auto WriteBytes(const std::filesystem::path &path, const std::vector<std::uint8_t> &content, bool createParents = true)
+        -> bool
+    {
+        if (createParents && !FolderHelper::EnsureParentExists(path))
+            return false;
+
+        std::ofstream output(path, std::ios::out | std::ios::binary | std::ios::trunc);
+        if (!output.is_open())
+            return false;
+
+        if (!content.empty())
+            output.write(reinterpret_cast<const char *>(content.data()), static_cast<std::streamsize>(content.size()));
+        return output.good();
+    }
+
+    static auto RemoveIfExists(const std::filesystem::path &path) -> bool
+    {
+        if (!Exists(path))
+            return true;
+
+        std::error_code error;
+        return std::filesystem::remove(path, error) && !error;
+    }
+
+    static auto CopyFile(const std::filesystem::path &source, const std::filesystem::path &target, bool overwrite = true,
+                         bool createParents = true) -> bool
+    {
+        if (!Exists(source))
+            return false;
+
+        if (createParents && !FolderHelper::EnsureParentExists(target))
+            return false;
+
+        std::error_code error;
+        const auto options = overwrite ? std::filesystem::copy_options::overwrite_existing : std::filesystem::copy_options::none;
+        return std::filesystem::copy_file(source, target, options, error) && !error;
+    }
+
+private:
+    static auto NormalizeExtension(std::string_view extension) -> std::string
+    {
+        if (extension.empty() || extension.front() == '.')
+            return std::string(extension);
+        return "." + std::string(extension);
+    }
+};
+
+} // namespace SZX::COMMON
