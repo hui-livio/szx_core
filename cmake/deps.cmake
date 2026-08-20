@@ -102,3 +102,27 @@ function(szx_ikap_copy_dlls _target)
         endif()
     endforeach()
 endfunction()
+
+function(szx_huaray_copy_dlls _target)
+    if(NOT TARGET "${_target}" OR NOT WIN32)
+        return()
+    endif()
+    if(NOT SZX_HUARAY_APP_ROOT)
+        return()
+    endif()
+
+    if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+        set(_bin_dir "${SZX_HUARAY_APP_ROOT}/x64")
+    else()
+        set(_bin_dir "${SZX_HUARAY_APP_ROOT}/win32")
+    endif()
+
+    foreach(_dll IN ITEMS MVSDKmd.dll)
+        if(EXISTS "${_bin_dir}/${_dll}")
+            add_custom_command(TARGET "${_target}" POST_BUILD
+                COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+                    "${_bin_dir}/${_dll}" "$<TARGET_FILE_DIR:${_target}>"
+                COMMENT "Copying ${_dll} for ${_target}")
+        endif()
+    endforeach()
+endfunction()

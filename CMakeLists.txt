@@ -36,7 +36,7 @@ szx_check_target_arch()
 szx_setup_git_hooks()
 szx_global_output_settings()
 
-if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/spdlog/CMakeLists.txt")
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/spdlog/CMakeLists.txt")
     set(SPDLOG_BUILD_EXAMPLE OFF CACHE BOOL "" FORCE)
     set(SPDLOG_BUILD_TESTS OFF CACHE BOOL "" FORCE)
     set(SPDLOG_INSTALL OFF CACHE BOOL "" FORCE)
@@ -50,31 +50,24 @@ add_subdirectory(components/common)
 add_subdirectory(components/logger)
 add_subdirectory(components/crypto)
 
-if (SZX_COMPONENTS_BUILD_CAMERA)
+if(SZX_COMPONENTS_BUILD_CAMERA)
     add_subdirectory(components/camera)
 endif()
 
-if (SZX_COMPONENTS_BUILD_PLC)
+if(SZX_COMPONENTS_BUILD_PLC)
     add_subdirectory(components/plc)
 endif()
 
 szx_install_components_package()
 
-if (SZX_COMPONENTS_BUILD_TESTS)
+if(SZX_COMPONENTS_BUILD_TESTS)
     enable_testing()
-    add_executable(szx_components_smoke_test tests/smoke.cpp)
-    target_link_libraries(szx_components_smoke_test PRIVATE szx::common szx::crypto szx::logger)
-    add_test(NAME szx_components_smoke_test COMMAND szx_components_smoke_test)
-    set_tests_properties(szx_components_smoke_test PROPERTIES
-        ENVIRONMENT "PATH=$<TARGET_FILE_DIR:szx_crypto>;$<TARGET_FILE_DIR:szx_logger>;$<TARGET_FILE_DIR:spdlog>")
     szx_find_gtest()
-    szx_add_test(NAME szx_components_gtest
-        SOURCES tests/gtest_smoke.cpp
-        LIBS szx::crypto
-        LABELS unit component)
+    add_subdirectory(tests)
+
 endif()
 
-if (SZX_COMPONENTS_ENABLE_CPACK AND SZX_COMPONENTS_INSTALL)
+if(SZX_COMPONENTS_ENABLE_CPACK AND SZX_COMPONENTS_INSTALL)
     szx_setup_packaging(VENDOR "SZX" DESCRIPTION "SZX Components SDK" COMPONENTS runtime devel)
 endif()
 

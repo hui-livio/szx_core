@@ -1,0 +1,6 @@
+add_subdirectory(crypto)
+add_subdirectory(common)
+add_subdirectory(logger)
+if(TARGET szx_camera)
+    add_subdirectory(camera)
+endif()
