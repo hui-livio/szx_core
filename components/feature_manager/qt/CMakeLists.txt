@@ -8,7 +8,8 @@ qt_add_library(szx_feature_manager_qt STATIC
 
 target_include_directories(szx_feature_manager_qt
     PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/szx/feature_manager/qt>
 )
 
 target_link_libraries(szx_feature_manager_qt

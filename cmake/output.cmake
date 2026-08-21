@@ -190,6 +190,11 @@ function(szx_install_components_package)
         list(APPEND _targets szx_plc)
     endif()
 
+    set(SZX_COMPONENTS_HAS_FEATURE_MANAGER_QT FALSE)
+    if(TARGET szx_feature_manager_qt)
+        set(SZX_COMPONENTS_HAS_FEATURE_MANAGER_QT TRUE)
+    endif()
+
     install(TARGETS ${_targets}
         EXPORT SZXComponentsTargets
         RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"

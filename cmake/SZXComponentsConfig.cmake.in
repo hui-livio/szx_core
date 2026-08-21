@@ -2,6 +2,9 @@
 
 include(CMakeFindDependencyMacro)
 find_dependency(Threads)
+if(@SZX_COMPONENTS_HAS_FEATURE_MANAGER_QT@)
+    find_dependency(Qt6 6.8 CONFIG COMPONENTS Core)
+endif()
 include("${CMAKE_CURRENT_LIST_DIR}/SZXComponentsTargets.cmake")
 
 # The package export uses the szx:: namespace for every target.  Keep the

@@ -94,8 +94,11 @@ qt_add_qml_module(UIToolkits
 
 
 target_include_directories(UIToolkits
-    PUBLIC include
-    PRIVATE src src/Charts
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:include>
+    PRIVATE
+        src src/Charts
 )
 target_compile_definitions(UIToolkits PRIVATE UITOOLKITS_EXPORTS)
 
@@ -129,21 +132,23 @@ add_custom_command(TARGET UIToolkitsplugin POST_BUILD
 # Make UIToolkits module output directory available for sibling subprojects.
 set(UITOOLKITS_QML_MODULE_OUTPUT_DIR "${UITOOLKITS_QML_MODULE_OUTPUT_DIR}" PARENT_SCOPE)
 
-# Install runtime and plugin artifacts so cmake --install output can load module UIToolkits.
-install(TARGETS UIToolkits
-    RUNTIME DESTINATION bin
-    LIBRARY DESTINATION bin
-    ARCHIVE DESTINATION lib
-)
+if(SZX_COMPONENTS_INSTALL)
+    # Install runtime and plugin artifacts so cmake --install output can load module UIToolkits.
+    install(TARGETS UIToolkits
+        RUNTIME DESTINATION bin
+        LIBRARY DESTINATION bin
+        ARCHIVE DESTINATION lib
+    )
 
-install(TARGETS UIToolkitsplugin
-    RUNTIME DESTINATION bin/UIToolkits
-    LIBRARY DESTINATION bin/UIToolkits
-    ARCHIVE DESTINATION lib
-)
+    install(TARGETS UIToolkitsplugin
+        RUNTIME DESTINATION bin/UIToolkits
+        LIBRARY DESTINATION bin/UIToolkits
+        ARCHIVE DESTINATION lib
+    )
 
-install(FILES
-    "${UITOOLKITS_QML_MODULE_OUTPUT_DIR}/qmldir"
-    "${UITOOLKITS_QML_MODULE_OUTPUT_DIR}/UIToolkits.qmltypes"
-    DESTINATION bin/UIToolkits
-)
+    install(FILES
+        "${UITOOLKITS_QML_MODULE_OUTPUT_DIR}/qmldir"
+        "${UITOOLKITS_QML_MODULE_OUTPUT_DIR}/UIToolkits.qmltypes"
+        DESTINATION bin/UIToolkits
+    )
+endif()
