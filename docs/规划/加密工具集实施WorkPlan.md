@@ -1,0 +1,350 @@
+# SZX 加密工具集实施 Work Plan
+
+> 文档状态：待执行。
+>
+> 编制日期：2026-08-04。
+>
+> 设计依据：[SZX 加密工具库与应用设计](../设计/加密工具库与应用设计.md)。
+
+## 1. 目标与完成证据
+
+目标是在不依赖 OpenSSL 的前提下，交付供所有上层业务统一使用的 `CryptoService`，以及密钥生成、对称/非对称加解密、软授权签发、验签、信息查询和校验工具。
+
+执行顺序固定为：
+
+```text
+冻结框架 -> 冻结接口 -> UT Case 与测试资产 -> 最小实现 -> 分层实现 -> 工具联调 -> 发布验收
+```
+
+项目完成必须同时具备以下证据，不能以“已有类/接口”或“编译通过”代替：
+
+- 设计评审记录和已冻结的模块依赖图、公共接口、格式与错误码。
+- 每个公共能力都有可追溯 UT Case、固定向量和边界/失败用例。
+- Windows CNG provider 通过统一 `ICryptoService` 契约测试。
+- `.szxe`、`.szxpub`、`.szxreq`、`.szxlic` 格式测试和篡改拒绝测试通过。
+- CLI、Qt GUI 和内部签发工具通过端到端验收。
+- 客户安装包不包含签发能力、发行私钥或内部签发工具。
+- 依赖扫描确认所有目标均未链接 OpenSSL。
+
+## 2. 范围边界
+
+### 2.1 本期范围
+
+- `modules/crypto`：密码原语和 Windows CNG provider。
+- `modules/crypto_keystore`：平台密钥存储适配。
+- `modules/crypto_service`：所有上层业务唯一的加密能力门面。
+- `modules/crypto_file`：SZX 文件容器及安全文件操作。
+- `modules/license`：客户侧请求、查询、验签、校验、安装和 FeatureGate。
+- `modules/crypto_app`：GUI/CLI 共用任务编排。
+- `tools/crypto/cli`、`tools/crypto/gui`、`tools/license-issuer`。
+- GoogleTest 单元测试、契约测试、格式测试和工具端到端测试。
+
+### 2.2 本期非目标
+
+- Linux provider 的正式实现；本期只冻结可替换边界和跨平台测试资产。
+- 在线激活、浮动授权、吊销服务、HSM/TPM 和 PKCS#11 正式接入。
+- TLS、PKI、证书签发和自研密码算法。
+- 删除或改变现有 Fernet token 格式。
+
+## 3. 执行原则
+
+1. `crypto_file`、`license` 和其他上层业务只能依赖 `ICryptoService`，不能直接调用 `szx::crypto`、keystore 或 CNG。
+2. 先定义可观察行为和失败语义，再写实现；接口冻结后才能进入正式实现。
+3. UT 使用 GoogleTest；优先表驱动、In-Got-Want 和 AAA，固定向量必须来自公开标准或已审核黄金数据。
+4. 测试必须可重复、无网络依赖，普通 UT 不依赖真实用户密钥容器；平台集成测试使用隔离测试 key namespace。
+5. 安全失败必须 fail closed：认证或验签失败不得返回明文、有效授权或正式输出文件。
+6. 签发端与客户侧从目标、接口、打包和密钥权限四个层面隔离。
+7. 每次编码任务必须执行“编码前 Review”和“编码后 Review”，并记录状态、结论和证据；任一 Review 未通过不得继续进入后续任务或声明完成。
+
+### 3.1 单次编码任务强制闭环
+
+```text
+领取任务
+  -> 编码前 Review（状态、范围、依赖、接口、UT Case）
+  -> Review 通过
+  -> 编码与本地验证
+  -> 编码后 Review（变更、测试、安全、依赖、结果）
+  -> 问题修正与复审
+  -> 证据归档
+  -> 任务完成
+```
+
+编码前 Review 必须回答：
+
+- 当前基线、工作树和关联任务状态是什么，是否存在冲突或未完成前置项。
+- 本次允许修改和明确不修改的范围是什么。
+- 依赖的框架、接口、格式、错误码和 UT Case 是否已经冻结。
+- 预期先失败的测试、完成后应转绿的测试及回归范围是什么。
+- 是否涉及 secret、私钥、授权签发、文件覆盖或发布边界等高风险项。
+- 计划变更是否仍符合“所有上层业务只依赖 `ICryptoService`”的架构约束。
+
+编码后 Review 必须检查：
+
+- 实际变更是否与批准范围一致，有无顺手修改或未说明的公共接口变化。
+- 代码正确性、错误路径、资源释放、敏感数据生命周期及日志安全。
+- 对应 UT 是否先验证失败原因、实现后转绿；新增边界和回归用例是否充分。
+- 受影响目标是否编译，相关 CTest 是否通过；不得只报告编译成功。
+- 是否新增反向依赖、平台类型泄漏、OpenSSL 链接或签发代码进入客户目标。
+- 最终结果、剩余问题、风险和证据是否完整，是否需要更新设计、计划或接口文档。
+
+每次 Review 使用以下最小记录：
+
+| 字段 | 内容 |
+|---|---|
+| Task ID | 对应 WBS/需求/缺陷编号 |
+| Review 类型 | Pre-Code / Post-Code / Re-Review |
+| 基线与范围 | 分支/提交、目标文件和非目标 |
+| 当前状态 | Not Started / In Progress / Blocked / Ready for Review / Done |
+| UT 状态 | 计划 Case、失败证据、通过证据和回归结果 |
+| Review 发现 | 问题、严重度、负责人和处理结论 |
+| 最终结论 | Pass / Pass with Follow-up / Fail |
+| Evidence | diff、测试日志、依赖扫描、截图或评审记录链接 |
+
+`Pass with Follow-up` 只允许非安全、非正确性、非兼容性的文档或优化项，并必须建立跟踪任务；安全、正确性、公共接口和格式问题一律 `Fail`，修正后执行 Re-Review。
+
+## 4. 多人协作组织
+
+### 4.1 建议团队与职责
+
+默认以 6 人核心小组编排。下表中的编号表示角色，不绑定具体姓名；项目启动时必须补齐实际负责人和备份人。
+
+| 角色编号 | 角色 | 主责范围 | 不可兼任约束 |
+|---|---|---|---|
+| A | 技术负责人/集成负责人 | 架构、公共接口、格式决策、依赖门禁、最终集成 | 不单独批准自己提交的公共接口变更 |
+| B | 密码原语开发 | `modules/crypto`、CNG provider、固定向量适配 | 原语安全 Review 由 A 或 F 执行 |
+| C | 服务与密钥开发 | `crypto_keystore`、`crypto_service`、FakeCryptoService | `ICryptoService` 由 A 最终批准 |
+| D | 文件与授权开发 | `crypto_file`、客户侧 `license`、格式 parser | 签发与验签关键逻辑需 F 交叉 Review |
+| E | 工具开发 | `crypto_app`、CLI、Qt GUI、内部 issuer 工具壳 | 不接触或提交正式 issuer 私钥 |
+| F | 测试与安全负责人 | UT Case、黄金数据、契约测试、安全/包审计、发布测试 | 不以实现代码作为测试 oracle |
+
+可选支持角色：构建发布工程师负责安装包和 CI，产品/交付负责人确认授权策略与 GUI 流程。人员少于 6 人时允许 B/C、D/E 或 A/构建角色合并，但每个任务的 Author 与 Reviewer 必须是不同人员，签发、密钥和格式安全变更至少需要 A、F 之一批准。
+
+### 4.2 并行工作流与代码所有权
+
+| 工作流 | 主责 | 主要目录 | 评审人 | 可并行条件 |
+|---|---|---|---|---|
+| WS-A 架构与集成 | A | 公共 CMake、公共接口、设计/计划文档 | F + 受影响模块负责人 | 始终运行；公共接口变更集中由 A 合入 |
+| WS-B 密码原语 | B | `modules/crypto`、`test/modules/crypto` | A/F | M2 原语接口冻结后开始 |
+| WS-C Service/Keystore | C | `modules/crypto_service`、`crypto_keystore` 及测试 | A/F | `ICryptoService`、KeyReference 冻结后开始 |
+| WS-D 文件与授权 | D | `crypto_file`、`license` 及测试 | A/F | 使用 FakeCryptoService，可在真实 provider 前并行 |
+| WS-E 工具 | E | `crypto_app`、`tools/*` 及工具测试 | A/D | Controller/CLI 契约冻结并有 fake 后开始 |
+| WS-F 测试与安全 | F | `testdata/crypto`、契约测试、审计脚本、报告 | A + 对应开发 | 从 M1 开始，与所有工作流并行 |
+
+所有权规则：
+
+- 每个文件同时只能有一个工作流主改；跨目录改动先由双方在任务记录中确认拆分点。
+- 公共头、错误码、格式 schema、顶层 CMake 和安装规则为集成热点，只由 A 或 A 指定的单一集成人修改。
+- F 维护黄金向量和需求—测试追踪矩阵；开发人员可提出新增数据，但不能未经复核覆盖期望结果。
+- 正式 issuer 私钥不进入仓库、测试资产、工单附件或协作消息；测试仅使用明确标记的测试密钥。
+
+### 4.3 协作任务卡与交接契约
+
+每个任务卡除 WBS 字段外，必须包含：
+
+- `Author`、`Reviewer`、备份人和预计交接时间。
+- 允许修改的目录/文件，潜在共享文件及协调人。
+- 输入接口版本、依赖任务和对应需求/UT Case ID。
+- Pre-Code Review 结论和开始条件。
+- 可独立验证的输出、测试命令和预期结果。
+- Post-Code Review、遗留问题和下游通知对象。
+
+工作流交接以可消费的制品为准：
+
+| 提供方 -> 使用方 | 必须交付的制品 | 接收门禁 |
+|---|---|---|
+| A -> B/C/D/E/F | 已评审公共头、错误表、格式 schema 和版本号 | 接口示例可编译；无待定语义 |
+| F -> B/C | 固定向量、契约测试和预期错误 | 来源可追溯；测试失败原因与缺实现一致 |
+| C -> D/E | FakeCryptoService、真实 Service target 和能力说明 | fake 与真实实现运行同一契约测试 |
+| D -> E | 文件/授权应用 API、状态和错误映射 | 无 GUI/CLI 类型反向进入业务模块 |
+| E -> F | 可安装工具、命令 schema 和测试入口 | 可在干净测试目录非交互运行 |
+| 各流 -> A | 已 Review 变更、测试日志和影响说明 | Post-Code Review 通过且无未声明接口变化 |
+
+### 4.4 分支、合入和日常同步
+
+- 每个任务使用独立短生命周期分支或等价变更集，命名建议 `crypto/<WBS-ID>-<topic>`；一个变更集只解决一个任务。
+- 合入顺序为公共契约 → 测试/fake → 最小实现 → 工具集成，避免多个工作流同时修改接口以追赶实现。
+- 作者在请求 Review 前完成 Post-Code 自检；Reviewer 独立运行相关测试并记录结论，不能只阅读作者提供的成功日志。
+- 公共接口或格式变更至少需要 A 和 F 双重批准；普通模块变更至少需要该模块之外一名 Reviewer。
+- 每日短同步只报告已验证制品、下一交接点、共享文件冲突和阻塞；不使用无证据百分比。
+- A 维护集成分支健康状态。任何合入导致主线相关测试失败，优先修复或回退该变更，不允许后续人员在红色基线上继续叠加。
+
+### 4.5 并行批次安排
+
+| 批次 | A | B | C | D | E | F | 批次出口 |
+|---|---|---|---|---|---|---|---|
+| P0 框架 | 目标/CMake/依赖图 | 盘点现有 crypto | keystore/service 骨架建议 | 格式模块骨架建议 | tools 目录与打包建议 | 测试目标/基线盘点 | M1 |
+| P1 接口 | 主持接口冻结 | 原语 API/限制 | Service/KeyReference | `.szxe/.szxlic` 与 License API | CLI/GUI contract | Case 评审与可测性检查 | M2 |
+| P2 UT 先行 | 处理接口问题 | 原语测试骨架协作 | Service fake/契约骨架 | 文件/授权测试骨架 | CLI/GUI 测试骨架 | 黄金数据与追踪矩阵主责 | M3 |
+| P3 基础实现 | 持续集成 | D-01 | D-02/03 | 基于 fake 完善 D-04/05 测试 | 基于 fake 开发 Controller/CLI 壳 | 独立验证每个切片 | M4 |
+| P4 业务实现 | 集成/接口守门 | 缺陷修复 | Service 支持 | D-04/05/06 | D-07/08 | 篡改、E2E、安全测试 | M5/M6 |
+| P5 加固 | 发布决策 | 性能修复 | Linux 边界验证 | parser/授权修复 | 安装包/可用性修复 | R-01~05 主责 | M7 |
+
+并行限制：B 与 C 可并行；D、E 可依靠 fake 提前工作；但真实文件/授权 E2E 必须等待 C 完成 Service 契约，签发工具闭环必须等待 D 完成 License 格式和验签。
+
+### 4.6 多人 Review 状态板
+
+状态统一为：`Not Started -> Pre-Review -> In Progress -> Post-Review -> Rework（可选）-> Ready to Integrate -> Done`，阻塞时额外标记 `Blocked` 并保留原阶段。
+
+| Task | Author | Reviewer | 状态 | 当前证据 | 下游/阻塞 |
+|---|---|---|---|---|---|
+| 示例：F-01 | A | C/F | Pre-Review | 目标目录与依赖图草案 | 阻塞 F-02/F-03 |
+
+只有集成负责人确认变更进入健康主线、相关测试通过且下游已收到接口/行为通知后，任务才能从 `Ready to Integrate` 变为 `Done`。
+
+## 5. 里程碑与退出门禁
+
+| 里程碑 | 可演示结果 | 退出门禁 | 状态 |
+|---|---|---|---|
+| M1 框架冻结 | 所有模块、工具、测试目标可配置并体现单向依赖 | 架构评审通过；依赖图和目录不再变更 | 未开始 |
+| M2 接口冻结 | 公共头、DTO、错误码、格式 schema 和服务注入方式齐备 | API/安全评审通过；无平台类型泄漏 | 未开始 |
+| M3 UT 设计冻结 | UT Case 清单、固定向量、fake、格式样本和测试目标齐备 | 每项 P0 能力都有成功、边界、失败和篡改用例 | 未开始 |
+| M4 基础服务可用 | CNG 原语、keystore、CryptoService 通过契约测试 | M3 中对应测试全绿；无 secret 日志 | 未开始 |
+| M5 文件与授权可用 | 文件容器和客户侧授权通过单元/格式测试 | 篡改、截断、错密钥、错签名全部拒绝 | 未开始 |
+| M6 工具闭环 | CLI、GUI、内部签发工具完成生成—签发—验签—加解密闭环 | E2E、安装包隔离和退出码验收通过 | 未开始 |
+| M7 发布候选 | 性能、长文件、恢复、安全和依赖审计完成 | 发布验收清单签字；遗留风险有明确处置 | 未开始 |
+
+## 6. WBS
+
+### WP1：框架与工程结构冻结
+
+| ID | 任务与交付物 | 责任角色 | 依赖 | 验收方式 | 规模 | 状态 |
+|---|---|---|---|---|---|---|
+| F-01 | 新增各 `modules/*` 和 `tools/*` 目录、占位 CMake 目标及 namespace | C++负责人 | 无 | 全量 CMake configure 成功；目标名称与设计一致 | M | 未开始 |
+| F-02 | 建立 `crypto -> keystore -> service -> file/license -> app -> tools` 的允许依赖规则 | 架构负责人 | F-01 | CMake link interface 审查；上层无反向依赖 | S | 未开始 |
+| F-03 | 为各模块建立 `test/modules/*`、`test/tools/*` 测试目标 | 测试负责人 | F-01 | CTest 能发现空骨架测试目标 | S | 未开始 |
+| F-04 | 定义 Windows/Linux provider 选择点，平台宏只存在于实现层 | 架构负责人 | F-02 | 公共头扫描无 CNG/Mbed TLS 类型 | S | 未开始 |
+| F-05 | 固定客户工具和内部签发工具的安装/打包边界 | 构建负责人 | F-01 | 模拟安装清单不包含 `szx-license-issuer` | S | 未开始 |
+
+M1 评审输入：目标拓扑、目录树、CMake target 表、发布组件清单。评审未通过不得开始公共 API 实现。
+
+### WP2：接口与数据契约冻结
+
+| ID | 任务与交付物 | 责任角色 | 依赖 | 验收方式 | 规模 | 状态 |
+|---|---|---|---|---|---|---|
+| I-01 | 冻结 `CryptoError`、`Result<T>`、算法 ID、key usage 和大小上限 | 架构/C++ | M1 | 错误表覆盖参数、认证、密钥、格式、I/O、权限和不支持 | M | 未开始 |
+| I-02 | 冻结 SecretBytes、PublicKey、KeyReference 等强类型及清零/移动语义 | C++负责人 | I-01 | 编译期禁止明显的公私钥/普通字节误用 | M | 未开始 |
+| I-03 | 冻结 `ICryptoService`：密钥生成、对称/非对称加解密、签名验签、Hash/HMAC、KDF、查询与校验 | 架构负责人 | I-01/02 | API 评审；不含路径、JSON、许可证和平台 handle | L | 未开始 |
+| I-04 | 冻结 `ICryptoKeyStore`：生成、查找、查询、删除及基于引用的 decrypt/sign | 安全负责人 | I-02 | 私钥不可导出路径完整；key usage 可检查 | M | 未开始 |
+| I-05 | 冻结 `.szxe/.szxpub` 二进制格式、解析上限与版本策略 | 文件模块负责人 | I-01/03 | 字段表和字节级黄金样本评审通过 | L | 未开始 |
+| I-06 | 冻结 `.szxreq/.szxlic`、License API、FeatureGate 与签发端 API | 授权负责人 | I-01/03 | 查询与有效性校验语义分离；签名 payload 唯一 | L | 未开始 |
+| I-07 | 冻结 `CryptoApplicationService`、进度、取消、原子输出和状态机 | 工具负责人 | I-03/05/06 | GUI/CLI 可共享且不泄漏 secret | M | 未开始 |
+| I-08 | 冻结 CLI 命令、JSON schema、退出码和 GUI Controller 边界 | 工具负责人 | I-07 | 命令评审及示例输入输出确认 | M | 未开始 |
+
+接口变更规则：M2 后公共接口、格式或错误码发生不兼容变化，必须提交变更说明、受影响 UT 和格式版本决策，不能在实现中静默修改。
+
+### WP3：UT Case 与测试资产先行
+
+本阶段先提交测试设计和可编译测试骨架。对尚未实现的能力可先使用 fake 验证上层契约，provider 契约用例在对应实现合入后转绿；禁止长期保留无跟踪项的 disabled test。
+
+| ID | 测试包 | 重点 Case | 交付物/退出条件 | 规模 | 状态 |
+|---|---|---|---|---|---|
+| T-01 | 原语固定向量 | AES-GCM、RSA-OAEP、RSA-PSS、SHA-256、HMAC、PBKDF2、Fernet 互操作 | 审核后的黄金向量与来源说明；正反例齐全 | L | 未开始 |
+| T-02 | 密钥管理 | AES key、RSA-3072 key pair、DER 导入导出、key ID、用途不匹配、不可导出私钥 | 表驱动 GTest；测试 key namespace 自动清理 | L | 未开始 |
+| T-03 | `ICryptoService` 契约 | 每个方法的成功、空输入、上下界、错误 key、错误 tag/signature、能力查询和错误映射 | 同一套 typed/parameterized tests 可套用不同 provider | L | 未开始 |
+| T-04 | Service 上层隔离 | FakeCryptoService 的调用参数、调用次数、错误传播和敏感信息隔离 | 可复用 fake；上层测试无需 CNG | M | 未开始 |
+| T-05 | `.szxe` 格式 | 空文件、块边界、多块、header/AAD/tag 篡改、截断/追加/重排、长度溢出 | 黄金文件、mutation case、无残留输出断言 | XL | 未开始 |
+| T-06 | 软授权 | 请求、签发、自验、验签、inspect、validate、产品/机器/期限/feature、issuer 轮换 | 固定签发 key 仅用于测试；分项校验报告断言 | XL | 未开始 |
+| T-07 | 文件事务 | 覆盖策略、取消、I/O 失败、临时文件清理、原文件不变 | 临时目录 fixture；失败注入点 | L | 未开始 |
+| T-08 | CLI | 参数组合、stdin 口令、JSON schema、退出码、非 TTY、secret 不进 argv/输出 | 进程级自动化测试清单及 runner | L | 未开始 |
+| T-09 | Qt GUI | 状态、字段可见性、worker 线程、取消、错误映射、QML 不持有私钥字节 | Qt Quick Test/Controller UT 设计 | M | 未开始 |
+| T-10 | 安全与包审计 | OpenSSL 依赖、签发代码泄漏、secret 日志、格式 fuzz seed | 可自动运行的审计脚本/CTest 标签 | M | 未开始 |
+
+UT Case 编写约束：
+
+- 一个函数或凝聚行为原则上使用一个表驱动 `TEST`，每行带 `SCOPED_TRACE`。
+- 使用 In-Got-Want 或 Arrange-Act-Assert；除无法继续的 fixture 前置条件外优先 `EXPECT_*`。
+- 随机功能不测试“看起来随机”，只验证长度、错误传播和基本不重复；算法正确性依靠标准向量。
+- 不用自产生结果的同一实现作为 oracle；RSA/AES 黄金数据由独立工具生成后固化并审核。
+- 认证失败同时断言：错误类别正确、明文为空、正式输出不存在、日志无敏感数据。
+- 每个需求 ID 映射到至少一个 Case ID，建议格式 `CRYPTO-UT-<模块>-<序号>`。
+
+M3 输出包括《UT Case 清单》、`testdata/crypto` 黄金数据、fake、fixture、CTest label 和需求—测试追踪矩阵。评审通过后才开始批量实现。
+
+### WP4：按测试驱动补充实现
+
+| ID | 实现切片 | 前置测试 | 实现内容 | 完成证据 | 规模 | 状态 |
+|---|---|---|---|---|---|---|
+| D-01 | 密码原语 | T-01 | CNG AES-GCM、RSA-OAEP/PSS、RNG、PBKDF2、key codec | 固定向量全绿；Fernet 无回归 | XL | 未开始 |
+| D-02 | 平台 keystore | T-02 | NCrypt 持久化 key、KeyReference、用途限制、错误映射 | key 生命周期与不可导出用例全绿 | L | 未开始 |
+| D-03 | CryptoService | T-03/04 | 门面、校验、能力查询、provider/keystore 组合 | 契约测试全绿；上层无直连 | L | 未开始 |
+| D-04 | 文件加密 | T-05/07 | `.szxe/.szxpub`、envelope、分块、认证、原子输出 | 格式、篡改和恢复用例全绿 | XL | 未开始 |
+| D-05 | 客户授权 | T-06 | request、inspect、verify、validate、install、FeatureGate | 授权矩阵和篡改用例全绿 | XL | 未开始 |
+| D-06 | 内部签发 | T-06/10 | issuer key pair、issue、自验、审计记录 | 生成—签发—客户验签闭环通过 | L | 未开始 |
+| D-07 | 应用服务与 CLI | T-07/08 | 状态机、进度、取消、命令、JSON 和退出码 | CLI E2E 全绿 | L | 未开始 |
+| D-08 | Qt GUI | T-09 | Controller、worker、QML 页面和授权页面 | GUI 自动化与人工可用性验收通过 | L | 未开始 |
+
+每个切片采用小循环：选取已冻结 Case → 确认测试因缺实现失败 → 写最小实现 → 测试转绿 → 重构 → 运行受影响回归。不得为了让测试通过而放宽认证、验签或参数校验。
+
+每个 `D-*` 切片开始前必须附 Pre-Code Review 记录，结束时必须附 Post-Code Review 记录；同一切片内若拆成多个独立编码任务，每个任务分别执行该闭环，不能用阶段总评审替代。
+
+### WP5：集成、加固与发布
+
+| ID | 任务 | 责任角色 | 依赖 | 完成证据 | 规模 | 状态 |
+|---|---|---|---|---|---|---|
+| R-01 | Windows 全链路 E2E | 测试负责人 | M6 | keygen→encrypt→decrypt；request→issue→verify 全部通过 | M | 未开始 |
+| R-02 | 性能与资源 | 性能负责人 | D-04 | 1 MiB/100 MiB/1 GiB 的吞吐、内存、P50/P95 和取消响应基线 | M | 未开始 |
+| R-03 | 长稳与故障恢复 | 测试负责人 | M6 | 重复任务、磁盘满、权限失败、中断恢复和无残留验证 | L | 未开始 |
+| R-04 | Fuzz/恶意输入 | 安全负责人 | T-10/D-04/05 | parser fuzz 无崩溃、越界或未认证输出 | L | 未开始 |
+| R-05 | 依赖与安装包审计 | 构建/安全 | M6 | 无 OpenSSL；客户包无 issuer 和私钥；DLL 清单归档 | M | 未开始 |
+| R-06 | 文档与迁移说明 | 技术负责人 | R-01~05 | API、CLI、GUI、密钥备份、Linux provider 接入说明齐备 | M | 未开始 |
+| R-07 | 发布评审 | 项目负责人 | R-01~06 | 验收记录、已知风险和回滚方案签字 | S | 未开始 |
+
+## 7. 关键路径
+
+```text
+F-01/02 -> I-01/02 -> I-03 -> T-01/02/03 -> D-01/02/03
+                                              ├-> I-05 -> T-05/07 -> D-04
+                                              └-> I-06 -> T-06 -> D-05/06
+D-04/05/06 -> I-07/08 -> T-08/09 -> D-07/08 -> R-01~07
+```
+
+关键约束：
+
+- `ICryptoService` 未冻结会同时阻塞文件、授权和工具层。
+- `.szxlic` 签名 payload 和 canonical encoding 未冻结会阻塞签发与验签。
+- UT 黄金向量未经独立审核会使“实现和测试同时错误”无法被发现。
+- GUI 可与底层实现并行，但必须基于冻结接口和 fake service。
+
+## 8. 风险登记
+
+| 风险 | 概率/影响 | 触发信号 | 缓解措施 | 兜底方案 | 责任角色 |
+|---|---|---|---|---|---|
+| CNG 与未来 Linux provider 行为不一致 | 中/高 | 同一向量或错误码结论不同 | 先建 provider 无关契约测试；公共头不暴露平台类型 | Linux 上线前以跨平台黄金文件作发布门禁 | 架构负责人 |
+| 文件格式过早固化后发现缺陷 | 中/高 | 解析上限、AAD 或 nonce 方案反复变化 | M2 进行安全评审和字节级样本评审 | 在正式发布前升格式版本，不修改 v1 语义 | 文件负责人 |
+| 签发能力误入客户包 | 低/极高 | 安装清单或符号中出现 issue API | 独立 target、默认不安装、CI 扫描 | 阻断发布并轮换可能暴露的 issuer key | 构建负责人 |
+| 私钥文件/日志泄漏 | 中/高 | 测试输出出现 key/password/payload | Secret 类型、日志审查、不可导出 keystore | 删除测试 key、轮换正式 key、修复后重发 | 安全负责人 |
+| UT 只覆盖 round-trip，掩盖算法错误 | 中/高 | 缺少固定向量和独立 oracle | 标准向量、互操作样本、mutation tests | 暂停实现验收，补齐向量后重测 | 测试负责人 |
+| 范围扩大到在线授权/HSM/Linux实现 | 中/中 | M2 后持续加入新 provider/协议 | 严格执行本期非目标和变更流程 | 转入 P1 backlog，不阻塞 P0 | 项目负责人 |
+
+## 9. 多人迭代安排
+
+按上述 6 人角色配置以相对规模排期；每个迭代只承诺可演示的纵向结果：
+
+1. 迭代 A：完成 M1、M2，交付框架和全部接口契约。
+2. 迭代 B：完成 M3，并使现有 Fernet/Base64/Hash 回归测试适配统一规范。
+3. 迭代 C：完成 D-01~03，交付可供业务调用的 CryptoService。
+4. 迭代 D：完成 D-04，交付文件加解密 CLI 最小闭环。
+5. 迭代 E：完成 D-05/06，交付软授权签发—验签闭环。
+6. 迭代 F：完成 GUI、完整 CLI、加固及发布验收。
+
+M2 后并行开展 WS-B 原语实现、WS-C Service/Keystore、WS-D 文件/授权 UT、WS-E 工具骨架和 WS-F 独立测试五条支线；D/E 先依赖 fake，不等待真实 provider。D-04/D-05 的真实集成仍必须等待 D-03，所有支线最终由 A 按交接门禁合入。
+
+## 10. 首批可执行任务
+
+1. 召开 M1 架构评审，确认目标名称、目录、依赖方向和客户/内部打包边界。
+2. 对 F-01 执行首次 Pre-Code Review，再提交 CMake 骨架和测试目标，不加入算法实现；完成后执行 Post-Code Review 并归档记录。
+3. 评审并冻结 `CryptoError`、Secret 类型、`KeyReference` 和 `ICryptoService`。
+4. 建立 UT Case 追踪表，优先完成 AES-GCM、RSA-OAEP/PSS 和授权验签固定向量。
+5. 建立 `FakeCryptoService`，让文件、授权和 GUI/CLI 测试可以提前并行。
+6. M3 评审通过后，从 CNG AES-GCM 固定向量开始进入第一个红—绿—重构循环。
+
+首次分工建议：A 负责 F-01/F-02，F 负责 F-03 和测试基线，B 盘点原语接口，C 起草 Service/Keystore 边界，D 起草文件/授权格式评审材料，E 起草 tools 目标和安装边界。所有产出先进入 M1 Review，不在框架阶段提前加入业务实现。
+
+## 11. 状态汇报模板
+
+- `Outcome`：本里程碑目标和当前可信度。
+- `Progress`：已通过评审的接口、已转绿的测试、已完成的演示。
+- `Next`：下一项关键路径任务。
+- `Problems`：阻塞项及风险触发情况。
+- `Decisions needed`：需谁在何时确认什么。
+- `Evidence`：代码提交、测试报告、向量来源、安装清单或演示记录。
