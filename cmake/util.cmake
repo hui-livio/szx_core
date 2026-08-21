@@ -1,6 +1,6 @@
 include_guard(GLOBAL)
 
-function(szx_find_qt)
+function(szx_core_find_qt)
     cmake_parse_arguments(ARG "QUIET" "MINIMUM_VERSION" "COMPONENTS" ${ARGN})
     if(NOT ARG_MINIMUM_VERSION)
         set(ARG_MINIMUM_VERSION 6.5)
