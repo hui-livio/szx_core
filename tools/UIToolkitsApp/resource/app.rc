@@ -1,0 +1,32 @@
+IDI_ICON1 ICON "resource/app.ico"
+
+#include <windows.h>
+
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION     1,0,0,0
+PRODUCTVERSION  1,0,0,0
+FILEFLAGSMASK   VS_FFI_FILEFLAGSMASK
+FILEFLAGS       0
+FILEOS          VOS_NT_WINDOWS32
+FILETYPE        VFT_APP
+FILESUBTYPE     VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904E4"
+        BEGIN
+            VALUE "CompanyName",      "UIToolkits"
+            VALUE "FileDescription",  "UIToolkits Demo Gallery"
+            VALUE "FileVersion",      "1.0.0.0"
+            VALUE "InternalName",     "UIToolkitsApp"
+            VALUE "LegalCopyright",   "livliu(yuanfeng1897@outlook.com) Copyright (C) 2026"
+            VALUE "OriginalFilename", "UIToolkitsApp.exe"
+            VALUE "ProductName",      "UIToolkitsApp"
+            VALUE "ProductVersion",   "1.0.0.0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 0x4E4
+    END
+END
