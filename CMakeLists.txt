@@ -9,6 +9,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
+set(_SZX_CORE_PARENT_MODULE_PATH "${CMAKE_MODULE_PATH}")
 list(PREPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(env)
 include(git_hooks)
@@ -93,3 +94,7 @@ if(SZX_COMPONENTS_ENABLE_CPACK AND SZX_COMPONENTS_INSTALL)
 endif()
 
 szx_print_config_summary()
+
+# Do not leak core helper-module precedence into the product repository.
+set(CMAKE_MODULE_PATH "${_SZX_CORE_PARENT_MODULE_PATH}")
+unset(_SZX_CORE_PARENT_MODULE_PATH)
