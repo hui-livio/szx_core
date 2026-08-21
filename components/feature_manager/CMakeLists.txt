@@ -18,3 +18,8 @@ target_include_directories(szx_feature_manager PUBLIC
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/szx/feature_manager>)
 target_link_libraries(szx_feature_manager PUBLIC szx::common)
 szx_apply_default_compile_policy(szx_feature_manager)
+
+option(SZX_COMPONENTS_BUILD_FEATURE_MANAGER_QT "Build the Qt Feature Manager adapter" OFF)
+if(SZX_COMPONENTS_BUILD_FEATURE_MANAGER_QT)
+    add_subdirectory(qt)
+endif()
