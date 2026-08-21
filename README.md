@@ -14,12 +14,12 @@
 
 ## 构建、测试和安装
 
-在已加载 MSVC 开发者环境的终端中：
+在已加载 MSVC 开发者环境的终端中（当前项目不使用 CMake 预设文件）：
 
 ```powershell
-cmake --preset windows-msvc
-cmake --build --preset windows-release
-ctest --preset windows-release
+cmake -S . -B build/msvc -G "Ninja Multi-Config"
+cmake --build build/msvc --config Release
+ctest --test-dir build/msvc -C Release --output-on-failure
 cmake --install build/msvc --config Release
 ```
 
@@ -31,4 +31,3 @@ target_link_libraries(MyApp PRIVATE szx::common szx::crypto szx::logger szx::cam
 ```
 
 OpenCV、IKap 和 libmodbus 均按本机 SDK/库是否存在选择性启用；无硬件环境仍可构建 common、crypto、logger 和 camera 核心。
-
