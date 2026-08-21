@@ -67,6 +67,7 @@ target_link_libraries(${TARGET_NAME} PRIVATE
 
 # --- 部署: windeployqt 自动复制 Qt DLL / plugins / qml 到构建目录 ---
 szx_windeployqt(${TARGET_NAME}
+    QML_DIR "${CMAKE_CURRENT_SOURCE_DIR}/qml"
     NO_TRANSLATIONS
     NO_COMPILER_RUNTIME
     NO_OPENGL_SW
