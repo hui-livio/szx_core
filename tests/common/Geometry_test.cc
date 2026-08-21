@@ -35,8 +35,8 @@ TEST(CommonGeometryTest, HandlesIntersectionsAndOverflowSafely)
     constexpr auto maxValue = std::numeric_limits<std::int64_t>::max();
     EXPECT_EQ((Size2T<std::int64_t>{maxValue, maxValue}).Area(), maxValue);
     const Segment2i segment{{std::numeric_limits<int>::min(), std::numeric_limits<int>::min()},
-                             {std::numeric_limits<int>::max(), std::numeric_limits<int>::max()}};
+                            {std::numeric_limits<int>::max(), std::numeric_limits<int>::max()}};
     EXPECT_EQ(segment.LengthSquared(), maxValue);
-    EXPECT_TRUE(std::isfinite(distance(Point2i{std::numeric_limits<int>::min(), 0},
-                                       Point2i{std::numeric_limits<int>::max(), 0})));
+    EXPECT_TRUE(
+        std::isfinite(distance(Point2i{std::numeric_limits<int>::min(), 0}, Point2i{std::numeric_limits<int>::max(), 0})));
 }

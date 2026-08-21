@@ -115,8 +115,7 @@ constexpr LONG kMinWindowSizePx    = 100;
 bool isValidMaximizeRect(const RECT &rect)
 {
     return rect.left >= kMinValidCoordinate && rect.top >= kMinValidCoordinate && rect.right > rect.left &&
-           rect.bottom > rect.top && (rect.right - rect.left) >= kMinWindowSizePx &&
-           (rect.bottom - rect.top) >= kMinWindowSizePx;
+        rect.bottom > rect.top && (rect.right - rect.left) >= kMinWindowSizePx && (rect.bottom - rect.top) >= kMinWindowSizePx;
 }
 
 bool clientAreaFillsMonitorWorkArea(HWND hwnd)
@@ -207,7 +206,7 @@ public:
                 {
                     params->rgrc[0]   = monitorInfo.rcWork;
                     state.lastMonitor = monitor;
-#ifdef QT_DEBUG
+    #ifdef QT_DEBUG
                     if (needWin11Fix)
                     {
                         qInfo().noquote().nospace()
@@ -215,7 +214,7 @@ public:
                             << " proposed_rect=" << nativeRectText(proposedRect)
                             << " corrected_rect=" << nativeRectText(monitorInfo.rcWork);
                     }
-#endif
+    #endif
                 }
                 logNativeWindowDiagnostic("maximize_client_area", msg->hwnd, monitor, &proposedRect);
             }

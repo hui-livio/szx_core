@@ -10,7 +10,10 @@ namespace
 {
 struct NonDefaultConstructible
 {
-    explicit NonDefaultConstructible(int input) : value(input) {}
+    explicit NonDefaultConstructible(int input) :
+        value(input)
+    {
+    }
     int value;
 };
 } // namespace

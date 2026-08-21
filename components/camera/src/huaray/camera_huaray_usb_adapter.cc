@@ -356,9 +356,7 @@ struct CameraHuarayUsbSdkAdapter::Impl
         }
         {
             std::unique_lock<std::mutex> lock(callbackMutex);
-            callbackCv.wait(lock, [this] {
-                return activeCallbacks == (g_huarayUsbCallbackImpl == this ? 1u : 0u);
-            });
+            callbackCv.wait(lock, [this] { return activeCallbacks == (g_huarayUsbCallbackImpl == this ? 1u : 0u); });
         }
         cb_installed = false;
         state.store(CameraState::Stopped, std::memory_order_relaxed);
@@ -623,7 +621,7 @@ struct CameraHuarayUsbSdkAdapter::Impl
             }
         } guard{this};
         g_huarayUsbCallbackImpl = this;
-        auto envelope = std::make_shared<FrameEnvelope>();
+        auto envelope           = std::make_shared<FrameEnvelope>();
         if (!makeFrame(f, *envelope))
             return;
         auto shared = std::shared_ptr<const FramePacket>(envelope, &envelope->packet);

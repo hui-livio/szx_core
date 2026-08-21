@@ -55,7 +55,7 @@ TEST(CryptoHashTest, ComputesDigestAndHmacHexValues)
 TEST(CryptoFernetTest, RoundTripsTextAndBinaryPayloads)
 {
     constexpr std::string_view key = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
-    const auto encryptedText = encryptFernet("tensorrt-engine-bytes", key);
+    const auto encryptedText       = encryptFernet("tensorrt-engine-bytes", key);
     ASSERT_TRUE(encryptedText.ok) << encryptedText.message;
     const auto decryptedText = decryptFernet(encryptedText.value, key);
     ASSERT_TRUE(decryptedText.ok) << decryptedText.message;

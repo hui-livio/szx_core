@@ -26,8 +26,8 @@ public:
         if (!frame || !frame->data)
             return;
         std::lock_guard<std::mutex> lock(mutex_);
-        frames_.push_back({frame->width, frame->height, frame->channels, frame->pixelFormat, frame->dataSize,
-                           frame->data[0], frame->meta.cameraSerialNumber ? frame->meta.cameraSerialNumber : ""});
+        frames_.push_back({frame->width, frame->height, frame->channels, frame->pixelFormat, frame->dataSize, frame->data[0],
+                           frame->meta.cameraSerialNumber ? frame->meta.cameraSerialNumber : ""});
         condition_.notify_all();
     }
 

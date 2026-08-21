@@ -27,10 +27,12 @@ TEST(CommonTimeHelperTest, ScopeTimerStopsOnceAndStopwatchResets)
 {
     int calls = 0;
     {
-        ScopeTimer timer([&](std::int64_t elapsed) {
-            ++calls;
-            EXPECT_GE(elapsed, 0);
-        });
+        ScopeTimer timer(
+            [&](std::int64_t elapsed)
+            {
+                ++calls;
+                EXPECT_GE(elapsed, 0);
+            });
         timer.Stop();
         timer.Stop();
     }
