@@ -22,6 +22,9 @@ Menu {
 
     property list<QtObject> generatedObjects
     property bool componentReady: false
+    property string fontFamily: UTTheme.fontFamily
+    property int fontPixelSize: 13
+    property int fontWeight: Font.Normal
     readonly property int generatedActionKind: 1
     readonly property int generatedMenuKind: 2
     readonly property int generatedItemKind: 3
@@ -60,11 +63,16 @@ Menu {
             implicitHeight: 34
             leftPadding: 34
             rightPadding: 30
+            font.family: root.fontFamily
+            font.pixelSize: root.fontPixelSize
+            font.weight: root.fontWeight
 
             contentItem: Text {
                 text: menuItem.text
                 color: menuItem.enabled ? UTTheme.primaryTextColor : UTTheme.secondaryTextColor
-                font: menuItem.font
+                font.family: root.fontFamily
+                font.pixelSize: root.fontPixelSize
+                font.weight: menuItem.highlighted ? Font.DemiBold : root.fontWeight
                 textFormat: Text.PlainText
                 verticalAlignment: Text.AlignVCenter
                 elide: Text.ElideRight
@@ -76,7 +84,8 @@ Menu {
                 visible: menuItem.checkable
                 text: menuItem.checked ? "✓" : ""
                 color: menuItem.enabled ? UTTheme.primaryColor : UTTheme.secondaryTextColor
-                font.pixelSize: 13
+                font.family: root.fontFamily
+                font.pixelSize: root.fontPixelSize
                 font.weight: Font.DemiBold
                 textFormat: Text.PlainText
             }
@@ -88,7 +97,8 @@ Menu {
                 visible: menuItem.subMenu !== null
                 text: menuItem.mirrored ? "‹" : "›"
                 color: menuItem.enabled ? UTTheme.primaryTextColor : UTTheme.secondaryTextColor
-                font.pixelSize: 17
+                font.family: root.fontFamily
+                font.pixelSize: root.fontPixelSize + 4
                 textFormat: Text.PlainText
             }
 

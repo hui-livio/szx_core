@@ -20,6 +20,7 @@ qt_add_qml_module(UIToolkits
     qml/UTButton.qml
     qml/UTLineEdit.qml
     qml/UTLabel.qml
+    qml/UTMarqueeLabel.qml
     qml/UTCheckBox.qml
     qml/UTCombobox.qml
     qml/UTSpinBox.qml
@@ -31,6 +32,7 @@ qt_add_qml_module(UIToolkits
     qml/UTImageAvatar.qml
     qml/UTToast.qml
     qml/UTMenu.qml
+    qml/UTMenuBar.qml
     qml/UTTabBar.qml
     qml/UTTabButton.qml
     qml/UTDatePicker.qml

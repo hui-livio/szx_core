@@ -3,6 +3,8 @@ module UIToolkits
 UTButton 1.0 UTButton.qml
 UTLineEdit 1.0 UTLineEdit.qml
 UTLabel 1.0 UTLabel.qml
+UTLoading 1.0 UTLoading.qml
+UTMarqueeLabel 1.0 UTMarqueeLabel.qml
 UTCheckBox 1.0 UTCheckBox.qml
 UTCombobox 1.0 UTCombobox.qml
 UTSpinBox 1.0 UTSpinBox.qml
@@ -14,6 +16,7 @@ UTProgressBar 1.0 UTProgressBar.qml
 UTImageAvatar 1.0 UTImageAvatar.qml
 UTToast 1.0 UTToast.qml
 UTMenu 1.0 UTMenu.qml
+UTMenuBar 1.0 UTMenuBar.qml
 UTTabBar 1.0 UTTabBar.qml
 UTTabButton 1.0 UTTabButton.qml
 UTDatePicker 1.0 UTDatePicker.qml

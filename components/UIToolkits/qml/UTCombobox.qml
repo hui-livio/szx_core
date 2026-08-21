@@ -38,6 +38,8 @@ ComboBox {
     property color arrowHoverColor: primaryColor
     property color popupBg: fieldBg
     property color popupBorder: borderNormal
+    property real cornerRadius: UTTheme.radius || 8
+    property int popupMinWidth: 180
     property color delegateSelectedBg: {
         var c = primaryColor;
         return Qt.rgba(c.r, c.g, c.b, 0.12);
@@ -48,6 +50,118 @@ ComboBox {
     }
     property string indicatorText: ""
     property color indicatorTextColor: placeholderColor
+    property bool filterOnEdit: true
+    property bool rememberSearchText: true
+    property string searchText: ""
+    readonly property int filteredCount: filteredModel.count
+
+    activeFocusOnTab: true
+
+    ListModel {
+        id: filteredModel
+    }
+
+    readonly property int filteredCurrentIndex: {
+        if (!root.editable || root.currentIndex < 0)
+            return -1;
+        for (let index = 0; index < filteredModel.count; ++index) {
+            if (filteredModel.get(index).sourceIndex === root.currentIndex)
+                return index;
+        }
+        return -1;
+    }
+
+    function sourceCount() {
+        return root.count;
+    }
+
+    function rebuildFilter() {
+        if (!root.editable || !root.filterOnEdit) {
+            filteredModel.clear();
+            return;
+        }
+
+        const keyword = String(root.editText || "").trim().toLowerCase();
+        filteredModel.clear();
+        for (let index = 0; index < root.sourceCount(); ++index) {
+            const display = root.textAt(index);
+            if (!keyword || display.toLowerCase().indexOf(keyword) >= 0)
+                filteredModel.append({ display: display, sourceIndex: index });
+        }
+
+        if (root.popup.visible)
+            root.resetPopupCurrentIndex();
+    }
+
+    function restoreSearchText() {
+        if (!root.editable || !root.rememberSearchText || root.searchText === "")
+            return;
+        if (root.editText === root.searchText)
+            return;
+        root.editText = root.searchText;
+        root.rebuildFilter();
+    }
+
+    function resetPopupCurrentIndex() {
+        const selectedIndex = root.editable && root.filterOnEdit
+                              ? root.filteredCurrentIndex
+                              : root.highlightedIndex;
+        listView.currentIndex = selectedIndex >= 0
+                                ? selectedIndex
+                                : (listView.count > 0 ? 0 : -1);
+    }
+
+    function movePopupCurrentIndex(step) {
+        if (!root.popup.visible)
+            root.popup.open();
+        if (listView.count <= 0)
+            return;
+
+        let nextIndex = listView.currentIndex;
+        if (nextIndex < 0)
+            nextIndex = step > 0 ? 0 : listView.count - 1;
+        else
+            nextIndex = Math.max(0, Math.min(listView.count - 1, nextIndex + step));
+        listView.currentIndex = nextIndex;
+        listView.positionViewAtIndex(nextIndex, ListView.Contain);
+    }
+
+    function activatePopupIndex(index) {
+        if (index < 0 || index >= listView.count)
+            return;
+
+        const sourceIndex = root.editable && root.filterOnEdit
+                            ? filteredModel.get(index).sourceIndex
+                            : index;
+        root.currentIndex = sourceIndex;
+        root.activated(sourceIndex);
+        root.popup.close();
+    }
+
+    function acceptPopupCurrentIndex() {
+        if (!root.popup.visible) {
+            root.popup.open();
+            return;
+        }
+        if (listView.currentIndex < 0 && listView.count > 0)
+            listView.currentIndex = 0;
+        root.activatePopupIndex(listView.currentIndex);
+    }
+
+    onEditableChanged: root.rebuildFilter()
+    onFilterOnEditChanged: root.rebuildFilter()
+    onModelChanged: root.rebuildFilter()
+    onCountChanged: root.rebuildFilter()
+    onEditTextChanged: {
+        if (!root.editable)
+            return;
+        root.rebuildFilter();
+    }
+
+    onActiveFocusChanged: {
+        if (root.editable && root.activeFocus)
+            root.contentItem.forceActiveFocus();
+    }
 
     // ── Sizing ───────────────────────────────────────────────────
     implicitWidth: 200
@@ -73,8 +187,9 @@ ComboBox {
         }
         font: root.font
         enabled: root.editable
+        focus: root.editable && root.activeFocus
+        activeFocusOnTab: root.editable
         autoScroll: root.editable
-        readOnly: root.down
         selectByMouse: root.selectTextByMouse
         verticalAlignment: Text.AlignVCenter
         clip: true
@@ -83,12 +198,50 @@ ComboBox {
 
         placeholderText: root.placeholderText || ""
         placeholderTextColor: root.placeholderColor
+
+        onTextEdited: {
+            if (!root.editable)
+                return;
+            if (root.rememberSearchText)
+                root.searchText = text;
+            if (!root.popup.visible)
+                root.popup.open();
+        }
+
+        Keys.onPressed: event => {
+            if (!root.editable)
+                return;
+
+            switch (event.key) {
+            case Qt.Key_Down:
+                root.movePopupCurrentIndex(1);
+                event.accepted = true;
+                break;
+            case Qt.Key_Up:
+                root.movePopupCurrentIndex(-1);
+                event.accepted = true;
+                break;
+            case Qt.Key_Return:
+            case Qt.Key_Enter:
+                root.acceptPopupCurrentIndex();
+                event.accepted = true;
+                break;
+            case Qt.Key_Escape:
+                if (root.popup.visible) {
+                    root.popup.close();
+                    event.accepted = true;
+                }
+                break;
+            default:
+                break;
+            }
+        }
     }
 
     // ── background ───────────────────────────────────────────────
     background: Rectangle {
         id: bgRect
-        radius: UTTheme.radius || 8
+        radius: root.cornerRadius
         color: root.enabled ? root.fieldBg : root.fieldBgDisabled
 
         HoverHandler {
@@ -142,13 +295,13 @@ ComboBox {
     // ── popup ────────────────────────────────────────────────────
     popup: Popup {
         y: root.height - 1
-        implicitWidth: Math.max(root.width, 180)
+        implicitWidth: Math.max(root.width, root.popupMinWidth)
         implicitHeight: Math.min(listView.contentHeight + padding * 2, 280)
         padding: 4
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
 
         background: Rectangle {
-            radius: Math.round((UTTheme.radius || 8) * 0.667)
+            radius: Math.round(root.cornerRadius * 0.667)
             color: root.popupBg
             border.width: 1
             border.color: root.popupBorder
@@ -157,8 +310,8 @@ ComboBox {
         contentItem: ListView {
             id: listView
             clip: true
-            model: root.delegateModel
-            currentIndex: root.highlightedIndex
+            model: root.editable && root.filterOnEdit ? filteredModel : root.delegateModel
+            currentIndex: -1
             implicitHeight: contentHeight
 
             highlight: Rectangle {
@@ -197,7 +350,7 @@ ComboBox {
                         return String(d[role]);
                     return String(d);
                 }
-                highlighted: root.highlightedIndex === delegateRoot.index
+                highlighted: ListView.isCurrentItem
                 hoverEnabled: true
 
                 contentItem: Text {
@@ -227,15 +380,25 @@ ComboBox {
                 }
 
                 onClicked: {
-                    root.currentIndex = delegateRoot.index;
-                    root.activated(delegateRoot.index);
-                    root.popup.close();
+                    root.activatePopupIndex(delegateRoot.index);
                 }
 
                 HoverHandler {
                     cursorShape: Qt.PointingHandCursor
                 }
             }
+        }
+
+        onOpened: {
+            root.restoreSearchText();
+            root.rebuildFilter();
+            root.resetPopupCurrentIndex();
+            if (root.editable)
+                root.contentItem.forceActiveFocus();
+        }
+        onClosed: {
+            if (root.editable && root.activeFocus)
+                root.contentItem.forceActiveFocus();
         }
     }
 
