@@ -1,0 +1,2034 @@
+#pragma once
+#include <string>
+
+#include "async_traits.hpp"
+#include "utility.hpp"
+
+namespace ormpp {
+struct where_condition {
+  std::string left;
+  std::string op;
+  std::string right;
+  bool need_quote = false;
+
+  std::string to_sql() const {
+    std::string sql;
+    sql.append("(").append(left).append(op);
+    if (need_quote) {
+      sql.append("'").append(escape_sql_string(right)).append("'");
+    }
+    else {
+      sql.append(right);
+    }
+    sql.append(")");
+    return sql;
+  }
+};
+
+template <typename M>
+struct col_info {
+  using value_type = M;
+
+  std::string_view name;
+  std::string_view class_name;
+  std::string sort_order;
+
+  col_info& desc() {
+    sort_order = " DESC ";
+    return *this;
+  }
+
+  col_info& asc() {
+    sort_order = " ASC ";
+    return *this;
+  }
+
+  where_condition param() {
+    std::string str(class_name);
+    str.append(".").append(name);
+    return where_condition{str, " = ", "?  "};
+  }
+
+  template <typename... Args>
+  where_condition in(Args... args) {
+    return in_impl("", args...);
+  }
+
+  template <typename... Args>
+  where_condition not_in(Args... args) {
+    return in_impl("not", args...);
+  }
+
+  where_condition null() {
+    return where_condition{std::string(name), " IS ", "NULL"};
+  }
+
+  where_condition not_null() {
+    return where_condition{std::string(name), " IS ", "NOT NULL"};
+  }
+
+  template <typename T>
+  where_condition between(T left, T right) {
+    std::string str_left;
+    str_left.append(name).append(" between ").append(to_string(left));
+
+    std::string str_right;
+    str_right.append(to_string(right));
+    return where_condition{str_left, " and ", str_right};
+  }
+
+  where_condition like(std::string str) {
+    return where_condition{std::string(name), " like ", to_string(str)};
+  }
+
+ private:
+  template <typename value_type>
+  std::string to_string(value_type val) {
+    static_assert(std::is_constructible_v<M, value_type>, "invalid type");
+    if constexpr (std::is_arithmetic_v<value_type>) {
+      return std::to_string(val);
+    }
+    else {
+      std::string str = "'";
+      str.append(escape_sql_string(val)).append("'");
+      return str;
+    }
+  }
+
+  template <typename... Args>
+  where_condition in_impl(std::string s, Args... args) {
+    std::string mid;
+    (mid.append(to_string(args)).append(","), ...);
+    mid.pop_back();
+
+    std::string left;
+    left.append(name).append(" ").append(s).append(" in(");
+    return where_condition{left, mid, ")"};
+  }
+};
+
+#define col(c)                                                         \
+  col_info<typename ylt::reflection::internal::member_tratis<          \
+      decltype(c)>::value_type> {                                      \
+    ylt::reflection::field_string<c>(),                                \
+        std::string(ormpp::get_short_struct_name<                      \
+                    typename ylt::reflection::internal::member_tratis< \
+                        decltype(c)>::owner_type>())                   \
+  }
+
+template <auto field>
+constexpr std::string_view name() {
+  return ylt::reflection::field_string<field>();
+}
+
+template <auto field>
+std::string str_name() {
+  return std::string(name<field>());
+}
+
+#define col_name(c) str_name<c>()
+
+inline where_condition operator||(where_condition lhs, where_condition rhs) {
+  return where_condition{lhs.to_sql(), " OR ", rhs.to_sql()};
+}
+
+inline where_condition operator&&(where_condition lhs, where_condition rhs) {
+  return where_condition{lhs.to_sql(), " AND ", rhs.to_sql()};
+}
+
+where_condition build_where(auto field, auto val, std::string op) {
+  using M = typename decltype(field)::value_type;
+  using value_type = decltype(val);
+  if constexpr (iguana::array_v<M>) {
+    static_assert(
+        std::is_same_v<typename M::value_type, typename value_type::value_type>,
+        "invalid type");
+  }
+  else {
+    static_assert(std::is_constructible_v<M, value_type>, "invalid type");
+  }
+  std::string name(field.class_name);
+  if (name.empty()) {
+    name.append(field.name);
+  }
+  else {
+    name.append(".").append(field.name);
+  }
+
+  if constexpr (std::is_enum_v<value_type>) {
+    using underlying = std::underlying_type_t<value_type>;
+    return where_condition{name, op,
+                           std::to_string(static_cast<underlying>(val))};
+  }
+  else if constexpr (std::is_arithmetic_v<value_type>) {
+    return where_condition{name, op, std::to_string(val)};
+  }
+  else {
+    if (val == "?  ") {
+      return where_condition{name, op, val};
+    }
+    return where_condition{name, op, val, true};
+  }
+}
+
+template <typename M>
+auto operator==(col_info<M> field, auto val) {
+  return build_where(field, val, "=");
+}
+
+template <typename M>
+auto operator>=(col_info<M> field, M val) {
+  return build_where(field, val, ">=");
+}
+
+template <typename M>
+auto operator<=(col_info<M> field, M val) {
+  return build_where(field, val, "<=");
+}
+
+template <typename M>
+auto operator!=(col_info<M> field, M val) {
+  return build_where(field, val, "!=");
+}
+
+template <typename M>
+auto operator>(col_info<M> field, M val) {
+  return build_where(field, val, ">");
+}
+
+template <typename M>
+auto operator<(col_info<M> field, M val) {
+  return build_where(field, val, "<");
+}
+
+template <typename Arg>
+struct aggregate_field {
+  using value_type = Arg;
+  std::string name;
+  std::string_view class_name;
+};
+
+template <typename M>
+auto operator==(aggregate_field<M> field, auto val) {
+  return build_where(field, val, "=");
+}
+
+template <typename M>
+auto operator!=(aggregate_field<M> field, auto val) {
+  return build_where(field, val, "!=");
+}
+
+template <typename M>
+auto operator>(aggregate_field<M> field, auto val) {
+  return build_where(field, val, ">");
+}
+
+template <typename M>
+auto operator>=(aggregate_field<M> field, auto val) {
+  return build_where(field, val, ">=");
+}
+
+template <typename M>
+auto operator<(aggregate_field<M> field, auto val) {
+  return build_where(field, val, "<");
+}
+
+template <typename M>
+auto operator<=(aggregate_field<M> field, auto val) {
+  return build_where(field, val, "<=");
+}
+
+struct token_t {};
+inline constexpr auto token = token_t{};
+
+inline auto count() { return aggregate_field<uint64_t>{"COUNT(*)"}; }
+
+struct raw_sql_value {
+  std::string sql;
+};
+
+inline raw_sql_value raw_sql(std::string sql) {
+  return raw_sql_value{std::move(sql)};
+}
+
+struct range_partition_desc {
+  std::string name;
+  std::string from;
+  std::string to;
+  bool maxvalue = false;
+};
+
+template <typename T>
+inline std::string partition_sql_literal(T&& val) {
+  using U = std::decay_t<T>;
+  if constexpr (std::is_same_v<U, raw_sql_value>) {
+    return std::forward<T>(val).sql;
+  }
+  else if constexpr (std::is_enum_v<U>) {
+    using underlying = std::underlying_type_t<U>;
+    return std::to_string(static_cast<underlying>(val));
+  }
+  else if constexpr (std::is_arithmetic_v<U>) {
+    return std::to_string(val);
+  }
+  else {
+    std::string s = "'";
+    s.append(escape_sql_string(std::string_view(val))).append("'");
+    return s;
+  }
+}
+
+template <typename From, typename To>
+inline range_partition_desc range_partition(std::string name, From&& from,
+                                            To&& to) {
+  return range_partition_desc{
+      std::move(name), partition_sql_literal(std::forward<From>(from)),
+      partition_sql_literal(std::forward<To>(to)), false};
+}
+
+template <typename From>
+inline range_partition_desc maxvalue_partition(std::string name, From&& from) {
+  return range_partition_desc{std::move(name),
+                              partition_sql_literal(std::forward<From>(from)),
+                              "MAXVALUE", true};
+}
+
+inline bool is_sql_identifier_char(char c) {
+  return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+         (c >= '0' && c <= '9') || c == '_';
+}
+
+inline bool is_valid_sql_identifier(std::string_view name) {
+  if (name.empty()) {
+    return false;
+  }
+
+  char first = name.front();
+  if (!((first >= 'a' && first <= 'z') || (first >= 'A' && first <= 'Z') ||
+        first == '_')) {
+    return false;
+  }
+
+  for (char c : name) {
+    if (!is_sql_identifier_char(c)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+inline bool is_valid_partition(const range_partition_desc& partition) {
+  return is_valid_sql_identifier(partition.name) && !partition.from.empty() &&
+         (!partition.to.empty() || partition.maxvalue);
+}
+
+inline std::string partition_child_table_name(std::string_view table_name,
+                                              std::string_view partition_name) {
+  std::string name(table_name);
+  name.append("_").append(partition_name);
+  return name;
+}
+
+inline std::string partition_range_predicate(std::string_view field_name,
+                                             const range_partition_desc& p) {
+  std::string sql;
+  sql.append(field_name).append(">=").append(p.from);
+  if (!p.maxvalue) {
+    sql.append(" AND ").append(field_name).append("<").append(p.to);
+  }
+  return sql;
+}
+
+inline std::string mysql_partition_definition(
+    const range_partition_desc& partition) {
+  std::string sql;
+  sql.append("PARTITION ")
+      .append(partition.name)
+      .append(" VALUES LESS THAN (")
+      .append(partition.maxvalue ? "MAXVALUE" : partition.to)
+      .append(")");
+  return sql;
+}
+
+inline std::string postgresql_partition_definition_sql(
+    std::string_view table_name, const range_partition_desc& partition) {
+  std::string sql;
+  sql.append("CREATE TABLE IF NOT EXISTS ")
+      .append(partition_child_table_name(table_name, partition.name))
+      .append(" PARTITION OF ")
+      .append(table_name)
+      .append(" FOR VALUES FROM (")
+      .append(partition.from)
+      .append(") TO (")
+      .append(partition.maxvalue ? "MAXVALUE" : partition.to)
+      .append(")");
+  return sql;
+}
+
+inline std::string sqlite_partition_index_sql(std::string_view table_name,
+                                              std::string_view field_name) {
+  std::string sql;
+  sql.append("CREATE INDEX IF NOT EXISTS idx_")
+      .append(table_name)
+      .append("_")
+      .append(field_name)
+      .append("_partition ON ")
+      .append(table_name)
+      .append("(")
+      .append(field_name)
+      .append(")");
+  return sql;
+}
+
+template <typename T>
+inline auto build_aggregate_field(std::string prefix, auto field) {
+  std::string str = std::move(prefix);
+  str.append(field.class_name).append(".").append(field.name).append(")");
+  return aggregate_field<T>{str};
+}
+
+inline auto count(auto field) {
+  return build_aggregate_field<uint64_t>("COUNT(", field);
+}
+
+inline auto count_distinct(auto field) {
+  return build_aggregate_field<uint64_t>("COUNT(DISTINCT ", field);
+}
+
+inline auto sum(auto field) {
+  return build_aggregate_field<uint64_t>("SUM(", field);
+}
+
+inline auto avg(auto field) {
+  return build_aggregate_field<double>("AVG(", field);
+}
+
+template <typename Field>
+inline auto(min)(Field field) {
+  return build_aggregate_field<typename Field::value_type>("MIN(", field);
+}
+
+template <typename Field>
+inline auto(max)(Field field) {
+  return build_aggregate_field<typename Field::value_type>("MAX(", field);
+}
+
+template <typename T>
+inline std::string join_impl(std::string prefix, auto field1, auto field2) {
+  std::string sql;
+  sql.append(prefix).append("join ");
+  if (std::string(get_short_struct_name<T>()) == field1.class_name) {
+    sql.append(field2.class_name);
+  }
+  else {
+    sql.append(field1.class_name);
+  }
+
+  sql.append(" ON ")
+      .append(field1.class_name)
+      .append(".")
+      .append(field1.name)
+      .append("=")
+      .append(field2.class_name)
+      .append(".")
+      .append(field2.name)
+      .append(" ");
+  return sql;
+}
+
+template <typename... Args>
+std::string order_by_sql(Args... fields) {
+  std::string sql = " ORDER BY ";
+  (
+      [&] {
+        if (fields.class_name.empty()) {
+          sql.append(fields.name);
+        }
+        else {
+          sql.append(fields.class_name).append(".").append(fields.name);
+        }
+        sql.append(fields.sort_order).append(",");
+      }(),
+      ...);
+  sql.pop_back();
+  return sql;
+}
+
+template <typename DB, typename R>
+struct stage_select;
+
+template <typename DB>
+struct stage_aggregate_t;
+
+template <typename T, typename DB, typename R>
+class query_builder {
+  struct context : public std::enable_shared_from_this<context> {
+    DB db_;
+    std::string sql_;
+    std::string select_clause_;
+    std::string from_clause_;
+    std::string group_by_clause_;
+    std::string join_clause_;
+    std::string where_clause_;
+    std::string order_by_clause_;
+    std::string having_clause_;
+    std::string desc_clause_;
+    std::string limit_clause_;
+    std::string offset_clause_;
+    std::string count_clause_;
+    std::string sum_clause_;
+    std::string avg_clause_;
+    std::string min_clause_;
+    std::string max_clause_;
+
+    template <typename To>
+    static constexpr bool scalar_collect_target_v =
+        iguana::optional_v<To> || std::is_arithmetic_v<To> ||
+        iguana::string_container_v<To>;
+
+    template <typename To>
+    using collect_result_t = std::conditional_t<
+        !ylt::reflection::is_ylt_refl_v<R> && !std::is_void_v<R> &&
+            !iguana::tuple_v<R>,
+        R,
+        std::conditional_t<
+            std::is_void_v<R>, std::vector<T>,
+            std::conditional_t<std::is_void_v<To>, std::vector<R>,
+                               std::conditional_t<scalar_collect_target_v<To>,
+                                                  To, std::vector<To>>>>>;
+
+    std::string aggregate_clause() {
+      if (!count_clause_.empty()) {
+        return count_clause_;
+      }
+
+      if (!sum_clause_.empty()) {
+        return sum_clause_;
+      }
+
+      if (!avg_clause_.empty()) {
+        return avg_clause_;
+      }
+
+      if (!min_clause_.empty()) {
+        return min_clause_;
+      }
+
+      if (!max_clause_.empty()) {
+        return max_clause_;
+      }
+      return "";
+    }
+
+    std::string build_sql() const {
+      std::string sql = sql_;
+      std::string where_clause = where_clause_;
+
+      if (!select_clause_.empty()) {
+        sql.append("select ").append(select_clause_).append(from_clause_);
+        if (!where_clause.empty()) {
+          where_clause.insert(0, " where ");
+        }
+      }
+
+      sql.append(join_clause_)
+          .append(where_clause)
+          .append(group_by_clause_)
+          .append(having_clause_)
+          .append(order_by_clause_)
+          .append(desc_clause_)
+          .append(limit_clause_)
+          .append(offset_clause_);
+
+      if constexpr (std::remove_pointer_t<DB>::db_type_v ==
+                    DBType::postgresql) {
+        if (sql.find('?') != std::string::npos) {
+          int index = 1;
+          for (size_t i = 0; i < sql.size(); i++) {
+            if (sql[i] == '?') {
+              sql[i] = '$';
+              std::string index_str = std::to_string(index++);
+              std::memcpy(&sql[i + 1], index_str.data(),
+                          (std::min)(index_str.size(), size_t(2)));
+            }
+          }
+        }
+      }
+
+      return sql;
+    }
+
+    template <typename To, typename Result>
+    static auto extract_query_result(Result&& result) {
+      if constexpr (!ylt::reflection::is_ylt_refl_v<R> && !std::is_void_v<R> &&
+                    !iguana::tuple_v<R>) {
+        if (result.empty()) {
+          return R{};
+        }
+        return std::get<0>(result.front());
+      }
+      else {
+        if constexpr (std::is_void_v<R>) {
+          return std::forward<Result>(result);
+        }
+        else {
+          if constexpr (std::is_void_v<To>) {
+            return std::forward<Result>(result);
+          }
+          else {
+            if constexpr (iguana::optional_v<To> || std::is_arithmetic_v<To> ||
+                          iguana::string_container_v<To>) {
+              if (result.empty()) {
+                return To{};
+              }
+              return std::get<0>(result.front());
+            }
+            else {
+              return std::forward<Result>(result);
+            }
+          }
+        }
+      }
+    }
+
+    template <typename Out, typename Tuple, std::size_t... I>
+    db_awaitable_t<DB, std::vector<Out>> query_async_with_params(
+        const std::string& sql, Tuple& params, std::index_sequence<I...>) {
+      co_return co_await db_->template query_s<Out>(
+          sql,
+          std::decay_t<decltype(std::get<I>(params))>(std::get<I>(params))...);
+    }
+
+    template <typename To, typename... Args>
+    auto collect_sync(Args&&... args) {
+      auto sql = build_sql();
+      if constexpr (!ylt::reflection::is_ylt_refl_v<R> && !std::is_void_v<R> &&
+                    !iguana::tuple_v<R>) {
+        auto result = db_->template query_s<std::tuple<R>>(
+            sql, std::forward<Args>(args)...);
+        return extract_query_result<To>(std::move(result));
+      }
+      else if constexpr (std::is_void_v<R>) {
+        auto result =
+            db_->template query_s<T>(sql, std::forward<Args>(args)...);
+        return extract_query_result<To>(std::move(result));
+      }
+      else if constexpr (std::is_void_v<To>) {
+        auto result =
+            db_->template query_s<R>(sql, std::forward<Args>(args)...);
+        return extract_query_result<To>(std::move(result));
+      }
+      else if constexpr (iguana::optional_v<To> || std::is_arithmetic_v<To> ||
+                         iguana::string_container_v<To>) {
+        auto result =
+            db_->template query_s<R>(sql, std::forward<Args>(args)...);
+        return extract_query_result<To>(std::move(result));
+      }
+      else {
+        auto result =
+            db_->template query_s<To>(sql, std::forward<Args>(args)...);
+        return extract_query_result<To>(std::move(result));
+      }
+    }
+
+    template <typename To = void, typename... Args>
+      requires(!is_async_db_v<DB>)
+    auto collect(Args&&... args) {
+      return collect_sync<To>(std::forward<Args>(args)...);
+    }
+
+    template <typename To = void, typename... Args>
+      requires(is_async_db_v<DB>)
+    auto collect(Args... args) {
+      return collect_async<To>(this->shared_from_this(),
+                               std::make_tuple(std::move(args)...),
+                               std::index_sequence_for<Args...>{});
+    }
+
+    template <typename To, typename Tuple, std::size_t... I>
+    static db_awaitable_t<DB, collect_result_t<To>> collect_async(
+        std::shared_ptr<context> ctx, Tuple params, std::index_sequence<I...>) {
+      auto sql = ctx->build_sql();
+      if constexpr (!ylt::reflection::is_ylt_refl_v<R> && !std::is_void_v<R> &&
+                    !iguana::tuple_v<R>) {
+        auto result =
+            co_await ctx->template query_async_with_params<std::tuple<R>>(
+                sql, params, std::index_sequence<I...>{});
+        co_return extract_query_result<To>(std::move(result));
+      }
+      else if constexpr (std::is_void_v<R>) {
+        auto result = co_await ctx->template query_async_with_params<T>(
+            sql, params, std::index_sequence<I...>{});
+        co_return extract_query_result<To>(std::move(result));
+      }
+      else if constexpr (std::is_void_v<To>) {
+        auto result = co_await ctx->template query_async_with_params<R>(
+            sql, params, std::index_sequence<I...>{});
+        co_return extract_query_result<To>(std::move(result));
+      }
+      else if constexpr (scalar_collect_target_v<To>) {
+        auto result = co_await ctx->template query_async_with_params<R>(
+            sql, params, std::index_sequence<I...>{});
+        co_return extract_query_result<To>(std::move(result));
+      }
+      else {
+        auto result = co_await ctx->template query_async_with_params<To>(
+            sql, params, std::index_sequence<I...>{});
+        co_return extract_query_result<To>(std::move(result));
+      }
+    }
+
+    template <typename Q = R, typename... Args>
+      requires(!is_async_db_v<DB> && iguana::tuple_v<Q>)
+    auto scalar(Args&&... args) {
+      using first = std::tuple_element_t<0, R>;
+      return collect<first>(std::forward<Args>(args)...);
+    }
+
+    template <typename Q = R, typename... Args>
+      requires(is_async_db_v<DB> && iguana::tuple_v<Q>)
+    auto scalar(Args... args) {
+      using first = std::tuple_element_t<0, Q>;
+      return collect_async<first>(this->shared_from_this(),
+                                  std::make_tuple(std::move(args)...),
+                                  std::index_sequence_for<Args...>{});
+    }
+  };
+
+ public:
+  query_builder(DB db) : db_(db), ctx_(std::make_shared<context>()) {
+    ctx_->db_ = db;
+  }
+
+  template <typename To, typename... Args>
+  auto collect(Args... args) {
+    return ctx_->template collect<To>(args...);
+  }
+
+  template <typename... Args>
+  auto collect(Args... args) {
+    return ctx_->collect(args...);
+  }
+
+  // first row and first col
+  template <typename... Args>
+  auto scalar(Args... args) {
+    return ctx_->scalar(args...);
+  }
+
+  struct stage_offset {
+    std::shared_ptr<context> ctx;
+
+    template <typename To, typename... Args>
+    auto collect(Args... args) {
+      return ctx->template collect<To>(args...);
+    }
+
+    template <typename... Args>
+    auto collect(Args... args) {
+      return ctx->collect(args...);
+    }
+
+    template <typename... Args>
+    auto scalar(Args... args) {
+      return ctx->scalar(args...);
+    }
+  };
+
+  struct stage_limit {
+    std::shared_ptr<context> ctx;
+
+    stage_offset offset(uint64_t row) {
+      ctx->offset_clause_.append(" offset ").append(std::to_string(row));
+      return stage_offset{ctx};
+    }
+
+    stage_offset offset(token_t) {
+      ctx->offset_clause_.append(" offset ?  ");
+      return stage_offset{ctx};
+    }
+
+    template <typename To, typename... Args>
+    auto collect(Args... args) {
+      return ctx->template collect<To>(args...);
+    }
+
+    template <typename... Args>
+    auto collect(Args... args) {
+      return ctx->collect(args...);
+    }
+
+    template <typename... Args>
+    auto scalar(Args... args) {
+      return ctx->scalar(args...);
+    }
+  };
+
+  struct stage_order {
+    std::shared_ptr<context> ctx;
+
+    stage_limit limit(uint64_t n) {
+      ctx->limit_clause_ = " LIMIT " + std::to_string(n);
+      return stage_limit{ctx};
+    }
+
+    stage_limit limit(token_t) {
+      ctx->limit_clause_ = " LIMIT ?  ";
+      return stage_limit{ctx};
+    }
+
+    template <typename To, typename... Args>
+    auto collect(Args... args) {
+      return ctx->template collect<To>(args...);
+    }
+
+    template <typename... Args>
+    auto collect(Args... args) {
+      return ctx->collect(args...);
+    }
+
+    template <typename... Args>
+    auto scalar(Args... args) {
+      return ctx->scalar(args...);
+    }
+  };
+
+  struct stage_having {
+    std::shared_ptr<context> ctx;
+    std::string cond_;
+
+    // order by
+    template <typename... Args>
+    stage_order order_by(Args... fields) {
+      ctx->order_by_clause_ = order_by_sql(fields...);
+      return stage_order{ctx};
+    }
+
+    template <typename To, typename... Args>
+    auto collect(Args... args) {
+      return ctx->template collect<To>(args...);
+    }
+
+    template <typename... Args>
+    auto collect(Args... args) {
+      return ctx->collect(args...);
+    }
+
+    template <typename... Args>
+    auto scalar(Args... args) {
+      return ctx->scalar(args...);
+    }
+  };
+
+  struct stage_group_by {
+    std::shared_ptr<context> ctx;
+
+    // order by
+    template <typename... Args>
+    stage_order order_by(Args... fields) {
+      ctx->order_by_clause_ = order_by_sql(fields...);
+      return stage_order{ctx};
+    }
+
+    // having
+    stage_having having(auto cond) {
+      ctx->having_clause_ = " HAVING ";
+      ctx->having_clause_.append(cond.to_sql());
+      return stage_having{ctx};
+    }
+
+    template <typename To, typename... Args>
+    auto collect(Args... args) {
+      return ctx->template collect<To>(args...);
+    }
+
+    template <typename... Args>
+    auto collect(Args... args) {
+      return ctx->collect(args...);
+    }
+
+    template <typename... Args>
+    auto scalar(Args... args) {
+      return ctx->scalar(args...);
+    }
+  };
+
+  template <typename... Args>
+  stage_group_by group_by(Args... fields) {
+    ctx_->group_by_clause_ = " GROUP BY ";
+    (ctx_->group_by_clause_.append(fields.name).append(","), ...);
+    ctx_->group_by_clause_.pop_back();
+    return stage_group_by{ctx_};
+  }
+
+  struct stage_where {
+    std::shared_ptr<context> ctx;
+
+    template <typename... Args>
+    stage_order order_by(Args... fields) {
+      ctx->order_by_clause_ = order_by_sql(fields...);
+      return stage_order{ctx};
+    }
+
+    stage_limit limit(uint64_t n) {
+      ctx->limit_clause_ = " LIMIT " + std::to_string(n);
+      return stage_limit{ctx};
+    }
+
+    stage_limit limit(token_t) {
+      ctx->limit_clause_ = " LIMIT ?  ";
+      return stage_limit{ctx};
+    }
+
+    template <typename... Args>
+    stage_group_by group_by(Args... fields) {
+      ctx->group_by_clause_ = " GROUP BY ";
+      (ctx->group_by_clause_.append(fields.class_name)
+           .append(".")
+           .append(fields.name)
+           .append(","),
+       ...);
+      ctx->group_by_clause_.pop_back();
+      return stage_group_by{ctx};
+    }
+
+    template <typename To, typename... Args>
+    auto collect(Args... args) {
+      return ctx->template collect<To>(args...);
+    }
+
+    template <typename... Args>
+    auto collect(Args... args) {
+      return ctx->collect(args...);
+    }
+
+    template <typename... Args>
+    auto scalar(Args... args) {
+      return ctx->scalar(args...);
+    }
+  };
+
+  stage_where where(const where_condition& condition) {
+    ctx_->where_clause_ = condition.to_sql();
+    return stage_where{ctx_};
+  }
+
+  struct stage_inner_join {
+    std::shared_ptr<context> ctx;
+
+    stage_inner_join& inner_join(auto field1, auto field2) {
+      std::string sql = join_impl<T>(" inner ", field1, field2);
+      ctx->join_clause_.append(sql);
+      return *this;
+    }
+
+    stage_where where(const where_condition& condition) {
+      ctx->where_clause_ = condition.to_sql();
+      return stage_where{ctx};
+    }
+
+    template <typename To, typename... Args>
+    auto collect(Args... args) {
+      return ctx->template collect<To>(args...);
+    }
+
+    template <typename... Args>
+    auto collect(Args... args) {
+      return ctx->collect(args...);
+    }
+
+    template <typename... Args>
+    auto scalar(Args... args) {
+      return ctx->scalar(args...);
+    }
+  };
+
+  auto inner_join(auto field1, auto field2) {
+    std::string sql = join_impl<T>(" inner ", field1, field2);
+    ctx_->join_clause_ = sql;
+    return stage_inner_join{ctx_};
+  }
+
+  auto left_join(auto field1, auto field2) {
+    std::string sql = join_impl<T>(" left ", field1, field2);
+    ctx_->join_clause_ = sql;
+    return stage_inner_join{ctx_};
+  }
+
+  auto right_join(auto field1, auto field2) {
+    std::string sql = join_impl<T>(" right ", field1, field2);
+    ctx_->join_clause_ = sql;
+    return stage_inner_join{ctx_};
+  }
+
+  auto full_join(auto field1, auto field2) {
+    std::string sql = join_impl<T>(" full ", field1, field2);
+    ctx_->join_clause_ = sql;
+    return stage_inner_join{ctx_};
+  }
+
+  auto full_outer_join(auto field1, auto field2) {
+    std::string sql = join_impl<T>(" full outer ", field1, field2);
+    ctx_->join_clause_ = sql;
+    return stage_inner_join{ctx_};
+  }
+
+ private:
+  friend struct stage_select<DB, R>;
+  friend struct stage_aggregate_t<DB>;
+  DB db_;
+  std::shared_ptr<context> ctx_;
+};
+
+template <typename DB, typename R = void>
+struct stage_select {
+  using ResultType = R;
+  DB db_;
+  std::string select_clause_;
+
+  template <typename T>
+  query_builder<T, DB, R> from() {
+    auto builder = query_builder<T, DB, R>{db_};
+    if (!select_clause_.empty()) {
+      builder.ctx_->select_clause_ = select_clause_;
+      builder.ctx_->from_clause_.append(" from ").append(
+          std::string(get_short_struct_name<T>()));
+    }
+    return builder;
+  }
+};
+
+template <typename T>
+concept HasName = requires(T t) { t.name; };
+
+template <typename Arg>
+auto append_select(auto& sel, Arg arg) {
+  if (arg.class_name.empty()) {
+    sel.select_clause_.append(arg.name).append(",");
+    return;
+  }
+
+  sel.select_clause_.append(arg.class_name)
+      .append(".")
+      .append(arg.name)
+      .append(",");
+}
+
+template <typename R, typename DB, typename... Args>
+auto create_stage_select(DB db, Args... args) {
+  stage_select<DB, R> sel{db};
+  (append_select(sel, args), ...);
+  sel.select_clause_.pop_back();
+
+  return sel;
+}
+
+template <typename DB, typename... Args>
+auto select(DB db, Args... args) {
+  static_assert(sizeof...(Args) > 0, "must choose at least one field");
+  using Tuple = std::tuple<typename Args::value_type...>;
+  using First = std::tuple_element_t<0, Tuple>;
+  using ArgType = std::tuple_element_t<0, std::tuple<Args...>>;
+  if constexpr (std::tuple_size_v<Tuple> == 1 &&
+                std::is_same_v<ArgType, aggregate_field<First>>) {
+    return create_stage_select<First>(db, args...);
+  }
+  else {
+    return create_stage_select<Tuple>(db, args...);
+  }
+}
+
+struct all_t {};
+
+inline constexpr auto all = all_t{};
+
+template <typename DB>
+stage_select<DB, void> select_all(DB db) {
+  return stage_select<DB>{db};
+}
+
+template <typename T, typename DB>
+struct update_context {
+  DB db_;
+  std::string set_clause_;
+  std::string where_clause_;
+
+  std::string build_sql() const {
+    std::string sql;
+    sql.append("UPDATE ")
+        .append(get_short_struct_name<T>())
+        .append(" SET ")
+        .append(set_clause_);
+    if (!where_clause_.empty()) {
+      sql.append(" WHERE ").append(where_clause_);
+    }
+    return sql;
+  }
+
+  auto execute_impl()
+    requires(!is_async_db_v<DB>)
+  {
+    auto sql = build_sql();
+#ifdef ORMPP_ENABLE_LOG
+    std::cout << sql << std::endl;
+#endif
+    if (db_->execute(sql)) {
+      return db_->get_last_affect_rows();
+    }
+    return -1;
+  }
+
+  db_awaitable_t<DB, int> execute_impl()
+    requires(is_async_db_v<DB>)
+  {
+    auto sql = build_sql();
+#ifdef ORMPP_ENABLE_LOG
+    std::cout << sql << std::endl;
+#endif
+    if (co_await db_->execute(sql)) {
+      co_return db_->get_last_affect_rows();
+    }
+    co_return -1;
+  }
+};
+
+template <typename M, typename V>
+void append_set(std::string& sql, col_info<M> field, V val) {
+  sql.append(field.name);
+  sql.append("=");
+  if constexpr (std::is_same_v<std::decay_t<V>, raw_sql_value>) {
+    sql.append(val.sql);
+  }
+  else if constexpr (std::is_enum_v<V>) {
+    using underlying = std::underlying_type_t<V>;
+    sql.append(std::to_string(static_cast<underlying>(val)));
+  }
+  else if constexpr (std::is_arithmetic_v<V>) {
+    sql.append(std::to_string(val));
+  }
+  else {
+    sql.append("'").append(escape_sql_string(val)).append("'");
+  }
+}
+
+template <typename T, typename DB>
+struct stage_update_where {
+  std::shared_ptr<update_context<T, DB>> ctx;
+  auto execute() { return ctx->execute_impl(); }
+};
+
+template <typename T, typename DB>
+struct stage_update_set {
+  std::shared_ptr<update_context<T, DB>> ctx;
+  template <typename M, typename V>
+  stage_update_set& set(col_info<M> field, V val) {
+    ctx->set_clause_.append(",");
+    append_set(ctx->set_clause_, field, val);
+    return *this;
+  }
+
+  template <typename M>
+  stage_update_set& set_null(col_info<M> field) {
+    ctx->set_clause_.append(",").append(field.name).append("=NULL");
+    return *this;
+  }
+
+  stage_update_where<T, DB> where(const where_condition& condition) {
+    ctx->where_clause_ = condition.to_sql();
+    return stage_update_where<T, DB>{ctx};
+  }
+
+  auto execute_all() { return ctx->execute_impl(); }
+};
+
+template <typename T, typename DB>
+struct update_builder {
+  DB db_;
+
+  template <typename M, typename V>
+  stage_update_set<T, DB> set(col_info<M> field, V val) {
+    auto ctx = std::make_shared<update_context<T, DB>>();
+    ctx->db_ = db_;
+    append_set(ctx->set_clause_, field, val);
+    return stage_update_set<T, DB>{ctx};
+  }
+
+  template <typename M>
+  stage_update_set<T, DB> set_null(col_info<M> field) {
+    auto ctx = std::make_shared<update_context<T, DB>>();
+    ctx->db_ = db_;
+    ctx->set_clause_.append(field.name).append("=NULL");
+    return stage_update_set<T, DB>{ctx};
+  }
+};
+
+template <typename T, typename DB>
+update_builder<T, DB> make_update_builder(DB db) {
+  return update_builder<T, DB>{db};
+}
+
+template <typename T, typename DB>
+struct delete_context {
+  static constexpr DBType db_type = std::remove_pointer_t<DB>::db_type_v;
+  DB db_;
+  std::string where_clause_;
+  std::string partition_field_;
+  range_partition_desc partition_;
+  bool use_partition_ = false;
+
+  std::string build_sql() const {
+    auto table_name = get_short_struct_name<T>();
+    std::string sql;
+    if (use_partition_) {
+      if constexpr (db_type == DBType::mysql) {
+        sql.append("DELETE FROM ")
+            .append(table_name)
+            .append(" PARTITION (")
+            .append(partition_.name)
+            .append(")");
+      }
+      else if constexpr (db_type == DBType::postgresql) {
+        sql.append("DELETE FROM ")
+            .append(partition_child_table_name(table_name, partition_.name));
+      }
+      else {
+        sql.append("DELETE FROM ").append(table_name);
+      }
+    }
+    else {
+      sql.append("DELETE FROM ").append(table_name);
+    }
+
+    std::string where = where_clause_;
+    if (use_partition_) {
+      if constexpr (db_type == DBType::sqlite) {
+        auto partition_where =
+            partition_range_predicate(partition_field_, partition_);
+        if (where.empty()) {
+          where = std::move(partition_where);
+        }
+        else {
+          where.insert(0, "(" + partition_where + ") AND ");
+        }
+      }
+    }
+
+    if (!where.empty()) {
+      sql.append(" WHERE ").append(where);
+    }
+    return sql;
+  }
+
+  bool validate_partition_config() const {
+    if (!use_partition_) {
+      return true;
+    }
+    return is_valid_sql_identifier(partition_field_) &&
+           is_valid_partition(partition_);
+  }
+
+  auto execute_impl()
+    requires(!is_async_db_v<DB>)
+  {
+    if (!validate_partition_config()) {
+      return -1;
+    }
+    auto sql = build_sql();
+#ifdef ORMPP_ENABLE_LOG
+    std::cout << sql << std::endl;
+#endif
+    if (db_->execute(sql)) {
+      return db_->get_last_affect_rows();
+    }
+    return -1;
+  }
+
+  db_awaitable_t<DB, int> execute_impl()
+    requires(is_async_db_v<DB>)
+  {
+    if (!validate_partition_config()) {
+      co_return -1;
+    }
+    auto sql = build_sql();
+#ifdef ORMPP_ENABLE_LOG
+    std::cout << sql << std::endl;
+#endif
+    if (co_await db_->execute(sql)) {
+      co_return db_->get_last_affect_rows();
+    }
+    co_return -1;
+  }
+};
+
+template <typename T, typename DB>
+struct delete_builder {
+  DB db_;
+  struct stage_delete_where {
+    std::shared_ptr<delete_context<T, DB>> ctx;
+    auto execute() { return ctx->execute_impl(); }
+  };
+
+  struct stage_delete_partition {
+    std::shared_ptr<delete_context<T, DB>> ctx;
+    stage_delete_where where(const where_condition& condition) {
+      ctx->where_clause_ = condition.to_sql();
+      return stage_delete_where{ctx};
+    }
+    auto execute() { return ctx->execute_impl(); }
+    auto execute_all() { return ctx->execute_impl(); }
+  };
+
+  stage_delete_where where(const where_condition& condition) {
+    auto ctx = std::make_shared<delete_context<T, DB>>();
+    ctx->db_ = db_;
+    ctx->where_clause_ = condition.to_sql();
+    return stage_delete_where{ctx};
+  }
+
+  template <typename M>
+  stage_delete_partition partition(col_info<M> field,
+                                   range_partition_desc partition) {
+    auto ctx = std::make_shared<delete_context<T, DB>>();
+    ctx->db_ = db_;
+    ctx->partition_field_ = std::string(field.name);
+    ctx->partition_ = std::move(partition);
+    ctx->use_partition_ = true;
+    return stage_delete_partition{ctx};
+  }
+
+  auto execute_all() {
+    auto ctx = std::make_shared<delete_context<T, DB>>();
+    ctx->db_ = db_;
+    return ctx->execute_impl();
+  }
+};
+
+template <typename T, typename DB>
+delete_builder<T, DB> make_delete_builder(DB db) {
+  return delete_builder<T, DB>{db};
+}
+
+template <typename T, typename DB>
+struct create_table_builder {
+  static constexpr DBType db_type = std::remove_pointer_t<DB>::db_type_v;
+  DB db_;
+  std::string auto_increment_field_;
+  std::set<std::string> primary_keys_;
+  std::set<std::string> not_null_fields_;
+  std::vector<std::string> unique_constraints_;
+  std::map<std::string, std::string> default_values_;
+  std::vector<std::string> check_constraints_;
+  std::vector<std::pair<std::string, std::string>> foreign_keys_;
+  std::string charset_;
+  std::string engine_;
+  std::string range_partition_field_;
+  std::vector<range_partition_desc> range_partitions_;
+
+  template <typename M>
+  create_table_builder& auto_increment(col_info<M> field) {
+    auto_increment_field_ = std::string(field.name);
+    primary_keys_.insert(auto_increment_field_);
+    return *this;
+  }
+
+  template <typename... Fields>
+  create_table_builder& primary_key(Fields... fields) {
+    (primary_keys_.insert(std::string(fields.name)), ...);
+    return *this;
+  }
+
+  template <typename... Fields>
+  create_table_builder& not_null(Fields... fields) {
+    (not_null_fields_.insert(std::string(fields.name)), ...);
+    return *this;
+  }
+
+  template <typename... Fields>
+  create_table_builder& unique(Fields... fields) {
+    std::string cols;
+    ((cols.empty() ? cols.append(fields.name)
+                   : cols.append(",").append(fields.name)),
+     ...);
+    unique_constraints_.push_back(std::move(cols));
+    return *this;
+  }
+
+  template <typename M1, typename M2>
+  create_table_builder& foreign_key(col_info<M1> local, col_info<M2> ref) {
+    std::string ref_str;
+    ref_str.append(ref.class_name).append("(").append(ref.name).append(")");
+    foreign_keys_.emplace_back(std::string(local.name), std::move(ref_str));
+    return *this;
+  }
+
+  template <typename M, typename V>
+  create_table_builder& default_value(col_info<M> field, V val) {
+    if constexpr (std::is_arithmetic_v<V>) {
+      default_values_[std::string(field.name)] = std::to_string(val);
+    }
+    else {
+      std::string s = "'";
+      s.append(escape_sql_string(val)).append("'");
+      default_values_[std::string(field.name)] = std::move(s);
+    }
+    return *this;
+  }
+
+  create_table_builder& check(const where_condition& cond) {
+    check_constraints_.push_back(cond.to_sql());
+    return *this;
+  }
+
+  create_table_builder& check(const std::string& expr) {
+    check_constraints_.push_back(expr);
+    return *this;
+  }
+
+  create_table_builder& charset(const std::string& cs) {
+    charset_ = cs;
+    return *this;
+  }
+
+  create_table_builder& engine(const std::string& eng) {
+    engine_ = eng;
+    return *this;
+  }
+
+  template <typename M>
+  create_table_builder& partition_by_range(col_info<M> field) {
+    range_partition_field_ = std::string(field.name);
+    return *this;
+  }
+
+  create_table_builder& partition(range_partition_desc partition) {
+    range_partitions_.push_back(std::move(partition));
+    return *this;
+  }
+
+  template <typename From, typename To>
+  create_table_builder& range_partition(std::string name, From&& from,
+                                        To&& to) {
+    return partition(ormpp::range_partition(
+        std::move(name), std::forward<From>(from), std::forward<To>(to)));
+  }
+
+  template <typename From>
+  create_table_builder& maxvalue_partition(std::string name, From&& from) {
+    return partition(
+        ormpp::maxvalue_partition(std::move(name), std::forward<From>(from)));
+  }
+
+  auto execute()
+    requires(!is_async_db_v<DB>)
+  {
+    if (!validate_partition_config()) {
+      return false;
+    }
+    register_auto_increment_field();
+    auto sqls = generate_sqls();
+    for (const auto& sql : sqls) {
+#ifdef ORMPP_ENABLE_LOG
+      std::cout << sql << std::endl;
+#endif
+      if (!db_->execute(sql)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  db_awaitable_t<DB, bool> execute()
+    requires(is_async_db_v<DB>)
+  {
+    if (!validate_partition_config()) {
+      co_return false;
+    }
+    register_auto_increment_field();
+    auto sqls = generate_sqls();
+    for (const auto& sql : sqls) {
+#ifdef ORMPP_ENABLE_LOG
+      std::cout << sql << std::endl;
+#endif
+      if (!(co_await db_->execute(sql))) {
+        co_return false;
+      }
+    }
+    co_return true;
+  }
+
+ private:
+  bool validate_partition_config() const {
+    if (range_partition_field_.empty()) {
+      return range_partitions_.empty();
+    }
+
+    if (!is_valid_sql_identifier(range_partition_field_)) {
+      return false;
+    }
+
+    if constexpr (db_type == DBType::mysql) {
+      if (range_partitions_.empty()) {
+        return false;
+      }
+    }
+
+    for (const auto& p : range_partitions_) {
+      if (!is_valid_partition(p)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  void register_auto_increment_field() {
+    if (auto_increment_field_.empty()) {
+      return;
+    }
+
+    T t{};
+    ylt::reflection::for_each(
+        t, [&](auto& /*field*/, auto name, size_t /*index*/) {
+          if (std::string_view(name) == auto_increment_field_) {
+            add_auto_key_field(get_short_struct_name<T>(), name);
+          }
+        });
+  }
+
+  std::vector<std::string> generate_sqls() {
+    std::vector<std::string> sqls;
+    auto table_name = get_short_struct_name<T>();
+    sqls.push_back(generate_sql());
+
+    if (!range_partition_field_.empty()) {
+      if constexpr (db_type == DBType::postgresql) {
+        for (const auto& p : range_partitions_) {
+          sqls.push_back(postgresql_partition_definition_sql(table_name, p));
+        }
+      }
+      else if constexpr (db_type == DBType::sqlite) {
+        sqls.push_back(
+            sqlite_partition_index_sql(table_name, range_partition_field_));
+      }
+    }
+
+    return sqls;
+  }
+
+  std::string generate_sql() {
+    auto table_name = get_short_struct_name<T>();
+    const auto type_name_arr = get_type_names<T>(db_type);
+    bool auto_inline_pk = false;
+    std::string sql;
+    sql.append("CREATE TABLE IF NOT EXISTS ").append(table_name).append("(");
+    T t{};
+    ylt::reflection::for_each(t, [&](auto& /*field*/, auto name, size_t index) {
+      std::string field_name(name);
+      std::string type_str = type_name_arr[index];
+
+      bool is_auto = (!auto_increment_field_.empty() &&
+                      field_name == auto_increment_field_);
+      if constexpr (db_type == DBType::postgresql) {
+        if (is_auto) {
+          if (type_str == "bigint") {
+            type_str = "bigserial";
+          }
+          else {
+            type_str = "serial";
+          }
+        }
+      }
+
+      sql.append(field_name).append(" ").append(type_str);
+      if constexpr (db_type == DBType::sqlite) {
+        if (is_auto) {
+          sql.append(" PRIMARY KEY AUTOINCREMENT");
+          auto_inline_pk = true;
+        }
+      }
+      else if constexpr (db_type == DBType::mysql) {
+        if (is_auto) {
+          sql.append(" AUTO_INCREMENT");
+        }
+      }
+
+      if (not_null_fields_.count(field_name)) {
+        sql.append(" NOT NULL");
+      }
+
+      if (default_values_.count(field_name)) {
+        sql.append(" DEFAULT ").append(default_values_[field_name]);
+      }
+
+      sql.append(",");
+    });
+
+    if (!auto_inline_pk && !primary_keys_.empty()) {
+      sql.append("PRIMARY KEY (");
+      bool first = true;
+      for (auto& k : primary_keys_) {
+        if (!first) {
+          sql.append(",");
+        }
+        sql.append(k);
+        first = false;
+      }
+      sql.append("),");
+    }
+
+    for (auto& u : unique_constraints_) {
+      sql.append("UNIQUE (").append(u).append("),");
+    }
+
+    for (auto& [local, ref] : foreign_keys_) {
+      sql.append("FOREIGN KEY (")
+          .append(local)
+          .append(") REFERENCES ")
+          .append(ref)
+          .append(",");
+    }
+
+    for (auto& chk : check_constraints_) {
+      sql.append("CHECK (").append(chk).append("),");
+    }
+
+    if (sql.back() == ',') {
+      sql.pop_back();
+    }
+    sql.append(")");
+
+    if constexpr (db_type == DBType::mysql) {
+      if (!engine_.empty()) {
+        sql.append(" ENGINE=").append(engine_);
+      }
+      if (!charset_.empty()) {
+        sql.append(" DEFAULT CHARSET=").append(charset_);
+      }
+      else {
+        sql.append(" DEFAULT CHARSET=utf8mb4");
+      }
+
+      if (!range_partition_field_.empty()) {
+        sql.append(" PARTITION BY RANGE COLUMNS(")
+            .append(range_partition_field_)
+            .append(") (");
+        bool first = true;
+        for (const auto& p : range_partitions_) {
+          if (!first) {
+            sql.append(",");
+          }
+          sql.append(mysql_partition_definition(p));
+          first = false;
+        }
+        sql.append(")");
+      }
+    }
+    else if constexpr (db_type == DBType::postgresql) {
+      if (!range_partition_field_.empty()) {
+        sql.append(" PARTITION BY RANGE (")
+            .append(range_partition_field_)
+            .append(")");
+      }
+    }
+
+    return sql;
+  }
+};
+
+template <typename T, typename DB>
+create_table_builder<T, DB> make_create_table_builder(DB db) {
+  return create_table_builder<T, DB>{db};
+}
+
+template <typename T, typename DB>
+create_table_builder<T, DB> make_create_table_buillder(DB db) {
+  return make_create_table_builder<T, DB>(db);
+}
+
+template <typename T, typename DB>
+struct alter_table_builder {
+  static constexpr DBType db_type = std::remove_pointer_t<DB>::db_type_v;
+  DB db_;
+  enum class alter_op_kind {
+    alter_clause,
+    clear_partition,
+    add_partition,
+    drop_partition
+  };
+
+  struct alter_op {
+    alter_op_kind kind = alter_op_kind::alter_clause;
+    std::string sql;
+    std::string partition_field;
+    range_partition_desc partition;
+
+    alter_op() = default;
+    alter_op(std::string s) : sql(std::move(s)) {}
+    alter_op(alter_op_kind op_kind, std::string field, range_partition_desc p)
+        : kind(op_kind),
+          partition_field(std::move(field)),
+          partition(std::move(p)) {}
+  };
+
+  std::vector<alter_op> ops_;
+
+  template <typename M>
+  alter_table_builder& add_column(col_info<M> field,
+                                  const std::string& extra = "") {
+    const auto type_name_arr = get_type_names<T>(db_type);
+    std::string type_str;
+    size_t target_idx = 0;
+    T t{};
+    ylt::reflection::for_each(t, [&](auto& /*f*/, auto name, size_t index) {
+      if (std::string_view(name) == field.name) {
+        target_idx = index;
+      }
+    });
+
+    type_str = type_name_arr[target_idx];
+    std::string s;
+    s.append("ADD COLUMN ").append(field.name).append(" ").append(type_str);
+    if (!extra.empty()) {
+      s.append(" ").append(extra);
+    }
+    ops_.push_back({std::move(s)});
+    return *this;
+  }
+
+  alter_table_builder& add_column(const std::string& col_name,
+                                  const std::string& type_and_constraints) {
+    std::string s;
+    s.append("ADD COLUMN ")
+        .append(col_name)
+        .append(" ")
+        .append(type_and_constraints);
+    ops_.push_back({std::move(s)});
+    return *this;
+  }
+
+  template <typename M>
+  alter_table_builder& drop_column(col_info<M> field) {
+    std::string s;
+    s.append("DROP COLUMN ").append(field.name);
+    ops_.push_back({std::move(s)});
+    return *this;
+  }
+
+  alter_table_builder& drop_column(const std::string& col_name) {
+    std::string s;
+    s.append("DROP COLUMN ").append(col_name);
+    ops_.push_back({std::move(s)});
+    return *this;
+  }
+
+  template <typename M>
+  alter_table_builder& rename_column(col_info<M> field,
+                                     const std::string& new_name) {
+    std::string s;
+    s.append("RENAME COLUMN ")
+        .append(field.name)
+        .append(" TO ")
+        .append(new_name);
+    ops_.push_back({std::move(s)});
+    return *this;
+  }
+
+  template <typename M>
+  alter_table_builder& modify_column(col_info<M> field,
+                                     const std::string& new_type) {
+    std::string s;
+    if constexpr (db_type == DBType::mysql) {
+      s.append("MODIFY COLUMN ")
+          .append(field.name)
+          .append(" ")
+          .append(new_type);
+    }
+    else if constexpr (db_type == DBType::postgresql) {
+      s.append("ALTER COLUMN ")
+          .append(field.name)
+          .append(" TYPE ")
+          .append(new_type);
+    }
+    ops_.push_back({std::move(s)});
+    return *this;
+  }
+
+  template <typename... Fields>
+  alter_table_builder& add_index(const std::string& index_name,
+                                 Fields... fields) {
+    std::string cols;
+    ((cols.empty() ? cols.append(fields.name)
+                   : cols.append(",").append(fields.name)),
+     ...);
+    std::string s;
+    if constexpr (db_type == DBType::mysql) {
+      s.append("ADD INDEX ")
+          .append(index_name)
+          .append(" (")
+          .append(cols)
+          .append(")");
+    }
+    else {
+      s.append("_CREATE__INDEX__ ").append(index_name).append(" ").append(cols);
+    }
+    ops_.push_back({std::move(s)});
+    return *this;
+  }
+
+  alter_table_builder& drop_index(const std::string& index_name) {
+    std::string s;
+    if constexpr (db_type == DBType::mysql) {
+      s.append("DROP INDEX ").append(index_name);
+    }
+    else {
+      s.append("_DROP_INDEX__ ").append(index_name);
+    }
+    ops_.push_back({std::move(s)});
+    return *this;
+  }
+
+  template <typename... Fields>
+  alter_table_builder& add_unique(const std::string& constraint_name,
+                                  Fields... fields) {
+    std::string cols;
+    ((cols.empty() ? cols.append(fields.name)
+                   : cols.append(",").append(fields.name)),
+     ...);
+    std::string s;
+    s.append("ADD CONSTRAINT ")
+        .append(constraint_name)
+        .append(" UNIQUE (")
+        .append(cols)
+        .append(")");
+    ops_.push_back({std::move(s)});
+    return *this;
+  }
+
+  alter_table_builder& drop_constraint(const std::string& constraint_name) {
+    std::string s;
+    if constexpr (db_type == DBType::mysql) {
+      s.append("DROP INDEX ").append(constraint_name);
+    }
+    else {
+      s.append("DROP CONSTRAINT ").append(constraint_name);
+    }
+    ops_.push_back({std::move(s)});
+    return *this;
+  }
+
+  template <typename M1, typename M2>
+  alter_table_builder& add_foreign_key(const std::string& constraint_name,
+                                       col_info<M1> local, col_info<M2> ref) {
+    std::string s;
+    s.append("ADD CONSTRAINT ")
+        .append(constraint_name)
+        .append(" FOREIGN KEY (")
+        .append(local.name)
+        .append(") REFERENCES ")
+        .append(ref.class_name)
+        .append("(")
+        .append(ref.name)
+        .append(")");
+    ops_.push_back({std::move(s)});
+    return *this;
+  }
+
+  alter_table_builder& add_check(const std::string& constraint_name,
+                                 const std::string& expr) {
+    std::string s;
+    s.append("ADD CONSTRAINT ")
+        .append(constraint_name)
+        .append(" CHECK (")
+        .append(expr)
+        .append(")");
+    ops_.push_back({std::move(s)});
+    return *this;
+  }
+
+  alter_table_builder& add_check(const std::string& constraint_name,
+                                 const where_condition& cond) {
+    return add_check(constraint_name, cond.to_sql());
+  }
+
+  alter_table_builder& raw(const std::string& clause) {
+    ops_.push_back({clause});
+    return *this;
+  }
+
+  template <typename M>
+  alter_table_builder& clear_partition(col_info<M> field,
+                                       range_partition_desc partition) {
+    ops_.push_back({alter_op_kind::clear_partition, std::string(field.name),
+                    std::move(partition)});
+    return *this;
+  }
+
+  template <typename M>
+  alter_table_builder& add_partition(col_info<M> field,
+                                     range_partition_desc partition) {
+    ops_.push_back({alter_op_kind::add_partition, std::string(field.name),
+                    std::move(partition)});
+    return *this;
+  }
+
+  alter_table_builder& drop_partition(range_partition_desc partition) {
+    ops_.push_back({alter_op_kind::drop_partition, {}, std::move(partition)});
+    return *this;
+  }
+
+  bool build_operation_sql(const alter_op& op, std::string_view table_name,
+                           std::string& sql) const {
+    constexpr std::string_view ci_prefix = "_CREATE__INDEX__ ";
+    constexpr std::string_view di_prefix = "_DROP_INDEX__ ";
+
+    if (op.kind == alter_op_kind::clear_partition ||
+        op.kind == alter_op_kind::add_partition ||
+        op.kind == alter_op_kind::drop_partition) {
+      if (!is_valid_partition(op.partition)) {
+        return false;
+      }
+
+      if (op.kind != alter_op_kind::drop_partition &&
+          !is_valid_sql_identifier(op.partition_field)) {
+        return false;
+      }
+
+      if (op.kind == alter_op_kind::clear_partition) {
+        if constexpr (db_type == DBType::mysql) {
+          sql.append("ALTER TABLE ")
+              .append(table_name)
+              .append(" TRUNCATE PARTITION ")
+              .append(op.partition.name);
+        }
+        else if constexpr (db_type == DBType::postgresql) {
+          sql.append("TRUNCATE TABLE ")
+              .append(
+                  partition_child_table_name(table_name, op.partition.name));
+        }
+        else {
+          sql.append("DELETE FROM ")
+              .append(table_name)
+              .append(" WHERE ")
+              .append(
+                  partition_range_predicate(op.partition_field, op.partition));
+        }
+        return true;
+      }
+
+      if (op.kind == alter_op_kind::add_partition) {
+        if constexpr (db_type == DBType::mysql) {
+          sql.append("ALTER TABLE ")
+              .append(table_name)
+              .append(" ADD PARTITION (")
+              .append(mysql_partition_definition(op.partition))
+              .append(")");
+        }
+        else if constexpr (db_type == DBType::postgresql) {
+          sql = postgresql_partition_definition_sql(table_name, op.partition);
+        }
+        else {
+          sql = sqlite_partition_index_sql(table_name, op.partition_field);
+        }
+        return true;
+      }
+
+      if constexpr (db_type == DBType::mysql) {
+        sql.append("ALTER TABLE ")
+            .append(table_name)
+            .append(" DROP PARTITION ")
+            .append(op.partition.name);
+        return true;
+      }
+      else if constexpr (db_type == DBType::postgresql) {
+        sql.append("DROP TABLE IF EXISTS ")
+            .append(partition_child_table_name(table_name, op.partition.name));
+        return true;
+      }
+      else {
+        return false;
+      }
+    }
+
+    if (op.sql.compare(0, ci_prefix.size(), ci_prefix) == 0) {
+      auto rest = op.sql.substr(ci_prefix.size());
+      auto sp = rest.find(' ');
+      auto idx_name = rest.substr(0, sp);
+      auto cols = rest.substr(sp + 1);
+      if constexpr (db_type == DBType::postgresql) {
+        sql.append("CREATE INDEX IF NOT EXISTS ");
+      }
+      else {
+        sql.append("CREATE INDEX ");
+      }
+      sql.append(idx_name)
+          .append(" ON ")
+          .append(table_name)
+          .append("(")
+          .append(cols)
+          .append(")");
+    }
+    else if (op.sql.compare(0, di_prefix.size(), di_prefix) == 0) {
+      auto idx_name = op.sql.substr(di_prefix.size());
+      sql.append("DROP INDEX ").append(idx_name);
+    }
+    else {
+      sql.append("ALTER TABLE ").append(table_name).append(" ").append(op.sql);
+    }
+    return true;
+  }
+
+  auto execute()
+    requires(!is_async_db_v<DB>)
+  {
+    auto table_name = get_short_struct_name<T>();
+    bool ok = true;
+    for (auto& op : ops_) {
+      std::string sql;
+      if (!build_operation_sql(op, table_name, sql)) {
+        ok = false;
+        break;
+      }
+#ifdef ORMPP_ENABLE_LOG
+      std::cout << sql << std::endl;
+#endif
+      if (!db_->execute(sql)) {
+        ok = false;
+        break;
+      }
+    }
+    return ok;
+  }
+
+  db_awaitable_t<DB, bool> execute()
+    requires(is_async_db_v<DB>)
+  {
+    auto table_name = get_short_struct_name<T>();
+    bool ok = true;
+    for (auto& op : ops_) {
+      std::string sql;
+      if (!build_operation_sql(op, table_name, sql)) {
+        ok = false;
+        break;
+      }
+#ifdef ORMPP_ENABLE_LOG
+      std::cout << sql << std::endl;
+#endif
+      if (!(co_await db_->execute(sql))) {
+        ok = false;
+        break;
+      }
+    }
+    co_return ok;
+  }
+};
+
+template <typename T, typename DB>
+alter_table_builder<T, DB> make_alter_table_builder(DB db) {
+  return alter_table_builder<T, DB>{db};
+}
+
+template <typename T, typename DB>
+alter_table_builder<T, DB> make_alter_table_buildeer(DB db) {
+  return make_alter_table_builder<T, DB>(db);
+}
+
+}  // namespace ormpp

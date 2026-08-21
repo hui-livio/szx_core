@@ -44,3 +44,5 @@ target_link_libraries(MyApp PRIVATE szx::common szx::crypto szx::logger
 Qt/QML 应用按需链接 `szx::feature_manager_qt`，并通过 `add_subdirectory()` 源码集成或安装后的 `SZXComponents` package 使用。
 
 OpenCV、IKap 和 libmodbus 均按本机 SDK/库是否存在选择性启用；无硬件环境仍可构建 common、crypto、logger 和 camera 核心。
+
+仓库内第三方源码依赖及其分发边界见 [docs/third_party.md](docs/third_party.md)。
