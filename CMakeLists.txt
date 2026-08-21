@@ -24,6 +24,7 @@ option(SZX_COMPONENTS_INSTALL "Generate install tree and package config" ON)
 option(SZX_COMPONENTS_BUILD_CAMERA "Build camera component" ON)
 option(SZX_COMPONENTS_BUILD_PLC "Build PLC component when libmodbus is available" ON)
 option(SZX_COMPONENTS_BUILD_FEATURE_MANAGER "Build the feature manager component" ON)
+option(SZX_COMPONENTS_BUILD_UI_TOOLKITS "Build the Qt/QML UI toolkits component" OFF)
 option(SZX_COMPONENTS_BUILD_IKAP "Build IKap adapter when SDK is available" OFF)
 option(SZX_COMPONENTS_ENABLE_CPACK "Enable CPack package generation" OFF)
 option(SZX_COMPONENTS_BUILD_HUARAY "Build Huaray camera adapters when SDK is available" ON)
@@ -61,6 +62,10 @@ endif()
 
 if(SZX_COMPONENTS_BUILD_PLC)
     add_subdirectory(components/plc)
+endif()
+
+if(SZX_COMPONENTS_BUILD_UI_TOOLKITS)
+    add_subdirectory(components/UIToolkits)
 endif()
 
 szx_install_components_package()

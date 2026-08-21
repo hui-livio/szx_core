@@ -1,0 +1,485 @@
+/*
+ * @file UTMultiRectOverlay.qml
+ * @brief UIToolkits 的 UTMultiRectOverlay.qml 组件。
+ */
+
+pragma ComponentBehavior: Bound
+
+import QtQuick
+
+Item {
+    id: root
+
+    // Each group: { key, color, thickness, visible, rectangles: [{ key, x, y, width, height, label, color, thickness, hidden }] }
+    property var groups: []
+    /// Changes when the displayed image/data set changes; clears local edits.
+    property var sessionKey: null
+    property point imagePosition: Qt.point(0, 0)
+    property real imageScale: 1
+    property size imageSourceSize: Qt.size(0, 0)
+    property string selectedKey: ""
+    property string hoveredKey: ""
+    property bool labelsVisible: true
+    property bool interactive: false
+    property bool editable: false
+    property bool creationEnabled: false
+    property bool viewportInteractionEnabled: false
+    property string createGroupKey: "general"
+    property string createLabel: ""
+    property real handleSize: 12
+    property color defaultColor: "#b4d2ff"
+    property real defaultThickness: 2
+    property var positionOverrides: ({})
+    property var hiddenOverrides: ({})
+    property var draftRectangle: null
+
+    signal rectangleClicked(string key)
+    signal rectangleSelected(string key)
+    signal rectangleRightClicked(string key)
+    signal rectangleUpdated(string key, var rectangle)
+    signal rectangleEditFinished(string key, var rectangle)
+    signal rectangleCreated(var rectangle)
+    signal rectangleHidden(string key)
+    signal allRectanglesShown()
+    signal viewportPanStarted(real x, real y)
+    signal viewportPanDelta(real deltaX, real deltaY)
+    signal viewportPanFinished()
+    signal viewportWheel(real x, real y, real delta)
+
+    focus: editable
+
+    function resetState() {
+        positionOverrides = ({});
+        hiddenOverrides = ({});
+        draftRectangle = null;
+        selectedKey = "";
+        hoveredKey = "";
+    }
+
+    function setGroups(nextGroups, nextSessionKey) {
+        groups = nextGroups || [];
+        if (nextSessionKey !== undefined)
+            sessionKey = nextSessionKey;
+        else
+            resetState();
+    }
+
+    // A caller that provides a session key owns the reset boundary.  Parameter
+    // edits can then update rectangle geometry without clearing the overlay's
+    // state twice and making the image panel appear to flicker.  Legacy users
+    // without a key keep the original reset-on-data-change behavior.
+    onGroupsChanged: {
+        if (sessionKey === null)
+            resetState()
+    }
+    onSessionKeyChanged: resetState()
+
+    function imagePoint(viewX, viewY) {
+        const scale = Math.max(imageScale, 0.0001);
+        let x = (viewX - imagePosition.x) / scale;
+        let y = (viewY - imagePosition.y) / scale;
+        if (imageSourceSize.width > 0)
+            x = Math.max(0, Math.min(imageSourceSize.width, x));
+        if (imageSourceSize.height > 0)
+            y = Math.max(0, Math.min(imageSourceSize.height, y));
+        return Qt.point(x, y);
+    }
+
+    function setPositionOverride(key, rectangle) {
+        const next = Object.assign({}, positionOverrides);
+        next[key] = rectangle;
+        positionOverrides = next;
+        rectangleUpdated(key, rectangle);
+    }
+
+    function hideRectangle(key) {
+        if (key.length === 0)
+            return;
+        const next = Object.assign({}, hiddenOverrides);
+        next[key] = true;
+        hiddenOverrides = next;
+        if (selectedKey === key)
+            selectedKey = "";
+        if (hoveredKey === key)
+            hoveredKey = "";
+        rectangleHidden(key);
+        UTLogger.debug("Rectangle hidden: " + key, "UIToolkits.MultiRectOverlay");
+    }
+
+    function showAllRectangles() {
+        hiddenOverrides = ({});
+        allRectanglesShown();
+    }
+
+    function updateDraft(point) {
+        if (!draftRectangle)
+            return;
+        const x1 = Math.min(draftRectangle.startX, point.x);
+        const y1 = Math.min(draftRectangle.startY, point.y);
+        draftRectangle = {
+            startX: draftRectangle.startX,
+            startY: draftRectangle.startY,
+            x: x1,
+            y: y1,
+            width: Math.abs(point.x - draftRectangle.startX),
+            height: Math.abs(point.y - draftRectangle.startY)
+        };
+    }
+
+    function finishDraft() {
+        if (!draftRectangle)
+            return;
+        const draft = draftRectangle;
+        draftRectangle = null;
+        if (draft.width < 2 || draft.height < 2)
+            return;
+        rectangleCreated({
+            key: "draft:" + Date.now(),
+            x: Math.round(draft.x),
+            y: Math.round(draft.y),
+            width: Math.round(draft.width),
+            height: Math.round(draft.height),
+            label: createLabel,
+            groupKey: createGroupKey
+        });
+        UTLogger.info("Rectangle created", "UIToolkits.MultiRectOverlay");
+    }
+
+    function transformRectangle(rectangle, handle, point) {
+        let x1 = rectangle.x;
+        let y1 = rectangle.y;
+        let x2 = rectangle.x + rectangle.width;
+        let y2 = rectangle.y + rectangle.height;
+        if (handle === "tl") {
+            x1 = point.x;
+            y1 = point.y;
+        } else if (handle === "tr") {
+            x2 = point.x;
+            y1 = point.y;
+        } else if (handle === "br") {
+            x2 = point.x;
+            y2 = point.y;
+        } else if (handle === "bl") {
+            x1 = point.x;
+            y2 = point.y;
+        } else {
+            x1 += point.x - rectangle.startX;
+            x2 += point.x - rectangle.startX;
+            y1 += point.y - rectangle.startY;
+            y2 += point.y - rectangle.startY;
+            if (imageSourceSize.width > 0) {
+                const dx = x1 < 0 ? -x1 : (x2 > imageSourceSize.width ? imageSourceSize.width - x2 : 0);
+                x1 += dx;
+                x2 += dx;
+            }
+            if (imageSourceSize.height > 0) {
+                const dy = y1 < 0 ? -y1 : (y2 > imageSourceSize.height ? imageSourceSize.height - y2 : 0);
+                y1 += dy;
+                y2 += dy;
+            }
+        }
+        if (imageSourceSize.width > 0) {
+            x1 = Math.max(0, Math.min(imageSourceSize.width, x1));
+            x2 = Math.max(0, Math.min(imageSourceSize.width, x2));
+        }
+        if (imageSourceSize.height > 0) {
+            y1 = Math.max(0, Math.min(imageSourceSize.height, y1));
+            y2 = Math.max(0, Math.min(imageSourceSize.height, y2));
+        }
+        return {
+            x: Math.round(Math.min(x1, x2)),
+            y: Math.round(Math.min(y1, y2)),
+            width: Math.round(Math.abs(x2 - x1)),
+            height: Math.round(Math.abs(y2 - y1))
+        };
+    }
+
+    Keys.onPressed: function (event) {
+        if (!editable)
+            return;
+        const targetKey = hoveredKey.length > 0 ? hoveredKey : selectedKey;
+        if (event.key === Qt.Key_S && targetKey.length > 0) {
+            hideRectangle(targetKey);
+            event.accepted = true;
+        } else if (event.key === Qt.Key_W) {
+            showAllRectangles();
+            event.accepted = true;
+        }
+    }
+
+    MouseArea {
+        anchors.fill: parent
+        z: -1
+        enabled: root.editable && (root.creationEnabled || root.viewportInteractionEnabled)
+        acceptedButtons: Qt.LeftButton | Qt.MiddleButton
+        preventStealing: true
+        scrollGestureEnabled: false
+        property bool panning: false
+        property real startX: 0
+        property real startY: 0
+        // A creation-only overlay cannot pan the viewport, so an open hand
+        // suggests an unavailable gesture. Keep the hand pair only for
+        // overlays that actually expose viewport panning; otherwise use the
+        // normal arrow while the operator prepares a new rectangle.
+        cursorShape: panning ? Qt.ClosedHandCursor :
+                               (root.viewportInteractionEnabled ? Qt.OpenHandCursor : Qt.ArrowCursor)
+
+        onPressed: function (mouse) {
+            root.forceActiveFocus();
+            const isPanGesture = mouse.button === Qt.MiddleButton
+                                  || (mouse.button === Qt.LeftButton && !(mouse.modifiers & Qt.ControlModifier));
+            if (isPanGesture && root.viewportInteractionEnabled) {
+                panning = true;
+                startX = mouse.x;
+                startY = mouse.y;
+                root.viewportPanStarted(mouse.x, mouse.y);
+                return;
+            }
+            if (mouse.button !== Qt.LeftButton || !(mouse.modifiers & Qt.ControlModifier) || !root.creationEnabled) {
+                mouse.accepted = false;
+                return;
+            }
+            const point = root.imagePoint(mouse.x, mouse.y);
+            root.draftRectangle = { startX: point.x, startY: point.y, x: point.x, y: point.y, width: 0, height: 0 };
+        }
+        onPositionChanged: function (mouse) {
+            if (panning && pressed)
+                root.viewportPanDelta(mouse.x - startX, mouse.y - startY);
+            else if (pressed && root.draftRectangle)
+                root.updateDraft(root.imagePoint(mouse.x, mouse.y));
+        }
+        onReleased: {
+            if (panning) {
+                panning = false;
+                root.viewportPanFinished();
+            } else {
+                root.finishDraft();
+            }
+        }
+        onWheel: function (wheel) {
+            if (root.viewportInteractionEnabled) {
+                root.viewportWheel(wheel.x, wheel.y, wheel.angleDelta.y);
+                wheel.accepted = true;
+            } else {
+                wheel.accepted = false;
+            }
+        }
+    }
+
+    Repeater {
+        model: root.groups
+
+        delegate: Item {
+            required property var modelData
+
+            readonly property var group: modelData
+            visible: group.visible !== false
+
+            Repeater {
+                model: group.rectangles || []
+
+                delegate: Rectangle {
+                    id: rectItem
+
+                    required property var modelData
+
+                    // Do not resolve the overlay's QML id from methods that
+                    // are invoked by a nested Repeater/Loader delegate.  Qt
+                    // can lose that lexical id context there (the runtime
+                    // symptom was "ReferenceError: root is not defined" on
+                    // rectangleEditFinished).  Keep an explicit object
+                    // reference on the rectangle instead.
+                    property var overlayRoot: root
+
+                    readonly property string rectKey: String(modelData.key || modelData.id || "")
+                    readonly property real sourceX: Number(modelData.x || 0)
+                    readonly property real sourceY: Number(modelData.y || 0)
+                    readonly property real sourceWidth: Number(modelData.width || modelData.w || 0)
+                    readonly property real sourceHeight: Number(modelData.height || modelData.h || 0)
+                    property var editOverride: null
+                    readonly property var override: editOverride || overlayRoot.positionOverrides[rectKey]
+                    readonly property real displayX: override ? override.x : sourceX
+                    readonly property real displayY: override ? override.y : sourceY
+                    readonly property real displayWidth: override ? override.width : sourceWidth
+                    readonly property real displayHeight: override ? override.height : sourceHeight
+                    readonly property color rectColor: modelData.color || group.color || overlayRoot.defaultColor
+                    readonly property real rectThickness: Number(modelData.thickness || group.thickness || overlayRoot.defaultThickness)
+                    readonly property bool selected: rectKey.length > 0 && rectKey === overlayRoot.selectedKey
+                    readonly property bool hovered: rectKey.length > 0 && rectKey === overlayRoot.hoveredKey
+                    readonly property string label: String(modelData.label || modelData.name || "")
+                    readonly property bool hidden: modelData.hidden === true || overlayRoot.hiddenOverrides[rectKey] === true
+                    readonly property bool rectangleEditable: overlayRoot.editable && modelData.editable !== false
+                    property string editHandle: ""
+                    property var editStart: null
+
+                    function select() {
+                        overlayRoot.selectedKey = rectKey;
+                        overlayRoot.forceActiveFocus();
+                        overlayRoot.rectangleSelected(rectKey);
+                        overlayRoot.rectangleClicked(rectKey);
+                    }
+
+                    function beginEdit(handle, viewPoint) {
+                        select();
+                        overlayRoot.forceActiveFocus();
+                        editHandle = handle;
+                        const point = overlayRoot.imagePoint(viewPoint.x, viewPoint.y);
+                        editStart = { x: displayX, y: displayY, width: displayWidth, height: displayHeight, startX: point.x, startY: point.y };
+                    }
+
+                    function updateEdit(viewPoint) {
+                        if (editHandle.length === 0 || !editStart)
+                            return;
+                        const next = overlayRoot.transformRectangle(editStart, editHandle, overlayRoot.imagePoint(viewPoint.x, viewPoint.y));
+                        if (next.width >= 2 && next.height >= 2)
+                            editOverride = next;
+                    }
+
+                    function finishEdit() {
+                        if (editHandle.length > 0 && override) {
+                            const finished = override;
+                            overlayRoot.setPositionOverride(rectKey, finished);
+                            overlayRoot.rectangleEditFinished(rectKey, finished);
+                            UTLogger.debug("Rectangle edited: " + rectKey, "UIToolkits.MultiRectOverlay");
+                        }
+                        editOverride = null;
+                        editHandle = "";
+                        editStart = null;
+                    }
+
+                    x: overlayRoot.imagePosition.x + displayX * overlayRoot.imageScale
+                    y: overlayRoot.imagePosition.y + displayY * overlayRoot.imageScale
+                    width: displayWidth * overlayRoot.imageScale
+                    height: displayHeight * overlayRoot.imageScale
+                    visible: !hidden
+                    color: "transparent"
+                    border.color: rectColor
+                    border.width: selected ? Math.max(1, rectThickness + 1) : Math.max(1, rectThickness)
+
+                    Text {
+                        anchors.left: parent.left
+                        anchors.leftMargin: 4
+                        anchors.top: parent.top
+                        anchors.topMargin: 3
+                        visible: rectItem.overlayRoot.labelsVisible && parent.label.length > 0
+                        text: parent.label
+                        color: parent.rectColor
+                        font.pixelSize: 12
+                        font.family: UTTheme.fontFamily
+                        font.weight: parent.selected ? Font.DemiBold : Font.Normal
+                        elide: Text.ElideRight
+                    }
+
+                    Loader {
+                        active: rectItem.rectangleEditable && (rectItem.selected || rectItem.hovered)
+                        anchors.fill: rectItem
+                        sourceComponent: handlesComponent
+                    }
+
+                    Component {
+                        id: handlesComponent
+
+                        Repeater {
+                            model: ["tl", "tr", "br", "bl"]
+
+                        delegate: Rectangle {
+                            required property string modelData
+
+                            readonly property string handleName: modelData
+                            width: rectItem.overlayRoot.handleSize
+                            height: rectItem.overlayRoot.handleSize
+                            x: handleName === "tl" || handleName === "bl" ? -width / 2 : parent.width - width / 2
+                            y: handleName === "tl" || handleName === "tr" ? -height / 2 : parent.height - height / 2
+                            visible: rectItem.rectangleEditable && (rectItem.selected || rectItem.hovered)
+                            color: rectItem.rectColor
+                            border.color: "#101010"
+                            border.width: 1
+                            z: 2
+
+                            MouseArea {
+                                anchors.fill: parent
+                                acceptedButtons: Qt.LeftButton
+                                cursorShape: handleName === "tl" || handleName === "br" ? Qt.SizeFDiagCursor : Qt.SizeBDiagCursor
+
+                                onPressed: function (mouse) {
+                                    const point = parent.mapToItem(rectItem.overlayRoot, mouse.x, mouse.y);
+                                    rectItem.beginEdit(handleName, point);
+                                }
+                                onPositionChanged: function (mouse) {
+                                    if (pressed) {
+                                        const point = parent.mapToItem(rectItem.overlayRoot, mouse.x, mouse.y);
+                                        rectItem.updateEdit(point);
+                                    }
+                                }
+                                onReleased: rectItem.finishEdit()
+                            }
+                        }
+                        }
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        enabled: rectItem.overlayRoot.interactive || rectItem.rectangleEditable
+                        acceptedButtons: Qt.LeftButton | Qt.RightButton
+                        hoverEnabled: enabled
+                        cursorShape: rectItem.editHandle.length > 0 ? Qt.ClosedHandCursor :
+                                     (rectItem.rectangleEditable ? Qt.SizeAllCursor : Qt.PointingHandCursor)
+
+                        onEntered: rectItem.overlayRoot.hoveredKey = rectItem.rectKey
+                        onExited: {
+                            if (rectItem.overlayRoot.hoveredKey === rectItem.rectKey)
+                                rectItem.overlayRoot.hoveredKey = "";
+                        }
+                        onPressed: function (mouse) {
+                            if (mouse.button === Qt.RightButton) {
+                                rectItem.select();
+                                rectItem.overlayRoot.rectangleRightClicked(rectItem.rectKey);
+                                return;
+                            }
+                            if (rectItem.rectangleEditable && rectItem.overlayRoot.creationEnabled && (mouse.modifiers & Qt.ControlModifier)) {
+                                const point = rectItem.mapToItem(rectItem.overlayRoot, mouse.x, mouse.y);
+                                const imagePoint = rectItem.overlayRoot.imagePoint(point.x, point.y);
+                                rectItem.overlayRoot.draftRectangle = { startX: imagePoint.x, startY: imagePoint.y, x: imagePoint.x, y: imagePoint.y, width: 0, height: 0 };
+                                return;
+                            }
+                            if (rectItem.rectangleEditable) {
+                                const point = rectItem.mapToItem(rectItem.overlayRoot, mouse.x, mouse.y);
+                                rectItem.beginEdit("move", point);
+                            } else {
+                                rectItem.select();
+                            }
+                        }
+                        onPositionChanged: function (mouse) {
+                            if (pressed && rectItem.overlayRoot.draftRectangle) {
+                                const point = rectItem.mapToItem(rectItem.overlayRoot, mouse.x, mouse.y);
+                                rectItem.overlayRoot.updateDraft(rectItem.overlayRoot.imagePoint(point.x, point.y));
+                            } else if (pressed && rectItem.editHandle.length > 0) {
+                                const point = rectItem.mapToItem(rectItem.overlayRoot, mouse.x, mouse.y);
+                                rectItem.updateEdit(point);
+                            }
+                        }
+                        onReleased: {
+                            if (rectItem.overlayRoot.draftRectangle)
+                                rectItem.overlayRoot.finishDraft();
+                            else
+                                rectItem.finishEdit();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Rectangle {
+        readonly property var draft: root.draftRectangle
+
+        x: root.imagePosition.x + (draft ? draft.x : 0) * root.imageScale
+        y: root.imagePosition.y + (draft ? draft.y : 0) * root.imageScale
+        width: (draft ? draft.width : 0) * root.imageScale
+        height: (draft ? draft.height : 0) * root.imageScale
+        visible: draft !== null
+        color: "transparent"
+        border.color: "#ffffff"
+        border.width: 2
+    }
+}

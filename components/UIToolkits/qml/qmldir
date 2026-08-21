@@ -1,0 +1,55 @@
+module UIToolkits
+
+UTButton 1.0 UTButton.qml
+UTLineEdit 1.0 UTLineEdit.qml
+UTLabel 1.0 UTLabel.qml
+UTCheckBox 1.0 UTCheckBox.qml
+UTCombobox 1.0 UTCombobox.qml
+UTSpinBox 1.0 UTSpinBox.qml
+UTDoubleSpinBox 1.0 UTDoubleSpinBox.qml
+UTSwitch 1.0 UTSwitch.qml
+UTCard 1.0 UTCard.qml
+UTSlider 1.0 UTSlider.qml
+UTProgressBar 1.0 UTProgressBar.qml
+UTImageAvatar 1.0 UTImageAvatar.qml
+UTToast 1.0 UTToast.qml
+UTMenu 1.0 UTMenu.qml
+UTTabBar 1.0 UTTabBar.qml
+UTTabButton 1.0 UTTabButton.qml
+UTDatePicker 1.0 UTDatePicker.qml
+UTTimePicker 1.0 UTTimePicker.qml
+UTDateTimePicker 1.0 UTDateTimePicker.qml
+UTRoundButton 1.0 UTRoundButton.qml
+UTTitleBar 1.0 UTTitleBar.qml
+UTTitleBarButtonGroup 1.0 UTTitleBarButtonGroup.qml
+UTFootBar 1.0 UTFootBar.qml
+UTImage 1.0 UTImage.qml
+UTSvgButton 1.0 UTSvgButton.qml
+UTAppWindow 1.0 UTAppWindow.qml
+UTScrollBar 1.0 UTScrollBar.qml
+UTListView 1.0 UTListView.qml
+UTPieChart 1.0 UTPieChart.qml
+UTPieChartV2 1.0 UTPieChartV2.qml
+UTBarChart 1.0 UTBarChart.qml
+UTBarChartV2 1.0 UTBarChartV2.qml
+UTAreaChart 1.0 UTAreaChart.qml
+UTAreaChartV2 1.0 UTAreaChartV2.qml
+UTMessageDialog 1.0 UTMessageDialog.qml
+UTTreeView 1.0 UTTreeView.qml
+UTRangeSlider 1.0 UTRangeSlider.qml
+UTScrollView 1.0 UTScrollView.qml
+UTFlickable 1.0 UTFlickable.qml
+UTImageViewer 1.0 UTImageViewer.qml
+UTMultiRectOverlay 1.0 UTMultiRectOverlay.qml
+UTGroupBox 1.0 UTGroupBox.qml
+UTKeyValueGrid 1.0 UTKeyValueGrid.qml
+UTTextArea 1.0 UTTextArea.qml
+UTSliderValue 1.0 UTSliderValue.qml
+UTBadge 1.0 UTBadge.qml
+UTStatCard 1.0 UTStatCard.qml
+UTHorizontalBarChart 1.0 UTHorizontalBarChart.qml
+UTCalendar 1.0 UTCalendar.qml
+UTDialog 1.0 UTDialog.qml
+singleton UTTooltip 1.0 UTTooltip.qml
+
+classname UIToolkitsPlugin
