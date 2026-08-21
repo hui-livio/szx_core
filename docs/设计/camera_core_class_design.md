@@ -5,7 +5,7 @@
 - 让任何新成员一眼看清楚“谁依赖谁、各层职责到哪里为止”。
 - 作为 Python 端复刻同一套硬件封装的参考蓝图，确保 C++ 与 Python 两端在数据模型、生命周期、错误语义上保持一致。
 
-如果要看怎么用，请看 [camera_core_usage.md](camera_core_usage.md)；如果要新增厂商接入，请看 [camera_vendor_extension_guide.md](camera_vendor_extension_guide.md)。
+如果要看怎么用，请看 [camera_core_usage.md](../使用/camera_core_usage.md)；如果要新增厂商接入，请看 [camera_vendor_extension_guide.md](../使用/camera_vendor_extension_guide.md)。
 
 ## 1. 设计目标
 
@@ -304,7 +304,7 @@ camera/
 
 ### 10.4 接入新厂商的最小 checklist
 
-与 C++ 端 [camera_vendor_extension_guide.md](camera_vendor_extension_guide.md) 完全一致：
+与 C++ 端 [camera_vendor_extension_guide.md](../使用/camera_vendor_extension_guide.md) 完全一致：
 
 1. 先写 `FooCameraSdkFactory`
 2. 再写 `CameraFooSdkAdapter`
@@ -325,5 +325,5 @@ camera/
 - [camera_manager.h](../include/camera/core/camera_manager.h)
 - [camera_pipeline.h](../include/camera/core/camera_pipeline.h)
 - [camera_service.h](../include/camera/core/camera_service.h)
-- [camera_core_usage.md](camera_core_usage.md)
-- [camera_vendor_extension_guide.md](camera_vendor_extension_guide.md)
+- [camera_core_usage.md](../使用/camera_core_usage.md)
+- [camera_vendor_extension_guide.md](../使用/camera_vendor_extension_guide.md)

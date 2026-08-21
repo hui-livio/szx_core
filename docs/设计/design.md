@@ -5,7 +5,7 @@
 模块级设计：
 
 - camera_core 的类设计：[camera_core_class_design.md](camera_core_class_design.md)
-- camera_core 的扩展方法：[camera_vendor_extension_guide.md](camera_vendor_extension_guide.md)
+- camera_core 的扩展方法：[camera_vendor_extension_guide.md](../使用/camera_vendor_extension_guide.md)
 
 ## 1. 设计目标
 
@@ -96,7 +96,7 @@
 - `ICameraSdkAdapter`：一台相机和一个具体 SDK 的适配器。9 个方法：`enumerateDevices / open / close / applyConfig / startGrabbing / stopGrabbing / executeSoftwareTrigger / setFrameCallback / info`。
 - `ICameraSdkFactory`：全局枚举 + 适配器工厂。2 个方法：`enumerateDevices / createAdapter`。
 
-新增厂商只需要实现这两个，参考 [camera_vendor_extension_guide.md](camera_vendor_extension_guide.md)。
+新增厂商只需要实现这两个，参考 [camera_vendor_extension_guide.md](../使用/camera_vendor_extension_guide.md)。
 
 ### 4.3 帧分发（`camera/core/camera_pipeline.h`）
 
@@ -123,7 +123,7 @@ CMake 探测到对应 SDK 时自动启用，无需手工开关。
 - 寄存器读写（线圈、保持寄存器、输入寄存器）
 - 异常时统一的错误返回
 
-接口设计参考 `include/plc/plccontrol.h` 和 [plc_core_usage.md](plc_core_usage.md)。
+接口设计参考 `include/plc/plccontrol.h` 和 [plc_core_usage.md](../使用/plc_core_usage.md)。
 
 设计目的：业务层不直接调 libmodbus，而是面向 `PlcController`，这样将来换底层 PLC 通信库（比如换成 OPC UA）只改一处。
 
@@ -131,9 +131,9 @@ CMake 探测到对应 SDK 时自动启用，无需手工开关。
 
 | 想做什么 | 在哪里改 | 看哪份文档 |
 |---|---|---|
-| 接入新厂商相机 | 实现 `ICameraSdkAdapter` + `ICameraSdkFactory` | [camera_vendor_extension_guide.md](camera_vendor_extension_guide.md) |
-| 自定义帧 sink（存盘、推流、检测） | 实现 `IFrameSink` 注册到 service | [camera_core_usage.md](camera_core_usage.md) §6 订阅式 sink |
-| 自定义订阅过滤 | 用 `FrameSubscription` 的字段组合 AND 匹配；不够用就在 sink 内部自己再过滤 | [camera_core_usage.md](camera_core_usage.md) §6 |
+| 接入新厂商相机 | 实现 `ICameraSdkAdapter` + `ICameraSdkFactory` | [camera_vendor_extension_guide.md](../使用/camera_vendor_extension_guide.md) |
+| 自定义帧 sink（存盘、推流、检测） | 实现 `IFrameSink` 注册到 service | [camera_core_usage.md](../使用/camera_core_usage.md) §6 订阅式 sink |
+| 自定义订阅过滤 | 用 `FrameSubscription` 的字段组合 AND 匹配；不够用就在 sink 内部自己再过滤 | [camera_core_usage.md](../使用/camera_core_usage.md) §6 |
 | 换日志后端 | 改 common_support/log_manager 的 sink 创建逻辑，宏不动 | `common/log/log_macros.h` |
 | 加新的 PLC 寄存器类型 | 在 `PlcController` 加方法，封装 libmodbus 对应调用 | `include/plc/plccontrol.h` |
 

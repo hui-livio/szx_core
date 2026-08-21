@@ -291,4 +291,4 @@ const auto stats = service->pipelineStats();
 
 如果你需要新增新的厂家 SDK 接入方式，可以继续看：
 
-- `docs/camera_vendor_extension_guide.md`
+- `docs/使用/camera_vendor_extension_guide.md`
