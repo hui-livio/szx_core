@@ -31,7 +31,10 @@ cmake --install build/msvc --config Release
 ```powershell
 -DSZX_COMPONENTS_BUILD_FEATURE_MANAGER_QT=ON
 -DSZX_COMPONENTS_BUILD_UI_TOOLKITS=ON
+-DSZX_COMPONENTS_BUILD_UI_TOOLKITS_APP=ON
 ```
+
+`UIToolkitsApp` 是放在 `tools/UIToolkitsApp/` 下的 Qt/QML 演示工具，不属于可复用库。启用后，Windows 多配置构建产物位于 `build/<目录>/bin/Release/UIToolkitsApp.exe`；`.qmlls.ini` 等 Qt 工具文件由构建生成并被 Git 忽略。
 
 安装后，消费方只需：
 

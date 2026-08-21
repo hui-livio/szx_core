@@ -17,7 +17,7 @@ AOI_PCB 当前没有名为 `base` 的物理目录；本文中的“base 模块�
 | Feature Manager Qt | `modules/feature_manager/qt` | `szx::feature_manager_qt`（可选） |
 | UI Toolkits | `modules/UIToolkits` | `UIToolkits`（可选 Qt/QML） |
 
-`feature_manager` 已迁入并默认构建；`feature_manager_qt` 和 `UIToolkits` 依赖 Qt 6，默认关闭，按需使用 `qt-cmake` 启用。
+`feature_manager` 已迁入并默认构建；`feature_manager_qt` 和 `UIToolkits` 依赖 Qt 6，按需使用 `qt-cmake` 启用。Qt 演示工具 `UIToolkitsApp` 位于 `tools/`，不作为可复用组件发布。
 
 ## 2. 移植原则
 
