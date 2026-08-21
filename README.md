@@ -45,4 +45,4 @@ Qt/QML 应用按需链接 `szx::feature_manager_qt`，并通过 `add_subdirector
 
 OpenCV、IKap 和 libmodbus 均按本机 SDK/库是否存在选择性启用；无硬件环境仍可构建 common、crypto、logger 和 camera 核心。
 
-仓库文档入口见 [docs/文档索引.md](docs/文档索引.md)，第三方源码依赖及其分发边界见 [docs/规范/third_party.md](docs/规范/third_party.md)。
+仓库文档入口见 [docs/文档索引.md](docs/文档索引.md)，第三方源码依赖及其分发边界见 [docs/规范/第三方库清单.md](docs/规范/第三方库清单.md)。
