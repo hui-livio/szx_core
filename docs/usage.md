@@ -1,9 +1,16 @@
 # szx_core 使用文档
 
-本文档说明如何把 szx_core 集成到你自己的工程里，包括 CMake 集成方式、SDK 配置、运行时 DLL、典型代码示例。模块级 API 细节看：
+本文档说明如何把 szx_core 集成到你自己的工程里，包括源码集成、安装包消费、组件开关和运行时 DLL。当前包名为 `SZXComponents`，公共 targets 使用 `szx::` 命名空间。模块级 API 细节看：
 
 - [camera_core_usage.md](camera_core_usage.md)
 - [plc_core_usage.md](plc_core_usage.md)
+
+Feature Manager 和 Qt/QML 组件：
+
+- `szx::feature_manager` 默认构建；
+- `szx::feature_manager_qt` 通过 `SZX_COMPONENTS_BUILD_FEATURE_MANAGER_QT=ON` 启用；
+- `UIToolkits` 通过 `SZX_COMPONENTS_BUILD_UI_TOOLKITS=ON` 启用；
+- Qt 组件要求 Qt 6.8 或更高版本，建议使用对应的 `qt-cmake`。
 
 ## 1. 集成方式
 
@@ -15,9 +22,9 @@
 add_subdirectory(third_party/szx_core)
 
 target_link_libraries(my_app PRIVATE
-    szx_core::camera_core
-    szx_core::plc_core         # 可选
-    szx_core::common_support   # camera_core 已经 PUBLIC 它，单独写也行
+    szx::camera
+    szx::plc                   # 可选
+    szx::common                # camera 已通过 PUBLIC 依赖传递
 )
 ```
 
@@ -34,8 +41,8 @@ cmake --install build --config Release
 
 ```cmake
 list(APPEND CMAKE_PREFIX_PATH "C:/my_libs/szx_core")
-find_package(szx_core CONFIG REQUIRED)
-target_link_libraries(my_app PRIVATE szx_core::camera_core)
+find_package(SZXComponents 0.1 CONFIG REQUIRED)
+target_link_libraries(my_app PRIVATE szx::camera)
 ```
 
 ### 1.3 方式 C：FetchContent
@@ -47,21 +54,24 @@ FetchContent_Declare(szx_core
     GIT_TAG        v0.1.0
 )
 FetchContent_MakeAvailable(szx_core)
-target_link_libraries(my_app PRIVATE szx_core::camera_core)
+target_link_libraries(my_app PRIVATE szx::camera)
 ```
 
 ## 2. CMake 选项
 
 | 选项 | 默认 | 说明 |
 |---|---|---|
-| `SZX_CORE_BUILD_EXAMPLES` | ON | 编译 `examples/` 下的示例程序 |
-| `SZX_CORE_BUILD_TESTS` | ON | 编译 `tests/` 下的 smoke 测试，注册到 CTest |
-| `SZX_CORE_BUILD_SHARED` | OFF | 切到 DLL 输出（与 `BUILD_SHARED_LIBS=ON` 等价） |
-| `SZX_CORE_FETCH_SPDLOG` | ON | 找不到本地 spdlog 时通过 FetchContent 下载 |
-| `IKAP_ROOT` | 默认装机路径 | IKap SDK 根目录，找不到则不编译 IKap 适配器 |
-| `HUARAY_ROOT` | 默认装机路径 | HuarayTech MV Viewer Development 目录 |
-| `HUARAY_APP_ROOT` | 默认装机路径 | HuarayTech MV Viewer Application 目录（运行时 DLL） |
-| `LIBMODBUS_ROOT` | `third_party/libmodbus` | libmodbus 根目录；找不到则 `plc_core` 不编译 |
+| `SZX_COMPONENTS_BUILD_TESTS` | ON | 编译 `tests/` 下的 smoke 测试，注册到 CTest |
+| `SZX_COMPONENTS_INSTALL` | ON | 生成安装树和 `SZXComponents` package |
+| `SZX_COMPONENTS_BUILD_CAMERA` | ON | 构建 camera 组件 |
+| `SZX_COMPONENTS_BUILD_PLC` | ON | 检测到 libmodbus 时构建 PLC 组件 |
+| `SZX_COMPONENTS_BUILD_FEATURE_MANAGER` | ON | 构建 Feature Manager |
+| `SZX_COMPONENTS_BUILD_FEATURE_MANAGER_QT` | OFF | 构建 Qt 6 Feature Manager 适配器 |
+| `SZX_COMPONENTS_BUILD_UI_TOOLKITS` | OFF | 构建 Qt 6/QML UI 工具包 |
+| `SZX_IKAP_ROOT` | 空 | IKap SDK 根目录，找不到则不编译 IKap 适配器 |
+| `SZX_HUARAY_ROOT` | 空 | HuarayTech MV Viewer Development 目录 |
+| `SZX_HUARAY_APP_ROOT` | 空 | HuarayTech MV Viewer Application 目录（运行时 DLL） |
+| `SZX_LIBMODBUS_ROOT` | `third_party/libmodbus` | libmodbus 根目录 |
 
 例如：
 
@@ -70,7 +80,7 @@ cmake -S . -B build \
     -DIKAP_ROOT="D:/sdks/IKap" \
     -DHUARAY_ROOT="D:/sdks/HuarayMV/Development" \
     -DLIBMODBUS_ROOT="D:/sdks/libmodbus" \
-    -DSZX_CORE_BUILD_EXAMPLES=ON
+    -DSZX_COMPONENTS_BUILD_CAMERA=ON
 ```
 
 Configure 完会打印一个 summary，告诉你哪些适配器被启用、哪些跳过。
@@ -255,7 +265,7 @@ plc.disconnect();
 | Configure 时报"no IKap detected" / "no Huaray detected" | 没装对应 SDK，或路径不在默认位置，用 `-DIKAP_ROOT=...` / `-DHUARAY_ROOT=...` 指定 |
 | 运行时报"找不到 IKapC.dll / MVSDKmd.dll" | DLL 没在 PATH 里，参考 §4 |
 | FileImage 启动后没收到帧 | 检查 `camera_images/camera_0/` 下是否有 `.png` `.jpg` `.bmp` 文件 |
-| 链接时报 `undefined reference to spdlog::...` | 没 PUBLIC 链 `common_support`，或者 spdlog 没装；CMake 的 `target_link_libraries(... szx_core::camera_core)` 应该会自动带上 |
+| 链接时报 `spdlog` 符号错误 | 确认通过 `find_package(SZXComponents CONFIG REQUIRED)` 或 `add_subdirectory()` 使用 `szx::logger`/`szx::camera`，并保持 spdlog 依赖由组件 target 传递 |
 | Linux 上没法用厂商 SDK | 是的，厂商 SDK 只有 Windows 版；Linux 下只能用 FileImage |
 | 想自己加新厂商 | 看 [camera_vendor_extension_guide.md](camera_vendor_extension_guide.md) |
 

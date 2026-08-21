@@ -13,16 +13,19 @@ AOI_PCB 当前没有名为 `base` 的物理目录；本文中的“base 模块�
 | Logger | `modules/logger` | `szx::logger` |
 | Camera | `modules/camera` | `szx::camera` |
 | PLC | `modules/plc` | `szx::plc` |
+| Feature Manager | `modules/feature_manager` | `szx::feature_manager` |
+| Feature Manager Qt | `modules/feature_manager/qt` | `szx::feature_manager_qt`（可选） |
+| UI Toolkits | `modules/UIToolkits` | `UIToolkits`（可选 Qt/QML） |
 
-`feature_manager`/`feature_manager_qt` 和 `UIToolkits` 属于方案中的后续批次：它们分别依赖 Qt 适配或 QML 插件，当前 `szx_core` 没有 Qt 工程基线，本次不强行迁入。
+`feature_manager` 已迁入并默认构建；`feature_manager_qt` 和 `UIToolkits` 依赖 Qt 6，默认关闭，按需使用 `qt-cmake` 启用。
 
 ## 2. 移植原则
 
 1. 依赖方向保持 `pcb-detect-app -> szx-components`，组件仓不引用 PCB 业务代码。
-2. 对外只发布 namespaced CMake targets：`szx::common`、`szx::crypto`、`szx::logger`、`szx::camera`、`szx::plc`。
+2. 对外发布 namespaced CMake targets：`szx::common`、`szx::crypto`、`szx::logger`、`szx::camera`、`szx::plc`、`szx::feature_manager`；Qt 适配器提供 `szx::feature_manager_qt`，QML 工具包提供 `UIToolkits`。
 3. 安装消费使用 `find_package(SZXComponents CONFIG REQUIRED)`，不要求消费方 `add_subdirectory()` 组件源码。
 4. 公共头文件通过 `BUILD_INTERFACE`/`INSTALL_INTERFACE` 暴露；第三方 SDK 和实现目录不进入公共接口。
-5. 保留当前仓库已有的 `szx_core::common_support`、`szx_core::camera_core`、`szx_core::plc_core` 兼容别名，降低现有消费者迁移风险。
+5. 统一使用 `szx::` canonical targets；源码集成与安装包消费使用同一组 target 名称。
 6. 不复制 PCB 配置、模型、数据库或 DetectEngine 代码；不改变 camera/PLC 的业务语义。
 
 ## 3. 目标目录与接口
@@ -49,7 +52,7 @@ camera 和 plc 沿用当前仓库已完成硬件抽象的实现，改为导出�
 
 ## 5. 实施步骤
 
-1. 将 AOI `modules/common`、`modules/crypto`、`modules/logger` 纳入 `components/`，补齐独立 CMake 子目录和公共 include 路径。
+1. 将 AOI `modules/common`、`modules/crypto`、`modules/logger`、`modules/feature_manager` 和 `modules/UIToolkits` 纳入 `components/`，补齐独立 CMake 子目录和公共 include 路径。
 2. 在顶层建立 `szx::` canonical targets，并将现有 camera/PLC 实现挂接到相同命名空间。
 3. 增加安装、导出和 package config；安装树不依赖源码绝对路径。
 4. 增加安装树 consumer smoke test，验证只通过 `find_package(SZXComponents)` 链接。
@@ -59,11 +62,10 @@ camera 和 plc 沿用当前仓库已完成硬件抽象的实现，改为导出�
 
 本阶段验收：
 
-- `cmake -S . -B build -DSZX_CORE_BUILD_TESTS=ON` 可配置；
+- `cmake -S . -B build -DSZX_COMPONENTS_BUILD_TESTS=ON` 可配置；
 - `cmake --build build --config Release` 和 CTest 通过（无可选 SDK 也可）；
 - `cmake --install` 生成 SZXComponents package；
-- 独立 consumer 通过 `find_package(SZXComponents CONFIG REQUIRED)` 找到并链接 `szx::common`、`szx::crypto`、`szx::logger`、`szx::camera`、`szx::plc`（PLC 目标在 libmodbus 不存在时按组件可选策略处理）；
+- 独立 consumer 通过 `find_package(SZXComponents CONFIG REQUIRED)` 找到并链接核心 targets；启用 Qt 适配器时 package config 自动声明 Qt6 Core 依赖；
 - 连续 configure/build 不修改源码树。
 
-后续仍需在 AOI 应用仓库完成：DetectEngine 公共 API 收敛、应用改用 package 消费、Qt/QML `UIToolkits` 独立安装测试，以及 `feature_manager` 的真实消费者确认。上述工作不属于本次基础库移植提交。
-
+后续仍需在 AOI 应用仓库完成：DetectEngine 公共 API 收敛、应用改用 package 消费，以及 Qt/QML 组件的真实消费者验证。
