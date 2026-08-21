@@ -69,11 +69,14 @@ function(szx_add_test)
         return()
     endif()
     add_executable(${ARG_NAME} ${ARG_SOURCES})
-    set_target_properties(${ARG_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${SZX_TEST_OUTPUT_DIR}")
+    set_target_properties(${ARG_NAME} PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${SZX_TEST_OUTPUT_DIR}"
+        PDB_OUTPUT_DIRECTORY "${SZX_TEST_OUTPUT_DIR}")
     foreach(_config IN ITEMS Debug Release RelWithDebInfo MinSizeRel)
         string(TOUPPER "${_config}" _config_upper)
         set_target_properties(${ARG_NAME} PROPERTIES
-            RUNTIME_OUTPUT_DIRECTORY_${_config_upper} "${SZX_TEST_OUTPUT_DIR}/${_config}")
+            RUNTIME_OUTPUT_DIRECTORY_${_config_upper} "${SZX_TEST_OUTPUT_DIR}/${_config}"
+            PDB_OUTPUT_DIRECTORY_${_config_upper} "${SZX_TEST_OUTPUT_DIR}/${_config}")
     endforeach()
     if(COMMAND szx_copy_runtime_dlls)
         szx_copy_runtime_dlls(${ARG_NAME})
