@@ -48,6 +48,14 @@ endif()
 if (SZX_COMPONENTS_BUILD_IKAP AND WIN32 AND EXISTS "${SZX_IKAP_ROOT}/Include/IKapC.h")
     target_sources(szx_camera PRIVATE src/ikap/camera_ikapsdk_adapter.cc src/ikap/ikap_runtime.cc)
     target_include_directories(szx_camera PRIVATE "${SZX_IKAP_ROOT}/Include" src/ikap)
+    if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+        set(_szx_ikap_lib_dir "${SZX_IKAP_ROOT}/Lib/x64")
+    else()
+        set(_szx_ikap_lib_dir "${SZX_IKAP_ROOT}/Lib/x86")
+    endif()
+    target_link_libraries(szx_camera PRIVATE
+        "${_szx_ikap_lib_dir}/IKapC.lib"
+        "${_szx_ikap_lib_dir}/IKapBoard.lib")
     target_compile_definitions(szx_camera PRIVATE AOI_HAS_IKAP=1)
 endif()
 
