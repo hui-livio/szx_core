@@ -11,6 +11,6 @@ function(szx_print_config_summary)
     message(STATUS "Install:       ${SZX_COMPONENTS_INSTALL}")
     message(STATUS "Camera:        ${SZX_COMPONENTS_BUILD_CAMERA}")
     message(STATUS "PLC:           ${SZX_COMPONENTS_BUILD_PLC}")
+    message(STATUS "Feature mgr:   ${SZX_COMPONENTS_BUILD_FEATURE_MANAGER}")
     message(STATUS "===========================================")
 endfunction()
-

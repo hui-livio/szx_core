@@ -177,6 +177,9 @@ function(szx_install_components_package)
     endif()
 
     set(_targets szx_common szx_logger szx_crypto)
+    if(TARGET szx_feature_manager)
+        list(APPEND _targets szx_feature_manager)
+    endif()
     if(TARGET szx_camera)
         list(APPEND _targets szx_camera)
     endif()
@@ -207,6 +210,10 @@ function(szx_install_components_package)
         DESTINATION . FILE_PATTERN "*.h")
     install(FILES "${CMAKE_SOURCE_DIR}/components/logger/Logger.h"
         DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/szx/logger")
+    if(TARGET szx_feature_manager)
+        szx_install_headers(feature_manager HEADER_DIR "${CMAKE_SOURCE_DIR}/components/feature_manager/include"
+            DESTINATION szx/feature_manager FILE_PATTERN "*.h")
+    endif()
     if(TARGET szx_camera)
         szx_install_headers(camera HEADER_DIR "${CMAKE_SOURCE_DIR}/components/camera/include"
             DESTINATION szx/camera FILE_PATTERN "*.h")
