@@ -1,11 +1,22 @@
 szx_add_test(
-    NAME szx_test_common
+    NAME test_modules_common
     SOURCES
-        Defer_test.cc
-        Geometry_test.cc
         Result_test.cc
+        Defer_test.cc
+        FileFolderHelper_test.cc
+        Geometry_test.cc
+        JsonHelper_test.cc
+        BlockQueue_test.cc
+        MessageBus_test.cc
+        Serializer_test.cc
+        StartupSelfCheck_test.cc
         StringHelper_test.cc
         TimeHelper_test.cc
         UUID_test.cc
-    LIBS szx::common
-    LABELS unit component common)
+        ThreadPool_test.cc
+        WorkQueueService_execution_tests.cc
+        WorkQueueService_concurrency_tests.cc
+        WorkQueueService_lifecycle_tests.cc
+    LIBS
+        szx::common
+)

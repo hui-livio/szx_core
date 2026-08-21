@@ -1,12 +1,20 @@
-#include <gtest/gtest.h>
+/**
+ * @file Defer_test.cc
+ * @brief Defer_test.cc 覆盖的单元测试与测试辅助。
+ */
 
 #include "Defer.hpp"
 
-#include <stdexcept>
+#include <gtest/gtest.h>
 
+#include <stdexcept>
+#include <string>
+
+namespace
+{
 using namespace SZX::COMMON;
 
-TEST(CommonDeferTest, ExecutesAndCanBeCancelled)
+TEST(common_DeferTest, ExecutesAtScopeExit)
 {
     int value = 0;
     {
@@ -16,27 +24,56 @@ TEST(CommonDeferTest, ExecutesAndCanBeCancelled)
         };
         EXPECT_EQ(value, 0);
     }
-    EXPECT_EQ(value, 5);
 
-    {
-        auto guard = Defer([&] { value = 9; });
-        guard.Cancel();
-    }
     EXPECT_EQ(value, 5);
 }
 
-TEST(CommonDeferTest, MoveTransfersOwnershipAndSuppressesExceptions)
+TEST(common_DeferTest, CancelSkipsCallback)
 {
-    int calls = 0;
+    int value = 0;
     {
-        auto first  = Defer([&] { ++calls; });
+        auto guard = Defer([&] { value = 1; });
+        guard.Cancel();
+    }
+
+    EXPECT_EQ(value, 0);
+}
+
+TEST(common_DeferTest, MoveTransfersOwnership)
+{
+    int callCount = 0;
+    {
+        auto first  = Defer([&] { ++callCount; });
         auto second = std::move(first);
         (void)second;
     }
-    EXPECT_EQ(calls, 1);
+
+    EXPECT_EQ(callCount, 1);
+}
+
+TEST(common_DeferTest, DestructorSuppressesCallbackException)
+{
+    testing::internal::CaptureStderr();
 
     EXPECT_NO_THROW({
-        auto guard = Defer([] { throw std::runtime_error("cleanup"); });
+        auto guard = Defer([] { throw std::runtime_error("close failed"); });
         (void)guard;
     });
+
+    const auto output = testing::internal::GetCapturedStderr();
+    EXPECT_NE(output.find("Defer cleanup failed: close failed"), std::string::npos);
 }
+
+TEST(common_DeferTest, DestructorReportsUnknownCallbackException)
+{
+    testing::internal::CaptureStderr();
+
+    EXPECT_NO_THROW({
+        auto guard = Defer([] { throw 7; });
+        (void)guard;
+    });
+
+    const auto output = testing::internal::GetCapturedStderr();
+    EXPECT_NE(output.find("Defer cleanup failed: unknown exception"), std::string::npos);
+}
+} // namespace
