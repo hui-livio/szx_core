@@ -1,0 +1,16 @@
+add_library(szx_compression SHARED src/Zip.cc include/SzxCompression/CompressionExport.h include/SzxCompression/Zip.h)
+add_library(szx::compression ALIAS szx_compression)
+set_target_properties(szx_compression PROPERTIES EXPORT_NAME compression)
+target_include_directories(szx_compression PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
+target_link_libraries(szx_compression PUBLIC szx::common)
+if(TARGET MINIZIP::minizip)
+    target_link_libraries(szx_compression PRIVATE MINIZIP::minizip)
+    target_compile_definitions(szx_compression PRIVATE SZX_COMPRESSION_HAS_MINIZIP=1)
+else()
+    target_compile_definitions(szx_compression PRIVATE SZX_COMPRESSION_HAS_MINIZIP=0)
+endif()
+target_compile_definitions(szx_compression PRIVATE SZX_COMPRESSION_EXPORTS)
+target_compile_features(szx_compression PUBLIC cxx_std_20)
+szx_apply_default_compile_policy(szx_compression)

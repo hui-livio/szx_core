@@ -193,6 +193,9 @@ function(szx_install_components_package)
     endif()
 
     set(_targets szx_common szx_logger szx_crypto)
+    if(TARGET szx_compression)
+        list(APPEND _targets szx_compression)
+    endif()
     if(TARGET szx_feature_manager)
         list(APPEND _targets szx_feature_manager)
     endif()
@@ -232,6 +235,10 @@ function(szx_install_components_package)
         DESTINATION szx/common/ext FILE_PATTERN "*.h" "*.hpp")
     szx_install_headers(crypto HEADER_DIR "${CMAKE_SOURCE_DIR}/components/crypto/include"
         DESTINATION . FILE_PATTERN "*.h")
+    if(TARGET szx_compression)
+        szx_install_headers(compression HEADER_DIR "${CMAKE_SOURCE_DIR}/components/compression/include"
+            DESTINATION . FILE_PATTERN "*.h")
+    endif()
     install(FILES "${CMAKE_SOURCE_DIR}/components/logger/Logger.h"
         DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/szx/logger")
     if(TARGET szx_feature_manager)

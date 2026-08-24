@@ -13,6 +13,7 @@
 | `szx::plc` | 可选 libmodbus PLC 控制 |
 | `szx::feature_manager` | Feature 配置读取、持久化、组合 Provider 与订阅 |
 | `szx::feature_manager_qt` | 可选 Qt 6 Feature/QML 适配器 |
+| `szx::compression` | Core ZIP reader/writer facade; the minizip-ng/zlib-ng/Zstandard implementation is private and selectable with `SZX_COMPRESSION_BACKEND` |
 | `UIToolkits` | 可选 Qt 6/QML 控件、图表和字体资源 |
 
 ## 构建、测试和安装
@@ -41,8 +42,14 @@ cmake --install build/msvc --config Release
 ```cmake
 find_package(SZXComponents 0.1 CONFIG REQUIRED)
 target_link_libraries(MyApp PRIVATE szx::common szx::crypto szx::logger
-    szx::feature_manager szx::camera szx::plc)
+    szx::feature_manager szx::camera szx::plc szx::compression)
 ```
+
+`szx::compression` is the exported entity target.  Product-source integration
+also provides the compatibility target `SZX::compression` for existing PCB
+targets; neither target exposes minizip-ng, zlib-ng, or zstd to application
+code.  Set `SZX_COMPRESSION_BACKEND=none` to build the facade without a ZIP
+backend; its operations then return `UnsupportedBackend`.
 
 Qt/QML 应用按需链接 `szx::feature_manager_qt`，并通过 `add_subdirectory()` 源码集成或安装后的 `SZXComponents` package 使用。
 

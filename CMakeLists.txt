@@ -30,6 +30,10 @@ option(SZX_COMPONENTS_BUILD_UI_TOOLKITS_APP "Build the UIToolkits demo applicati
 option(SZX_COMPONENTS_BUILD_IKAP "Build IKap adapter when SDK is available" OFF)
 option(SZX_COMPONENTS_ENABLE_CPACK "Enable CPack package generation" OFF)
 option(SZX_COMPONENTS_BUILD_HUARAY "Build Huaray camera adapters when SDK is available" ON)
+option(SZX_COMPONENTS_BUILD_COMPRESSION "Build bundled ZIP/Zstandard compression stack" ON)
+set(SZX_COMPRESSION_BACKEND "minizip-ng" CACHE STRING
+    "ZIP backend used by szx::compression (minizip-ng or none)")
+set_property(CACHE SZX_COMPRESSION_BACKEND PROPERTY STRINGS minizip-ng none)
 
 set(SZX_IKAP_ROOT "" CACHE PATH "IKap SDK root (optional)")
 set(SZX_OPENCV_DIR "" CACHE PATH "OpenCV package directory (optional)")
@@ -50,9 +54,82 @@ else()
     find_package(spdlog CONFIG REQUIRED)
 endif()
 
+function(_szx_add_compression)
+    # Keep compression options local to this function.  The bundled projects
+    # consume normal variables while configuring their subdirectories, so the
+    # parent project cache and later SZX components are not modified.
+    set(BUILD_SHARED_LIBS OFF)
+    set(BUILD_TESTING OFF)
+
+    set(ZSTD_BUILD_PROGRAMS OFF)
+    set(ZSTD_BUILD_TESTS OFF)
+    set(ZSTD_BUILD_CONTRIB OFF)
+    set(ZSTD_BUILD_STATIC ON)
+    set(ZSTD_BUILD_SHARED OFF)
+    add_subdirectory(third_party/zstd/build/cmake third_party/zstd-build EXCLUDE_FROM_ALL)
+    if(TARGET libzstd_static AND NOT TARGET zstd::libzstd_static)
+        add_library(zstd::libzstd_static ALIAS libzstd_static)
+    endif()
+    if(TARGET libzstd_shared AND NOT TARGET zstd::libzstd_shared)
+        add_library(zstd::libzstd_shared ALIAS libzstd_shared)
+    endif()
+
+    set(ZLIB_COMPAT OFF)
+    set(WITH_GTEST OFF)
+    set(WITH_FUZZERS OFF)
+    set(WITH_BENCHMARKS OFF)
+    set(WITH_BENCHMARK_APPS OFF)
+    add_subdirectory(third_party/zlib-ng third_party/zlib-ng-build EXCLUDE_FROM_ALL)
+
+    # minizip-ng discovers compression backends through package config files.
+    # These tiny build-tree configs point it at the already-created local
+    # targets, preventing an accidental fallback to a host installation or a
+    # network FetchContent clone.
+    set(_SZX_COMPRESSION_PACKAGE_DIR "${CMAKE_CURRENT_BINARY_DIR}/compression-packages")
+    file(MAKE_DIRECTORY "${_SZX_COMPRESSION_PACKAGE_DIR}")
+    file(WRITE "${_SZX_COMPRESSION_PACKAGE_DIR}/ZLIB-NGConfig.cmake"
+        "set(ZLIB-NG_FOUND TRUE)\nset(ZLIB-NG_VERSION 2.3.3)\n")
+    file(WRITE "${_SZX_COMPRESSION_PACKAGE_DIR}/zstdConfig.cmake"
+        "set(zstd_FOUND TRUE)\nset(zstd_VERSION 1.5.7)\n")
+    list(PREPEND CMAKE_PREFIX_PATH "${_SZX_COMPRESSION_PACKAGE_DIR}")
+
+    set(MZ_COMPAT OFF)
+    set(MZ_ZLIB ON)
+    set(MZ_ZLIB_FLAVOR "zlib-ng")
+    set(MZ_ZSTD ON)
+    set(MZ_BZIP2 OFF)
+    set(MZ_LZMA OFF)
+    set(MZ_PPMD OFF)
+    set(MZ_OPENSSL OFF)
+    set(MZ_ICONV OFF)
+    set(MZ_FETCH_LIBS OFF)
+    set(MZ_BUILD_TESTS OFF)
+    set(MZ_BUILD_UNIT_TESTS OFF)
+    set(MZ_BUILD_FUZZ_TESTS OFF)
+    add_subdirectory(third_party/minizip-ng third_party/minizip-ng-build EXCLUDE_FROM_ALL)
+
+endfunction()
+
+if(SZX_COMPONENTS_BUILD_COMPRESSION AND SZX_COMPRESSION_BACKEND STREQUAL "minizip-ng")
+    _szx_add_compression()
+elseif(SZX_COMPONENTS_BUILD_COMPRESSION AND NOT SZX_COMPRESSION_BACKEND STREQUAL "none")
+    message(FATAL_ERROR
+        "Unsupported SZX_COMPRESSION_BACKEND='${SZX_COMPRESSION_BACKEND}'; "
+        "expected 'minizip-ng' or 'none'.")
+endif()
+
 add_subdirectory(components/common)
 add_subdirectory(components/logger)
 add_subdirectory(components/crypto)
+if(SZX_COMPONENTS_BUILD_COMPRESSION)
+    add_subdirectory(components/compression)
+    # Expose a global integration target to sibling projects.  The concrete
+    # implementation remains szx_compression; this wrapper does not expose
+    # minizip-ng, zlib-ng, or zstd as application-facing targets.
+    add_library(SZX::compression INTERFACE IMPORTED GLOBAL)
+    set_target_properties(SZX::compression PROPERTIES
+        INTERFACE_LINK_LIBRARIES szx_compression)
+endif()
 
 if(SZX_COMPONENTS_BUILD_FEATURE_MANAGER)
     add_subdirectory(components/feature_manager)
