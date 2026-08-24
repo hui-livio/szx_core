@@ -19,7 +19,7 @@ namespace SZX::COMPRESSION
 #pragma warning(disable : 4251)
 #endif
 
-enum class ZipError
+enum class ZipError : int
 {
     InvalidArgument = 1,
     Io,
@@ -30,7 +30,7 @@ enum class ZipError
     WriteFailed
 };
 
-enum class ZipCompressionMethod
+enum class ZipCompressionMethod : std::uint8_t
 {
     Store,
     Deflate,

@@ -123,12 +123,6 @@ add_subdirectory(components/logger)
 add_subdirectory(components/crypto)
 if(SZX_COMPONENTS_BUILD_COMPRESSION)
     add_subdirectory(components/compression)
-    # Expose a global integration target to sibling projects.  The concrete
-    # implementation remains szx_compression; this wrapper does not expose
-    # minizip-ng, zlib-ng, or zstd as application-facing targets.
-    add_library(SZX::compression INTERFACE IMPORTED GLOBAL)
-    set_target_properties(SZX::compression PROPERTIES
-        INTERFACE_LINK_LIBRARIES szx_compression)
 endif()
 
 if(SZX_COMPONENTS_BUILD_FEATURE_MANAGER)
