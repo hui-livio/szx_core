@@ -41,6 +41,8 @@ Button {
     property color textButtonPressedColor: Qt.rgba(root.primaryColor.r, root.primaryColor.g, root.primaryColor.b, 0.18)
     property string tooltipText: ""
     property int tooltipPlacement: UTTooltip.Auto
+    // Allow compact dialogs to opt out of the default ellipsis behavior.
+    property int textElide: Text.ElideRight
 
     // Hover 边框颜色：焦点框颜色的透明版本
     property color surfaceButtonHoverBorderColor: UTTheme.surfaceButtonHoverBorderColor
@@ -96,7 +98,7 @@ Button {
         font: root.font
         horizontalAlignment: Text.AlignHCenter
         verticalAlignment: Text.AlignVCenter
-        elide: Text.ElideRight
+        elide: root.textElide
 
         scale: (root.buttonType === UTButton.ButtonType.Text && root.down) ? 1.15 : 1.0
 
