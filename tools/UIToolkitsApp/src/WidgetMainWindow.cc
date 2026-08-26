@@ -158,7 +158,7 @@ QWidget *makeFeedbackPage(QWidget *parent)
     auto *toastButton = new UIToolkits::UTButton(page);
     toastButton->setText(QStringLiteral("Show feedback"));
     layout->addWidget(toastButton, 0, Qt::AlignLeft);
-    connect(toastButton, &QPushButton::clicked, page, [status]()
+    QObject::connect(toastButton, &QPushButton::clicked, page, [status]()
     {
         status->setText(QStringLiteral("操作已完成"));
         QTimer::singleShot(2500, status, [status]() { status->setText(QStringLiteral("Ready")); });
@@ -166,7 +166,7 @@ QWidget *makeFeedbackPage(QWidget *parent)
 
     auto *messageButton = new QPushButton(QStringLiteral("Show message box"), page);
     layout->addWidget(messageButton, 0, Qt::AlignLeft);
-    connect(messageButton, &QPushButton::clicked, page, [page]()
+    QObject::connect(messageButton, &QPushButton::clicked, page, [page]()
     {
         QMessageBox::information(page, QStringLiteral("UIToolkits"), QStringLiteral("这是一条 QWidget feedback 消息。"));
     });
@@ -188,7 +188,7 @@ QWidget *makeDialogsPage(QWidget *parent)
     auto *dialogButton = new UIToolkits::UTButton(page);
     dialogButton->setText(QStringLiteral("Open dialog"));
     layout->addWidget(dialogButton, 0, Qt::AlignLeft);
-    connect(dialogButton, &QPushButton::clicked, page, [page]()
+    QObject::connect(dialogButton, &QPushButton::clicked, page, [page]()
     {
         QDialog dialog(page);
         dialog.setWindowTitle(QStringLiteral("UTDialog"));
@@ -221,7 +221,7 @@ QWidget *makeThemePage(QWidget *parent)
     auto *toggleButton = new UIToolkits::UTButton(page);
     toggleButton->setText(QStringLiteral("Toggle light / dark palette"));
     layout->addWidget(toggleButton, 0, Qt::AlignLeft);
-    connect(toggleButton, &QPushButton::clicked, page, []()
+    QObject::connect(toggleButton, &QPushButton::clicked, page, []()
     {
         QPalette palette = QApplication::palette();
         const bool dark = palette.color(QPalette::Window).lightness() > 128;
