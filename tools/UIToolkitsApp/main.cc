@@ -6,7 +6,7 @@
  * @date 2026-07-01
  */
 
-#include <QGuiApplication>
+#include <QApplication>
 #include <QIcon>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
@@ -19,6 +19,8 @@
 #include "src/model/NavTreeFilterModel.h"
 #include "src/model/TreeModel.h"
 #include "src/model/TreeNode.h"
+#include "DemoLauncher.h"
+#include "WidgetMainWindow.h"
 
 class ApplicationIconProvider : public QQuickImageProvider
 {
@@ -31,7 +33,7 @@ public:
     QPixmap requestPixmap(const QString & /*id*/, QSize *size, const QSize &requestedSize) override
     {
         const QSize iconSize = requestedSize.isValid() ? requestedSize : QSize(32, 32);
-        QPixmap pixmap       = QGuiApplication::windowIcon().pixmap(iconSize);
+        QPixmap pixmap       = QApplication::windowIcon().pixmap(iconSize);
         if (pixmap.isNull())
         {
             pixmap = QPixmap(iconSize);
@@ -51,7 +53,7 @@ static void centerWindowOnCurrentScreen(QWindow *window)
 
     QScreen *screen = window->screen();
     if (!screen)
-        screen = QGuiApplication::primaryScreen();
+        screen = QApplication::primaryScreen();
     if (!screen)
         return;
 
@@ -65,8 +67,8 @@ int main(int argc, char *argv[])
     /**
  * @brief 应用初始化
  */
-    QGuiApplication app(argc, argv);
-    QGuiApplication::setWindowIcon(QIcon(QStringLiteral(":/qt/qml/UIToolkitsApp/resource/app.ico")));
+    QApplication app(argc, argv);
+    QApplication::setWindowIcon(QIcon(QStringLiteral(":/qt/qml/UIToolkitsApp/resource/app.ico")));
 
     // ========================================================================
     // 构建演示数据
@@ -128,11 +130,13 @@ int main(int argc, char *argv[])
     if (!mainWindow)
         return -1;
 
-    mainWindow->setIcon(QGuiApplication::windowIcon());
+    mainWindow->setIcon(QApplication::windowIcon());
     setupNativeWindow(mainWindow);
     centerWindowOnCurrentScreen(mainWindow);
-    // 先完成原生窗口配置，再显示窗口，避免 visible:true 导致启动闪烁
-    mainWindow->show();
+
+    WidgetMainWindow widgetWindow;
+    DemoLauncher launcher(mainWindow, &widgetWindow);
+    launcher.show();
 
     /**
  * @brief 事件循环

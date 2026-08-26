@@ -1,4 +1,4 @@
-find_package(Qt6 6.8 REQUIRED COMPONENTS Quick QuickControls2)
+find_package(Qt6 6.8 REQUIRED COMPONENTS Quick QuickControls2 Widgets)
 find_package(Vulkan QUIET) # suppress Qt internal Vulkan not-found warning
 qt_standard_project_setup(REQUIRES 6.8)
 
@@ -13,6 +13,10 @@ set(TARGET_NAME "UIToolkitsApp")
 
 qt_add_executable(${TARGET_NAME}
     main.cc
+    src/DemoLauncher.h
+    src/DemoLauncher.cc
+    src/WidgetMainWindow.h
+    src/WidgetMainWindow.cc
 )
 
 if(WIN32)
@@ -55,11 +59,13 @@ qt_add_qml_module(${TARGET_NAME}
 target_include_directories(${TARGET_NAME} PRIVATE
     src
     src/model
+    src/widgetpages
 )
 
 target_link_libraries(${TARGET_NAME} PRIVATE
     Qt6::Quick
     Qt6::QuickControls2
+    Qt6::Widgets
     UIToolkits
 )
 

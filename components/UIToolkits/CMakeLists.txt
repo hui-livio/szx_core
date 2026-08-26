@@ -1,4 +1,4 @@
-find_package(Qt6 6.8 REQUIRED COMPONENTS Quick QuickControls2 QmlIntegration)
+find_package(Qt6 6.8 REQUIRED COMPONENTS Quick QuickControls2 QmlIntegration Widgets)
 find_package(Vulkan QUIET) # suppress Qt internal Vulkan not-found warning
 qt_standard_project_setup(REQUIRES 6.8)
 
@@ -77,11 +77,15 @@ qt_add_qml_module(UIToolkits
     include/NativeWindow.h
     include/QmlPropertyMacros.h
     include/UIToolkitsExport.h
+    include/UIToolkits/UTButton.h
+    include/UIToolkits/UTLineEdit.h
     src/NativeWindow.cc
     src/UTTheme.h
     src/UTTheme.cc
     src/UTQmlLogger.h
     src/UTQmlLogger.cc
+    src/widgets/UTButton.cc
+    src/widgets/UTLineEdit.cc
     src/Charts/UTPieChartV2Renderer.h
     src/Charts/UTPieChartV2Renderer.cc
     src/Charts/UTBarChartV2Renderer.h
@@ -106,7 +110,7 @@ target_include_directories(UIToolkits
 target_compile_definitions(UIToolkits PRIVATE UITOOLKITS_EXPORTS)
 
 target_link_libraries(UIToolkits
-    PUBLIC Qt6::Quick Qt6::QuickControls2
+    PUBLIC Qt6::Quick Qt6::QuickControls2 Qt6::Widgets
     PRIVATE Qt6::QmlIntegration
 )
 
