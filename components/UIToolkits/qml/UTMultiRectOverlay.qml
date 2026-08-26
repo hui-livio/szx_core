@@ -297,22 +297,27 @@ Item {
                     readonly property real sourceWidth: Number(modelData.width || modelData.w || 0)
                     readonly property real sourceHeight: Number(modelData.height || modelData.h || 0)
                     property var editOverride: null
-                    readonly property var override: editOverride || overlayRoot.positionOverrides[rectKey]
+                    readonly property var override: editOverride || (overlayRoot ? overlayRoot.positionOverrides[rectKey] : null)
                     readonly property real displayX: override ? override.x : sourceX
                     readonly property real displayY: override ? override.y : sourceY
                     readonly property real displayWidth: override ? override.width : sourceWidth
                     readonly property real displayHeight: override ? override.height : sourceHeight
-                    readonly property color rectColor: modelData.color || group.color || overlayRoot.defaultColor
-                    readonly property real rectThickness: Number(modelData.thickness || group.thickness || overlayRoot.defaultThickness)
-                    readonly property bool selected: rectKey.length > 0 && rectKey === overlayRoot.selectedKey
-                    readonly property bool hovered: rectKey.length > 0 && rectKey === overlayRoot.hoveredKey
+                    readonly property color rectColor: modelData.color || group.color || (overlayRoot ? overlayRoot.defaultColor : "white")
+                    readonly property real rectThickness: Number(modelData.thickness || group.thickness
+                                                                 || (overlayRoot ? overlayRoot.defaultThickness : 1))
+                    readonly property bool selected: rectKey.length > 0 && overlayRoot && rectKey === overlayRoot.selectedKey
+                    readonly property bool hovered: rectKey.length > 0 && overlayRoot && rectKey === overlayRoot.hoveredKey
                     readonly property string label: String(modelData.label || modelData.name || "")
-                    readonly property bool hidden: modelData.hidden === true || overlayRoot.hiddenOverrides[rectKey] === true
-                    readonly property bool rectangleEditable: overlayRoot.editable && modelData.editable !== false
+                    readonly property bool hidden: modelData.hidden === true
+                                                   || (overlayRoot && overlayRoot.hiddenOverrides[rectKey] === true)
+                    readonly property bool rectangleEditable: !!overlayRoot && overlayRoot.editable
+                                                                && modelData.editable !== false
                     property string editHandle: ""
                     property var editStart: null
 
                     function select() {
+                        if (!overlayRoot)
+                            return;
                         overlayRoot.selectedKey = rectKey;
                         overlayRoot.forceActiveFocus();
                         overlayRoot.rectangleSelected(rectKey);
@@ -320,6 +325,8 @@ Item {
                     }
 
                     function beginEdit(handle, viewPoint) {
+                        if (!overlayRoot)
+                            return;
                         select();
                         overlayRoot.forceActiveFocus();
                         editHandle = handle;
@@ -338,8 +345,10 @@ Item {
                     function finishEdit() {
                         if (editHandle.length > 0 && override) {
                             const finished = override;
-                            overlayRoot.setPositionOverride(rectKey, finished);
-                            overlayRoot.rectangleEditFinished(rectKey, finished);
+                            if (overlayRoot) {
+                                overlayRoot.setPositionOverride(rectKey, finished);
+                                overlayRoot.rectangleEditFinished(rectKey, finished);
+                            }
                             UTLogger.debug("Rectangle edited: " + rectKey, "UIToolkits.MultiRectOverlay");
                         }
                         editOverride = null;
@@ -347,10 +356,10 @@ Item {
                         editStart = null;
                     }
 
-                    x: overlayRoot.imagePosition.x + displayX * overlayRoot.imageScale
-                    y: overlayRoot.imagePosition.y + displayY * overlayRoot.imageScale
-                    width: displayWidth * overlayRoot.imageScale
-                    height: displayHeight * overlayRoot.imageScale
+                    x: overlayRoot ? overlayRoot.imagePosition.x + displayX * overlayRoot.imageScale : 0
+                    y: overlayRoot ? overlayRoot.imagePosition.y + displayY * overlayRoot.imageScale : 0
+                    width: overlayRoot ? displayWidth * overlayRoot.imageScale : 0
+                    height: overlayRoot ? displayHeight * overlayRoot.imageScale : 0
                     visible: !hidden
                     color: "transparent"
                     border.color: rectColor
@@ -361,7 +370,7 @@ Item {
                         anchors.leftMargin: 4
                         anchors.top: parent.top
                         anchors.topMargin: 3
-                        visible: rectItem.overlayRoot.labelsVisible && parent.label.length > 0
+                        visible: !!rectItem.overlayRoot && rectItem.overlayRoot.labelsVisible && parent.label.length > 0
                         text: parent.label
                         color: parent.rectColor
                         font.pixelSize: 12
@@ -386,8 +395,8 @@ Item {
                             required property string modelData
 
                             readonly property string handleName: modelData
-                            width: rectItem.overlayRoot.handleSize
-                            height: rectItem.overlayRoot.handleSize
+                            width: rectItem.overlayRoot ? rectItem.overlayRoot.handleSize : 0
+                            height: rectItem.overlayRoot ? rectItem.overlayRoot.handleSize : 0
                             x: handleName === "tl" || handleName === "bl" ? -width / 2 : parent.width - width / 2
                             y: handleName === "tl" || handleName === "tr" ? -height / 2 : parent.height - height / 2
                             visible: rectItem.rectangleEditable && (rectItem.selected || rectItem.hovered)
@@ -419,15 +428,18 @@ Item {
 
                     MouseArea {
                         anchors.fill: parent
-                        enabled: rectItem.overlayRoot.interactive || rectItem.rectangleEditable
+                        enabled: !!rectItem.overlayRoot && (rectItem.overlayRoot.interactive || rectItem.rectangleEditable)
                         acceptedButtons: Qt.LeftButton | Qt.RightButton
                         hoverEnabled: enabled
                         cursorShape: rectItem.editHandle.length > 0 ? Qt.ClosedHandCursor :
                                      (rectItem.rectangleEditable ? Qt.SizeAllCursor : Qt.PointingHandCursor)
 
-                        onEntered: rectItem.overlayRoot.hoveredKey = rectItem.rectKey
+                        onEntered: {
+                            if (rectItem.overlayRoot)
+                                rectItem.overlayRoot.hoveredKey = rectItem.rectKey;
+                        }
                         onExited: {
-                            if (rectItem.overlayRoot.hoveredKey === rectItem.rectKey)
+                            if (rectItem.overlayRoot && rectItem.overlayRoot.hoveredKey === rectItem.rectKey)
                                 rectItem.overlayRoot.hoveredKey = "";
                         }
                         onPressed: function (mouse) {
