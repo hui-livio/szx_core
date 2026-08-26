@@ -31,6 +31,7 @@
 
 #include <UIToolkits/UTButton.h>
 #include <UIToolkits/UTLineEdit.h>
+#include <UIToolkits/UTWidgetTheme.h>
 
 namespace
 {
@@ -223,20 +224,11 @@ QWidget *makeThemePage(QWidget *parent)
     layout->addWidget(toggleButton, 0, Qt::AlignLeft);
     QObject::connect(toggleButton, &QPushButton::clicked, page, []()
     {
-        QPalette palette = QApplication::palette();
-        const bool dark = palette.color(QPalette::Window).lightness() > 128;
-        if (dark)
-        {
-            palette.setColor(QPalette::Window, QColor(QStringLiteral("#20242c")));
-            palette.setColor(QPalette::Base, QColor(QStringLiteral("#15181e")));
-            palette.setColor(QPalette::Text, QColor(QStringLiteral("#e6edf5")));
-            palette.setColor(QPalette::WindowText, QColor(QStringLiteral("#e6edf5")));
-        }
-        else
-        {
-            palette = QPalette();
-        }
-        QApplication::setPalette(palette);
+        static auto theme = UIToolkits::UTWidgetThemeKind::Dark;
+        theme = theme == UIToolkits::UTWidgetThemeKind::Dark ? UIToolkits::UTWidgetThemeKind::Light
+                                                              : UIToolkits::UTWidgetThemeKind::Dark;
+        if (auto *application = qobject_cast<QApplication *>(QCoreApplication::instance()))
+            UIToolkits::UTWidgetTheme::apply(*application, theme);
     });
     layout->addStretch();
     return page;

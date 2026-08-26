@@ -79,6 +79,7 @@ qt_add_qml_module(UIToolkits
     include/UIToolkitsExport.h
     include/UIToolkits/UTButton.h
     include/UIToolkits/UTLineEdit.h
+    include/UIToolkits/UTWidgetTheme.h
     src/NativeWindow.cc
     src/UTTheme.h
     src/UTTheme.cc
@@ -86,6 +87,7 @@ qt_add_qml_module(UIToolkits
     src/UTQmlLogger.cc
     src/widgets/UTButton.cc
     src/widgets/UTLineEdit.cc
+    src/widgets/UTWidgetTheme.cc
     src/Charts/UTPieChartV2Renderer.h
     src/Charts/UTPieChartV2Renderer.cc
     src/Charts/UTBarChartV2Renderer.h

@@ -21,6 +21,7 @@
 #include "src/model/TreeNode.h"
 #include "DemoLauncher.h"
 #include "WidgetMainWindow.h"
+#include <UIToolkits/UTWidgetTheme.h>
 
 class ApplicationIconProvider : public QQuickImageProvider
 {
@@ -69,6 +70,7 @@ int main(int argc, char *argv[])
  */
     QApplication app(argc, argv);
     QApplication::setWindowIcon(QIcon(QStringLiteral(":/qt/qml/UIToolkitsApp/resource/app.ico")));
+    UIToolkits::UTWidgetTheme::apply(app, UIToolkits::UTWidgetThemeKind::Dark);
 
     // ========================================================================
     // 构建演示数据
