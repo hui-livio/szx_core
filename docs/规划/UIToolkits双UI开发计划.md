@@ -193,11 +193,199 @@ components/UIToolkits/
 
 ### M5：示例和测试
 
-新增示例：
+保留现有 QML demo，并新增 QWidget demo；两者放在同一个 demo 应用中，通过两个独立的主界面分别展示：
 
 ```text
-tools/UIToolkitsWidgetsApp/
+tools/
+└── UIToolkitsApp/
+    ├── QML 主界面              # 现有 QML/Qt Quick demo
+    └── QWidget 主界面           # 新增 QWidget demo
 ```
+
+两个主界面共享一个进程和一个 `UIToolkits` DLL，但界面对象和页面实现完全分离：
+
+- 应用入口统一使用 `QApplication`，因为 `QApplication` 兼容 QML 所需的 `QGuiApplication` 能力；
+- QML 主界面由 `QQmlApplicationEngine` 加载；
+- QWidget 主界面由 `QMainWindow` 创建；
+- 启动时显示一个 demo 选择器，用户可以分别打开 QML 主界面或 QWidget 主界面；
+- 两个主界面可以先后打开，也可以同时打开；
+- 不在 demo 中创建第二个应用对象，也不让 DLL 负责创建应用对象。
+
+#### 5.1 QWidget demo 目录设计
+
+```text
+tools/UIToolkitsApp/
+├── main.cc
+├── src/
+│   ├── DemoLauncher.h/.cc
+│   ├── WidgetMainWindow.h/.cc
+│   └── widgetpages/
+│       ├── ButtonsPage.h/.cc
+│       ├── InputsPage.h/.cc
+│       ├── SelectionsPage.h/.cc
+│       ├── DisplayPage.h/.cc
+│       ├── FeedbackPage.h/.cc
+│       ├── DialogsPage.h/.cc
+│       └── ThemePage.h/.cc
+└── resource/
+    ├── app.rc
+    └── app.ico
+```
+
+`MainWindow` 负责窗口框架和导航，不直接承载所有控件示例：
+
+```text
+QApplication
+└── MainWindow (QMainWindow)
+    ├── navigation panel
+    └── QStackedWidget
+        ├── ButtonsPage
+        ├── InputsPage
+        ├── SelectionsPage
+        ├── DisplayPage
+        ├── FeedbackPage
+        ├── DialogsPage
+        └── ThemePage
+```
+
+每个 page 只负责展示一组控件和交互示例，避免把 demo 逻辑耦合进 `UIToolkits` 库。
+
+#### 5.2 QWidget demo 页面要求
+
+首期页面与现有 QML demo 建立对应关系：
+
+| QWidget 页面 | 对应 QML 页面 | 展示内容 |
+| --- | --- | --- |
+| `ButtonsPage` | `DemoButtons.qml` | Button、RoundButton、SvgButton |
+| `InputsPage` | `DemoInputs.qml` | LineEdit、TextArea、SpinBox |
+| `SelectionsPage` | `DemoSelections.qml` | CheckBox、Switch、ComboBox、Slider |
+| `DisplayPage` | `DemoDisplay.qml` | Label、Badge、Card、ProgressBar |
+| `FeedbackPage` | `DemoFeedback.qml` | Toast、Loading、MessageDialog |
+| `DialogsPage` | `DemoDialogs.qml` | Dialog、DialogButtonBox 和关闭结果 |
+| `ThemePage` | `DemoColors.qml` | 主题颜色、字体、尺寸和主题切换 |
+
+每个页面至少包含：
+
+- 默认状态；
+- 禁用状态；
+- 交互状态；
+- 主题切换后的状态；
+- 中文文本和长文本；
+- 高 DPI 下的布局表现。
+
+#### 5.3 双主界面和 CMake 设计
+
+不新增独立的 `UIToolkitsWidgetsApp` 可执行目标，Widget demo 作为现有 `UIToolkitsApp` 的一部分编译。
+
+建议的目录结构调整为：
+
+```text
+tools/UIToolkitsApp/
+├── main.cc
+├── qml/
+│   ├── Main.qml
+│   ├── QmlDemoShell.qml
+│   └── ...
+├── src/
+│   ├── DemoLauncher.h/.cc
+│   ├── QmlMainWindowController.h/.cc
+│   ├── WidgetMainWindow.h/.cc
+│   └── widgetpages/
+│       ├── ButtonsPage.h/.cc
+│       └── ...
+└── CMakeLists.txt
+```
+
+可以增加一个开关，用于在不需要 Widget demo 时减少构建内容：
+
+```cmake
+option(
+    SZX_COMPONENTS_BUILD_UI_TOOLKITS_WIDGETS_APP
+    "Build the QWidget main interface in UIToolkitsApp"
+    OFF
+)
+```
+
+构建关系：
+
+```cmake
+if(SZX_COMPONENTS_BUILD_UI_TOOLKITS_APP AND
+   SZX_COMPONENTS_BUILD_UI_TOOLKITS_WIDGETS_APP)
+    # Widget sources are added by tools/UIToolkitsApp/CMakeLists.txt.
+endif()
+```
+
+`tools/UIToolkitsApp/CMakeLists.txt` 同时声明 Quick 和 Widgets：
+
+```cmake
+find_package(Qt6 6.8 REQUIRED COMPONENTS Widgets)
+qt_standard_project_setup(REQUIRES 6.8)
+
+qt_add_executable(UIToolkitsApp
+    main.cc
+    src/DemoLauncher.cc
+    src/DemoLauncher.h
+    src/WidgetMainWindow.cc
+    src/WidgetMainWindow.h
+    src/widgetpages/ButtonsPage.cc
+    src/widgetpages/ButtonsPage.h
+    # ...其余 page
+)
+
+target_link_libraries(UIToolkitsApp PRIVATE
+    Qt6::Quick
+    Qt6::Widgets
+    UIToolkits
+)
+```
+
+Widget 页面不依赖 QML 页面实现；QML 页面仍通过现有 `UIToolkitsApp` QML module 管理。
+
+#### 5.4 Demo 复用边界
+
+两个 demo 可以复用以下内容：
+
+- 页面名称和组件对应关系；
+- 主题 token 的测试数据；
+- 示例文本、颜色和数值；
+- README 和截图说明。
+
+不建议直接复用以下内容：
+
+- QML 页面实现；
+- `QQmlApplicationEngine`；
+- QML `ListModel`/JavaScript 状态；
+- QWidget `QWidget` 实例或布局对象。
+
+如需避免页面名称重复，可后续增加只读的 demo manifest，例如 JSON 或 C++ 常量表；首期不为此引入额外运行时依赖。
+
+#### 5.5 双主界面启动和验收
+
+启动入口统一创建一个 `QApplication`：
+
+```cpp
+int main(int argc, char *argv[])
+{
+    QApplication app(argc, argv);
+    UIToolkits::initializeTheme();
+    UIToolkitsApp::DemoLauncher launcher;
+    launcher.show();
+    return app.exec();
+}
+```
+
+验收要求：
+
+- 程序启动后显示 demo 选择器；
+- 可以分别打开 QML 主界面和 QWidget 主界面；
+- QML 主界面保持现有导航和页面行为；
+- QWidget 主界面左侧导航可以切换所有首期页面；
+- 每个主界面至少有一个真实交互示例；
+- 主题切换能刷新已创建的 QML 和 Widget 控件；
+- 两个主界面可以同时运行，关闭其中一个不影响另一个；
+- 关闭 Dialog、Toast 和 Loading 后无对象泄漏；
+- Debug/Release、100%/150%/200% DPI 下均可启动；
+- QML 主界面只由 QML engine 管理，Widget 主界面只由 QWidget 对象树管理。
 
 示例覆盖：
 
@@ -268,6 +456,7 @@ tools/UIToolkitsWidgetsApp/
 - `UIToolkits` 同一共享库提供至少 6 个 QWidget 控件；
 - 现有 QML demo 和 module 通过回归验证；
 - QML consumer 和 QWidget consumer 均链接同一个 `UIToolkits` target；
+- `UIToolkitsApp` 可以分别打开 QML 主界面和 QWidget 主界面，并覆盖首期 QWidget 页面；
 - 主题和字体资源在两套控件中可用；
 - 安装后的独立 consumer 构建通过；
 - Debug/Release 构建通过；
