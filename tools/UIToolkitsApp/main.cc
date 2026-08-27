@@ -133,7 +133,7 @@ int main(int argc, char *argv[])
         return -1;
 
     mainWindow->setIcon(QApplication::windowIcon());
-    mainWindow->setFlags(mainWindow->flags() | Qt::FramelessWindowHint);
+    mainWindow->setVisibility(QWindow::Hidden);
     setupNativeWindow(mainWindow);
     centerWindowOnCurrentScreen(mainWindow);
 

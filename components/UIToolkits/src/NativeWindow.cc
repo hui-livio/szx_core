@@ -358,19 +358,22 @@ void revealNativeWindow(QWindow *win)
     if (!win)
         return;
     const HWND hwnd = reinterpret_cast<HWND>(win->winId());
-    // The caller has already called show(). Delay uncloak until Qt has
-    // completed the first native show/geometry pass.
+    // Keep the HWND hidden while Qt performs its first native show pass, then
+    // reveal it in the same queued callback. This prevents DWM from painting
+    // a transient caption between QWindow::show() and frame recalculation.
     QTimer::singleShot(0, win,
-                       [hwnd]()
+                       [win, hwnd]()
                        {
                            if (!IsWindow(hwnd))
                                return;
+                           win->show();
                            BOOL disabled = FALSE;
                            DwmSetWindowAttribute(hwnd, DWMWA_CLOAK, &disabled, sizeof(disabled));
                            DwmSetWindowAttribute(hwnd, DWMWA_TRANSITIONS_FORCEDISABLED, &disabled, sizeof(disabled));
                            DwmFlush();
                        });
 #else
-    Q_UNUSED(win)
+    if (win)
+        win->show();
 #endif
 }

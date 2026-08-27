@@ -43,10 +43,9 @@ DemoLauncher::DemoLauncher(QWindow *qmlWindow, WidgetMainWindow *widgetWindow, Q
             {
                 if (m_qmlWindow)
                 {
-                    m_qmlWindow->show();
+                    revealNativeWindow(m_qmlWindow);
                     m_qmlWindow->raise();
                     m_qmlWindow->requestActivate();
-                    revealNativeWindow(m_qmlWindow);
                 }
             });
     connect(widgetButton, &QPushButton::clicked, this,
@@ -54,10 +53,9 @@ DemoLauncher::DemoLauncher(QWindow *qmlWindow, WidgetMainWindow *widgetWindow, Q
             {
                 if (m_widgetWindow)
                 {
-                    m_widgetWindow->show();
+                    revealNativeWindow(m_widgetWindow->windowHandle());
                     m_widgetWindow->raise();
                     m_widgetWindow->activateWindow();
-                    revealNativeWindow(m_widgetWindow->windowHandle());
                 }
             });
 }
