@@ -19,6 +19,7 @@
 #include <QMainWindow>
 #include <QMessageBox>
 #include <QPalette>
+#include <QPixmap>
 #include <QProgressBar>
 #include <QPlainTextEdit>
 #include <QPushButton>
@@ -41,6 +42,12 @@
 #include <UIToolkits/UTMarqueeLabel.h>
 #include <UIToolkits/UTToast.h>
 #include <UIToolkits/UTImageAvatar.h>
+#include <UIToolkits/UTStatCard.h>
+#include <UIToolkits/UTKeyValueGrid.h>
+#include <UIToolkits/UTImageViewer.h>
+#include <UIToolkits/UTTabButton.h>
+#include <UIToolkits/UTSliderValue.h>
+#include <UIToolkits/UTMessageDialog.h>
 #include <UIToolkits/UTSlider.h>
 #include <UIToolkits/UTSpinBox.h>
 #include <UIToolkits/UTSwitch.h>
@@ -153,6 +160,19 @@ QWidget *makeDisplayPage(QWidget *parent)
     progress->setValue(72);
     cardLayout->addWidget(progress);
     layout->addWidget(card);
+    auto *stat = new UIToolkits::UTStatCard(page);
+    stat->setTitle(QStringLiteral("检测通过率"));
+    stat->setValue(QStringLiteral("98.6%"));
+    stat->setMaximumWidth(220);
+    layout->addWidget(stat, 0, Qt::AlignLeft);
+    auto *grid = new UIToolkits::UTKeyValueGrid(page);
+    grid->addRow(QStringLiteral("设备"), QStringLiteral("AOI-01"));
+    grid->addRow(QStringLiteral("耗时"), QStringLiteral("12.4 ms"));
+    layout->addWidget(grid, 0, Qt::AlignLeft);
+    auto *viewer = new UIToolkits::UTImageViewer(page);
+    QPixmap preview(160, 80); preview.fill(QColor(QStringLiteral("#dbeafe")));
+    viewer->setFixedSize(180, 100); viewer->setPixmap(preview);
+    layout->addWidget(viewer, 0, Qt::AlignLeft);
 
     auto *badge = new UIToolkits::UTBadge(page);
     badge->setText(QStringLiteral("SUCCESS"));
@@ -204,6 +224,20 @@ QWidget *makeFeedbackPage(QWidget *parent)
     {
         QMessageBox::information(page, QStringLiteral("UIToolkits"), QStringLiteral("这是一条 QWidget feedback 消息。"));
     });
+    auto *dialog = new UIToolkits::UTMessageDialog(page);
+    dialog->setWindowTitle(QStringLiteral("UTMessageDialog"));
+    dialog->setMessage(QStringLiteral("这是 UIToolkits QWidget 消息对话框示例。"));
+    auto *dialogButton = new UIToolkits::UTButton(page);
+    dialogButton->setText(QStringLiteral("Show UTMessageDialog"));
+    layout->addWidget(dialogButton, 0, Qt::AlignLeft);
+    QObject::connect(dialogButton, &QPushButton::clicked, dialog, [dialog]() { dialog->exec(); });
+    auto *tab = new UIToolkits::UTTabButton(page);
+    tab->setText(QStringLiteral("运行模式"));
+    tab->setActive(true);
+    layout->addWidget(tab, 0, Qt::AlignLeft);
+    auto *slider = new UIToolkits::UTSliderValue(Qt::Horizontal, page);
+    slider->setRange(0, 100); slider->setValue(65); slider->setFixedWidth(240);
+    layout->addWidget(slider, 0, Qt::AlignLeft);
     layout->addStretch();
     return page;
 }
