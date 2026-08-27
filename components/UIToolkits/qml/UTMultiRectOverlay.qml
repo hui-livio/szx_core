@@ -273,7 +273,7 @@ Item {
         delegate: Item {
             required property var modelData
 
-            readonly property var group: modelData
+            readonly property var group: modelData || ({})
             visible: group.visible !== false
 
             Repeater {
@@ -303,9 +303,24 @@ Item {
                     readonly property real displayY: override ? override.y : sourceY
                     readonly property real displayWidth: override ? override.width : sourceWidth
                     readonly property real displayHeight: override ? override.height : sourceHeight
-                    readonly property color rectColor: modelData.color || group.color || (overlayRoot ? overlayRoot.defaultColor : "white")
-                    readonly property real rectThickness: Number(modelData.thickness || group.thickness
-                                                                 || (overlayRoot ? overlayRoot.defaultThickness : 1))
+
+                    function resolvedColor() {
+                        const modelColor = modelData ? modelData.color : null;
+                        const groupColor = group ? group.color : null;
+                        const defaultColor = overlayRoot ? overlayRoot.defaultColor : null;
+                        return modelColor || groupColor || defaultColor || "white";
+                    }
+
+                    function resolvedThickness() {
+                        const modelThickness = modelData ? modelData.thickness : null;
+                        const groupThickness = group ? group.thickness : null;
+                        const defaultThickness = overlayRoot ? overlayRoot.defaultThickness : null;
+                        const value = modelThickness || groupThickness || defaultThickness;
+                        return value === undefined || value === null ? 1 : Number(value);
+                    }
+
+                    readonly property color rectColor: resolvedColor()
+                    readonly property real rectThickness: resolvedThickness()
                     readonly property bool selected: rectKey.length > 0 && overlayRoot && rectKey === overlayRoot.selectedKey
                     readonly property bool hovered: rectKey.length > 0 && overlayRoot && rectKey === overlayRoot.hoveredKey
                     readonly property string label: String(modelData.label || modelData.name || "")

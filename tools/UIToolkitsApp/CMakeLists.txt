@@ -61,7 +61,6 @@ target_link_libraries(${TARGET_NAME} PRIVATE
     Qt6::Quick
     Qt6::QuickControls2
     UIToolkits
-    SingleApplication::SingleApplication
 )
 
 
