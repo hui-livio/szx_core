@@ -17,3 +17,6 @@ UITOOLKITS_API void installNativeWindowFilter();
 
 // 为现有 QWindow 应用 DWM 阴影和深色标题栏。
 UITOOLKITS_API void setupNativeWindow(QWindow *win);
+
+// 在窗口完成 show() 后解蔽 DWM cloak，避免首次显示短暂出现系统标题栏。
+UITOOLKITS_API void revealNativeWindow(QWindow *win);

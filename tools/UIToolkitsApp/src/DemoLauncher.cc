@@ -6,6 +6,7 @@
 #include "DemoLauncher.h"
 
 #include "WidgetMainWindow.h"
+#include "NativeWindow.h"
 
 #include <QLabel>
 #include <QPushButton>
@@ -45,6 +46,7 @@ DemoLauncher::DemoLauncher(QWindow *qmlWindow, WidgetMainWindow *widgetWindow, Q
                     m_qmlWindow->show();
                     m_qmlWindow->raise();
                     m_qmlWindow->requestActivate();
+                    revealNativeWindow(m_qmlWindow);
                 }
             });
     connect(widgetButton, &QPushButton::clicked, this,
@@ -55,6 +57,7 @@ DemoLauncher::DemoLauncher(QWindow *qmlWindow, WidgetMainWindow *widgetWindow, Q
                     m_widgetWindow->show();
                     m_widgetWindow->raise();
                     m_widgetWindow->activateWindow();
+                    revealNativeWindow(m_widgetWindow->windowHandle());
                 }
             });
 }

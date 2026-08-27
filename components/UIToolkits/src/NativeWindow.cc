@@ -349,9 +349,17 @@ void setupNativeWindow(QWindow *win)
     SetWindowPos(hwnd, nullptr, 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
 
     DwmFlush();
-    // setupNativeWindow() runs before QWindow::show(). Keep the HWND cloaked
-    // until the queued callback, which runs after the caller has shown and
-    // positioned the fully configured window.
+#endif
+}
+
+void revealNativeWindow(QWindow *win)
+{
+#ifdef Q_OS_WIN
+    if (!win)
+        return;
+    const HWND hwnd = reinterpret_cast<HWND>(win->winId());
+    // The caller has already called show(). Delay uncloak until Qt has
+    // completed the first native show/geometry pass.
     QTimer::singleShot(0, win,
                        [hwnd]()
                        {
@@ -359,8 +367,10 @@ void setupNativeWindow(QWindow *win)
                                return;
                            BOOL disabled = FALSE;
                            DwmSetWindowAttribute(hwnd, DWMWA_CLOAK, &disabled, sizeof(disabled));
-                           DwmFlush();
                            DwmSetWindowAttribute(hwnd, DWMWA_TRANSITIONS_FORCEDISABLED, &disabled, sizeof(disabled));
+                           DwmFlush();
                        });
+#else
+    Q_UNUSED(win)
 #endif
 }
