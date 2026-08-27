@@ -20,6 +20,7 @@ Item {
     property string selectedKey: ""
     property string hoveredKey: ""
     property bool labelsVisible: true
+    property bool selectedLabelsVisible: false
     property bool interactive: false
     property bool editable: false
     property bool creationEnabled: false
@@ -370,7 +371,9 @@ Item {
                         anchors.leftMargin: 4
                         anchors.top: parent.top
                         anchors.topMargin: 3
-                        visible: !!rectItem.overlayRoot && rectItem.overlayRoot.labelsVisible && parent.label.length > 0
+                        visible: !!rectItem.overlayRoot && parent.label.length > 0
+                                 && (rectItem.overlayRoot.labelsVisible
+                                     || (rectItem.overlayRoot.selectedLabelsVisible && rectItem.selected))
                         text: parent.label
                         color: parent.rectColor
                         font.pixelSize: 12
