@@ -535,6 +535,7 @@ Rectangle {
             model: root.effectiveDataSeries.length > 0 ? root.effectiveDataSeries[0].data : []
 
             delegate: Text {
+                required property var modelData
                 width: root.chartWidth / (root.effectiveDataSeries.length > 0 ? root.effectiveDataSeries[0].data.length : 1)
                 text: modelData.month
                 font.pixelSize: root.fontSize - 2
@@ -600,6 +601,7 @@ Rectangle {
                 model: root.effectiveDataSeries
 
                 Row {
+                    required property var modelData
                     spacing: 5
 
                     Rectangle {
@@ -646,6 +648,7 @@ Rectangle {
             model: root.effectiveDataSeries
 
             Row {
+                required property var modelData
                 spacing: 8
                 Rectangle {
                     width: 12
