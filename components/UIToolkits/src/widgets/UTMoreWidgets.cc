@@ -19,6 +19,7 @@
 #include "UIToolkits/UTTooltip.h"
 #include <QApplication>
 #include <QColor>
+#include <QDialogButtonBox>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
@@ -31,7 +32,8 @@
 
 namespace UIToolkits
 {
-UTAppWindow::UTAppWindow(QWidget *parent) : QMainWindow(parent) {}
+UTAppWindow::UTAppWindow(QWidget *parent) : QMainWindow(parent) { setAttribute(Qt::WA_StyledBackground, true); }
+void UTAppWindow::setFrameless(bool enabled) { setWindowFlag(Qt::FramelessWindowHint, enabled); }
 UTTitleBar::UTTitleBar(QWidget *parent) : QWidget(parent)
 {
     setFixedHeight(40);
@@ -90,20 +92,33 @@ UTKeyValueGrid::UTKeyValueGrid(QWidget *parent) : QWidget(parent)
 }
 void UTKeyValueGrid::addRow(const QString &key, const QString &value) { if (auto *form = qobject_cast<QFormLayout *>(layout())) { form->addRow(new QLabel(key, this), new QLabel(value, this)); setProperty("rowCount", property("rowCount").toInt() + 1); } }
 void UTKeyValueGrid::clearRows() { if (auto *form = qobject_cast<QFormLayout *>(layout())) { while (form->count()) { auto *item = form->takeAt(0); delete item->widget(); delete item; } setProperty("rowCount", 0); } }
-UTScrollView::UTScrollView(QWidget *parent) : QScrollArea(parent) {}
-UTFlickable::UTFlickable(QWidget *parent) : QScrollArea(parent) {}
+UTScrollView::UTScrollView(QWidget *parent) : QScrollArea(parent) { setWidgetResizable(true); setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff); }
+UTFlickable::UTFlickable(QWidget *parent) : QScrollArea(parent) { setWidgetResizable(true); setFrameShape(QFrame::NoFrame); setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff); }
 UTImageAvatar::UTImageAvatar(QWidget *parent) : QLabel(parent) { setAlignment(Qt::AlignCenter); setMinimumSize(32, 32); setScaledContents(false); }
 void UTImageAvatar::paintEvent(QPaintEvent *) { QPainter painter(this); painter.setRenderHint(QPainter::Antialiasing); QPainterPath clip; clip.addEllipse(rect()); painter.setClipPath(clip); if (!pixmap().isNull()) { const auto scaled = pixmap().scaled(size(), Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation); painter.drawPixmap((width()-scaled.width())/2, (height()-scaled.height())/2, scaled); } else { painter.fillRect(rect(), palette().mid()); painter.setPen(palette().brightText().color()); painter.drawText(rect(), Qt::AlignCenter, text().left(1).toUpper()); } }
-UTImageViewer::UTImageViewer(QWidget *parent) : QScrollArea(parent) {}
+UTImageViewer::UTImageViewer(QWidget *parent) : QScrollArea(parent)
+{
+    setWidgetResizable(false); setAlignment(Qt::AlignCenter); setBackgroundRole(QPalette::Dark);
+    auto *label = new QLabel(this); label->setObjectName("imageLabel"); label->setAlignment(Qt::AlignCenter); setWidget(label);
+}
+void UTImageViewer::setPixmap(const QPixmap &image) { if (auto *label = findChild<QLabel *>("imageLabel")) { label->setPixmap(image); label->adjustSize(); } }
+QPixmap UTImageViewer::pixmap() const { if (auto *label = findChild<QLabel *>("imageLabel")) { if (const auto *image = label->pixmap()) return *image; } return {}; }
 UTLoading::UTLoading(QWidget *parent) : QProgressBar(parent) { setRange(0, 0); setTextVisible(false); setFixedHeight(4); stop(); }
 void UTLoading::start() { setProperty("active", true); show(); }
 void UTLoading::stop() { setProperty("active", false); hide(); }
 bool UTLoading::isActive() const { return property("active").toBool(); }
 UTToast::UTToast(QWidget *parent) : QLabel(parent) { setAlignment(Qt::AlignCenter); setWordWrap(true); setMargin(10); setStyleSheet(QStringLiteral("QLabel { color: white; background: #334155; border-radius: 8px; }") ); hide(); }
 void UTToast::showMessage(const QString &message, int durationMs) { setText(message); adjustSize(); if (parentWidget()) move((parentWidget()->width()-width())/2, parentWidget()->height()-height()-24); show(); raise(); auto *timer = findChild<QTimer *>(QStringLiteral("hideTimer")); if (!timer) { timer = new QTimer(this); timer->setObjectName(QStringLiteral("hideTimer")); timer->setSingleShot(true); connect(timer, &QTimer::timeout, this, &QWidget::hide); } timer->start(qMax(0, durationMs)); }
-UTTooltip::UTTooltip(QWidget *parent) : QLabel(parent) {}
-UTMessageDialog::UTMessageDialog(QWidget *parent) : QDialog(parent) {}
-UTCalendar::UTCalendar(QWidget *parent) : QCalendarWidget(parent) {}
+UTTooltip::UTTooltip(QWidget *parent) : QLabel(parent) { setWindowFlags(Qt::ToolTip); setWordWrap(true); setMargin(6); setAttribute(Qt::WA_ShowWithoutActivating); }
+UTMessageDialog::UTMessageDialog(QWidget *parent) : QDialog(parent)
+{
+    auto *layout = new QVBoxLayout(this); layout->setContentsMargins(24, 20, 24, 16);
+    auto *label = new QLabel(this); label->setObjectName("messageLabel"); label->setWordWrap(true); layout->addWidget(label);
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok, this); layout->addWidget(buttons); connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);
+}
+void UTMessageDialog::setMessage(const QString &message) { if (auto *label = findChild<QLabel *>("messageLabel")) label->setText(message); }
+QString UTMessageDialog::message() const { if (auto *label = findChild<QLabel *>("messageLabel")) return label->text(); return {}; }
+UTCalendar::UTCalendar(QWidget *parent) : QCalendarWidget(parent) { setGridVisible(true); setFirstDayOfWeek(Qt::Monday); }
 UTMarqueeLabel::UTMarqueeLabel(QWidget *parent) : QLabel(parent) { setProperty("offset", 0); setProperty("speed", 1); setActive(true); }
 void UTMarqueeLabel::setActive(bool active) { setProperty("active", active); auto *timer = findChild<QTimer *>(QStringLiteral("marqueeTimer")); if (!timer) { timer = new QTimer(this); timer->setObjectName(QStringLiteral("marqueeTimer")); connect(timer, &QTimer::timeout, this, [this] { setProperty("offset", property("offset").toInt() + property("speed").toInt()); update(); }); } active ? timer->start(30) : timer->stop(); }
 bool UTMarqueeLabel::isActive() const { return property("active").toBool(); }
