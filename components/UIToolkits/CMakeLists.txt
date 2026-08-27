@@ -146,6 +146,24 @@ qt_add_qml_module(UIToolkits
     fonts/HarmonyOS_Sans_SC_Bold.ttf
 )
 
+# AUTOMOC does not recognize Q_OBJECT when a compact public declaration keeps
+# the namespace, class and macro on one line. Generate those moc files
+# explicitly while leaving regular AUTOMOC enabled for the existing classes.
+file(GLOB _UIToolkits_public_headers CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/*.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/UIToolkits/*.h")
+set(_UIToolkits_compact_qobject_headers)
+foreach(_header IN LISTS _UIToolkits_public_headers)
+    file(STRINGS "${_header}" _qobject_lines REGEX "namespace UIToolkits[ ]*\\{ class .*Q_OBJECT")
+    if(_qobject_lines)
+        list(APPEND _UIToolkits_compact_qobject_headers "${_header}")
+    endif()
+endforeach()
+if(_UIToolkits_compact_qobject_headers)
+    qt_wrap_cpp(_UIToolkits_compact_moc_sources ${_UIToolkits_compact_qobject_headers})
+    target_sources(UIToolkits PRIVATE ${_UIToolkits_compact_moc_sources})
+endif()
+
 
 
 target_include_directories(UIToolkits
