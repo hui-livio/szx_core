@@ -36,6 +36,11 @@
 #include <UIToolkits/UTLineEdit.h>
 #include <UIToolkits/UTLabel.h>
 #include <UIToolkits/UTProgressBar.h>
+#include <UIToolkits/UTBadge.h>
+#include <UIToolkits/UTLoading.h>
+#include <UIToolkits/UTMarqueeLabel.h>
+#include <UIToolkits/UTToast.h>
+#include <UIToolkits/UTImageAvatar.h>
 #include <UIToolkits/UTSlider.h>
 #include <UIToolkits/UTSpinBox.h>
 #include <UIToolkits/UTSwitch.h>
@@ -149,10 +154,18 @@ QWidget *makeDisplayPage(QWidget *parent)
     cardLayout->addWidget(progress);
     layout->addWidget(card);
 
-    auto *badge = new QLabel(QStringLiteral("  SUCCESS  "), page);
-    badge->setStyleSheet(QStringLiteral(
-        "QLabel { color: white; background: #16a34a; border-radius: 10px; padding: 4px 8px; }"));
+    auto *badge = new UIToolkits::UTBadge(page);
+    badge->setText(QStringLiteral("SUCCESS"));
+    badge->setTone(UIToolkits::UTBadge::Tone::Success);
     layout->addWidget(badge, 0, Qt::AlignLeft);
+    auto *avatar = new UIToolkits::UTImageAvatar(page);
+    avatar->setFixedSize(48, 48);
+    avatar->setText(QStringLiteral("U"));
+    layout->addWidget(avatar, 0, Qt::AlignLeft);
+    auto *marquee = new UIToolkits::UTMarqueeLabel(page);
+    marquee->setText(QStringLiteral("UIToolkits QWidget 控件正在运行 · 默认 Qt 样式 · 与 QML 共用 DLL"));
+    marquee->setMinimumWidth(360);
+    layout->addWidget(marquee);
     layout->addStretch();
     return page;
 }
@@ -170,14 +183,19 @@ QWidget *makeFeedbackPage(QWidget *parent)
 
     auto *status = new QLabel(QStringLiteral("Ready"), page);
     layout->addWidget(status);
+    auto *loading = new UIToolkits::UTLoading(page);
+    layout->addWidget(loading);
+    auto *toast = new UIToolkits::UTToast(page);
 
     auto *toastButton = new UIToolkits::UTButton(page);
     toastButton->setText(QStringLiteral("Show feedback"));
     layout->addWidget(toastButton, 0, Qt::AlignLeft);
-    QObject::connect(toastButton, &QPushButton::clicked, page, [status]()
+    QObject::connect(toastButton, &QPushButton::clicked, page, [status, toast, loading]()
     {
         status->setText(QStringLiteral("操作已完成"));
-        QTimer::singleShot(2500, status, [status]() { status->setText(QStringLiteral("Ready")); });
+        loading->start();
+        toast->showMessage(QStringLiteral("操作已完成"));
+        QTimer::singleShot(1500, status, [status, loading]() { status->setText(QStringLiteral("Ready")); loading->stop(); });
     });
 
     auto *messageButton = new QPushButton(QStringLiteral("Show message box"), page);
