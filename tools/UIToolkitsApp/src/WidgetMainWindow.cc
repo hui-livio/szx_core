@@ -54,6 +54,8 @@
 #include <UIToolkits/UTSwitch.h>
 #include <UIToolkits/UTWidgetTheme.h>
 
+QWidget *makePlaceholderPage(QWidget *parent, const QString &name);
+
 namespace
 {
 QWidget *makeButtonsPage(QWidget *parent)
