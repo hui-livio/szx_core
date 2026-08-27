@@ -24,6 +24,7 @@ RangeSlider {
     property string valuePrefix: ""
     property string valueSuffix: ""
     property int valuePrecision: -1  // -1 自动，>=0 固定小数位
+    property int sideEditorWidth: 60
     enum ValueDisplayMode {
         AboveHandles,
         SideValues
@@ -57,8 +58,8 @@ RangeSlider {
     // ── 尺寸 ─────────────────────────────────────────────────────────
     implicitWidth: _showsSideValues ? 300 : 200
     implicitHeight: _showsAboveValues ? 54 : 30
-    leftPadding: _showsSideValues ? 70 : 12
-    rightPadding: _showsSideValues ? 70 : 12
+    leftPadding: _showsSideValues ? sideEditorWidth + 10 : 12
+    rightPadding: _showsSideValues ? sideEditorWidth + 10 : 12
     topPadding: 12
     bottomPadding: 12
 
@@ -275,7 +276,7 @@ RangeSlider {
         visible: root._showsSideValues && root._usesIntegerEditors
         anchors.left: parent.left
         anchors.verticalCenter: parent.verticalCenter
-        width: 60
+        width: root.sideEditorWidth
         height: 32
         from: Math.ceil(root.from)
         to: Math.floor(root.second.value - root.minimumSeparation)
@@ -294,7 +295,7 @@ RangeSlider {
         visible: root._showsSideValues && !root._usesIntegerEditors
         anchors.right: parent.right
         anchors.verticalCenter: parent.verticalCenter
-        width: 60
+        width: root.sideEditorWidth
         height: 32
         from: root.first.value + root.minimumSeparation
         to: root.to
@@ -313,7 +314,7 @@ RangeSlider {
         visible: root._showsSideValues && !root._usesIntegerEditors
         anchors.left: parent.left
         anchors.verticalCenter: parent.verticalCenter
-        width: 60
+        width: root.sideEditorWidth
         height: 32
         from: root.from
         to: root.second.value - root.minimumSeparation
@@ -332,7 +333,7 @@ RangeSlider {
         visible: root._showsSideValues && root._usesIntegerEditors
         anchors.right: parent.right
         anchors.verticalCenter: parent.verticalCenter
-        width: 60
+        width: root.sideEditorWidth
         height: 32
         from: Math.ceil(root.first.value + root.minimumSeparation)
         to: Math.floor(root.to)

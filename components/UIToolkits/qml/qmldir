@@ -40,6 +40,7 @@ UTAreaChartV2 1.0 UTAreaChartV2.qml
 UTMessageDialog 1.0 UTMessageDialog.qml
 UTTreeView 1.0 UTTreeView.qml
 UTRangeSlider 1.0 UTRangeSlider.qml
+UTHsvColorWheel 1.0 UTHsvColorWheel.qml
 UTScrollView 1.0 UTScrollView.qml
 UTFlickable 1.0 UTFlickable.qml
 UTImageViewer 1.0 UTImageViewer.qml

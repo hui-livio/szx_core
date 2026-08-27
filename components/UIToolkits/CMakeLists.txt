@@ -56,6 +56,7 @@ qt_add_qml_module(UIToolkits
     qml/UTDataUtils.js
     qml/UTTreeView.qml
     qml/UTRangeSlider.qml
+    qml/UTHsvColorWheel.qml
     qml/UTScrollView.qml
     qml/UTFlickable.qml
     qml/UTImageViewer.qml
