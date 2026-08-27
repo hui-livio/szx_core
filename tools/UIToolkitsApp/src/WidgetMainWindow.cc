@@ -30,7 +30,15 @@
 #include <QWidget>
 
 #include <UIToolkits/UTButton.h>
+#include <UIToolkits/UTCard.h>
+#include <UIToolkits/UTCheckBox.h>
+#include <UIToolkits/UTComboBox.h>
 #include <UIToolkits/UTLineEdit.h>
+#include <UIToolkits/UTLabel.h>
+#include <UIToolkits/UTProgressBar.h>
+#include <UIToolkits/UTSlider.h>
+#include <UIToolkits/UTSpinBox.h>
+#include <UIToolkits/UTSwitch.h>
 #include <UIToolkits/UTWidgetTheme.h>
 
 namespace
@@ -46,7 +54,8 @@ QWidget *makeButtonsPage(QWidget *parent)
     title->setObjectName(QStringLiteral("pageTitle"));
     layout->addWidget(title);
 
-    auto *description = new QLabel(QStringLiteral("QWidget 版本的基础按钮组件"), page);
+    auto *description = new UIToolkits::UTLabel(page);
+    description->setText(QStringLiteral("QWidget 版本的基础按钮组件"));
     layout->addWidget(description);
 
     auto *primary = new UIToolkits::UTButton(page);
@@ -94,20 +103,26 @@ QWidget *makeSelectionsPage(QWidget *parent)
     title->setObjectName(QStringLiteral("pageTitle"));
     layout->addRow(title);
 
-    auto *checkBox = new QCheckBox(QStringLiteral("启用自动检测"), page);
+    auto *checkBox = new UIToolkits::UTCheckBox(page);
+    checkBox->setText(QStringLiteral("启用自动检测"));
     checkBox->setChecked(true);
     layout->addRow(QStringLiteral("CheckBox"), checkBox);
 
-    auto *comboBox = new QComboBox(page);
+    auto *switchBox = new UIToolkits::UTSwitch(page);
+    switchBox->setText(QStringLiteral("实时监控"));
+    switchBox->setChecked(true);
+    layout->addRow(QStringLiteral("Switch"), switchBox);
+
+    auto *comboBox = new UIToolkits::UTComboBox(page);
     comboBox->addItems({QStringLiteral("普通检测"), QStringLiteral("深度检测"), QStringLiteral("快速检测")});
     layout->addRow(QStringLiteral("ComboBox"), comboBox);
 
-    auto *slider = new QSlider(Qt::Horizontal, page);
+    auto *slider = new UIToolkits::UTSlider(Qt::Horizontal, page);
     slider->setRange(0, 100);
     slider->setValue(60);
     layout->addRow(QStringLiteral("Slider"), slider);
 
-    auto *spinBox = new QSpinBox(page);
+    auto *spinBox = new UIToolkits::UTSpinBox(page);
     spinBox->setRange(0, 999);
     spinBox->setValue(20);
     layout->addRow(QStringLiteral("SpinBox"), spinBox);
@@ -125,10 +140,10 @@ QWidget *makeDisplayPage(QWidget *parent)
     title->setObjectName(QStringLiteral("pageTitle"));
     layout->addWidget(title);
 
-    auto *card = new QGroupBox(QStringLiteral("Inspection status"), page);
+    auto *card = new UIToolkits::UTCard(page);
     auto *cardLayout = new QVBoxLayout(card);
     cardLayout->addWidget(new QLabel(QStringLiteral("当前状态：运行中"), card));
-    auto *progress = new QProgressBar(card);
+    auto *progress = new UIToolkits::UTProgressBar(card);
     progress->setRange(0, 100);
     progress->setValue(72);
     cardLayout->addWidget(progress);
