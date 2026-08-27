@@ -44,12 +44,30 @@ UTTitleBar::UTTitleBar(QWidget *parent) : QWidget(parent)
     label->setObjectName("titleLabel");
     label->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     layout->addWidget(label);
+    auto *minimize = new QToolButton(this);
+    minimize->setText(QStringLiteral("−"));
+    minimize->setAutoRaise(true);
+    minimize->setFixedSize(30, 30);
+    layout->addWidget(minimize);
+    auto *maximize = new QToolButton(this);
+    maximize->setText(QStringLiteral("□"));
+    maximize->setAutoRaise(true);
+    maximize->setFixedSize(30, 30);
+    layout->addWidget(maximize);
     auto *close = new QToolButton(this);
     close->setText(QStringLiteral("×"));
     close->setAutoRaise(true);
     close->setFixedSize(30, 30);
     layout->addWidget(close);
     connect(close, &QToolButton::clicked, this, &UTTitleBar::closeRequested);
+    connect(minimize, &QToolButton::clicked, this, [this] { emit minimizeRequested(); if (window()) window()->showMinimized(); });
+    connect(maximize, &QToolButton::clicked, this, [this, maximize] {
+        if (window()) {
+            if (window()->isMaximized()) { window()->showNormal(); maximize->setText(QStringLiteral("□")); }
+            else { window()->showMaximized(); maximize->setText(QStringLiteral("❐")); }
+        }
+        emit maximizeRequested();
+    });
 }
 void UTTitleBar::setTitle(const QString &title) { if (auto *label = findChild<QLabel *>(QStringLiteral("titleLabel"))) label->setText(title); }
 QString UTTitleBar::title() const { if (auto *label = findChild<QLabel *>(QStringLiteral("titleLabel"))) return label->text(); return {}; }

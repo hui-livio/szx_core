@@ -48,6 +48,7 @@
 #include <UIToolkits/UTTabButton.h>
 #include <UIToolkits/UTSliderValue.h>
 #include <UIToolkits/UTMessageDialog.h>
+#include <UIToolkits/UTTitleBar.h>
 #include <UIToolkits/UTSlider.h>
 #include <UIToolkits/UTSpinBox.h>
 #include <UIToolkits/UTSwitch.h>
@@ -329,11 +330,18 @@ WidgetMainWindow::WidgetMainWindow(QWidget *parent) :
     m_pages->addWidget(makeThemePage(m_pages));
 
     auto *central = new QWidget(this);
-    auto *layout  = new QHBoxLayout(central);
-    layout->setContentsMargins(0, 0, 0, 0);
-    layout->addWidget(m_navigation);
-    layout->addWidget(m_pages, 1);
+    auto *rootLayout = new QVBoxLayout(central);
+    rootLayout->setContentsMargins(0, 0, 0, 0);
+    auto *titleBar = new UIToolkits::UTTitleBar(central);
+    titleBar->setTitle(QStringLiteral("UIToolkits · QWidget Demo"));
+    rootLayout->addWidget(titleBar);
+    auto *contentLayout = new QHBoxLayout;
+    contentLayout->setContentsMargins(0, 0, 0, 0);
+    contentLayout->addWidget(m_navigation);
+    contentLayout->addWidget(m_pages, 1);
+    rootLayout->addLayout(contentLayout, 1);
     setCentralWidget(central);
 
     connect(m_navigation, &QListWidget::currentRowChanged, m_pages, &QStackedWidget::setCurrentIndex);
+    connect(titleBar, &UIToolkits::UTTitleBar::closeRequested, this, &QWidget::close);
 }
