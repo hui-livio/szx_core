@@ -316,9 +316,20 @@ WidgetMainWindow::WidgetMainWindow(QWidget *parent) :
                             QStringLiteral("Selections"),
                             QStringLiteral("Display"),
                             QStringLiteral("Feedback"),
+                            QStringLiteral("Pickers"),
+                            QStringLiteral("Charts"),
+                            QStringLiteral("Calendar"),
+                            QStringLiteral("TreeView"),
+                            QStringLiteral("Colors"),
+                            QStringLiteral("TabBar"),
+                            QStringLiteral("FootBar"),
+                            QStringLiteral("Menu"),
+                            QStringLiteral("ImageViewer"),
+                            QStringLiteral("MultiRectOverlay"),
                             QStringLiteral("Dialogs"),
                             QStringLiteral("Theme")});
     m_navigation->setFixedWidth(200);
+    m_navigation->setStyleSheet(QStringLiteral("QListWidget { background: #171b23; border: 0; color: #d6dbe5; padding: 8px 0; } QListWidget::item { padding: 9px 16px; margin: 1px 0; } QListWidget::item:selected { background: #27344a; color: #70a7ff; border-left: 3px solid #70a7ff; }"));
     m_navigation->setCurrentRow(0);
 
     m_pages->addWidget(makeButtonsPage(m_pages));
@@ -326,6 +337,16 @@ WidgetMainWindow::WidgetMainWindow(QWidget *parent) :
     m_pages->addWidget(makeSelectionsPage(m_pages));
     m_pages->addWidget(makeDisplayPage(m_pages));
     m_pages->addWidget(makeFeedbackPage(m_pages));
+    m_pages->addWidget(makePlaceholderPage(m_pages, QStringLiteral("Pickers")));
+    m_pages->addWidget(makePlaceholderPage(m_pages, QStringLiteral("Charts")));
+    m_pages->addWidget(makePlaceholderPage(m_pages, QStringLiteral("Calendar")));
+    m_pages->addWidget(makePlaceholderPage(m_pages, QStringLiteral("TreeView")));
+    m_pages->addWidget(makePlaceholderPage(m_pages, QStringLiteral("Colors")));
+    m_pages->addWidget(makePlaceholderPage(m_pages, QStringLiteral("TabBar")));
+    m_pages->addWidget(makePlaceholderPage(m_pages, QStringLiteral("FootBar")));
+    m_pages->addWidget(makePlaceholderPage(m_pages, QStringLiteral("Menu")));
+    m_pages->addWidget(makePlaceholderPage(m_pages, QStringLiteral("ImageViewer")));
+    m_pages->addWidget(makePlaceholderPage(m_pages, QStringLiteral("MultiRectOverlay")));
     m_pages->addWidget(makeDialogsPage(m_pages));
     m_pages->addWidget(makeThemePage(m_pages));
 
@@ -344,4 +365,17 @@ WidgetMainWindow::WidgetMainWindow(QWidget *parent) :
 
     connect(m_navigation, &QListWidget::currentRowChanged, m_pages, &QStackedWidget::setCurrentIndex);
     connect(titleBar, &UIToolkits::UTTitleBar::closeRequested, this, &QWidget::close);
+}
+
+QWidget *makePlaceholderPage(QWidget *parent, const QString &name)
+{
+    auto *page = new QWidget(parent);
+    auto *layout = new QVBoxLayout(page);
+    layout->setContentsMargins(32, 32, 32, 32);
+    auto *title = new QLabel(name, page);
+    title->setObjectName(QStringLiteral("pageTitle"));
+    layout->addWidget(title);
+    layout->addWidget(new QLabel(QStringLiteral("QWidget 版本页面正在逐步对齐 QML Demo。"), page));
+    layout->addStretch();
+    return page;
 }
