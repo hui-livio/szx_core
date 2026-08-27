@@ -102,7 +102,7 @@ UTImageViewer::UTImageViewer(QWidget *parent) : QScrollArea(parent)
     auto *label = new QLabel(this); label->setObjectName("imageLabel"); label->setAlignment(Qt::AlignCenter); setWidget(label);
 }
 void UTImageViewer::setPixmap(const QPixmap &image) { if (auto *label = findChild<QLabel *>("imageLabel")) { label->setPixmap(image); label->adjustSize(); } }
-QPixmap UTImageViewer::pixmap() const { if (auto *label = findChild<QLabel *>("imageLabel")) { if (const auto *image = label->pixmap()) return *image; } return {}; }
+QPixmap UTImageViewer::pixmap() const { if (auto *label = findChild<QLabel *>("imageLabel")) return label->pixmap(); return {}; }
 UTLoading::UTLoading(QWidget *parent) : QProgressBar(parent) { setRange(0, 0); setTextVisible(false); setFixedHeight(4); stop(); }
 void UTLoading::start() { setProperty("active", true); show(); }
 void UTLoading::stop() { setProperty("active", false); hide(); }
