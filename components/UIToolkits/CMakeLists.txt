@@ -88,6 +88,21 @@ qt_add_qml_module(UIToolkits
     include/UIToolkits/UTProgressBar.h
     include/UIToolkits/UTCard.h
     include/UIToolkits/UTDialog.h
+    include/UIToolkits/UTDoubleSpinBox.h
+    include/UIToolkits/UTTextArea.h
+    include/UIToolkits/UTRoundButton.h
+    include/UIToolkits/UTSvgButton.h
+    include/UIToolkits/UTTabBar.h
+    include/UIToolkits/UTScrollBar.h
+    include/UIToolkits/UTGroupBox.h
+    include/UIToolkits/UTListView.h
+    include/UIToolkits/UTTreeView.h
+    include/UIToolkits/UTDatePicker.h
+    include/UIToolkits/UTTimePicker.h
+    include/UIToolkits/UTDateTimePicker.h
+    include/UIToolkits/UTMenu.h
+    include/UIToolkits/UTMenuBar.h
+    include/UIToolkits/UTImage.h
     include/UIToolkits/UTWidgetTheme.h
     src/NativeWindow.cc
     src/UTTheme.h
@@ -97,6 +112,7 @@ qt_add_qml_module(UIToolkits
     src/widgets/UTButton.cc
     src/widgets/UTLineEdit.cc
     src/widgets/UTBasicWidgets.cc
+    src/widgets/UTAdditionalWidgets.cc
     src/widgets/UTWidgetTheme.cc
     src/Charts/UTPieChartV2Renderer.h
     src/Charts/UTPieChartV2Renderer.cc
