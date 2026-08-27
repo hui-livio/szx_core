@@ -304,7 +304,8 @@ void installNativeWindowFilter()
 {
     // 静态局部变量：生命周期等于程序运行期，避免内存泄漏
     static FramelessFilter s_filter;
-    QGuiApplication::instance()->installNativeEventFilter(&s_filter);
+    if (auto *application = QGuiApplication::instance())
+        application->installNativeEventFilter(&s_filter);
 }
 
 void setupNativeWindow(QWindow *win)
@@ -313,6 +314,10 @@ void setupNativeWindow(QWindow *win)
     if (!win)
         return;
     HWND hwnd = reinterpret_cast<HWND>(win->winId());
+
+    // Hide an already-created native window before changing its frame style.
+    // This prevents DWM from presenting the standard caption for one frame.
+    ShowWindow(hwnd, SW_HIDE);
 
     // Keep DWM from presenting the standard frame while the existing HWND is
     // converted to the custom frame. The QML window is still hidden here.
@@ -342,23 +347,6 @@ void setupNativeWindow(QWindow *win)
     DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark, sizeof(dark));
 
     SetWindowPos(hwnd, nullptr, 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
-
-    DwmFlush();
-    // setupNativeWindow() runs before QWindow::show(). Keep the HWND cloaked
-    // until the queued callback, which runs after the caller has shown and
-    // positioned the fully configured window.
-    QTimer::singleShot(0, win,
-                       [hwnd]()
-                       {
-                           if (!IsWindow(hwnd))
-                               return;
-                           BOOL disabled = FALSE;
-                           DwmSetWindowAttribute(hwnd, DWMWA_CLOAK, &disabled, sizeof(disabled));
-                           DwmFlush();
-                           DwmSetWindowAttribute(hwnd, DWMWA_TRANSITIONS_FORCEDISABLED, &disabled, sizeof(disabled));
-                           logNativeWindowDiagnostic("native_window_uncloaked", hwnd,
-                                                     MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST));
-                       });
 
     DwmFlush();
     // setupNativeWindow() runs before QWindow::show(). Keep the HWND cloaked

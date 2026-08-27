@@ -137,6 +137,12 @@ int main(int argc, char *argv[])
     centerWindowOnCurrentScreen(mainWindow);
 
     WidgetMainWindow widgetWindow;
+    widgetWindow.setWindowIcon(QApplication::windowIcon());
+    // QWidget exposes its native QWindow after winId() creates the HWND.
+    // Configure the same frameless/DWM policy used by the QML window before
+    // the launcher can show it.
+    widgetWindow.winId();
+    setupNativeWindow(widgetWindow.windowHandle());
     DemoLauncher launcher(mainWindow, &widgetWindow);
     launcher.show();
 
