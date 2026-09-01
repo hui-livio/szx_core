@@ -461,6 +461,25 @@ Item {
                                 rectItem.overlayRoot.hoveredKey = "";
                         }
                         onPressed: function (mouse) {
+                            // Read-only ROI rectangles often overlap.  Their
+                            // full-area hit target made the topmost gray box
+                            // swallow clicks intended for a lower box.  For
+                            // non-editable rectangles, only the visible
+                            // border is a hit target and interior clicks can
+                            // propagate to the rectangle below.
+                            // Editable rectangles must be selectable from their
+                            // full area so single-view and multi-view expose
+                            // identical drag/resize behavior.  Keep the
+                            // border-only hit target only for read-only overlays
+                            // to avoid overlapping gray boxes swallowing clicks.
+                            if (!rectItem.rectangleEditable) {
+                                const edgeDistance = Math.min(mouse.x, mouse.y,
+                                                              width - mouse.x, height - mouse.y);
+                                if (edgeDistance > 8) {
+                                    mouse.accepted = false;
+                                    return;
+                                }
+                            }
                             if (mouse.button === Qt.RightButton) {
                                 rectItem.select();
                                 rectItem.overlayRoot.rectangleRightClicked(rectItem.rectKey);
