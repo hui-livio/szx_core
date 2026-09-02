@@ -1,14 +1,15 @@
 #include "SzxKeyStore/KeyStore.h"
-#include "SzxCrypto/Rsa.h"
+#include <chrono>
 #include <gtest/gtest.h>
 #include <string>
 #include <vector>
-#include <chrono>
+#include "SzxCrypto/Rsa.h"
 #if defined(_WIN32)
-#include <windows.h>
+    #include <windows.h>
 #endif
 using namespace SZX::KEYSTORE;
-TEST(KeyStoreTest, RejectsInvalidReferences) {
+TEST(KeyStoreTest, RejectsInvalidReferences)
+{
     auto result = openRsaPublicKey({});
     EXPECT_FALSE(result.ok);
     EXPECT_EQ(result.error, static_cast<int>(KeyStoreError::InvalidArgument));
@@ -19,7 +20,8 @@ TEST(KeyStoreTest, RejectsInvalidReferences) {
     EXPECT_FALSE(badProvider.ok);
     EXPECT_EQ(badProvider.error, static_cast<int>(KeyStoreError::InvalidArgument));
 }
-TEST(KeyStoreTest, ReportsPlatformCapability) {
+TEST(KeyStoreTest, ReportsPlatformCapability)
+{
     auto result = createRsa3072("");
     EXPECT_FALSE(result.ok);
     EXPECT_EQ(result.error, static_cast<int>(KeyStoreError::InvalidArgument));
@@ -29,7 +31,7 @@ TEST(KeyStoreTest, PersistentKeyLifecycle)
 {
 #if defined(_WIN32)
     const auto name = std::string("SZX.Test.") + std::to_string(GetCurrentProcessId());
-    auto created = createRsa3072(name, KeyUsage::Sign);
+    auto created    = createRsa3072(name, KeyUsage::Sign);
     ASSERT_TRUE(created.ok) << created.message;
     auto opened = openRsaPublicKey({{}, name});
     ASSERT_TRUE(opened.ok) << opened.message;
@@ -48,7 +50,7 @@ TEST(KeyStoreTest, PersistentKeyDecryptRoundTrip)
 {
 #if defined(_WIN32)
     const auto name = std::string("SZX.Test.Decrypt.") + std::to_string(GetCurrentProcessId());
-    auto created = createRsa3072(name, KeyUsage::SignAndDecrypt);
+    auto created    = createRsa3072(name, KeyUsage::SignAndDecrypt);
     ASSERT_TRUE(created.ok) << created.message;
     auto encrypted = SZX::CRYPTO::rsaOaepSha256Encrypt(created.value, std::vector<std::uint8_t>{'o', 'k'});
     ASSERT_TRUE(encrypted.ok) << encrypted.message;
@@ -65,7 +67,7 @@ TEST(KeyStoreTest, EnforcesUsageRestrictions)
 {
 #if defined(_WIN32)
     const auto signName = std::string("SZX.Test.SignOnly.") + std::to_string(GetCurrentProcessId());
-    auto signKey = createRsa3072(signName, KeyUsage::Sign);
+    auto signKey        = createRsa3072(signName, KeyUsage::Sign);
     ASSERT_TRUE(signKey.ok) << signKey.message;
     const std::vector<std::uint8_t> payload{'x'};
     EXPECT_TRUE(signPssSha256({{}, signName}, payload).ok);
@@ -73,7 +75,7 @@ TEST(KeyStoreTest, EnforcesUsageRestrictions)
     EXPECT_TRUE(deleteKey({{}, signName}).ok);
 
     const auto decryptName = std::string("SZX.Test.DecryptOnly.") + std::to_string(GetCurrentProcessId());
-    auto decryptKey = createRsa3072(decryptName, KeyUsage::Decrypt);
+    auto decryptKey        = createRsa3072(decryptName, KeyUsage::Decrypt);
     ASSERT_TRUE(decryptKey.ok) << decryptKey.message;
     EXPECT_FALSE(signPssSha256({{}, decryptName}, payload).ok);
     EXPECT_TRUE(deleteKey({{}, decryptName}).ok);

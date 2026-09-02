@@ -165,9 +165,8 @@ TEST(CryptoAeadTest, MatchesAes256GcmEmptyPlaintextVector)
 #if defined(_WIN32)
     ASSERT_TRUE(encrypted.ok) << encrypted.message;
     EXPECT_TRUE(encrypted.value.ciphertext.empty());
-    const std::vector<std::uint8_t> expectedTag{
-        0x53, 0x0f, 0x8a, 0xfb, 0xc7, 0x45, 0x36, 0xb9,
-        0xa9, 0x63, 0xb4, 0xf1, 0xc4, 0xcb, 0x73, 0x8b};
+    const std::vector<std::uint8_t> expectedTag{0x53, 0x0f, 0x8a, 0xfb, 0xc7, 0x45, 0x36, 0xb9,
+                                                0xa9, 0x63, 0xb4, 0xf1, 0xc4, 0xcb, 0x73, 0x8b};
     EXPECT_EQ(encrypted.value.tag, expectedTag);
 #else
     EXPECT_FALSE(encrypted.ok);
@@ -202,11 +201,9 @@ TEST(CryptoKdfTest, MatchesPbkdf2Sha256Vector)
     auto derived = derivePbkdf2Sha256(password, salt, 1, 32);
 #if defined(_WIN32)
     ASSERT_TRUE(derived.ok) << derived.message;
-    const std::vector<std::uint8_t> expected{
-        0x12, 0x0f, 0xb6, 0xcf, 0xfc, 0xf8, 0xb3, 0x2c,
-        0x43, 0xe7, 0x22, 0x52, 0x56, 0xc4, 0xf8, 0x37,
-        0xa8, 0x65, 0x48, 0xc9, 0x2c, 0xcc, 0x35, 0x48,
-        0x08, 0x05, 0x98, 0x7c, 0xb7, 0x0b, 0xe1, 0x7b};
+    const std::vector<std::uint8_t> expected{0x12, 0x0f, 0xb6, 0xcf, 0xfc, 0xf8, 0xb3, 0x2c, 0x43, 0xe7, 0x22,
+                                             0x52, 0x56, 0xc4, 0xf8, 0x37, 0xa8, 0x65, 0x48, 0xc9, 0x2c, 0xcc,
+                                             0x35, 0x48, 0x08, 0x05, 0x98, 0x7c, 0xb7, 0x0b, 0xe1, 0x7b};
     EXPECT_EQ(derived.value, expected);
 #else
     EXPECT_FALSE(derived.ok);
@@ -253,7 +250,7 @@ TEST(CryptoRsaTest, RejectsMalformedKeysAndCiphertext)
 
 TEST(CryptoRsaTest, RejectsCiphertextWithWrongPrivateKey)
 {
-    auto first = generateRsa3072KeyPair();
+    auto first  = generateRsa3072KeyPair();
     auto second = generateRsa3072KeyPair();
     ASSERT_TRUE(first.ok) << first.message;
     ASSERT_TRUE(second.ok) << second.message;
@@ -268,7 +265,7 @@ TEST(CryptoRsaTest, ComputesStablePublicKeyId)
 {
     auto keys = generateRsa3072KeyPair();
     ASSERT_TRUE(keys.ok) << keys.message;
-    auto first = rsaPublicKeyId(keys.value.publicKey);
+    auto first  = rsaPublicKeyId(keys.value.publicKey);
     auto second = rsaPublicKeyId(keys.value.publicKey);
     ASSERT_TRUE(first.ok) << first.message;
     ASSERT_TRUE(second.ok) << second.message;
@@ -316,14 +313,14 @@ TEST(CryptoRsaTest, SignsAndRejectsTamperedPssSignature)
     ASSERT_TRUE(verified.ok) << verified.message;
     EXPECT_TRUE(verified.value);
     signature.value.front() ^= 0x01U;
-    auto tampered = rsaPssSha256Verify(keys.value.publicKey, data, signature.value);
+    auto tampered            = rsaPssSha256Verify(keys.value.publicKey, data, signature.value);
     ASSERT_TRUE(tampered.ok) << tampered.message;
     EXPECT_FALSE(tampered.value);
 }
 
 TEST(CryptoRandomTest, GeneratesRequestedLengthAndComparesConstantTime)
 {
-    auto first = randomBytes(32);
+    auto first  = randomBytes(32);
     auto second = randomBytes(32);
     ASSERT_TRUE(first.ok) << first.message;
     ASSERT_TRUE(second.ok) << second.message;
@@ -355,8 +352,7 @@ TEST(CryptoSecureBytesTest, ClearsAndMoveAssigns)
     SecureBytes source(std::vector<std::uint8_t>{9, 8, 7});
     SecureBytes target(std::vector<std::uint8_t>{1});
     target = std::move(source);
-    EXPECT_EQ(std::vector<std::uint8_t>(target.span().begin(), target.span().end()),
-              (std::vector<std::uint8_t>{9, 8, 7}));
+    EXPECT_EQ(std::vector<std::uint8_t>(target.span().begin(), target.span().end()), (std::vector<std::uint8_t>{9, 8, 7}));
     EXPECT_TRUE(source.empty());
     target.clear();
     EXPECT_TRUE(target.empty());

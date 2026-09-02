@@ -7,11 +7,11 @@
 
 #pragma once
 
-#include "SzxCrypto/Base64.h"
 #include "SzxCrypto/Aead.h"
+#include "SzxCrypto/Base64.h"
 #include "SzxCrypto/Fernet.h"
 #include "SzxCrypto/Hash.h"
 #include "SzxCrypto/Kdf.h"
-#include "SzxCrypto/Rsa.h"
 #include "SzxCrypto/Random.h"
+#include "SzxCrypto/Rsa.h"
 #include "SzxCrypto/SecureBytes.h"

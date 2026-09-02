@@ -1,3 +1,15 @@
+#include <QApplication>
+#include <QColor>
+#include <QDialogButtonBox>
+#include <QFormLayout>
+#include <QHBoxLayout>
+#include <QMouseEvent>
+#include <QPainter>
+#include <QPainterPath>
+#include <QPushButton>
+#include <QTimer>
+#include <QToolButton>
+#include <QVBoxLayout>
 #include "UIToolkits/UTAppWindow.h"
 #include "UIToolkits/UTBadge.h"
 #include "UIToolkits/UTCalendar.h"
@@ -17,24 +29,20 @@
 #include "UIToolkits/UTTitleBarButtonGroup.h"
 #include "UIToolkits/UTToast.h"
 #include "UIToolkits/UTTooltip.h"
-#include <QApplication>
-#include <QColor>
-#include <QDialogButtonBox>
-#include <QMouseEvent>
-#include <QPainter>
-#include <QPainterPath>
-#include <QPushButton>
-#include <QTimer>
-#include <QToolButton>
-#include <QHBoxLayout>
-#include <QFormLayout>
-#include <QVBoxLayout>
 
 namespace UIToolkits
 {
-UTAppWindow::UTAppWindow(QWidget *parent) : QMainWindow(parent) { setAttribute(Qt::WA_StyledBackground, true); }
-void UTAppWindow::setFrameless(bool enabled) { setWindowFlag(Qt::FramelessWindowHint, enabled); }
-UTTitleBar::UTTitleBar(QWidget *parent) : QWidget(parent)
+UTAppWindow::UTAppWindow(QWidget *parent) :
+    QMainWindow(parent)
+{
+    setAttribute(Qt::WA_StyledBackground, true);
+}
+void UTAppWindow::setFrameless(bool enabled)
+{
+    setWindowFlag(Qt::FramelessWindowHint, enabled);
+}
+UTTitleBar::UTTitleBar(QWidget *parent) :
+    QWidget(parent)
 {
     setFixedHeight(40);
     setObjectName("utTitleBar");
@@ -60,20 +68,63 @@ UTTitleBar::UTTitleBar(QWidget *parent) : QWidget(parent)
     close->setFixedSize(30, 30);
     layout->addWidget(close);
     connect(close, &QToolButton::clicked, this, &UTTitleBar::closeRequested);
-    connect(minimize, &QToolButton::clicked, this, [this] { emit minimizeRequested(); if (window()) window()->showMinimized(); });
-    connect(maximize, &QToolButton::clicked, this, [this, maximize] {
-        if (window()) {
-            if (window()->isMaximized()) { window()->showNormal(); maximize->setText(QStringLiteral("□")); }
-            else { window()->showMaximized(); maximize->setText(QStringLiteral("❐")); }
-        }
-        emit maximizeRequested();
-    });
+    connect(minimize, &QToolButton::clicked, this,
+            [this]
+            {
+                emit minimizeRequested();
+                if (window())
+                    window()->showMinimized();
+            });
+    connect(maximize, &QToolButton::clicked, this,
+            [this, maximize]
+            {
+                if (window())
+                {
+                    if (window()->isMaximized())
+                    {
+                        window()->showNormal();
+                        maximize->setText(QStringLiteral("□"));
+                    }
+                    else
+                    {
+                        window()->showMaximized();
+                        maximize->setText(QStringLiteral("❐"));
+                    }
+                }
+                emit maximizeRequested();
+            });
 }
-void UTTitleBar::setTitle(const QString &title) { if (auto *label = findChild<QLabel *>(QStringLiteral("titleLabel"))) label->setText(title); }
-QString UTTitleBar::title() const { if (auto *label = findChild<QLabel *>(QStringLiteral("titleLabel"))) return label->text(); return {}; }
-void UTTitleBar::mousePressEvent(QMouseEvent *event) { if (event->button() == Qt::LeftButton) setProperty("utDragPos", event->globalPosition().toPoint()); QWidget::mousePressEvent(event); }
-void UTTitleBar::mouseMoveEvent(QMouseEvent *event) { const auto pos = property("utDragPos"); if (pos.isValid() && (event->buttons() & Qt::LeftButton)) { const auto delta = event->globalPosition().toPoint() - pos.toPoint(); if (window()) window()->move(window()->pos() + delta); setProperty("utDragPos", event->globalPosition().toPoint()); } QWidget::mouseMoveEvent(event); }
-UTTitleBarButtonGroup::UTTitleBarButtonGroup(QWidget *parent) : QWidget(parent)
+void UTTitleBar::setTitle(const QString &title)
+{
+    if (auto *label = findChild<QLabel *>(QStringLiteral("titleLabel")))
+        label->setText(title);
+}
+QString UTTitleBar::title() const
+{
+    if (auto *label = findChild<QLabel *>(QStringLiteral("titleLabel")))
+        return label->text();
+    return {};
+}
+void UTTitleBar::mousePressEvent(QMouseEvent *event)
+{
+    if (event->button() == Qt::LeftButton)
+        setProperty("utDragPos", event->globalPosition().toPoint());
+    QWidget::mousePressEvent(event);
+}
+void UTTitleBar::mouseMoveEvent(QMouseEvent *event)
+{
+    const auto pos = property("utDragPos");
+    if (pos.isValid() && (event->buttons() & Qt::LeftButton))
+    {
+        const auto delta = event->globalPosition().toPoint() - pos.toPoint();
+        if (window())
+            window()->move(window()->pos() + delta);
+        setProperty("utDragPos", event->globalPosition().toPoint());
+    }
+    QWidget::mouseMoveEvent(event);
+}
+UTTitleBarButtonGroup::UTTitleBarButtonGroup(QWidget *parent) :
+    QWidget(parent)
 {
     auto *layout = new QHBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
@@ -84,67 +135,319 @@ QToolButton *UTTitleBarButtonGroup::addButton(const QString &text)
     auto *button = new QToolButton(this);
     button->setText(text);
     button->setAutoRaise(true);
-    if (auto *layout = qobject_cast<QHBoxLayout *>(this->layout())) layout->addWidget(button);
+    if (auto *layout = qobject_cast<QHBoxLayout *>(this->layout()))
+        layout->addWidget(button);
     return button;
 }
-UTFootBar::UTFootBar(QWidget *parent) : QWidget(parent) { setFixedHeight(32); setLayout(new QHBoxLayout); layout()->setContentsMargins(12, 4, 12, 4); }
-UTBadge::UTBadge(QWidget *parent) : QLabel(parent) { setTone(Tone::Neutral); setAlignment(Qt::AlignCenter); setMinimumHeight(22); setContentsMargins(8, 1, 8, 1); }
-void UTBadge::setTone(Tone tone) { setProperty("tone", static_cast<int>(tone)); const char *colors[] = {"#64748b", "#16a34a", "#d97706", "#dc2626", "#2563eb"}; setStyleSheet(QStringLiteral("QLabel { color: white; background: %1; border-radius: 11px; }").arg(colors[static_cast<int>(tone)])); }
-UTBadge::Tone UTBadge::tone() const { return static_cast<Tone>(property("tone").toInt()); }
-UTStatCard::UTStatCard(QWidget *parent) : QFrame(parent)
+UTFootBar::UTFootBar(QWidget *parent) :
+    QWidget(parent)
+{
+    setFixedHeight(32);
+    setLayout(new QHBoxLayout);
+    layout()->setContentsMargins(12, 4, 12, 4);
+}
+UTBadge::UTBadge(QWidget *parent) :
+    QLabel(parent)
+{
+    setTone(Tone::Neutral);
+    setAlignment(Qt::AlignCenter);
+    setMinimumHeight(22);
+    setContentsMargins(8, 1, 8, 1);
+}
+void UTBadge::setTone(Tone tone)
+{
+    setProperty("tone", static_cast<int>(tone));
+    const char *colors[] = {"#64748b", "#16a34a", "#d97706", "#dc2626", "#2563eb"};
+    setStyleSheet(
+        QStringLiteral("QLabel { color: white; background: %1; border-radius: 11px; }").arg(colors[static_cast<int>(tone)]));
+}
+UTBadge::Tone UTBadge::tone() const
+{
+    return static_cast<Tone>(property("tone").toInt());
+}
+UTStatCard::UTStatCard(QWidget *parent) :
+    QFrame(parent)
 {
     setFrameShape(QFrame::StyledPanel);
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(16, 12, 16, 12);
-    auto *title = new QLabel(this); title->setObjectName("statTitle");
-    auto *value = new QLabel(this); value->setObjectName("statValue"); value->setStyleSheet("font-size: 22px; font-weight: 600;");
-    layout->addWidget(title); layout->addWidget(value);
+    auto *title = new QLabel(this);
+    title->setObjectName("statTitle");
+    auto *value = new QLabel(this);
+    value->setObjectName("statValue");
+    value->setStyleSheet("font-size: 22px; font-weight: 600;");
+    layout->addWidget(title);
+    layout->addWidget(value);
 }
-void UTStatCard::setTitle(const QString &title) { if (auto *label = findChild<QLabel *>("statTitle")) label->setText(title); }
-void UTStatCard::setValue(const QString &value) { if (auto *label = findChild<QLabel *>("statValue")) label->setText(value); }
-QString UTStatCard::title() const { if (auto *label = findChild<QLabel *>("statTitle")) return label->text(); return {}; }
-QString UTStatCard::value() const { if (auto *label = findChild<QLabel *>("statValue")) return label->text(); return {}; }
-UTKeyValueGrid::UTKeyValueGrid(QWidget *parent) : QWidget(parent)
+void UTStatCard::setTitle(const QString &title)
 {
-    auto *layout = new QFormLayout(this); layout->setContentsMargins(0, 0, 0, 0); setProperty("rowCount", 0);
+    if (auto *label = findChild<QLabel *>("statTitle"))
+        label->setText(title);
 }
-void UTKeyValueGrid::addRow(const QString &key, const QString &value) { if (auto *form = qobject_cast<QFormLayout *>(layout())) { form->addRow(new QLabel(key, this), new QLabel(value, this)); setProperty("rowCount", property("rowCount").toInt() + 1); } }
-void UTKeyValueGrid::clearRows() { if (auto *form = qobject_cast<QFormLayout *>(layout())) { while (form->count()) { auto *item = form->takeAt(0); delete item->widget(); delete item; } setProperty("rowCount", 0); } }
-UTScrollView::UTScrollView(QWidget *parent) : QScrollArea(parent) { setWidgetResizable(true); setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff); }
-UTFlickable::UTFlickable(QWidget *parent) : QScrollArea(parent) { setWidgetResizable(true); setFrameShape(QFrame::NoFrame); setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff); }
-UTImageAvatar::UTImageAvatar(QWidget *parent) : QLabel(parent) { setAlignment(Qt::AlignCenter); setMinimumSize(32, 32); setScaledContents(false); }
-void UTImageAvatar::paintEvent(QPaintEvent *) { QPainter painter(this); painter.setRenderHint(QPainter::Antialiasing); QPainterPath clip; clip.addEllipse(rect()); painter.setClipPath(clip); if (!pixmap().isNull()) { const auto scaled = pixmap().scaled(size(), Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation); painter.drawPixmap((width()-scaled.width())/2, (height()-scaled.height())/2, scaled); } else { painter.fillRect(rect(), palette().mid()); painter.setPen(palette().brightText().color()); painter.drawText(rect(), Qt::AlignCenter, text().left(1).toUpper()); } }
-UTImageViewer::UTImageViewer(QWidget *parent) : QScrollArea(parent)
+void UTStatCard::setValue(const QString &value)
 {
-    setWidgetResizable(false); setAlignment(Qt::AlignCenter); setBackgroundRole(QPalette::Dark);
-    auto *label = new QLabel(this); label->setObjectName("imageLabel"); label->setAlignment(Qt::AlignCenter); setWidget(label);
+    if (auto *label = findChild<QLabel *>("statValue"))
+        label->setText(value);
 }
-void UTImageViewer::setPixmap(const QPixmap &image) { if (auto *label = findChild<QLabel *>("imageLabel")) { label->setPixmap(image); label->adjustSize(); } }
-QPixmap UTImageViewer::pixmap() const { if (auto *label = findChild<QLabel *>("imageLabel")) return label->pixmap(); return {}; }
-UTLoading::UTLoading(QWidget *parent) : QProgressBar(parent) { setRange(0, 0); setTextVisible(false); setFixedHeight(4); stop(); }
-void UTLoading::start() { setProperty("active", true); show(); }
-void UTLoading::stop() { setProperty("active", false); hide(); }
-bool UTLoading::isActive() const { return property("active").toBool(); }
-UTToast::UTToast(QWidget *parent) : QLabel(parent) { setAlignment(Qt::AlignCenter); setWordWrap(true); setMargin(10); setStyleSheet(QStringLiteral("QLabel { color: white; background: #334155; border-radius: 8px; }") ); hide(); }
-void UTToast::showMessage(const QString &message, int durationMs) { setText(message); adjustSize(); if (parentWidget()) move((parentWidget()->width()-width())/2, parentWidget()->height()-height()-24); show(); raise(); auto *timer = findChild<QTimer *>(QStringLiteral("hideTimer")); if (!timer) { timer = new QTimer(this); timer->setObjectName(QStringLiteral("hideTimer")); timer->setSingleShot(true); connect(timer, &QTimer::timeout, this, &QWidget::hide); } timer->start(qMax(0, durationMs)); }
-UTTooltip::UTTooltip(QWidget *parent) : QLabel(parent) { setWindowFlags(Qt::ToolTip); setWordWrap(true); setMargin(6); setAttribute(Qt::WA_ShowWithoutActivating); }
-UTMessageDialog::UTMessageDialog(QWidget *parent) : QDialog(parent)
+QString UTStatCard::title() const
 {
-    auto *layout = new QVBoxLayout(this); layout->setContentsMargins(24, 20, 24, 16);
-    auto *label = new QLabel(this); label->setObjectName("messageLabel"); label->setWordWrap(true); layout->addWidget(label);
-    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok, this); layout->addWidget(buttons); connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);
+    if (auto *label = findChild<QLabel *>("statTitle"))
+        return label->text();
+    return {};
 }
-void UTMessageDialog::setMessage(const QString &message) { if (auto *label = findChild<QLabel *>("messageLabel")) label->setText(message); }
-QString UTMessageDialog::message() const { if (auto *label = findChild<QLabel *>("messageLabel")) return label->text(); return {}; }
-UTCalendar::UTCalendar(QWidget *parent) : QCalendarWidget(parent) { setGridVisible(true); setFirstDayOfWeek(Qt::Monday); }
-UTMarqueeLabel::UTMarqueeLabel(QWidget *parent) : QLabel(parent) { setProperty("offset", 0); setProperty("speed", 1); setActive(true); }
-void UTMarqueeLabel::setActive(bool active) { setProperty("active", active); auto *timer = findChild<QTimer *>(QStringLiteral("marqueeTimer")); if (!timer) { timer = new QTimer(this); timer->setObjectName(QStringLiteral("marqueeTimer")); connect(timer, &QTimer::timeout, this, [this] { setProperty("offset", property("offset").toInt() + property("speed").toInt()); update(); }); } active ? timer->start(30) : timer->stop(); }
-bool UTMarqueeLabel::isActive() const { return property("active").toBool(); }
-void UTMarqueeLabel::setSpeed(int pixelsPerTick) { setProperty("speed", qMax(1, pixelsPerTick)); }
-void UTMarqueeLabel::paintEvent(QPaintEvent *event) { if (text().isEmpty() || !isActive()) { QLabel::paintEvent(event); return; } QPainter p(this); p.setPen(palette().windowText().color()); const int textWidth = fontMetrics().horizontalAdvance(text()); const int offset = textWidth > width() ? property("offset").toInt() % (textWidth + width()) : 0; p.drawText(-offset, 0, textWidth, height(), alignment(), text()); p.drawText(-offset + textWidth + width(), 0, textWidth, height(), alignment(), text()); }
-UTTabButton::UTTabButton(QWidget *parent) : QPushButton(parent) { setCheckable(true); setActive(false); }
-void UTTabButton::setActive(bool active) { setChecked(active); setProperty("active", active); }
-bool UTTabButton::isActive() const { return property("active").toBool(); }
-UTSliderValue::UTSliderValue(Qt::Orientation orientation, QWidget *parent) : QSlider(orientation, parent) { connect(this, &QSlider::valueChanged, this, [this](int value) { setToolTip(valueText()); }); }
-QString UTSliderValue::valueText() const { return QString::number(value()); }
+QString UTStatCard::value() const
+{
+    if (auto *label = findChild<QLabel *>("statValue"))
+        return label->text();
+    return {};
+}
+UTKeyValueGrid::UTKeyValueGrid(QWidget *parent) :
+    QWidget(parent)
+{
+    auto *layout = new QFormLayout(this);
+    layout->setContentsMargins(0, 0, 0, 0);
+    setProperty("rowCount", 0);
+}
+void UTKeyValueGrid::addRow(const QString &key, const QString &value)
+{
+    if (auto *form = qobject_cast<QFormLayout *>(layout()))
+    {
+        form->addRow(new QLabel(key, this), new QLabel(value, this));
+        setProperty("rowCount", property("rowCount").toInt() + 1);
+    }
+}
+void UTKeyValueGrid::clearRows()
+{
+    if (auto *form = qobject_cast<QFormLayout *>(layout()))
+    {
+        while (form->count())
+        {
+            auto *item = form->takeAt(0);
+            delete item->widget();
+            delete item;
+        }
+        setProperty("rowCount", 0);
+    }
+}
+UTScrollView::UTScrollView(QWidget *parent) :
+    QScrollArea(parent)
+{
+    setWidgetResizable(true);
+    setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+}
+UTFlickable::UTFlickable(QWidget *parent) :
+    QScrollArea(parent)
+{
+    setWidgetResizable(true);
+    setFrameShape(QFrame::NoFrame);
+    setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+}
+UTImageAvatar::UTImageAvatar(QWidget *parent) :
+    QLabel(parent)
+{
+    setAlignment(Qt::AlignCenter);
+    setMinimumSize(32, 32);
+    setScaledContents(false);
+}
+void UTImageAvatar::paintEvent(QPaintEvent *)
+{
+    QPainter painter(this);
+    painter.setRenderHint(QPainter::Antialiasing);
+    QPainterPath clip;
+    clip.addEllipse(rect());
+    painter.setClipPath(clip);
+    if (!pixmap().isNull())
+    {
+        const auto scaled = pixmap().scaled(size(), Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
+        painter.drawPixmap((width() - scaled.width()) / 2, (height() - scaled.height()) / 2, scaled);
+    }
+    else
+    {
+        painter.fillRect(rect(), palette().mid());
+        painter.setPen(palette().brightText().color());
+        painter.drawText(rect(), Qt::AlignCenter, text().left(1).toUpper());
+    }
+}
+UTImageViewer::UTImageViewer(QWidget *parent) :
+    QScrollArea(parent)
+{
+    setWidgetResizable(false);
+    setAlignment(Qt::AlignCenter);
+    setBackgroundRole(QPalette::Dark);
+    auto *label = new QLabel(this);
+    label->setObjectName("imageLabel");
+    label->setAlignment(Qt::AlignCenter);
+    setWidget(label);
+}
+void UTImageViewer::setPixmap(const QPixmap &image)
+{
+    if (auto *label = findChild<QLabel *>("imageLabel"))
+    {
+        label->setPixmap(image);
+        label->adjustSize();
+    }
+}
+QPixmap UTImageViewer::pixmap() const
+{
+    if (auto *label = findChild<QLabel *>("imageLabel"))
+        return label->pixmap();
+    return {};
+}
+UTLoading::UTLoading(QWidget *parent) :
+    QProgressBar(parent)
+{
+    setRange(0, 0);
+    setTextVisible(false);
+    setFixedHeight(4);
+    stop();
+}
+void UTLoading::start()
+{
+    setProperty("active", true);
+    show();
+}
+void UTLoading::stop()
+{
+    setProperty("active", false);
+    hide();
+}
+bool UTLoading::isActive() const
+{
+    return property("active").toBool();
+}
+UTToast::UTToast(QWidget *parent) :
+    QLabel(parent)
+{
+    setAlignment(Qt::AlignCenter);
+    setWordWrap(true);
+    setMargin(10);
+    setStyleSheet(QStringLiteral("QLabel { color: white; background: #334155; border-radius: 8px; }"));
+    hide();
+}
+void UTToast::showMessage(const QString &message, int durationMs)
+{
+    setText(message);
+    adjustSize();
+    if (parentWidget())
+        move((parentWidget()->width() - width()) / 2, parentWidget()->height() - height() - 24);
+    show();
+    raise();
+    auto *timer = findChild<QTimer *>(QStringLiteral("hideTimer"));
+    if (!timer)
+    {
+        timer = new QTimer(this);
+        timer->setObjectName(QStringLiteral("hideTimer"));
+        timer->setSingleShot(true);
+        connect(timer, &QTimer::timeout, this, &QWidget::hide);
+    }
+    timer->start(qMax(0, durationMs));
+}
+UTTooltip::UTTooltip(QWidget *parent) :
+    QLabel(parent)
+{
+    setWindowFlags(Qt::ToolTip);
+    setWordWrap(true);
+    setMargin(6);
+    setAttribute(Qt::WA_ShowWithoutActivating);
+}
+UTMessageDialog::UTMessageDialog(QWidget *parent) :
+    QDialog(parent)
+{
+    auto *layout = new QVBoxLayout(this);
+    layout->setContentsMargins(24, 20, 24, 16);
+    auto *label = new QLabel(this);
+    label->setObjectName("messageLabel");
+    label->setWordWrap(true);
+    layout->addWidget(label);
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok, this);
+    layout->addWidget(buttons);
+    connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);
+}
+void UTMessageDialog::setMessage(const QString &message)
+{
+    if (auto *label = findChild<QLabel *>("messageLabel"))
+        label->setText(message);
+}
+QString UTMessageDialog::message() const
+{
+    if (auto *label = findChild<QLabel *>("messageLabel"))
+        return label->text();
+    return {};
+}
+UTCalendar::UTCalendar(QWidget *parent) :
+    QCalendarWidget(parent)
+{
+    setGridVisible(true);
+    setFirstDayOfWeek(Qt::Monday);
+}
+UTMarqueeLabel::UTMarqueeLabel(QWidget *parent) :
+    QLabel(parent)
+{
+    setProperty("offset", 0);
+    setProperty("speed", 1);
+    setActive(true);
+}
+void UTMarqueeLabel::setActive(bool active)
+{
+    setProperty("active", active);
+    auto *timer = findChild<QTimer *>(QStringLiteral("marqueeTimer"));
+    if (!timer)
+    {
+        timer = new QTimer(this);
+        timer->setObjectName(QStringLiteral("marqueeTimer"));
+        connect(timer, &QTimer::timeout, this,
+                [this]
+                {
+                    setProperty("offset", property("offset").toInt() + property("speed").toInt());
+                    update();
+                });
+    }
+    active ? timer->start(30) : timer->stop();
+}
+bool UTMarqueeLabel::isActive() const
+{
+    return property("active").toBool();
+}
+void UTMarqueeLabel::setSpeed(int pixelsPerTick)
+{
+    setProperty("speed", qMax(1, pixelsPerTick));
+}
+void UTMarqueeLabel::paintEvent(QPaintEvent *event)
+{
+    if (text().isEmpty() || !isActive())
+    {
+        QLabel::paintEvent(event);
+        return;
+    }
+    QPainter p(this);
+    p.setPen(palette().windowText().color());
+    const int textWidth = fontMetrics().horizontalAdvance(text());
+    const int offset    = textWidth > width() ? property("offset").toInt() % (textWidth + width()) : 0;
+    p.drawText(-offset, 0, textWidth, height(), alignment(), text());
+    p.drawText(-offset + textWidth + width(), 0, textWidth, height(), alignment(), text());
+}
+UTTabButton::UTTabButton(QWidget *parent) :
+    QPushButton(parent)
+{
+    setCheckable(true);
+    setActive(false);
+}
+void UTTabButton::setActive(bool active)
+{
+    setChecked(active);
+    setProperty("active", active);
+}
+bool UTTabButton::isActive() const
+{
+    return property("active").toBool();
+}
+UTSliderValue::UTSliderValue(Qt::Orientation orientation, QWidget *parent) :
+    QSlider(orientation, parent)
+{
+    connect(this, &QSlider::valueChanged, this, [this](int value) { setToolTip(valueText()); });
+}
+QString UTSliderValue::valueText() const
+{
+    return QString::number(value());
+}
 } // namespace UIToolkits

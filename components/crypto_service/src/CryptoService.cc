@@ -1,6 +1,6 @@
 #include "SzxCryptoService/CryptoService.h"
-#include "SzxCrypto/Crypto.h"
 #include <exception>
+#include "SzxCrypto/Crypto.h"
 
 namespace SZX::CRYPTO_SERVICE
 {
@@ -13,12 +13,10 @@ auto invokeBoundary(Function &&function) -> decltype(function())
     try
     {
         return function();
-    }
-    catch (const std::exception &)
+    } catch (const std::exception &)
     {
         return ResultType::Failure(static_cast<int>(CryptoServiceError::InternalFailure), "加密服务内部异常。");
-    }
-    catch (...)
+    } catch (...)
     {
         return ResultType::Failure(static_cast<int>(CryptoServiceError::InternalFailure), "加密服务内部异常。");
     }
@@ -32,17 +30,19 @@ auto CryptoService::capabilities() const -> CryptoCapabilities
 auto CryptoService::encrypt(std::span<const std::uint8_t> key, std::span<const std::uint8_t> data,
                             std::span<const std::uint8_t> aad) -> SZX::COMMON::Result<CryptoCiphertext>
 {
-    return invokeBoundary([&]() -> SZX::COMMON::Result<CryptoCiphertext> {
-        auto r = SZX::CRYPTO::aes256GcmEncrypt(key, data, aad);
-        if (!r.ok)
-            return SZX::COMMON::Result<CryptoCiphertext>::Failure(r.error, r.message);
-        return SZX::COMMON::Result<CryptoCiphertext>::Success(
-            {std::move(r.value.nonce), std::move(r.value.ciphertext), std::move(r.value.tag)});
-    });
+    return invokeBoundary(
+        [&]() -> SZX::COMMON::Result<CryptoCiphertext>
+        {
+            auto r = SZX::CRYPTO::aes256GcmEncrypt(key, data, aad);
+            if (!r.ok)
+                return SZX::COMMON::Result<CryptoCiphertext>::Failure(r.error, r.message);
+            return SZX::COMMON::Result<CryptoCiphertext>::Success(
+                {std::move(r.value.nonce), std::move(r.value.ciphertext), std::move(r.value.tag)});
+        });
 }
 
-auto CryptoService::decrypt(std::span<const std::uint8_t> key, const CryptoCiphertext &cipher,
-                            std::span<const std::uint8_t> aad) -> SZX::COMMON::Result<std::vector<std::uint8_t>>
+auto CryptoService::decrypt(std::span<const std::uint8_t> key, const CryptoCiphertext &cipher, std::span<const std::uint8_t> aad)
+    -> SZX::COMMON::Result<std::vector<std::uint8_t>>
 {
     return invokeBoundary([&] { return SZX::CRYPTO::aes256GcmDecrypt(key, cipher.nonce, cipher.ciphertext, cipher.tag, aad); });
 }
@@ -90,8 +90,8 @@ auto FakeCryptoService::encrypt(std::span<const std::uint8_t>, std::span<const s
     ++encryptCalls;
     return fakeUnsupported<CryptoCiphertext>();
 }
-auto FakeCryptoService::decrypt(std::span<const std::uint8_t>, const CryptoCiphertext &,
-                                std::span<const std::uint8_t>) -> SZX::COMMON::Result<std::vector<std::uint8_t>>
+auto FakeCryptoService::decrypt(std::span<const std::uint8_t>, const CryptoCiphertext &, std::span<const std::uint8_t>)
+    -> SZX::COMMON::Result<std::vector<std::uint8_t>>
 {
     ++decryptCalls;
     return fakeUnsupported<std::vector<std::uint8_t>>();

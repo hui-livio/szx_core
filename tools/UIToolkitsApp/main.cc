@@ -14,14 +14,14 @@
 #include <QQuickWindow>
 #include <QScreen>
 #include <QWindow>
+#include <UIToolkits/UTWidgetTheme.h>
 #include <memory>
+#include "DemoLauncher.h"
 #include "NativeWindow.h"
+#include "WidgetMainWindow.h"
 #include "src/model/NavTreeFilterModel.h"
 #include "src/model/TreeModel.h"
 #include "src/model/TreeNode.h"
-#include "DemoLauncher.h"
-#include "WidgetMainWindow.h"
-#include <UIToolkits/UTWidgetTheme.h>
 
 class ApplicationIconProvider : public QQuickImageProvider
 {

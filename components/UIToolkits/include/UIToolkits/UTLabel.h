@@ -1,7 +1,7 @@
 #pragma once
 
-#include "../UIToolkitsExport.h"
 #include <QLabel>
+#include "../UIToolkitsExport.h"
 
 namespace UIToolkits
 {

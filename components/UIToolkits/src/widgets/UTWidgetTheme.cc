@@ -35,24 +35,24 @@ QPalette UTWidgetTheme::palette(UTWidgetThemeKind kind)
     {
     case UTWidgetThemeKind::Light:
         setCommonPalette(result, QColor(QStringLiteral("#f5f7fa")), QColor(QStringLiteral("#ffffff")),
-                         QColor(QStringLiteral("#181d27")), QColor(QStringLiteral("#5a6577")),
-                         QColor(QStringLiteral("#d5dbe3")), QColor(QStringLiteral("#3a6df0")));
+                         QColor(QStringLiteral("#181d27")), QColor(QStringLiteral("#5a6577")), QColor(QStringLiteral("#d5dbe3")),
+                         QColor(QStringLiteral("#3a6df0")));
         break;
     case UTWidgetThemeKind::Warm:
         setCommonPalette(result, QColor(QStringLiteral("#fcf9f5")), QColor(QStringLiteral("#f5ede3")),
-                         QColor(QStringLiteral("#231c16")), QColor(QStringLiteral("#6b5543")),
-                         QColor(QStringLiteral("#dfd3c5")), QColor(QStringLiteral("#e0732f")));
+                         QColor(QStringLiteral("#231c16")), QColor(QStringLiteral("#6b5543")), QColor(QStringLiteral("#dfd3c5")),
+                         QColor(QStringLiteral("#e0732f")));
         break;
     case UTWidgetThemeKind::Forest:
         setCommonPalette(result, QColor(QStringLiteral("#f2f7f3")), QColor(QStringLiteral("#e3ede6")),
-                         QColor(QStringLiteral("#17241c")), QColor(QStringLiteral("#4d6654")),
-                         QColor(QStringLiteral("#ced9d0")), QColor(QStringLiteral("#2e9e5b")));
+                         QColor(QStringLiteral("#17241c")), QColor(QStringLiteral("#4d6654")), QColor(QStringLiteral("#ced9d0")),
+                         QColor(QStringLiteral("#2e9e5b")));
         break;
     case UTWidgetThemeKind::Dark:
     default:
         setCommonPalette(result, QColor(QStringLiteral("#0f1217")), QColor(QStringLiteral("#1a1e25")),
-                         QColor(QStringLiteral("#e6edf5")), QColor(QStringLiteral("#8b949e")),
-                         QColor(QStringLiteral("#404854")), QColor(QStringLiteral("#6d9fff")));
+                         QColor(QStringLiteral("#e6edf5")), QColor(QStringLiteral("#8b949e")), QColor(QStringLiteral("#404854")),
+                         QColor(QStringLiteral("#6d9fff")));
         result.setColor(QPalette::Disabled, QPalette::Text, QColor(QStringLiteral("#6b7280")));
         result.setColor(QPalette::Disabled, QPalette::ButtonText, QColor(QStringLiteral("#6b7280")));
         break;
@@ -63,32 +63,32 @@ QPalette UTWidgetTheme::palette(UTWidgetThemeKind kind)
 void UTWidgetTheme::apply(QApplication &application, UTWidgetThemeKind kind)
 {
     application.setPalette(palette(kind));
-    application.setStyleSheet(QStringLiteral(
-        "QMainWindow, QWidget { background: palette(window); color: palette(window-text); }"
-        "QListWidget { background: palette(base); border: 1px solid palette(mid); }"
-        "QListWidget::item { padding: 8px; }"
-        "QListWidget::item:selected { background: palette(highlight); color: palette(highlighted-text); }"
-        "QPushButton#UTButton { background: palette(highlight); color: palette(highlighted-text); "
-        "border: none; border-radius: 6px; padding: 6px 16px; min-height: 24px; }"
-        "QPushButton#UTButton:hover { background: palette(highlight); }"
-        "QPushButton#UTButton:disabled { background: palette(mid); color: palette(disabled, text); }"
-        "QLineEdit#UTLineEdit { background: palette(base); color: palette(text); border: 1px solid palette(mid); "
-        "border-radius: 6px; padding: 6px 10px; min-height: 22px; }"
-        "QLineEdit#UTLineEdit:focus { border: 2px solid palette(highlight); padding: 5px 9px; }"
-        "QComboBox#UTComboBox, QSpinBox#UTSpinBox { background: palette(base); color: palette(text); "
-        "border: 1px solid palette(mid); border-radius: 6px; padding: 6px 10px; min-height: 22px; }"
-        "QCheckBox#UTCheckBox { color: palette(text); spacing: 8px; }"
-        "QCheckBox#UTSwitch { color: palette(text); spacing: 8px; }"
-        "QCheckBox#UTSwitch::indicator { width: 36px; height: 20px; border-radius: 10px; "
-        "background: palette(mid); }"
-        "QCheckBox#UTSwitch::indicator:checked { background: palette(highlight); }"
-        "QSlider#UTSlider::groove:horizontal { height: 4px; background: palette(mid); }"
-        "QSlider#UTSlider::handle:horizontal { width: 14px; margin: -5px 0; border-radius: 7px; "
-        "background: palette(highlight); }"
-        "QProgressBar#UTProgressBar { border: none; background: palette(mid); border-radius: 4px; }"
-        "QProgressBar#UTProgressBar::chunk { background: palette(highlight); border-radius: 4px; }"
-        "QFrame#UTCard { background: palette(base); border: 1px solid palette(mid); border-radius: 8px; }"
-        "QGroupBox { border: 1px solid palette(mid); border-radius: 8px; margin-top: 12px; padding: 12px; }"
-        "QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 4px; }"));
+    application.setStyleSheet(
+        QStringLiteral("QMainWindow, QWidget { background: palette(window); color: palette(window-text); }"
+                       "QListWidget { background: palette(base); border: 1px solid palette(mid); }"
+                       "QListWidget::item { padding: 8px; }"
+                       "QListWidget::item:selected { background: palette(highlight); color: palette(highlighted-text); }"
+                       "QPushButton#UTButton { background: palette(highlight); color: palette(highlighted-text); "
+                       "border: none; border-radius: 6px; padding: 6px 16px; min-height: 24px; }"
+                       "QPushButton#UTButton:hover { background: palette(highlight); }"
+                       "QPushButton#UTButton:disabled { background: palette(mid); color: palette(disabled, text); }"
+                       "QLineEdit#UTLineEdit { background: palette(base); color: palette(text); border: 1px solid palette(mid); "
+                       "border-radius: 6px; padding: 6px 10px; min-height: 22px; }"
+                       "QLineEdit#UTLineEdit:focus { border: 2px solid palette(highlight); padding: 5px 9px; }"
+                       "QComboBox#UTComboBox, QSpinBox#UTSpinBox { background: palette(base); color: palette(text); "
+                       "border: 1px solid palette(mid); border-radius: 6px; padding: 6px 10px; min-height: 22px; }"
+                       "QCheckBox#UTCheckBox { color: palette(text); spacing: 8px; }"
+                       "QCheckBox#UTSwitch { color: palette(text); spacing: 8px; }"
+                       "QCheckBox#UTSwitch::indicator { width: 36px; height: 20px; border-radius: 10px; "
+                       "background: palette(mid); }"
+                       "QCheckBox#UTSwitch::indicator:checked { background: palette(highlight); }"
+                       "QSlider#UTSlider::groove:horizontal { height: 4px; background: palette(mid); }"
+                       "QSlider#UTSlider::handle:horizontal { width: 14px; margin: -5px 0; border-radius: 7px; "
+                       "background: palette(highlight); }"
+                       "QProgressBar#UTProgressBar { border: none; background: palette(mid); border-radius: 4px; }"
+                       "QProgressBar#UTProgressBar::chunk { background: palette(highlight); border-radius: 4px; }"
+                       "QFrame#UTCard { background: palette(base); border: 1px solid palette(mid); border-radius: 8px; }"
+                       "QGroupBox { border: 1px solid palette(mid); border-radius: 8px; margin-top: 12px; padding: 12px; }"
+                       "QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 4px; }"));
 }
 } // namespace UIToolkits

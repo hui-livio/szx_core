@@ -2,9 +2,9 @@
 
 #pragma once
 #include <cstdint>
+#include <span>
 #include <string>
 #include <vector>
-#include <span>
 
 #include "Result.hpp"
 #include "SzxKeyStore/KeyStoreExport.h"

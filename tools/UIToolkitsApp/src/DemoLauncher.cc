@@ -5,8 +5,8 @@
 
 #include "DemoLauncher.h"
 
-#include "WidgetMainWindow.h"
 #include "NativeWindow.h"
+#include "WidgetMainWindow.h"
 
 #include <QLabel>
 #include <QPushButton>

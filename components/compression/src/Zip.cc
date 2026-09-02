@@ -1,10 +1,10 @@
 #include "SzxCompression/Zip.h"
 
 #if SZX_COMPRESSION_HAS_MINIZIP
-#include <mz.h>
-#include <mz_strm.h>
-#include <mz_zip.h>
-#include <mz_zip_rw.h>
+    #include <mz.h>
+    #include <mz_strm.h>
+    #include <mz_zip.h>
+    #include <mz_zip_rw.h>
 #endif
 
 #include <limits>
@@ -67,11 +67,16 @@ struct ZipReader::Impl
     }
 };
 
-ZipReader::ZipReader() : impl_(std::make_unique<Impl>()) {}
-ZipReader::ZipReader(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {}
-ZipReader::~ZipReader()
-    = default;
-ZipReader::ZipReader(ZipReader &&) noexcept = default;
+ZipReader::ZipReader() :
+    impl_(std::make_unique<Impl>())
+{
+}
+ZipReader::ZipReader(std::unique_ptr<Impl> impl) :
+    impl_(std::move(impl))
+{
+}
+ZipReader::~ZipReader()                                = default;
+ZipReader::ZipReader(ZipReader &&) noexcept            = default;
 ZipReader &ZipReader::operator=(ZipReader &&) noexcept = default;
 
 auto ZipReader::Open(const std::filesystem::path &path) -> SZX::COMMON::Result<ZipReader>
@@ -80,8 +85,8 @@ auto ZipReader::Open(const std::filesystem::path &path) -> SZX::COMMON::Result<Z
     static_cast<void>(path);
     return failure<ZipReader>(ZipError::UnsupportedBackend, "ZIP backend is disabled");
 #else
-    auto impl = std::make_unique<Impl>();
-    impl->handle = mz_zip_reader_create();
+    auto impl           = std::make_unique<Impl>();
+    impl->handle        = mz_zip_reader_create();
     const auto pathUtf8 = utf8Path(path);
     if (impl->handle == nullptr || mz_zip_reader_open_file(impl->handle, pathUtf8.c_str()) != MZ_OK)
         return failure<ZipReader>(ZipError::Io, "unable to open ZIP archive");
@@ -131,8 +136,8 @@ auto ZipReader::read(std::string_view path) const -> SZX::COMMON::Result<std::ve
     int64_t offset = 0;
     while (offset < entry->uncompressed_size)
     {
-        const auto read = mz_zip_reader_entry_read(impl_->handle, data.data() + offset,
-                                                    static_cast<int>(entry->uncompressed_size - offset));
+        const auto read =
+            mz_zip_reader_entry_read(impl_->handle, data.data() + offset, static_cast<int>(entry->uncompressed_size - offset));
         if (read <= 0)
         {
             static_cast<void>(mz_zip_reader_entry_close(impl_->handle));
@@ -150,7 +155,7 @@ struct ZipWriter::Impl
 {
 #if SZX_COMPRESSION_HAS_MINIZIP
     void *handle = nullptr;
-    bool closed = false;
+    bool closed  = false;
 #endif
 
     ~Impl()
@@ -164,11 +169,16 @@ struct ZipWriter::Impl
     }
 };
 
-ZipWriter::ZipWriter() : impl_(std::make_unique<Impl>()) {}
-ZipWriter::ZipWriter(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {}
-ZipWriter::~ZipWriter()
-    = default;
-ZipWriter::ZipWriter(ZipWriter &&) noexcept = default;
+ZipWriter::ZipWriter() :
+    impl_(std::make_unique<Impl>())
+{
+}
+ZipWriter::ZipWriter(std::unique_ptr<Impl> impl) :
+    impl_(std::move(impl))
+{
+}
+ZipWriter::~ZipWriter()                                = default;
+ZipWriter::ZipWriter(ZipWriter &&) noexcept            = default;
 ZipWriter &ZipWriter::operator=(ZipWriter &&) noexcept = default;
 
 auto ZipWriter::Create(const std::filesystem::path &path) -> SZX::COMMON::Result<ZipWriter>
@@ -177,8 +187,8 @@ auto ZipWriter::Create(const std::filesystem::path &path) -> SZX::COMMON::Result
     static_cast<void>(path);
     return failure<ZipWriter>(ZipError::UnsupportedBackend, "ZIP backend is disabled");
 #else
-    auto impl = std::make_unique<Impl>();
-    impl->handle = mz_zip_writer_create();
+    auto impl           = std::make_unique<Impl>();
+    impl->handle        = mz_zip_writer_create();
     const auto pathUtf8 = utf8Path(path);
     if (impl->handle == nullptr || mz_zip_writer_open_file(impl->handle, pathUtf8.c_str(), 0, 0) != MZ_OK)
         return failure<ZipWriter>(ZipError::Io, "unable to create ZIP archive");
@@ -204,9 +214,9 @@ auto ZipWriter::addFile(std::string_view path, std::span<const std::uint8_t> dat
         return failure<void>(ZipError::InvalidArgument, "ZIP entry is too large");
     mz_zip_file info = {};
     const std::string name(path);
-    info.filename = name.c_str();
+    info.filename           = name.c_str();
     info.compression_method = static_cast<uint16_t>(compressionMethod);
-    info.uncompressed_size = static_cast<int64_t>(data.size());
+    info.uncompressed_size  = static_cast<int64_t>(data.size());
     if (mz_zip_writer_add_buffer(impl_->handle, data.data(), static_cast<int32_t>(data.size()), &info) != MZ_OK)
         return failure<void>(ZipError::WriteFailed, "unable to write ZIP entry");
     return SZX::COMMON::Result<void>::Success();

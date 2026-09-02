@@ -6,12 +6,12 @@
 #include "WidgetMainWindow.h"
 
 #include <QApplication>
-#include <QColor>
-#include <QFormLayout>
 #include <QCheckBox>
+#include <QColor>
 #include <QComboBox>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -20,38 +20,38 @@
 #include <QMessageBox>
 #include <QPalette>
 #include <QPixmap>
-#include <QProgressBar>
 #include <QPlainTextEdit>
+#include <QProgressBar>
 #include <QPushButton>
 #include <QSlider>
-#include <QStackedWidget>
 #include <QSpinBox>
+#include <QStackedWidget>
 #include <QTimer>
 #include <QVBoxLayout>
 #include <QWidget>
 
+#include <UIToolkits/UTBadge.h>
 #include <UIToolkits/UTButton.h>
 #include <UIToolkits/UTCard.h>
 #include <UIToolkits/UTCheckBox.h>
 #include <UIToolkits/UTComboBox.h>
-#include <UIToolkits/UTLineEdit.h>
+#include <UIToolkits/UTImageAvatar.h>
+#include <UIToolkits/UTImageViewer.h>
+#include <UIToolkits/UTKeyValueGrid.h>
 #include <UIToolkits/UTLabel.h>
-#include <UIToolkits/UTProgressBar.h>
-#include <UIToolkits/UTBadge.h>
+#include <UIToolkits/UTLineEdit.h>
 #include <UIToolkits/UTLoading.h>
 #include <UIToolkits/UTMarqueeLabel.h>
-#include <UIToolkits/UTToast.h>
-#include <UIToolkits/UTImageAvatar.h>
-#include <UIToolkits/UTStatCard.h>
-#include <UIToolkits/UTKeyValueGrid.h>
-#include <UIToolkits/UTImageViewer.h>
-#include <UIToolkits/UTTabButton.h>
-#include <UIToolkits/UTSliderValue.h>
 #include <UIToolkits/UTMessageDialog.h>
-#include <UIToolkits/UTTitleBar.h>
+#include <UIToolkits/UTProgressBar.h>
 #include <UIToolkits/UTSlider.h>
+#include <UIToolkits/UTSliderValue.h>
 #include <UIToolkits/UTSpinBox.h>
+#include <UIToolkits/UTStatCard.h>
 #include <UIToolkits/UTSwitch.h>
+#include <UIToolkits/UTTabButton.h>
+#include <UIToolkits/UTTitleBar.h>
+#include <UIToolkits/UTToast.h>
 #include <UIToolkits/UTWidgetTheme.h>
 
 QWidget *makePlaceholderPage(QWidget *parent, const QString &name);
@@ -155,7 +155,7 @@ QWidget *makeDisplayPage(QWidget *parent)
     title->setObjectName(QStringLiteral("pageTitle"));
     layout->addWidget(title);
 
-    auto *card = new UIToolkits::UTCard(page);
+    auto *card       = new UIToolkits::UTCard(page);
     auto *cardLayout = new QVBoxLayout(card);
     cardLayout->addWidget(new QLabel(QStringLiteral("当前状态：运行中"), card));
     auto *progress = new UIToolkits::UTProgressBar(card);
@@ -173,8 +173,10 @@ QWidget *makeDisplayPage(QWidget *parent)
     grid->addRow(QStringLiteral("耗时"), QStringLiteral("12.4 ms"));
     layout->addWidget(grid, 0, Qt::AlignLeft);
     auto *viewer = new UIToolkits::UTImageViewer(page);
-    QPixmap preview(160, 80); preview.fill(QColor(QStringLiteral("#dbeafe")));
-    viewer->setFixedSize(180, 100); viewer->setPixmap(preview);
+    QPixmap preview(160, 80);
+    preview.fill(QColor(QStringLiteral("#dbeafe")));
+    viewer->setFixedSize(180, 100);
+    viewer->setPixmap(preview);
     layout->addWidget(viewer, 0, Qt::AlignLeft);
 
     auto *badge = new UIToolkits::UTBadge(page);
@@ -213,20 +215,25 @@ QWidget *makeFeedbackPage(QWidget *parent)
     auto *toastButton = new UIToolkits::UTButton(page);
     toastButton->setText(QStringLiteral("Show feedback"));
     layout->addWidget(toastButton, 0, Qt::AlignLeft);
-    QObject::connect(toastButton, &QPushButton::clicked, page, [status, toast, loading]()
-    {
-        status->setText(QStringLiteral("操作已完成"));
-        loading->start();
-        toast->showMessage(QStringLiteral("操作已完成"));
-        QTimer::singleShot(1500, status, [status, loading]() { status->setText(QStringLiteral("Ready")); loading->stop(); });
-    });
+    QObject::connect(toastButton, &QPushButton::clicked, page,
+                     [status, toast, loading]()
+                     {
+                         status->setText(QStringLiteral("操作已完成"));
+                         loading->start();
+                         toast->showMessage(QStringLiteral("操作已完成"));
+                         QTimer::singleShot(1500, status,
+                                            [status, loading]()
+                                            {
+                                                status->setText(QStringLiteral("Ready"));
+                                                loading->stop();
+                                            });
+                     });
 
     auto *messageButton = new QPushButton(QStringLiteral("Show message box"), page);
     layout->addWidget(messageButton, 0, Qt::AlignLeft);
-    QObject::connect(messageButton, &QPushButton::clicked, page, [page]()
-    {
-        QMessageBox::information(page, QStringLiteral("UIToolkits"), QStringLiteral("这是一条 QWidget feedback 消息。"));
-    });
+    QObject::connect(
+        messageButton, &QPushButton::clicked, page, [page]()
+        { QMessageBox::information(page, QStringLiteral("UIToolkits"), QStringLiteral("这是一条 QWidget feedback 消息。")); });
     auto *dialog = new UIToolkits::UTMessageDialog(page);
     dialog->setWindowTitle(QStringLiteral("UTMessageDialog"));
     dialog->setMessage(QStringLiteral("这是 UIToolkits QWidget 消息对话框示例。"));
@@ -239,7 +246,9 @@ QWidget *makeFeedbackPage(QWidget *parent)
     tab->setActive(true);
     layout->addWidget(tab, 0, Qt::AlignLeft);
     auto *slider = new UIToolkits::UTSliderValue(Qt::Horizontal, page);
-    slider->setRange(0, 100); slider->setValue(65); slider->setFixedWidth(240);
+    slider->setRange(0, 100);
+    slider->setValue(65);
+    slider->setFixedWidth(240);
     layout->addWidget(slider, 0, Qt::AlignLeft);
     layout->addStretch();
     return page;
@@ -259,18 +268,19 @@ QWidget *makeDialogsPage(QWidget *parent)
     auto *dialogButton = new UIToolkits::UTButton(page);
     dialogButton->setText(QStringLiteral("Open dialog"));
     layout->addWidget(dialogButton, 0, Qt::AlignLeft);
-    QObject::connect(dialogButton, &QPushButton::clicked, page, [page]()
-    {
-        QDialog dialog(page);
-        dialog.setWindowTitle(QStringLiteral("UTDialog"));
-        auto *dialogLayout = new QVBoxLayout(&dialog);
-        dialogLayout->addWidget(new QLabel(QStringLiteral("QWidget 对话框示例"), &dialog));
-        auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
-        dialogLayout->addWidget(buttons);
-        QObject::connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
-        QObject::connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
-        dialog.exec();
-    });
+    QObject::connect(dialogButton, &QPushButton::clicked, page,
+                     [page]()
+                     {
+                         QDialog dialog(page);
+                         dialog.setWindowTitle(QStringLiteral("UTDialog"));
+                         auto *dialogLayout = new QVBoxLayout(&dialog);
+                         dialogLayout->addWidget(new QLabel(QStringLiteral("QWidget 对话框示例"), &dialog));
+                         auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+                         dialogLayout->addWidget(buttons);
+                         QObject::connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+                         QObject::connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+                         dialog.exec();
+                     });
     layout->addStretch();
     return page;
 }
@@ -292,14 +302,15 @@ QWidget *makeThemePage(QWidget *parent)
     auto *toggleButton = new UIToolkits::UTButton(page);
     toggleButton->setText(QStringLiteral("Toggle light / dark palette"));
     layout->addWidget(toggleButton, 0, Qt::AlignLeft);
-    QObject::connect(toggleButton, &QPushButton::clicked, page, []()
-    {
-        static auto theme = UIToolkits::UTWidgetThemeKind::Dark;
-        theme = theme == UIToolkits::UTWidgetThemeKind::Dark ? UIToolkits::UTWidgetThemeKind::Light
-                                                              : UIToolkits::UTWidgetThemeKind::Dark;
-        if (auto *application = qobject_cast<QApplication *>(QCoreApplication::instance()))
-            UIToolkits::UTWidgetTheme::apply(*application, theme);
-    });
+    QObject::connect(toggleButton, &QPushButton::clicked, page,
+                     []()
+                     {
+                         static auto theme = UIToolkits::UTWidgetThemeKind::Dark;
+                         theme             = theme == UIToolkits::UTWidgetThemeKind::Dark ? UIToolkits::UTWidgetThemeKind::Light :
+                                                                                            UIToolkits::UTWidgetThemeKind::Dark;
+                         if (auto *application = qobject_cast<QApplication *>(QCoreApplication::instance()))
+                             UIToolkits::UTWidgetTheme::apply(*application, theme);
+                     });
     layout->addStretch();
     return page;
 }
@@ -313,25 +324,15 @@ WidgetMainWindow::WidgetMainWindow(QWidget *parent) :
     setWindowTitle(QStringLiteral("UIToolkits · QWidget Demo"));
     resize(1000, 680);
 
-    m_navigation->addItems({QStringLiteral("Buttons"),
-                            QStringLiteral("Inputs"),
-                            QStringLiteral("Selections"),
-                            QStringLiteral("Display"),
-                            QStringLiteral("Feedback"),
-                            QStringLiteral("Pickers"),
-                            QStringLiteral("Charts"),
-                            QStringLiteral("Calendar"),
-                            QStringLiteral("TreeView"),
-                            QStringLiteral("Colors"),
-                            QStringLiteral("TabBar"),
-                            QStringLiteral("FootBar"),
-                            QStringLiteral("Menu"),
-                            QStringLiteral("ImageViewer"),
-                            QStringLiteral("MultiRectOverlay"),
-                            QStringLiteral("Dialogs"),
+    m_navigation->addItems({QStringLiteral("Buttons"), QStringLiteral("Inputs"), QStringLiteral("Selections"),
+                            QStringLiteral("Display"), QStringLiteral("Feedback"), QStringLiteral("Pickers"),
+                            QStringLiteral("Charts"), QStringLiteral("Calendar"), QStringLiteral("TreeView"),
+                            QStringLiteral("Colors"), QStringLiteral("TabBar"), QStringLiteral("FootBar"), QStringLiteral("Menu"),
+                            QStringLiteral("ImageViewer"), QStringLiteral("MultiRectOverlay"), QStringLiteral("Dialogs"),
                             QStringLiteral("Theme")});
     m_navigation->setFixedWidth(200);
-    m_navigation->setStyleSheet(QStringLiteral("QListWidget { background: #171b23; border: 0; color: #d6dbe5; padding: 8px 0; } QListWidget::item { padding: 9px 16px; margin: 1px 0; } QListWidget::item:selected { background: #27344a; color: #70a7ff; border-left: 3px solid #70a7ff; }"));
+    m_navigation->setStyleSheet(QStringLiteral(
+        "QListWidget { background: #171b23; border: 0; color: #d6dbe5; padding: 8px 0; } QListWidget::item { padding: 9px 16px; margin: 1px 0; } QListWidget::item:selected { background: #27344a; color: #70a7ff; border-left: 3px solid #70a7ff; }"));
     m_navigation->setCurrentRow(0);
 
     m_pages->addWidget(makeButtonsPage(m_pages));
@@ -352,7 +353,7 @@ WidgetMainWindow::WidgetMainWindow(QWidget *parent) :
     m_pages->addWidget(makeDialogsPage(m_pages));
     m_pages->addWidget(makeThemePage(m_pages));
 
-    auto *central = new QWidget(this);
+    auto *central    = new QWidget(this);
     auto *rootLayout = new QVBoxLayout(central);
     rootLayout->setContentsMargins(0, 0, 0, 0);
     auto *titleBar = new UIToolkits::UTTitleBar(central);
@@ -371,7 +372,7 @@ WidgetMainWindow::WidgetMainWindow(QWidget *parent) :
 
 QWidget *makePlaceholderPage(QWidget *parent, const QString &name)
 {
-    auto *page = new QWidget(parent);
+    auto *page   = new QWidget(parent);
     auto *layout = new QVBoxLayout(page);
     layout->setContentsMargins(32, 32, 32, 32);
     auto *title = new QLabel(name, page);

@@ -7,8 +7,8 @@
  */
 #pragma once
 
-#include "SzxCrypto/CryptoExport.h"
 #include "Result.hpp"
+#include "SzxCrypto/CryptoExport.h"
 
 #include <cstdint>
 #include <span>
@@ -40,13 +40,11 @@ enum class HashAlgorithm
     -> SZX::COMMON::Result<std::string>;
 
 /** 按原始字符串字节计算小写十六进制摘要。 */
-[[nodiscard]] SZX_CRYPTO_API auto digestHex(HashAlgorithm algorithm, std::string_view data)
-    -> SZX::COMMON::Result<std::string>;
+[[nodiscard]] SZX_CRYPTO_API auto digestHex(HashAlgorithm algorithm, std::string_view data) -> SZX::COMMON::Result<std::string>;
 
 /** 计算字节数据的二进制 HMAC。 */
 [[nodiscard]] SZX_CRYPTO_API auto hmac(HashAlgorithm algorithm, std::span<const std::uint8_t> key,
-                                       std::span<const std::uint8_t> data)
-    -> SZX::COMMON::Result<std::vector<std::uint8_t>>;
+                                       std::span<const std::uint8_t> data) -> SZX::COMMON::Result<std::vector<std::uint8_t>>;
 
 /** 按原始字符串字节计算二进制 HMAC。 */
 [[nodiscard]] SZX_CRYPTO_API auto hmac(HashAlgorithm algorithm, std::string_view key, std::string_view data)
@@ -54,8 +52,7 @@ enum class HashAlgorithm
 
 /** 计算字节数据的小写十六进制 HMAC。 */
 [[nodiscard]] SZX_CRYPTO_API auto hmacHex(HashAlgorithm algorithm, std::span<const std::uint8_t> key,
-                                          std::span<const std::uint8_t> data)
-    -> SZX::COMMON::Result<std::string>;
+                                          std::span<const std::uint8_t> data) -> SZX::COMMON::Result<std::string>;
 
 /** 按原始字符串字节计算小写十六进制 HMAC。 */
 [[nodiscard]] SZX_CRYPTO_API auto hmacHex(HashAlgorithm algorithm, std::string_view key, std::string_view data)

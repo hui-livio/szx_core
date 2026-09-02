@@ -1,7 +1,7 @@
 #pragma once
 
-#include "../UIToolkitsExport.h"
 #include <QSpinBox>
+#include "../UIToolkitsExport.h"
 
 namespace UIToolkits
 {

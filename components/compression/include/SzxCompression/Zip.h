@@ -15,8 +15,8 @@ namespace SZX::COMPRESSION
 {
 
 #if defined(_MSC_VER)
-#pragma warning(push)
-#pragma warning(disable : 4251)
+    #pragma warning(push)
+    #pragma warning(disable : 4251)
 #endif
 
 enum class ZipError : int
@@ -41,7 +41,7 @@ struct ZipEntry
 {
     std::string path;
     std::uint64_t uncompressedSize = 0;
-    bool directory = false;
+    bool directory                 = false;
 };
 
 class SZX_COMPRESSION_API ZipReader final
@@ -53,7 +53,7 @@ public:
     ~ZipReader();
     ZipReader(ZipReader &&) noexcept;
     ZipReader &operator=(ZipReader &&) noexcept;
-    ZipReader(const ZipReader &) = delete;
+    ZipReader(const ZipReader &)            = delete;
     ZipReader &operator=(const ZipReader &) = delete;
 
     [[nodiscard]] auto entries() const -> const std::vector<ZipEntry> &;
@@ -74,7 +74,7 @@ public:
     ~ZipWriter();
     ZipWriter(ZipWriter &&) noexcept;
     ZipWriter &operator=(ZipWriter &&) noexcept;
-    ZipWriter(const ZipWriter &) = delete;
+    ZipWriter(const ZipWriter &)            = delete;
     ZipWriter &operator=(const ZipWriter &) = delete;
 
     auto addFile(std::string_view path, std::span<const std::uint8_t> data,
@@ -88,7 +88,7 @@ private:
 };
 
 #if defined(_MSC_VER)
-#pragma warning(pop)
+    #pragma warning(pop)
 #endif
 
 } // namespace SZX::COMPRESSION
