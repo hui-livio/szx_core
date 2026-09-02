@@ -91,8 +91,13 @@ auto aes256GcmEncryptWithNonce(std::span<const std::uint8_t> key, std::span<cons
     auth.pbAuthData = const_cast<PUCHAR>(aad.data());
     auth.cbAuthData = static_cast<ULONG>(aad.size());
     ULONG written   = 0;
-    if (BCryptEncrypt(keyHandle.value, const_cast<PUCHAR>(plaintext.data()), static_cast<ULONG>(plaintext.size()), &auth, nullptr,
-                      0, output.ciphertext.data(), static_cast<ULONG>(output.ciphertext.size()), &written, 0) != 0)
+    // CNG 对零长度输入/输出仍要求提供非空缓冲区；否则可能跳过 GCM
+    // 认证流程，导致空明文使用错误密钥时被误判为成功。
+    std::uint8_t dummy = 0;
+    auto *input       = plaintext.empty() ? &dummy : const_cast<std::uint8_t *>(plaintext.data());
+    auto *ciphertext  = output.ciphertext.empty() ? &dummy : output.ciphertext.data();
+    if (BCryptEncrypt(keyHandle.value, input, static_cast<ULONG>(plaintext.size()), &auth, nullptr,
+                      0, ciphertext, static_cast<ULONG>(output.ciphertext.size()), &written, 0) != 0)
         return SZX::COMMON::Result<AesGcmCiphertext>::Failure(static_cast<int>(AeadError::ProviderFailure), "AES-GCM 加密失败。");
     output.ciphertext.resize(written);
     return SZX::COMMON::Result<AesGcmCiphertext>::Success(std::move(output));
@@ -133,8 +138,11 @@ auto aes256GcmDecrypt(std::span<const std::uint8_t> key, std::span<const std::ui
     auth.pbAuthData = const_cast<PUCHAR>(aad.data());
     auth.cbAuthData = static_cast<ULONG>(aad.size());
     ULONG written   = 0;
-    NTSTATUS status = BCryptDecrypt(keyHandle.value, const_cast<PUCHAR>(ciphertext.data()), static_cast<ULONG>(ciphertext.size()),
-                                    &auth, nullptr, 0, output.data(), static_cast<ULONG>(output.size()), &written, 0);
+    std::uint8_t dummy = 0;
+    auto *input       = ciphertext.empty() ? &dummy : const_cast<std::uint8_t *>(ciphertext.data());
+    auto *plaintext   = output.empty() ? &dummy : output.data();
+    NTSTATUS status = BCryptDecrypt(keyHandle.value, input, static_cast<ULONG>(ciphertext.size()),
+                                     &auth, nullptr, 0, plaintext, static_cast<ULONG>(output.size()), &written, 0);
     if (status != 0)
         return SZX::COMMON::Result<std::vector<std::uint8_t>>::Failure(static_cast<int>(AeadError::AuthenticationFailed),
                                                                        "AES-GCM 认证失败。");
