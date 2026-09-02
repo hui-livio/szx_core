@@ -147,3 +147,43 @@ TEST(CryptoFileTest, RejectsTooShortContainers)
         EXPECT_FALSE(verifyBuffer(key, input).ok);
     }
 }
+TEST(CryptoFileTest, KeepsSingleChunkLayoutStable)
+{
+    const std::vector<std::uint8_t> key(32, 15), data{'g','o','l','d'};
+    auto encrypted = encryptBuffer(key, data);
+#if defined(_WIN32)
+    ASSERT_TRUE(encrypted.ok) << encrypted.message;
+    const auto &container = encrypted.value;
+    ASSERT_EQ(container.size(), 24U + data.size() + 16U);
+    EXPECT_EQ(std::vector<std::uint8_t>(container.begin(), container.begin() + 4),
+              (std::vector<std::uint8_t>{'S','Z','X','E'}));
+    EXPECT_EQ(container[4], 1U);
+    EXPECT_EQ(container[5], 0U);
+    EXPECT_EQ(container[6], 0U);
+    EXPECT_EQ(container[7], 0U);
+    EXPECT_EQ(container[20], data.size());
+    EXPECT_EQ(container[21], 0U);
+    EXPECT_EQ(container[22], 0U);
+    EXPECT_EQ(container[23], 0U);
+#else
+    EXPECT_FALSE(encrypted.ok);
+#endif
+}
+TEST(CryptoFileTest, RejectsHeaderMutationsBeforeAuthentication)
+{
+    const std::vector<std::uint8_t> key(32, 16), data{'m','u','t'};
+    auto encrypted = encryptBuffer(key, data);
+#if defined(_WIN32)
+    ASSERT_TRUE(encrypted.ok) << encrypted.message;
+    for (std::size_t offset = 0; offset < 24; ++offset)
+    {
+        auto mutated = encrypted.value;
+        mutated[offset] ^= 0x01U;
+        if (offset < 8 || offset >= 20)
+            EXPECT_FALSE(inspectBuffer(mutated).ok) << "offset=" << offset;
+        EXPECT_FALSE(decryptBuffer(key, mutated).ok) << "offset=" << offset;
+    }
+#else
+    EXPECT_FALSE(encrypted.ok);
+#endif
+}

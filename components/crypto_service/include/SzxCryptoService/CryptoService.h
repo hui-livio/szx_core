@@ -8,6 +8,12 @@
 #include "SzxCryptoService/CryptoServiceExport.h"
 namespace SZX::CRYPTO_SERVICE
 {
+/** CryptoService 对外返回的稳定错误码。 */
+enum class CryptoServiceError : int
+{
+    InternalFailure = 1600 ///< 服务边界捕获到未分类的内部异常。
+};
+
 /** AES-GCM 加密结果，nonce、密文和认证标签均为二进制字节序列。 */
 struct CryptoCiphertext
 {

@@ -16,11 +16,11 @@ auto invokeBoundary(Function &&function) -> decltype(function())
     }
     catch (const std::exception &)
     {
-        return ResultType::Failure(-1, "加密服务内部异常。");
+        return ResultType::Failure(static_cast<int>(CryptoServiceError::InternalFailure), "加密服务内部异常。");
     }
     catch (...)
     {
-        return ResultType::Failure(-1, "加密服务内部异常。");
+        return ResultType::Failure(static_cast<int>(CryptoServiceError::InternalFailure), "加密服务内部异常。");
     }
 }
 } // namespace
