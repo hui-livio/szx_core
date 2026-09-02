@@ -7,7 +7,6 @@
     #else
         #define SZX_KEYSTORE_API __declspec(dllimport)
     #endif
-    #define SZX_CRYPTO_API SZX_KEYSTORE_API
 #else
     #define SZX_KEYSTORE_API __attribute__((visibility("default")))
 #endif

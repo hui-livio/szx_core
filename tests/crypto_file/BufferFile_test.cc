@@ -1,4 +1,5 @@
 #include "SzxCryptoFile/BufferFile.h"
+#include "SzxCryptoService/CryptoService.h"
 #include <gtest/gtest.h>
 #include <vector>
 using namespace SZX::CRYPTO_FILE;
@@ -73,4 +74,76 @@ TEST(CryptoFileTest, RejectsUnknownHeaderFlags)
 #else
     EXPECT_FALSE(encrypted.ok);
 #endif
+}
+TEST(CryptoFileTest, PropagatesInjectedCryptoServiceFailure)
+{
+    SZX::CRYPTO_SERVICE::FakeCryptoService fake;
+    const std::vector<std::uint8_t> key(32, 8), data{'f','a','k','e'};
+
+    auto encrypted = encryptBuffer(fake, key, data);
+    EXPECT_FALSE(encrypted.ok);
+    EXPECT_EQ(fake.encryptCalls, 1U);
+
+    const std::vector<std::uint8_t> malformed{'b','a','d'};
+    auto decrypted = decryptBuffer(fake, key, malformed);
+    EXPECT_FALSE(decrypted.ok);
+    EXPECT_EQ(fake.decryptCalls, 0U);
+}
+TEST(CryptoFileTest, SupportsInjectedServiceRoundTrip)
+{
+    SZX::CRYPTO_SERVICE::CryptoService service;
+    const std::vector<std::uint8_t> key(32, 11), data{'s','e','r','v','i','c','e'};
+    auto encrypted = encryptBuffer(service, key, data);
+#if defined(_WIN32)
+    ASSERT_TRUE(encrypted.ok) << encrypted.message;
+    EXPECT_TRUE(verifyBuffer(service, key, encrypted.value).ok);
+    auto decrypted = decryptBuffer(service, key, encrypted.value);
+    ASSERT_TRUE(decrypted.ok) << decrypted.message;
+    EXPECT_EQ(decrypted.value, data);
+#else
+    EXPECT_FALSE(encrypted.ok);
+#endif
+}
+TEST(CryptoFileTest, InspectDoesNotReplaceAuthentication)
+{
+    const std::vector<std::uint8_t> key(32, 12), data{'a','u','d','i','t'};
+    auto encrypted = encryptBuffer(key, data);
+#if defined(_WIN32)
+    ASSERT_TRUE(encrypted.ok) << encrypted.message;
+    encrypted.value.back() ^= 0x80U;
+    auto info = inspectBuffer(encrypted.value);
+    EXPECT_TRUE(info.ok);
+    EXPECT_FALSE(decryptBuffer(key, encrypted.value).ok);
+#else
+    EXPECT_FALSE(encrypted.ok);
+#endif
+}
+TEST(CryptoFileTest, RejectsLengthFieldOverflowAndShortPayload)
+{
+    const std::vector<std::uint8_t> key(32, 13), data{'l','e','n'};
+    auto encrypted = encryptBuffer(key, data);
+#if defined(_WIN32)
+    ASSERT_TRUE(encrypted.ok) << encrypted.message;
+    encrypted.value[20] = 0xffU;
+    encrypted.value[21] = 0xffU;
+    encrypted.value[22] = 0xffU;
+    encrypted.value[23] = 0xffU;
+    EXPECT_FALSE(inspectBuffer(encrypted.value).ok);
+    EXPECT_FALSE(decryptBuffer(key, encrypted.value).ok);
+#else
+    EXPECT_FALSE(encrypted.ok);
+#endif
+}
+TEST(CryptoFileTest, RejectsTooShortContainers)
+{
+    const std::vector<std::uint8_t> key(32, 14);
+    const std::vector<std::vector<std::uint8_t>> inputs{{}, {'S'}, {'S','Z','X','E'},
+                                                        std::vector<std::uint8_t>(23, 0),
+                                                        std::vector<std::uint8_t>(39, 0)};
+    for (const auto &input : inputs)
+    {
+        EXPECT_FALSE(inspectBuffer(input).ok);
+        EXPECT_FALSE(decryptBuffer(key, input).ok);
+        EXPECT_FALSE(verifyBuffer(key, input).ok);
+    }
 }
