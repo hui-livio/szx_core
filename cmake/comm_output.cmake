@@ -193,6 +193,11 @@ function(szx_install_components_package)
     endif()
 
     set(_targets szx_common szx_logger szx_crypto)
+    foreach(_crypto_target IN ITEMS szx_keystore szx_crypto_service szx_crypto_file)
+        if(TARGET ${_crypto_target})
+            list(APPEND _targets ${_crypto_target})
+        endif()
+    endforeach()
     if(TARGET szx_compression)
         list(APPEND _targets szx_compression)
     endif()
@@ -235,6 +240,18 @@ function(szx_install_components_package)
         DESTINATION szx/common/ext FILE_PATTERN "*.h" "*.hpp")
     szx_install_headers(crypto HEADER_DIR "${CMAKE_SOURCE_DIR}/components/crypto/include"
         DESTINATION . FILE_PATTERN "*.h")
+    if(TARGET szx_keystore)
+        szx_install_headers(keystore HEADER_DIR "${CMAKE_SOURCE_DIR}/components/keystore/include"
+            DESTINATION . FILE_PATTERN "*.h")
+    endif()
+    if(TARGET szx_crypto_service)
+        szx_install_headers(crypto_service HEADER_DIR "${CMAKE_SOURCE_DIR}/components/crypto_service/include"
+            DESTINATION . FILE_PATTERN "*.h")
+    endif()
+    if(TARGET szx_crypto_file)
+        szx_install_headers(crypto_file HEADER_DIR "${CMAKE_SOURCE_DIR}/components/crypto_file/include"
+            DESTINATION . FILE_PATTERN "*.h")
+    endif()
     if(TARGET szx_compression)
         szx_install_headers(compression HEADER_DIR "${CMAKE_SOURCE_DIR}/components/compression/include"
             DESTINATION . FILE_PATTERN "*.h")
