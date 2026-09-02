@@ -74,19 +74,37 @@ public:
     auto derive(std::span<const std::uint8_t>, std::span<const std::uint8_t>, std::uint32_t, std::size_t)
         -> SZX::COMMON::Result<std::vector<std::uint8_t>> override;
 };
+
 class SZX_CRYPTO_API FakeCryptoService final : public ICryptoService
 {
 public:
     CryptoCapabilities supported{};
     std::size_t encryptCalls{};
     std::size_t decryptCalls{};
-    auto capabilities() const -> CryptoCapabilities override { return supported; }
-    auto encrypt(std::span<const std::uint8_t>, std::span<const std::uint8_t>, std::span<const std::uint8_t> = {}) -> SZX::COMMON::Result<SZX::CRYPTO::AesGcmCiphertext> override;
-    auto decrypt(std::span<const std::uint8_t>, const SZX::CRYPTO::AesGcmCiphertext &, std::span<const std::uint8_t> = {}) -> SZX::COMMON::Result<std::vector<std::uint8_t>> override;
-    auto rsaEncrypt(std::span<const std::uint8_t>, std::span<const std::uint8_t>) -> SZX::COMMON::Result<std::vector<std::uint8_t>> override;
-    auto rsaDecrypt(std::span<const std::uint8_t>, std::span<const std::uint8_t>) -> SZX::COMMON::Result<std::vector<std::uint8_t>> override;
-    auto sign(std::span<const std::uint8_t>, std::span<const std::uint8_t>) -> SZX::COMMON::Result<std::vector<std::uint8_t>> override;
-    auto verify(std::span<const std::uint8_t>, std::span<const std::uint8_t>, std::span<const std::uint8_t>) -> SZX::COMMON::Result<bool> override;
-    auto derive(std::span<const std::uint8_t>, std::span<const std::uint8_t>, std::uint32_t, std::size_t) -> SZX::COMMON::Result<std::vector<std::uint8_t>> override;
+    auto capabilities() const -> CryptoCapabilities override
+    {
+        return supported;
+    }
+
+    auto encrypt(std::span<const std::uint8_t>, std::span<const std::uint8_t>, std::span<const std::uint8_t> = {})
+        -> SZX::COMMON::Result<SZX::CRYPTO::AesGcmCiphertext> override;
+
+    auto decrypt(std::span<const std::uint8_t>, const SZX::CRYPTO::AesGcmCiphertext &, std::span<const std::uint8_t> = {})
+        -> SZX::COMMON::Result<std::vector<std::uint8_t>> override;
+
+    auto rsaEncrypt(std::span<const std::uint8_t>, std::span<const std::uint8_t>)
+        -> SZX::COMMON::Result<std::vector<std::uint8_t>> override;
+
+    auto rsaDecrypt(std::span<const std::uint8_t>, std::span<const std::uint8_t>)
+        -> SZX::COMMON::Result<std::vector<std::uint8_t>> override;
+
+    auto sign(std::span<const std::uint8_t>, std::span<const std::uint8_t>)
+        -> SZX::COMMON::Result<std::vector<std::uint8_t>> override;
+
+    auto verify(std::span<const std::uint8_t>, std::span<const std::uint8_t>, std::span<const std::uint8_t>)
+        -> SZX::COMMON::Result<bool> override;
+
+    auto derive(std::span<const std::uint8_t>, std::span<const std::uint8_t>, std::uint32_t, std::size_t)
+        -> SZX::COMMON::Result<std::vector<std::uint8_t>> override;
 };
 } // namespace SZX::CRYPTO_SERVICE
