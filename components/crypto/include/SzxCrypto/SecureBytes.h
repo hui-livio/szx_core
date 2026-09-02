@@ -15,31 +15,31 @@ namespace SZX::CRYPTO
 {
 
 /** 不可复制、析构时清零的敏感字节容器。 */
-class SZX_CRYPTO_API SecureBytes final
+class SecureBytes final
 {
 public:
     /** 创建空容器。 */
-    SecureBytes() = default;
+    SZX_CRYPTO_API SecureBytes() = default;
     /** 接管字节并在析构时清零。 */
-    explicit SecureBytes(std::vector<std::uint8_t> bytes);
+    SZX_CRYPTO_API explicit SecureBytes(std::vector<std::uint8_t> bytes);
     /** 禁止复制，避免敏感数据产生额外副本。 */
     SecureBytes(const SecureBytes &)                     = delete;
     auto operator=(const SecureBytes &) -> SecureBytes & = delete;
     /** 移动容器所有权。 */
-    SecureBytes(SecureBytes &&other) noexcept;
-    auto operator=(SecureBytes &&other) noexcept -> SecureBytes &;
-    ~SecureBytes() noexcept;
+    SZX_CRYPTO_API SecureBytes(SecureBytes &&other) noexcept;
+    SZX_CRYPTO_API auto operator=(SecureBytes &&other) noexcept -> SecureBytes &;
+    SZX_CRYPTO_API ~SecureBytes() noexcept;
 
     /** 返回当前字节数。 */
-    [[nodiscard]] auto size() const noexcept -> std::size_t;
-    [[nodiscard]] auto empty() const noexcept -> bool;
+    [[nodiscard]] SZX_CRYPTO_API auto size() const noexcept -> std::size_t;
+    [[nodiscard]] SZX_CRYPTO_API auto empty() const noexcept -> bool;
     /** 返回只读数据指针；空容器返回 nullptr。 */
-    [[nodiscard]] auto data() const noexcept -> const std::uint8_t *;
-    [[nodiscard]] auto span() const noexcept -> std::span<const std::uint8_t>;
+    [[nodiscard]] SZX_CRYPTO_API auto data() const noexcept -> const std::uint8_t *;
+    [[nodiscard]] SZX_CRYPTO_API auto span() const noexcept -> std::span<const std::uint8_t>;
     /** 移出字节；调用后容器为空。 */
-    [[nodiscard]] auto take() && noexcept -> std::vector<std::uint8_t>;
+    [[nodiscard]] SZX_CRYPTO_API auto take() && noexcept -> std::vector<std::uint8_t>;
     /** 清零并清空敏感数据。 */
-    void clear() noexcept;
+    SZX_CRYPTO_API void clear() noexcept;
 
 private:
     struct Impl;

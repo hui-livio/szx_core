@@ -288,6 +288,9 @@ TEST(CryptoRsaTest, ConvertsPublicKeyToDerAndBack)
     auto restored = rsaPublicKeyFromDer(der.value);
     ASSERT_TRUE(restored.ok) << restored.message;
     EXPECT_EQ(restored.value, keys.value.publicKey);
+    auto derId = rsaPublicKeyIdFromDer(der.value);
+    ASSERT_TRUE(derId.ok) << derId.message;
+    EXPECT_EQ(derId.value.size(), 64U);
 #else
     EXPECT_FALSE(keys.ok);
 #endif
@@ -299,6 +302,7 @@ TEST(CryptoRsaTest, RejectsMalformedDerPublicKey)
     auto result = rsaPublicKeyFromDer(malformed);
     EXPECT_FALSE(result.ok);
     EXPECT_EQ(result.error, static_cast<int>(RsaError::InvalidArgument));
+    EXPECT_FALSE(rsaPublicKeyIdFromDer(malformed).ok);
 }
 
 TEST(CryptoRsaTest, SignsAndRejectsTamperedPssSignature)

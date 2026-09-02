@@ -128,6 +128,17 @@ auto rsaPublicKeyId(std::span<const std::uint8_t> publicKey) -> SZX::COMMON::Res
     return sha256KeyId(publicKey);
 }
 
+auto rsaPublicKeyIdFromDer(std::span<const std::uint8_t> der) -> SZX::COMMON::Result<std::string>
+{
+    auto decoded = rsaPublicKeyFromDer(der);
+    if (!decoded.ok)
+        return failure<std::string>(RsaError::InvalidArgument, "DER RSA 公钥无效。");
+    auto canonical = rsaPublicKeyToDer(decoded.value);
+    if (!canonical.ok)
+        return failure<std::string>(RsaError::InvalidArgument, "DER RSA 公钥无法规范化。");
+    return sha256KeyId(canonical.value);
+}
+
 auto rsaPublicKeyToDer(std::span<const std::uint8_t> publicKey) -> SZX::COMMON::Result<std::vector<std::uint8_t>>
 {
 #if defined(_WIN32)
@@ -162,7 +173,10 @@ auto rsaPublicKeyFromDer(std::span<const std::uint8_t> der) -> SZX::COMMON::Resu
     const std::uint8_t oid[] = {0x06,0x09,0x2a,0x86,0x48,0x86,0xf7,0x0d,0x01,0x01,0x01,0x05,0x00};
     if (!std::equal(alg.begin(), alg.end(), std::begin(oid), std::end(oid))) return failure<std::vector<std::uint8_t>>(RsaError::InvalidArgument, "DER RSA 算法标识无效。");
     p = 1; if (!read(bits, p, 0x30, rsa) || p != bits.size()) return failure<std::vector<std::uint8_t>>(RsaError::InvalidArgument, "DER RSA 公钥无效。");
-    p = 0; if (!read(rsa, p, 0x02, n) || !read(rsa, p, 0x02, e) || p != rsa.size() || n.empty() || e.empty() || n.front() == 0 && n.size() > 1 && !(n[1] & 0x80)) return failure<std::vector<std::uint8_t>>(RsaError::InvalidArgument, "DER RSA 参数无效。");
+    p = 0; if (!read(rsa, p, 0x02, n) || !read(rsa, p, 0x02, e) || p != rsa.size() || n.empty() || e.empty() ||
+        (n.front() & 0x80) || (e.front() & 0x80) || (n.front() == 0 && n.size() > 1 && !(n[1] & 0x80)) ||
+        (e.front() == 0 && e.size() > 1 && !(e[1] & 0x80)))
+        return failure<std::vector<std::uint8_t>>(RsaError::InvalidArgument, "DER RSA 参数无效。");
     while (n.size() > 1 && n.front() == 0) n = n.subspan(1); while (e.size() > 1 && e.front() == 0) e = e.subspan(1);
     BCRYPT_RSAKEY_BLOB header{BCRYPT_RSAPUBLIC_MAGIC, static_cast<ULONG>(n.size() * 8), static_cast<ULONG>(e.size()), static_cast<ULONG>(n.size()), 0, 0};
     std::vector<std::uint8_t> out(sizeof(header) + e.size() + n.size()); std::memcpy(out.data(), &header, sizeof(header)); std::copy(e.begin(), e.end(), out.begin() + sizeof(header)); std::copy(n.begin(), n.end(), out.begin() + sizeof(header) + e.size());
@@ -176,6 +190,8 @@ auto rsaOaepSha256Encrypt(std::span<const std::uint8_t> publicKey, std::span<con
     -> SZX::COMMON::Result<std::vector<std::uint8_t>>
 {
 #if defined(_WIN32)
+    if (publicKey.size() > 0xffffffffULL || plaintext.size() > 0xffffffffULL)
+        return failure<std::vector<std::uint8_t>>(RsaError::InvalidArgument, "RSA 输入长度超出 CNG 限制。");
     auto algorithm = openRsa();
     if (!algorithm) return failure<std::vector<std::uint8_t>>(RsaError::ProviderFailure, "failed to open RSA provider.");
     auto key = importKey(reinterpret_cast<BCRYPT_ALG_HANDLE>(algorithm.get()), publicKey, BCRYPT_RSAPUBLIC_BLOB);
@@ -196,6 +212,8 @@ auto rsaOaepSha256Decrypt(std::span<const std::uint8_t> privateKey, std::span<co
     -> SZX::COMMON::Result<std::vector<std::uint8_t>>
 {
 #if defined(_WIN32)
+    if (privateKey.size() > 0xffffffffULL || ciphertext.size() > 0xffffffffULL)
+        return failure<std::vector<std::uint8_t>>(RsaError::InvalidArgument, "RSA 输入长度超出 CNG 限制。");
     auto algorithm = openRsa();
     if (!algorithm) return failure<std::vector<std::uint8_t>>(RsaError::ProviderFailure, "failed to open RSA provider.");
     auto key = importKey(reinterpret_cast<BCRYPT_ALG_HANDLE>(algorithm.get()), privateKey, BCRYPT_RSAFULLPRIVATE_BLOB);
@@ -216,6 +234,8 @@ auto rsaPssSha256Sign(std::span<const std::uint8_t> privateKey, std::span<const 
     -> SZX::COMMON::Result<std::vector<std::uint8_t>>
 {
 #if defined(_WIN32)
+    if (privateKey.size() > 0xffffffffULL || data.size() > 0xffffffffULL)
+        return failure<std::vector<std::uint8_t>>(RsaError::InvalidArgument, "RSA 输入长度超出 CNG 限制。");
     auto algorithm = openRsa();
     if (!algorithm) return failure<std::vector<std::uint8_t>>(RsaError::ProviderFailure, "failed to open RSA provider.");
     auto key = importKey(reinterpret_cast<BCRYPT_ALG_HANDLE>(algorithm.get()), privateKey, BCRYPT_RSAFULLPRIVATE_BLOB);
@@ -238,6 +258,8 @@ auto rsaPssSha256Verify(std::span<const std::uint8_t> publicKey, std::span<const
     -> SZX::COMMON::Result<bool>
 {
 #if defined(_WIN32)
+    if (publicKey.size() > 0xffffffffULL || data.size() > 0xffffffffULL || signature.size() > 0xffffffffULL)
+        return failure<bool>(RsaError::InvalidArgument, "RSA 输入长度超出 CNG 限制。");
     auto algorithm = openRsa();
     if (!algorithm) return failure<bool>(RsaError::ProviderFailure, "failed to open RSA provider.");
     auto key = importKey(reinterpret_cast<BCRYPT_ALG_HANDLE>(algorithm.get()), publicKey, BCRYPT_RSAPUBLIC_BLOB);

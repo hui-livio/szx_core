@@ -18,6 +18,7 @@ namespace
 constexpr std::size_t kKeySize   = 32;
 constexpr std::size_t kNonceSize = 12;
 constexpr std::size_t kTagSize   = 16;
+constexpr std::size_t kMaxCngLength = 0xffffffffULL;
 
 #if defined(_WIN32)
 struct AlgorithmHandle
@@ -60,7 +61,7 @@ auto aes256GcmEncryptWithNonce(std::span<const std::uint8_t> key, std::span<cons
                                std::span<const std::uint8_t> plaintext, std::span<const std::uint8_t> aad)
     -> SZX::COMMON::Result<AesGcmCiphertext>
 {
-    if (key.size() != kKeySize || nonce.size() != kNonceSize)
+    if (key.size() != kKeySize || nonce.size() != kNonceSize || plaintext.size() > kMaxCngLength || aad.size() > kMaxCngLength)
         return invalid<AesGcmCiphertext>("AES-256-GCM 密钥必须为 32 字节，nonce 必须为 12 字节。");
 #if !defined(_WIN32)
     return SZX::COMMON::Result<AesGcmCiphertext>::Failure(static_cast<int>(AeadError::Unsupported),
@@ -102,7 +103,7 @@ auto aes256GcmDecrypt(std::span<const std::uint8_t> key, std::span<const std::ui
                       std::span<const std::uint8_t> ciphertext, std::span<const std::uint8_t> tag,
                       std::span<const std::uint8_t> aad) -> SZX::COMMON::Result<std::vector<std::uint8_t>>
 {
-    if (key.size() != kKeySize || nonce.size() != kNonceSize || tag.size() != kTagSize)
+    if (key.size() != kKeySize || nonce.size() != kNonceSize || tag.size() != kTagSize || ciphertext.size() > kMaxCngLength || aad.size() > kMaxCngLength)
         return invalid<std::vector<std::uint8_t>>("AES-256-GCM 参数长度无效。");
 #if !defined(_WIN32)
     return SZX::COMMON::Result<std::vector<std::uint8_t>>::Failure(static_cast<int>(AeadError::Unsupported),
