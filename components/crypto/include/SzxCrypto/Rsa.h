@@ -36,6 +36,12 @@ struct RsaKeyPair
 
 /** 根据 CNG 公钥 blob 计算稳定的小写十六进制 SHA-256 Key ID。 */
 [[nodiscard]] SZX_CRYPTO_API auto rsaPublicKeyId(std::span<const std::uint8_t> publicKey) -> SZX::COMMON::Result<std::string>;
+/** 将 CNG RSA 公钥 blob 编码为 DER SubjectPublicKeyInfo。 */
+[[nodiscard]] SZX_CRYPTO_API auto rsaPublicKeyToDer(std::span<const std::uint8_t> publicKey)
+    -> SZX::COMMON::Result<std::vector<std::uint8_t>>;
+/** 将 DER SubjectPublicKeyInfo 解码为 CNG RSA 公钥 blob。 */
+[[nodiscard]] SZX_CRYPTO_API auto rsaPublicKeyFromDer(std::span<const std::uint8_t> der)
+    -> SZX::COMMON::Result<std::vector<std::uint8_t>>;
 /** 使用 RSA-OAEP-SHA256 加密一条消息；大数据应使用混合加密。 */
 [[nodiscard]] SZX_CRYPTO_API auto rsaOaepSha256Encrypt(std::span<const std::uint8_t> publicKey,
                                                        std::span<const std::uint8_t> plaintext)

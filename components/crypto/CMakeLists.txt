@@ -1,15 +1,19 @@
 add_library(szx_crypto SHARED
+    src/Aead.cc
     src/Base64.cc
     src/Fernet.cc
     src/Hash.cc
+    src/Kdf.cc
     src/Rsa.cc
     src/Random.cc
     src/SecureBytes.cc
     include/SzxCrypto/Base64.h
+    include/SzxCrypto/Aead.h
     include/SzxCrypto/Crypto.h
     include/SzxCrypto/CryptoExport.h
     include/SzxCrypto/Fernet.h
     include/SzxCrypto/Hash.h
+    include/SzxCrypto/Kdf.h
     include/SzxCrypto/Rsa.h
     include/SzxCrypto/Random.h
     include/SzxCrypto/SecureBytes.h

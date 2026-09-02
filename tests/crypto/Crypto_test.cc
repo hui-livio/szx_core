@@ -157,6 +157,72 @@ TEST(CryptoFernetTest, RejectsInvalidTokenAndKey)
     EXPECT_FALSE(invalidKey.ok);
 }
 
+TEST(CryptoAeadTest, MatchesAes256GcmEmptyPlaintextVector)
+{
+    const std::vector<std::uint8_t> key(32, 0);
+    const std::vector<std::uint8_t> nonce(12, 0);
+    auto encrypted = aes256GcmEncryptWithNonce(key, nonce, {}, {});
+#if defined(_WIN32)
+    ASSERT_TRUE(encrypted.ok) << encrypted.message;
+    EXPECT_TRUE(encrypted.value.ciphertext.empty());
+    const std::vector<std::uint8_t> expectedTag{
+        0x53, 0x0f, 0x8a, 0xfb, 0xc7, 0x45, 0x36, 0xb9,
+        0xa9, 0x63, 0xb4, 0xf1, 0xc4, 0xcb, 0x73, 0x8b};
+    EXPECT_EQ(encrypted.value.tag, expectedTag);
+#else
+    EXPECT_FALSE(encrypted.ok);
+    EXPECT_EQ(encrypted.error, static_cast<int>(AeadError::Unsupported));
+#endif
+}
+
+TEST(CryptoAeadTest, RoundTripsAndRejectsTampering)
+{
+    const std::vector<std::uint8_t> key(32, 0x11);
+    const std::vector<std::uint8_t> plaintext{'l', 'i', 'c', 'e', 'n', 's', 'e'};
+    const std::vector<std::uint8_t> aad{'h', 'd', 'r'};
+    auto encrypted = aes256GcmEncrypt(key, plaintext, aad);
+#if defined(_WIN32)
+    ASSERT_TRUE(encrypted.ok) << encrypted.message;
+    auto decrypted = aes256GcmDecrypt(key, encrypted.value.nonce, encrypted.value.ciphertext, encrypted.value.tag, aad);
+    ASSERT_TRUE(decrypted.ok) << decrypted.message;
+    EXPECT_EQ(decrypted.value, plaintext);
+    encrypted.value.tag.front() ^= 1U;
+    auto tampered = aes256GcmDecrypt(key, encrypted.value.nonce, encrypted.value.ciphertext, encrypted.value.tag, aad);
+    EXPECT_FALSE(tampered.ok);
+    EXPECT_EQ(tampered.error, static_cast<int>(AeadError::AuthenticationFailed));
+#else
+    EXPECT_FALSE(encrypted.ok);
+#endif
+}
+
+TEST(CryptoKdfTest, MatchesPbkdf2Sha256Vector)
+{
+    const std::vector<std::uint8_t> password{'p', 'a', 's', 's', 'w', 'o', 'r', 'd'};
+    const std::vector<std::uint8_t> salt{'s', 'a', 'l', 't'};
+    auto derived = derivePbkdf2Sha256(password, salt, 1, 32);
+#if defined(_WIN32)
+    ASSERT_TRUE(derived.ok) << derived.message;
+    const std::vector<std::uint8_t> expected{
+        0x12, 0x0f, 0xb6, 0xcf, 0xfc, 0xf8, 0xb3, 0x2c,
+        0x43, 0xe7, 0x22, 0x52, 0x56, 0xc4, 0xf8, 0x37,
+        0xa8, 0x65, 0x48, 0xc9, 0x2c, 0xcc, 0x35, 0x48,
+        0x08, 0x05, 0x98, 0x7c, 0xb7, 0x0b, 0xe1, 0x7b};
+    EXPECT_EQ(derived.value, expected);
+#else
+    EXPECT_FALSE(derived.ok);
+    EXPECT_EQ(derived.error, static_cast<int>(KdfError::Unsupported));
+#endif
+}
+
+TEST(CryptoKdfTest, RejectsUnsafeParameters)
+{
+    const std::vector<std::uint8_t> password{'p'};
+    const std::vector<std::uint8_t> salt{'s'};
+    EXPECT_FALSE(derivePbkdf2Sha256({}, {}, 1, 32).ok);
+    EXPECT_FALSE(derivePbkdf2Sha256(password, salt, 0, 32).ok);
+    EXPECT_FALSE(derivePbkdf2Sha256(password, salt, 1, 0).ok);
+}
+
 TEST(CryptoRsaTest, GeneratesKeyPairAndRoundTripsOaep)
 {
     auto keys = generateRsa3072KeyPair();
@@ -209,6 +275,30 @@ TEST(CryptoRsaTest, ComputesStablePublicKeyId)
     EXPECT_EQ(first.value, second.value);
     EXPECT_EQ(first.value.size(), 64U);
     EXPECT_FALSE(rsaPublicKeyId({}).ok);
+}
+
+TEST(CryptoRsaTest, ConvertsPublicKeyToDerAndBack)
+{
+    auto keys = generateRsa3072KeyPair();
+#if defined(_WIN32)
+    ASSERT_TRUE(keys.ok) << keys.message;
+    auto der = rsaPublicKeyToDer(keys.value.publicKey);
+    ASSERT_TRUE(der.ok) << der.message;
+    ASSERT_FALSE(der.value.empty());
+    auto restored = rsaPublicKeyFromDer(der.value);
+    ASSERT_TRUE(restored.ok) << restored.message;
+    EXPECT_EQ(restored.value, keys.value.publicKey);
+#else
+    EXPECT_FALSE(keys.ok);
+#endif
+}
+
+TEST(CryptoRsaTest, RejectsMalformedDerPublicKey)
+{
+    const std::vector<std::uint8_t> malformed{0x30, 0x01, 0x00};
+    auto result = rsaPublicKeyFromDer(malformed);
+    EXPECT_FALSE(result.ok);
+    EXPECT_EQ(result.error, static_cast<int>(RsaError::InvalidArgument));
 }
 
 TEST(CryptoRsaTest, SignsAndRejectsTamperedPssSignature)

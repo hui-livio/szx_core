@@ -5,6 +5,8 @@
 #include "SzxCrypto/Random.h"
 
 #include <memory>
+#include <algorithm>
+#include <cstring>
 #include <utility>
 
 #if defined(_WIN32)
@@ -73,6 +75,28 @@ auto exportKey(BCRYPT_KEY_HANDLE key, LPCWSTR blobType) -> SZX::COMMON::Result<s
     return SZX::COMMON::Result<std::vector<std::uint8_t>>::Success(std::move(result));
 }
 #endif
+
+auto derLength(std::size_t size) -> std::vector<std::uint8_t>
+{
+    if (size < 128) return {static_cast<std::uint8_t>(size)};
+    std::vector<std::uint8_t> bytes;
+    while (size) { bytes.push_back(static_cast<std::uint8_t>(size)); size >>= 8; }
+    std::reverse(bytes.begin(), bytes.end());
+    bytes.insert(bytes.begin(), static_cast<std::uint8_t>(0x80 | bytes.size()));
+    return bytes;
+}
+auto derWrap(std::uint8_t tag, const std::vector<std::uint8_t> &value) -> std::vector<std::uint8_t>
+{
+    std::vector<std::uint8_t> out{tag}; auto len = derLength(value.size()); out.insert(out.end(), len.begin(), len.end());
+    out.insert(out.end(), value.begin(), value.end()); return out;
+}
+auto derInteger(std::span<const std::uint8_t> value) -> std::vector<std::uint8_t>
+{
+    while (value.size() > 1 && value.front() == 0) value = value.subspan(1);
+    std::vector<std::uint8_t> bytes(value.begin(), value.end());
+    if (bytes.empty() || (bytes.front() & 0x80)) bytes.insert(bytes.begin(), 0);
+    return derWrap(0x02, bytes);
+}
 } // namespace
 
 auto generateRsa3072KeyPair() -> SZX::COMMON::Result<RsaKeyPair>
@@ -102,6 +126,50 @@ auto rsaPublicKeyId(std::span<const std::uint8_t> publicKey) -> SZX::COMMON::Res
     if (publicKey.empty())
         return failure<std::string>(RsaError::InvalidArgument, "RSA 公钥 blob 不能为空。");
     return sha256KeyId(publicKey);
+}
+
+auto rsaPublicKeyToDer(std::span<const std::uint8_t> publicKey) -> SZX::COMMON::Result<std::vector<std::uint8_t>>
+{
+#if defined(_WIN32)
+    if (publicKey.size() < sizeof(BCRYPT_RSAKEY_BLOB)) return failure<std::vector<std::uint8_t>>(RsaError::InvalidArgument, "RSA 公钥 blob 长度无效。");
+    const auto *blob = reinterpret_cast<const BCRYPT_RSAKEY_BLOB *>(publicKey.data());
+    if (blob->Magic != BCRYPT_RSAPUBLIC_MAGIC || blob->cbPublicExp == 0 || blob->cbModulus == 0 ||
+        sizeof(BCRYPT_RSAKEY_BLOB) + blob->cbPublicExp + blob->cbModulus > publicKey.size())
+        return failure<std::vector<std::uint8_t>>(RsaError::InvalidArgument, "RSA 公钥 blob 格式无效。");
+    const auto *exponent = publicKey.data() + sizeof(BCRYPT_RSAKEY_BLOB);
+    const auto *modulus = exponent + blob->cbPublicExp;
+    auto rsa = derWrap(0x30, [&] { std::vector<std::uint8_t> v; auto n = derInteger({modulus, blob->cbModulus}); auto e = derInteger({exponent, blob->cbPublicExp}); v.insert(v.end(), n.begin(), n.end()); v.insert(v.end(), e.begin(), e.end()); return v; }());
+    std::vector<std::uint8_t> bitString{0}; bitString.insert(bitString.end(), rsa.begin(), rsa.end());
+    auto algorithm = derWrap(0x30, {0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x01, 0x05, 0x00});
+    std::vector<std::uint8_t> body = algorithm; auto bits = derWrap(0x03, bitString); body.insert(body.end(), bits.begin(), bits.end());
+    return SZX::COMMON::Result<std::vector<std::uint8_t>>::Success(derWrap(0x30, body));
+#else
+    (void)publicKey; return failure<std::vector<std::uint8_t>>(RsaError::Unsupported, "RSA CNG is only available on Windows.");
+#endif
+}
+
+auto rsaPublicKeyFromDer(std::span<const std::uint8_t> der) -> SZX::COMMON::Result<std::vector<std::uint8_t>>
+{
+#if defined(_WIN32)
+    auto read = [](std::span<const std::uint8_t> input, std::size_t &pos, std::uint8_t tag, std::span<const std::uint8_t> &value) -> bool {
+        if (pos >= input.size() || input[pos++] != tag || pos >= input.size()) return false; const auto first = input[pos++]; std::size_t len = first;
+        if (first & 0x80) { const auto count = first & 0x7f; if (count == 0 || count > sizeof(std::size_t) || pos + count > input.size()) return false; len = 0; for (std::size_t i=0;i<count;++i) len = (len << 8) | input[pos++]; }
+        if (pos + len > input.size()) return false; value = input.subspan(pos, len); pos += len; return true;
+    };
+    std::size_t p = 0; std::span<const std::uint8_t> outer, alg, bits, rsa, n, e;
+    if (!read(der, p, 0x30, outer) || p != der.size()) return failure<std::vector<std::uint8_t>>(RsaError::InvalidArgument, "DER 外层结构无效。");
+    p = 0; if (!read(outer, p, 0x30, alg) || !read(outer, p, 0x03, bits) || p != outer.size() || bits.size() < 1 || bits[0] != 0) return failure<std::vector<std::uint8_t>>(RsaError::InvalidArgument, "DER SubjectPublicKeyInfo 无效。");
+    const std::uint8_t oid[] = {0x06,0x09,0x2a,0x86,0x48,0x86,0xf7,0x0d,0x01,0x01,0x01,0x05,0x00};
+    if (!std::equal(alg.begin(), alg.end(), std::begin(oid), std::end(oid))) return failure<std::vector<std::uint8_t>>(RsaError::InvalidArgument, "DER RSA 算法标识无效。");
+    p = 1; if (!read(bits, p, 0x30, rsa) || p != bits.size()) return failure<std::vector<std::uint8_t>>(RsaError::InvalidArgument, "DER RSA 公钥无效。");
+    p = 0; if (!read(rsa, p, 0x02, n) || !read(rsa, p, 0x02, e) || p != rsa.size() || n.empty() || e.empty() || n.front() == 0 && n.size() > 1 && !(n[1] & 0x80)) return failure<std::vector<std::uint8_t>>(RsaError::InvalidArgument, "DER RSA 参数无效。");
+    while (n.size() > 1 && n.front() == 0) n = n.subspan(1); while (e.size() > 1 && e.front() == 0) e = e.subspan(1);
+    BCRYPT_RSAKEY_BLOB header{BCRYPT_RSAPUBLIC_MAGIC, static_cast<ULONG>(n.size() * 8), static_cast<ULONG>(e.size()), static_cast<ULONG>(n.size()), 0, 0};
+    std::vector<std::uint8_t> out(sizeof(header) + e.size() + n.size()); std::memcpy(out.data(), &header, sizeof(header)); std::copy(e.begin(), e.end(), out.begin() + sizeof(header)); std::copy(n.begin(), n.end(), out.begin() + sizeof(header) + e.size());
+    return SZX::COMMON::Result<std::vector<std::uint8_t>>::Success(std::move(out));
+#else
+    (void)der; return failure<std::vector<std::uint8_t>>(RsaError::Unsupported, "RSA CNG is only available on Windows.");
+#endif
 }
 
 auto rsaOaepSha256Encrypt(std::span<const std::uint8_t> publicKey, std::span<const std::uint8_t> plaintext)
