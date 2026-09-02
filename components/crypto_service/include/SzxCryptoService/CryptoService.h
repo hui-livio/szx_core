@@ -5,11 +5,15 @@
 #include <span>
 #include <vector>
 #include "Result.hpp"
-#include "SzxCrypto/Crypto.h"
-#include "SzxCrypto/CryptoExport.h"
-
+#include "SzxCryptoService/CryptoServiceExport.h"
 namespace SZX::CRYPTO_SERVICE
 {
+struct CryptoCiphertext
+{
+    std::vector<std::uint8_t> nonce;
+    std::vector<std::uint8_t> ciphertext;
+    std::vector<std::uint8_t> tag;
+};
 
 struct CryptoCapabilities
 {
@@ -27,9 +31,9 @@ public:
     virtual auto capabilities() const -> CryptoCapabilities = 0;
 
     virtual auto encrypt(std::span<const std::uint8_t>, std::span<const std::uint8_t>, std::span<const std::uint8_t> = {})
-        -> SZX::COMMON::Result<SZX::CRYPTO::AesGcmCiphertext> = 0;
+        -> SZX::COMMON::Result<CryptoCiphertext> = 0;
 
-    virtual auto decrypt(std::span<const std::uint8_t>, const SZX::CRYPTO::AesGcmCiphertext &, std::span<const std::uint8_t> = {})
+    virtual auto decrypt(std::span<const std::uint8_t>, const CryptoCiphertext &, std::span<const std::uint8_t> = {})
         -> SZX::COMMON::Result<std::vector<std::uint8_t>> = 0;
 
     virtual auto rsaEncrypt(std::span<const std::uint8_t>, std::span<const std::uint8_t>)
@@ -54,9 +58,9 @@ public:
     auto capabilities() const -> CryptoCapabilities override;
 
     auto encrypt(std::span<const std::uint8_t>, std::span<const std::uint8_t>, std::span<const std::uint8_t> = {})
-        -> SZX::COMMON::Result<SZX::CRYPTO::AesGcmCiphertext> override;
+        -> SZX::COMMON::Result<CryptoCiphertext> override;
 
-    auto decrypt(std::span<const std::uint8_t>, const SZX::CRYPTO::AesGcmCiphertext &, std::span<const std::uint8_t> = {})
+    auto decrypt(std::span<const std::uint8_t>, const CryptoCiphertext &, std::span<const std::uint8_t> = {})
         -> SZX::COMMON::Result<std::vector<std::uint8_t>> override;
 
     auto rsaEncrypt(std::span<const std::uint8_t>, std::span<const std::uint8_t>)
@@ -87,9 +91,9 @@ public:
     }
 
     auto encrypt(std::span<const std::uint8_t>, std::span<const std::uint8_t>, std::span<const std::uint8_t> = {})
-        -> SZX::COMMON::Result<SZX::CRYPTO::AesGcmCiphertext> override;
+        -> SZX::COMMON::Result<CryptoCiphertext> override;
 
-    auto decrypt(std::span<const std::uint8_t>, const SZX::CRYPTO::AesGcmCiphertext &, std::span<const std::uint8_t> = {})
+    auto decrypt(std::span<const std::uint8_t>, const CryptoCiphertext &, std::span<const std::uint8_t> = {})
         -> SZX::COMMON::Result<std::vector<std::uint8_t>> override;
 
     auto rsaEncrypt(std::span<const std::uint8_t>, std::span<const std::uint8_t>)

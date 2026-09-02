@@ -7,5 +7,5 @@ target_include_directories(szx_crypto_service PUBLIC $<BUILD_INTERFACE:${CMAKE_C
 target_link_libraries(szx_crypto_service PUBLIC szx::crypto)
 target_compile_features(szx_crypto_service PUBLIC cxx_std_20)
 if(WIN32)
-    target_compile_definitions(szx_crypto_service PRIVATE SZX_CRYPTO_EXPORTS)
+ target_compile_definitions(szx_crypto_service PRIVATE SZX_CRYPTO_SERVICE_EXPORTS)
 endif()

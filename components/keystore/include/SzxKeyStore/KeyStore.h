@@ -7,7 +7,7 @@
 #include <span>
 
 #include "Result.hpp"
-#include "SzxCrypto/CryptoExport.h"
+#include "SzxKeyStore/KeyStoreExport.h"
 
 namespace SZX::KEYSTORE
 {
