@@ -1,9 +1,9 @@
 /**
  * @file Fernet.h
- * @brief Python cryptography.fernet compatible decrypt helpers.
+ * @brief 兼容 Python cryptography.fernet 的加解密接口。
  *
- * Provides Fernet token encryption and decryption compatible with Python's
- * cryptography.fernet package for AES-128-CBC and HMAC-SHA256 tokens.
+ * 提供与 Python cryptography.fernet 包兼容的 AES-128-CBC 与 HMAC-SHA256
+ * token 加解密。
  */
 
 #pragma once
@@ -20,32 +20,29 @@ namespace SZX::CRYPTO
 {
 
 /**
- * @brief Decrypts a Fernet token to plaintext bytes.
+ * @brief 将 Fernet token 解密为明文字节。
  *
- * The key must be a URL-safe Base64 encoded 32-byte Fernet key. The token is
- * authenticated before decryption, so tampered tokens fail without returning
- * plaintext.
+ * 密钥必须是 URL-safe Base64 编码的 32 字节 Fernet 密钥。解密前会先验证
+ * token 完整性，篡改 token 不会返回明文。
  *
- * @param[in] encryptedToken URL-safe Base64 Fernet token text.
- * @param[in] urlSafeBase64Key URL-safe Base64 encoded 32-byte Fernet key.
- * @return Success with decrypted bytes, or failure for malformed keys, malformed
- *         tokens, authentication failures, or crypto provider errors.
+ * @param[in] encryptedToken URL-safe Base64 编码的 Fernet token。
+ * @param[in] urlSafeBase64Key URL-safe Base64 编码的 32 字节 Fernet 密钥。
+ * @return 成功时返回明文；密钥/token 格式错误、认证失败或 provider 错误时返回失败。
  *
- * @note Token TTL and timestamp freshness are not enforced by this helper.
+ * @note 本接口不校验 token 的 TTL 和时间戳新鲜度。
  */
 [[nodiscard]] SZX_CRYPTO_API auto decryptFernet(std::string_view encryptedToken, std::string_view urlSafeBase64Key)
     -> SZX::COMMON::Result<std::vector<std::uint8_t>>;
 
 /**
- * @brief Encrypts plaintext bytes into a Fernet token.
+ * @brief 将明文字节加密为 Fernet token。
  *
- * The key must be a URL-safe Base64 encoded 32-byte Fernet key. The generated
- * token includes the current system timestamp and a random initialization vector.
+ * 密钥必须是 URL-safe Base64 编码的 32 字节 Fernet 密钥。生成的 token 包含
+ * 当前系统时间戳和随机初始化向量。
  *
- * @param[in] plainData Plaintext bytes to encrypt.
- * @param[in] urlSafeBase64Key URL-safe Base64 encoded 32-byte Fernet key.
- * @return Success with URL-safe Base64 Fernet token text, or failure for malformed
- *         keys or crypto provider errors.
+ * @param[in] plainData 待加密的明文字节。
+ * @param[in] urlSafeBase64Key URL-safe Base64 编码的 32 字节 Fernet 密钥。
+ * @return 成功时返回 URL-safe Base64 token；密钥格式错误或 provider 错误时返回失败。
  */
 [[nodiscard]] SZX_CRYPTO_API auto encryptFernet(std::string_view plainData, std::string_view urlSafeBase64Key)
     -> SZX::COMMON::Result<std::string>;

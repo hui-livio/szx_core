@@ -1,12 +1,16 @@
-SZX_FETCH_OpenCV()
+szx_find_opencv(QUIET)
 
-szx_add_test(
-    NAME test_modules_camera
-    SOURCES
+if(OpenCV_FOUND)
+    szx_add_test(
+        NAME test_modules_camera
+        SOURCES
         CameraServiceCv_test.cc
-    LIBS
+        LIBS
         szx::camera
         ${OpenCV_LIBS}
-)
+    )
 
-target_include_directories(test_modules_camera PRIVATE ${OpenCV_INCLUDE_DIRS})
+    target_include_directories(test_modules_camera PRIVATE ${OpenCV_INCLUDE_DIRS})
+else()
+    message(STATUS "Skipping camera tests: OpenCV is unavailable")
+endif()

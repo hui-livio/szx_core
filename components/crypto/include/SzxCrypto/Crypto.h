@@ -1,8 +1,8 @@
 /**
  * @file Crypto.h
- * @brief Convenience include for SZX crypto helpers.
+ * @brief SZX 加密公共接口的便捷聚合头文件。
  *
- * Includes the public Base64, hash/HMAC, and Fernet helper APIs.
+ * 包含 Base64、Hash/HMAC、Fernet、随机数、安全字节容器和 RSA 接口。
  */
 
 #pragma once
@@ -10,3 +10,6 @@
 #include "SzxCrypto/Base64.h"
 #include "SzxCrypto/Fernet.h"
 #include "SzxCrypto/Hash.h"
+#include "SzxCrypto/Rsa.h"
+#include "SzxCrypto/Random.h"
+#include "SzxCrypto/SecureBytes.h"

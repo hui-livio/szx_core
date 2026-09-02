@@ -1,9 +1,8 @@
 /**
  * @file CryptoExport.h
- * @brief szx_crypto dynamic library export macros.
+ * @brief szx_crypto 动态库导出宏。
  *
- * Defines SZX_CRYPTO_API for importing and exporting public szx_crypto symbols
- * from shared-library builds.
+ * 为共享库构建定义公共符号导入和导出所需的 SZX_CRYPTO_API。
  */
 
 #pragma once

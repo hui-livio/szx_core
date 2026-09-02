@@ -9,6 +9,7 @@
 
 #include <cstdint>
 #include <string>
+#include <utility>
 #include <vector>
 
 using namespace SZX::CRYPTO;
@@ -82,6 +83,17 @@ TEST(CryptoHashTest, ComputesHmacHexValues)
     EXPECT_EQ(mac.value, "9c196e32dc0175f86f4b1cb89289d6619de6bee699e4c378e68309ed97a1a6ab");
 }
 
+TEST(CryptoHashTest, ComputesEmptySha256AndHmac)
+{
+    auto digestResult = digestHex(HashAlgorithm::Sha256, std::string_view{});
+    ASSERT_TRUE(digestResult.ok) << digestResult.message;
+    EXPECT_EQ(digestResult.value, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+
+    auto mac = hmac(HashAlgorithm::Sha256, std::span<const std::uint8_t>{}, std::span<const std::uint8_t>{});
+    ASSERT_TRUE(mac.ok) << mac.message;
+    EXPECT_EQ(mac.value.size(), 32U);
+}
+
 TEST(CryptoFernetTest, RoundTripsTextPayload)
 {
     constexpr std::string_view key     = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
@@ -143,6 +155,118 @@ TEST(CryptoFernetTest, RejectsInvalidTokenAndKey)
 
     auto invalidKey = encryptFernet("payload", "bad-key");
     EXPECT_FALSE(invalidKey.ok);
+}
+
+TEST(CryptoRsaTest, GeneratesKeyPairAndRoundTripsOaep)
+{
+    auto keys = generateRsa3072KeyPair();
+    ASSERT_TRUE(keys.ok) << keys.message;
+    ASSERT_FALSE(keys.value.publicKey.empty());
+    ASSERT_FALSE(keys.value.privateKey.empty());
+
+    const std::vector<std::uint8_t> plaintext{'r', 's', 'a', '-', 'o', 'a', 'e', 'p'};
+    auto encrypted = rsaOaepSha256Encrypt(keys.value.publicKey, plaintext);
+    ASSERT_TRUE(encrypted.ok) << encrypted.message;
+    auto decrypted = rsaOaepSha256Decrypt(keys.value.privateKey, encrypted.value);
+    ASSERT_TRUE(decrypted.ok) << decrypted.message;
+    EXPECT_EQ(decrypted.value, plaintext);
+}
+
+TEST(CryptoRsaTest, RejectsMalformedKeysAndCiphertext)
+{
+    const std::vector<std::uint8_t> malformed{1, 2, 3};
+    const std::vector<std::uint8_t> plaintext{'x'};
+    auto encrypted = rsaOaepSha256Encrypt(malformed, plaintext);
+    EXPECT_FALSE(encrypted.ok);
+    EXPECT_EQ(encrypted.error, static_cast<int>(RsaError::InvalidArgument));
+
+    auto decrypted = rsaOaepSha256Decrypt(malformed, malformed);
+    EXPECT_FALSE(decrypted.ok);
+    EXPECT_EQ(decrypted.error, static_cast<int>(RsaError::InvalidArgument));
+}
+
+TEST(CryptoRsaTest, RejectsCiphertextWithWrongPrivateKey)
+{
+    auto first = generateRsa3072KeyPair();
+    auto second = generateRsa3072KeyPair();
+    ASSERT_TRUE(first.ok) << first.message;
+    ASSERT_TRUE(second.ok) << second.message;
+    auto encrypted = rsaOaepSha256Encrypt(first.value.publicKey, std::vector<std::uint8_t>{'x'});
+    ASSERT_TRUE(encrypted.ok) << encrypted.message;
+    auto decrypted = rsaOaepSha256Decrypt(second.value.privateKey, encrypted.value);
+    EXPECT_FALSE(decrypted.ok);
+    EXPECT_EQ(decrypted.error, static_cast<int>(RsaError::AuthenticationFailed));
+}
+
+TEST(CryptoRsaTest, ComputesStablePublicKeyId)
+{
+    auto keys = generateRsa3072KeyPair();
+    ASSERT_TRUE(keys.ok) << keys.message;
+    auto first = rsaPublicKeyId(keys.value.publicKey);
+    auto second = rsaPublicKeyId(keys.value.publicKey);
+    ASSERT_TRUE(first.ok) << first.message;
+    ASSERT_TRUE(second.ok) << second.message;
+    EXPECT_EQ(first.value, second.value);
+    EXPECT_EQ(first.value.size(), 64U);
+    EXPECT_FALSE(rsaPublicKeyId({}).ok);
+}
+
+TEST(CryptoRsaTest, SignsAndRejectsTamperedPssSignature)
+{
+    auto keys = generateRsa3072KeyPair();
+    ASSERT_TRUE(keys.ok) << keys.message;
+    const std::vector<std::uint8_t> data{'l', 'i', 'c', 'e', 'n', 's', 'e'};
+    auto signature = rsaPssSha256Sign(keys.value.privateKey, data);
+    ASSERT_TRUE(signature.ok) << signature.message;
+    auto verified = rsaPssSha256Verify(keys.value.publicKey, data, signature.value);
+    ASSERT_TRUE(verified.ok) << verified.message;
+    EXPECT_TRUE(verified.value);
+    signature.value.front() ^= 0x01U;
+    auto tampered = rsaPssSha256Verify(keys.value.publicKey, data, signature.value);
+    ASSERT_TRUE(tampered.ok) << tampered.message;
+    EXPECT_FALSE(tampered.value);
+}
+
+TEST(CryptoRandomTest, GeneratesRequestedLengthAndComparesConstantTime)
+{
+    auto first = randomBytes(32);
+    auto second = randomBytes(32);
+    ASSERT_TRUE(first.ok) << first.message;
+    ASSERT_TRUE(second.ok) << second.message;
+    EXPECT_EQ(first.value.size(), 32U);
+    EXPECT_EQ(second.value.size(), 32U);
+    EXPECT_TRUE(constantTimeEqual(first.value, first.value));
+    EXPECT_FALSE(constantTimeEqual(first.value, std::vector<std::uint8_t>(32, 0)));
+    EXPECT_FALSE(constantTimeEqual(first.value, std::vector<std::uint8_t>(31, 0)));
+    EXPECT_TRUE(constantTimeEqual({}, {}));
+}
+
+TEST(CryptoRandomTest, SupportsZeroLengthRandomRequest)
+{
+    auto result = randomBytes(0);
+    ASSERT_TRUE(result.ok) << result.message;
+    EXPECT_TRUE(result.value.empty());
+}
+
+TEST(CryptoSecureBytesTest, ClearsAndMovesSecretData)
+{
+    SecureBytes secret(std::vector<std::uint8_t>{1, 2, 3});
+    EXPECT_EQ(secret.size(), 3U);
+    auto moved = std::move(secret).take();
+    EXPECT_EQ(moved, (std::vector<std::uint8_t>{1, 2, 3}));
+}
+
+TEST(CryptoSecureBytesTest, ClearsAndMoveAssigns)
+{
+    SecureBytes source(std::vector<std::uint8_t>{9, 8, 7});
+    SecureBytes target(std::vector<std::uint8_t>{1});
+    target = std::move(source);
+    EXPECT_EQ(std::vector<std::uint8_t>(target.span().begin(), target.span().end()),
+              (std::vector<std::uint8_t>{9, 8, 7}));
+    EXPECT_TRUE(source.empty());
+    target.clear();
+    EXPECT_TRUE(target.empty());
+    EXPECT_TRUE(target.span().empty());
 }
 
 } // namespace

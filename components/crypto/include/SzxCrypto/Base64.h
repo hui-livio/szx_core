@@ -1,10 +1,9 @@
 /**
  * @file Base64.h
- * @brief Base64 and URL-safe Base64 helpers.
+ * @brief Base64 与 URL-safe Base64 编解码接口。
  *
- * Provides RFC 4648 style Base64 encoding and decoding for text and binary
- * buffers. APIs return project Result values for decode failures instead of
- * throwing exceptions.
+ * 提供符合 RFC 4648 的文本和二进制缓冲区编解码。解码失败通过项目
+ * Result 返回，不向调用方抛出异常。
  */
 
 #pragma once
@@ -23,37 +22,37 @@ namespace SZX::CRYPTO
 {
 
 /**
- * @brief Selects the Base64 alphabet used by encode and decode operations.
+ * @brief 选择编码和解码所使用的 Base64 字母表。
  */
 enum class Base64Alphabet
 {
-    Standard, ///< RFC 4648 standard alphabet using '+' and '/'.
-    UrlSafe   ///< RFC 4648 URL-safe alphabet using '-' and '_'.
+    Standard, ///< RFC 4648 标准字母表，使用 '+' 和 '/'.
+    UrlSafe   ///< RFC 4648 URL 安全字母表，使用 '-' 和 '_'.
 };
 
 /**
- * @brief Encodes binary data to Base64 text.
+ * @brief 将二进制数据编码为 Base64 文本。
  *
- * @param[in] input Binary input bytes to encode.
- * @param[in] alphabet Alphabet variant used for output characters.
- * @param[in] padding Whether '=' padding characters are emitted.
- * @return Encoded Base64 string.
+ * @param[in] input 待编码的输入字节。
+ * @param[in] alphabet 输出所使用的字母表。
+ * @param[in] padding 是否输出 '=' 填充字符。
+ * @return 编码后的 Base64 字符串。
  *
- * @note This function is deterministic and does not fail.
+ * @note 该函数是确定性的，不会失败。
  */
 [[nodiscard]] SZX_CRYPTO_API auto encodeBase64(std::span<const std::uint8_t> input,
                                                Base64Alphabet alphabet = Base64Alphabet::Standard, bool padding = true)
     -> std::string;
 
 /**
- * @brief Encodes string data to Base64 text.
+ * @brief 将字符串字节编码为 Base64 文本。
  *
- * The string bytes are encoded as-is; no character set conversion is performed.
+ * 字符串按原始字节编码，不进行字符集转换。
  *
- * @param[in] input String bytes to encode.
- * @param[in] alphabet Alphabet variant used for output characters.
- * @param[in] padding Whether '=' padding characters are emitted.
- * @return Encoded Base64 string.
+ * @param[in] input 待编码的字符串字节。
+ * @param[in] alphabet 输出所使用的字母表。
+ * @param[in] padding 是否输出 '=' 填充字符。
+ * @return 编码后的 Base64 字符串。
  *
  * @note This function is deterministic and does not fail.
  */
@@ -61,14 +60,13 @@ enum class Base64Alphabet
                                                bool padding = true) -> std::string;
 
 /**
- * @brief Decodes Base64 text to binary bytes.
+ * @brief 将 Base64 文本解码为二进制字节。
  *
- * Whitespace characters are ignored. Missing padding is accepted when the
- * remaining Base64 input length is otherwise valid for the selected alphabet.
+ * 空白字符会被忽略。当剩余长度符合所选字母表规则时允许省略填充。
  *
- * @param[in] input Base64 text to decode.
- * @param[in] alphabet Alphabet variant expected in the input text.
- * @return Success with decoded bytes, or failure when the input is malformed.
+ * @param[in] input 待解码的 Base64 文本。
+ * @param[in] alphabet 输入文本所使用的字母表。
+ * @return 成功时返回解码字节；输入格式错误时返回失败。
  */
 [[nodiscard]] SZX_CRYPTO_API auto decodeBase64(std::string_view input, Base64Alphabet alphabet = Base64Alphabet::Standard)
     -> SZX::COMMON::Result<std::vector<std::uint8_t>>;

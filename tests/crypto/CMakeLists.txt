@@ -1,7 +1,7 @@
 szx_add_test(
     NAME test_modules_crypto
     SOURCES
-        Crypto_test.cc
+    Crypto_test.cc
     LIBS
-        szx::crypto
+    szx::crypto
 )

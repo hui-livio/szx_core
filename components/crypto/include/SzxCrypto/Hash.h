@@ -1,15 +1,13 @@
 /**
  * @file Hash.h
- * @brief Hash and HMAC helpers.
+ * @brief Hash 和 HMAC 接口。
  *
- * Provides common digest and keyed-HMAC operations behind the project Result
- * type. Current implementations use Windows CNG/BCrypt when built on Windows.
+ * 提供 SHA 摘要和带密钥 HMAC 操作。接口使用项目 Result 返回 provider
+ * 错误，不向调用方暴露第三方异常。
  */
-
 #pragma once
 
 #include "SzxCrypto/CryptoExport.h"
-
 #include "Result.hpp"
 
 #include <cstdint>
@@ -21,101 +19,45 @@
 namespace SZX::CRYPTO
 {
 
-/**
- * @brief Supported hash algorithms for digest and HMAC helpers.
- */
+/** 摘要和 HMAC 支持的哈希算法。 */
 enum class HashAlgorithm
 {
-    Sha1,   ///< SHA-1 digest algorithm.
-    Sha256, ///< SHA-256 digest algorithm.
-    Sha512  ///< SHA-512 digest algorithm.
+    Sha1,   ///< SHA-1 摘要算法。
+    Sha256, ///< SHA-256 摘要算法。
+    Sha512  ///< SHA-512 摘要算法。
 };
 
-/**
- * @brief Computes a binary digest for byte data.
- *
- * @param[in] algorithm Hash algorithm to use.
- * @param[in] data Input bytes to hash.
- * @return Success with raw digest bytes, or failure if the crypto provider fails.
- */
+/** 计算字节数据的二进制摘要。 */
 [[nodiscard]] SZX_CRYPTO_API auto digest(HashAlgorithm algorithm, std::span<const std::uint8_t> data)
     -> SZX::COMMON::Result<std::vector<std::uint8_t>>;
 
-/**
- * @brief Computes a binary digest for string data.
- *
- * The string bytes are hashed as-is; no character set conversion is performed.
- *
- * @param[in] algorithm Hash algorithm to use.
- * @param[in] data Input string bytes to hash.
- * @return Success with raw digest bytes, or failure if the crypto provider fails.
- */
+/** 按原始字符串字节计算二进制摘要，不进行字符集转换。 */
 [[nodiscard]] SZX_CRYPTO_API auto digest(HashAlgorithm algorithm, std::string_view data)
     -> SZX::COMMON::Result<std::vector<std::uint8_t>>;
 
-/**
- * @brief Computes a lowercase hexadecimal digest for byte data.
- *
- * @param[in] algorithm Hash algorithm to use.
- * @param[in] data Input bytes to hash.
- * @return Success with lowercase hex digest text, or failure on provider error.
- */
+/** 计算字节数据的小写十六进制摘要。 */
 [[nodiscard]] SZX_CRYPTO_API auto digestHex(HashAlgorithm algorithm, std::span<const std::uint8_t> data)
     -> SZX::COMMON::Result<std::string>;
 
-/**
- * @brief Computes a lowercase hexadecimal digest for string data.
- *
- * @param[in] algorithm Hash algorithm to use.
- * @param[in] data Input string bytes to hash.
- * @return Success with lowercase hex digest text, or failure on provider error.
- */
-[[nodiscard]] SZX_CRYPTO_API auto digestHex(HashAlgorithm algorithm, std::string_view data) -> SZX::COMMON::Result<std::string>;
+/** 按原始字符串字节计算小写十六进制摘要。 */
+[[nodiscard]] SZX_CRYPTO_API auto digestHex(HashAlgorithm algorithm, std::string_view data)
+    -> SZX::COMMON::Result<std::string>;
 
-/**
- * @brief Computes a binary HMAC for byte data.
- *
- * @param[in] algorithm Hash algorithm used by HMAC.
- * @param[in] key HMAC key bytes.
- * @param[in] data Input bytes to authenticate.
- * @return Success with raw HMAC bytes, or failure if the crypto provider fails.
- */
+/** 计算字节数据的二进制 HMAC。 */
 [[nodiscard]] SZX_CRYPTO_API auto hmac(HashAlgorithm algorithm, std::span<const std::uint8_t> key,
-                                       std::span<const std::uint8_t> data) -> SZX::COMMON::Result<std::vector<std::uint8_t>>;
+                                       std::span<const std::uint8_t> data)
+    -> SZX::COMMON::Result<std::vector<std::uint8_t>>;
 
-/**
- * @brief Computes a binary HMAC for string data.
- *
- * The key and data string bytes are used as-is; no character set conversion is
- * performed.
- *
- * @param[in] algorithm Hash algorithm used by HMAC.
- * @param[in] key HMAC key string bytes.
- * @param[in] data Input string bytes to authenticate.
- * @return Success with raw HMAC bytes, or failure if the crypto provider fails.
- */
+/** 按原始字符串字节计算二进制 HMAC。 */
 [[nodiscard]] SZX_CRYPTO_API auto hmac(HashAlgorithm algorithm, std::string_view key, std::string_view data)
     -> SZX::COMMON::Result<std::vector<std::uint8_t>>;
 
-/**
- * @brief Computes a lowercase hexadecimal HMAC for byte data.
- *
- * @param[in] algorithm Hash algorithm used by HMAC.
- * @param[in] key HMAC key bytes.
- * @param[in] data Input bytes to authenticate.
- * @return Success with lowercase hex HMAC text, or failure on provider error.
- */
+/** 计算字节数据的小写十六进制 HMAC。 */
 [[nodiscard]] SZX_CRYPTO_API auto hmacHex(HashAlgorithm algorithm, std::span<const std::uint8_t> key,
-                                          std::span<const std::uint8_t> data) -> SZX::COMMON::Result<std::string>;
+                                          std::span<const std::uint8_t> data)
+    -> SZX::COMMON::Result<std::string>;
 
-/**
- * @brief Computes a lowercase hexadecimal HMAC for string data.
- *
- * @param[in] algorithm Hash algorithm used by HMAC.
- * @param[in] key HMAC key string bytes.
- * @param[in] data Input string bytes to authenticate.
- * @return Success with lowercase hex HMAC text, or failure on provider error.
- */
+/** 按原始字符串字节计算小写十六进制 HMAC。 */
 [[nodiscard]] SZX_CRYPTO_API auto hmacHex(HashAlgorithm algorithm, std::string_view key, std::string_view data)
     -> SZX::COMMON::Result<std::string>;
 
