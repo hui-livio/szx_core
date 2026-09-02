@@ -7,7 +7,6 @@
     #else
         #define SZX_CRYPTO_SERVICE_API __declspec(dllimport)
     #endif
-    #define SZX_CRYPTO_API SZX_CRYPTO_SERVICE_API
 #else
     #define SZX_CRYPTO_SERVICE_API __attribute__((visibility("default")))
 #endif

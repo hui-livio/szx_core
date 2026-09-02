@@ -52,7 +52,7 @@ public:
         -> SZX::COMMON::Result<std::vector<std::uint8_t>> = 0;
 };
 
-class SZX_CRYPTO_API CryptoService final : public ICryptoService
+class SZX_CRYPTO_SERVICE_API CryptoService final : public ICryptoService
 {
 public:
     auto capabilities() const -> CryptoCapabilities override;
@@ -79,7 +79,7 @@ public:
         -> SZX::COMMON::Result<std::vector<std::uint8_t>> override;
 };
 
-class SZX_CRYPTO_API FakeCryptoService final : public ICryptoService
+class SZX_CRYPTO_SERVICE_API FakeCryptoService final : public ICryptoService
 {
 public:
     CryptoCapabilities supported{};
