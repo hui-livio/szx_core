@@ -33,7 +33,17 @@ Base URL：`/api/v1`。认证头：`Authorization: Bearer <access_token>`。成�
 
 同时提供或同时缺失返回 `USER_IDENTITY_ONE_OF_REQUIRED`；标识重复返回 `USER_IDENTITY_CONFLICT`。
 
-## 4. Client 行为日志
+## 4. Client 当前用户权限与行为日志
+
+### 4.1 当前用户权限
+
+`GET /client/me/permissions` 返回客户端业务判断所需的固定角色和能力码：
+
+```json
+{"data":{"role":"engineer","capabilities":["business.read","business.operate","engineering.configure"]}}
+```
+
+客户端据此控制菜单、按钮和流程分支；实际业务 API 仍必须在服务端按角色校验。
 
 业务服务端自动记录 Client 行为；如需前端埋点，使用非可信采集接口：
 
