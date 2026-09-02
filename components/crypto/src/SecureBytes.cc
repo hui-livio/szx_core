@@ -11,6 +11,8 @@ struct SecureBytes::Impl
     std::vector<std::uint8_t> bytes;
 };
 
+SecureBytes::SecureBytes() = default;
+
 SecureBytes::SecureBytes(std::vector<std::uint8_t> bytes) :
     impl_(std::make_unique<Impl>(Impl{std::move(bytes)}))
 {

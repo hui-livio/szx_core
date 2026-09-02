@@ -1,6 +1,7 @@
 add_subdirectory(common)
 add_subdirectory(crypto)
 add_subdirectory(keystore)
+add_subdirectory(crypto_service)
 add_subdirectory(camera)
 add_subdirectory(logger)
 add_subdirectory(feature_manager)

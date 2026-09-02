@@ -19,7 +19,7 @@ class SecureBytes final
 {
 public:
     /** 创建空容器。 */
-    SZX_CRYPTO_API SecureBytes() = default;
+    SZX_CRYPTO_API SecureBytes();
     /** 接管字节并在析构时清零。 */
     SZX_CRYPTO_API explicit SecureBytes(std::vector<std::uint8_t> bytes);
     /** 禁止复制，避免敏感数据产生额外副本。 */
