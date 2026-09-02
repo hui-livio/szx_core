@@ -348,6 +348,9 @@ void setupNativeWindow(QWindow *win)
 
     SetWindowPos(hwnd, nullptr, 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
 
+    // Keep the cloak until the caller has completed QWindow::show().
+    // revealNativeWindow() removes it on the next event-loop turn, preventing
+    // DWM from painting a transient native caption during frame setup.
     DwmFlush();
 #endif
 }
@@ -358,22 +361,21 @@ void revealNativeWindow(QWindow *win)
     if (!win)
         return;
     const HWND hwnd = reinterpret_cast<HWND>(win->winId());
-    // Keep the HWND hidden while Qt performs its first native show pass, then
-    // reveal it in the same queued callback. This prevents DWM from painting
-    // a transient caption between QWindow::show() and frame recalculation.
+    // The caller owns the Qt window lifecycle (show/raise/activate).  This
+    // helper only removes the temporary DWM cloak after native frame setup;
+    // calling QWindow::show() here races the caller and can leave the window
+    // minimized or invisible while its taskbar thumbnail remains alive.
     QTimer::singleShot(0, win,
-                       [win, hwnd]()
+                       [hwnd]()
                        {
                            if (!IsWindow(hwnd))
                                return;
-                           win->show();
                            BOOL disabled = FALSE;
                            DwmSetWindowAttribute(hwnd, DWMWA_CLOAK, &disabled, sizeof(disabled));
                            DwmSetWindowAttribute(hwnd, DWMWA_TRANSITIONS_FORCEDISABLED, &disabled, sizeof(disabled));
                            DwmFlush();
                        });
 #else
-    if (win)
-        win->show();
+    Q_UNUSED(win)
 #endif
 }
