@@ -23,6 +23,10 @@ Item {
     property bool selectedLabelsVisible: false
     property bool interactive: false
     property bool editable: false
+    // A multi-view card can be selected before it becomes the active editor.
+    // In that state the ROI is read-only but must still accept an interior
+    // click; callers that need edge-only read-only hit testing leave this off.
+    property bool allowInteriorSelection: false
     property bool creationEnabled: false
     property bool viewportInteractionEnabled: false
     property string createGroupKey: "general"
@@ -30,6 +34,16 @@ Item {
     property real handleSize: 12
     property color defaultColor: "#b4d2ff"
     property real defaultThickness: 2
+    // EditableDetectionRectItem in the Python parameter editor switches to
+    // a uniform cyan selection pen, independent of each ROI's base color.
+    property color selectedColor: "#00A8FF"
+    property real selectedThickness: 2.2
+    // Python QGraphics items use dashed component frames and, in CAD mode,
+    // a translucent fill.  Keep these optional so existing overlays retain
+    // their solid/transparent appearance.
+    property string defaultLineStyle: "solid"
+    property color defaultFillColor: "transparent"
+    property real defaultFillOpacity: 0
     property var positionOverrides: ({})
     property var hiddenOverrides: ({})
     property var draftRectangle: null
@@ -283,6 +297,7 @@ Item {
                     id: rectItem
 
                     required property var modelData
+                    required property int index
 
                     // Do not resolve the overlay's QML id from methods that
                     // are invoked by a nested Repeater/Loader delegate.  Qt
@@ -293,6 +308,15 @@ Item {
                     property var overlayRoot: root
 
                     readonly property string rectKey: String(modelData.key || modelData.id || "")
+                    // Detection area ids may be persisted as
+                    // "componentRecordId:areaName". Python displays only the
+                    // area name in the upper-left label.
+                    readonly property string displayKey: {
+                        if (modelData.displayKey !== undefined && String(modelData.displayKey).length > 0)
+                            return String(modelData.displayKey);
+                        const separator = rectKey.lastIndexOf(":");
+                        return separator >= 0 ? rectKey.slice(separator + 1) : rectKey;
+                    }
                     readonly property real sourceX: Number(modelData.x || 0)
                     readonly property real sourceY: Number(modelData.y || 0)
                     readonly property real sourceWidth: Number(modelData.width || modelData.w || 0)
@@ -303,6 +327,7 @@ Item {
                     readonly property real displayY: override ? override.y : sourceY
                     readonly property real displayWidth: override ? override.width : sourceWidth
                     readonly property real displayHeight: override ? override.height : sourceHeight
+                    readonly property real rectArea: Math.max(0, displayWidth * displayHeight)
 
                     function resolvedColor() {
                         const modelColor = modelData ? modelData.color : null;
@@ -319,11 +344,55 @@ Item {
                         return value === undefined || value === null ? 1 : Number(value);
                     }
 
+                    function resolvedLineStyle() {
+                        const value = modelData && modelData.lineStyle !== undefined
+                                ? modelData.lineStyle
+                                : (group && group.lineStyle !== undefined ? group.lineStyle : (overlayRoot ? overlayRoot.defaultLineStyle : "solid"));
+                        return String(value || "solid").toLowerCase();
+                    }
+
+                    function resolvedFillColor() {
+                        const value = modelData && modelData.fillColor !== undefined
+                                ? modelData.fillColor
+                                : (group && group.fillColor !== undefined ? group.fillColor : (overlayRoot ? overlayRoot.defaultFillColor : "transparent"));
+                        return value || "transparent";
+                    }
+
+                    function resolvedFillOpacity() {
+                        const value = modelData && modelData.fillOpacity !== undefined
+                                ? modelData.fillOpacity
+                                : (group && group.fillOpacity !== undefined ? group.fillOpacity : (overlayRoot ? overlayRoot.defaultFillOpacity : 0));
+                        return Math.max(0, Math.min(1, Number(value || 0)));
+                    }
+
+                    function resolvedStackingOrder() {
+                        const key = rectKey.toLowerCase();
+                        let value = 20;
+                        if (key.indexOf("solder_detection") >= 0 || key.indexOf("detection_rect") >= 0
+                                || key.indexOf("solder_area_") >= 0)
+                            value = 30;
+                        else if (key === "body-self" || key === "self" || key.indexOf("margin") >= 0
+                                 || key.indexOf("polarity") >= 0 || key.indexOf("char") >= 0)
+                            value = 25;
+                        else if (key.indexOf("pad") >= 0)
+                            value = 20;
+                        // Python sorts equal-category overlays by area so the
+                        // smallest box is on top and can be selected when
+                        // rectangles overlap.  Keep the repeater index as a
+                        // deterministic final tie-breaker.
+                        return value + (selected ? 10 : 0) - rectArea / 1000000
+                                + (100000 - index) / 1000000000;
+                    }
+
                     readonly property color rectColor: resolvedColor()
                     readonly property real rectThickness: resolvedThickness()
+                    readonly property string rectLineStyle: resolvedLineStyle()
+                    readonly property color rectFillColor: resolvedFillColor()
+                    readonly property real rectFillOpacity: resolvedFillOpacity()
                     readonly property bool selected: rectKey.length > 0 && overlayRoot && rectKey === overlayRoot.selectedKey
                     readonly property bool hovered: rectKey.length > 0 && overlayRoot && rectKey === overlayRoot.hoveredKey
                     readonly property string label: String(modelData.label || modelData.name || "")
+                    readonly property string recognizedText: String(modelData.recognizedText || "")
                     readonly property bool hidden: modelData.hidden === true
                                                    || (overlayRoot && overlayRoot.hiddenOverrides[rectKey] === true)
                     readonly property bool rectangleEditable: !!overlayRoot && overlayRoot.editable
@@ -376,10 +445,42 @@ Item {
                     y: overlayRoot ? overlayRoot.imagePosition.y + displayY * overlayRoot.imageScale : 0
                     width: overlayRoot ? displayWidth * overlayRoot.imageScale : 0
                     height: overlayRoot ? displayHeight * overlayRoot.imageScale : 0
-                    visible: !hidden
-                    color: "transparent"
-                    border.color: rectColor
-                    border.width: selected ? Math.max(1, rectThickness + 1) : Math.max(1, rectThickness)
+                    z: resolvedStackingOrder()
+                    visible: !hidden && displayWidth > 0 && displayHeight > 0
+                    color: rectFillOpacity > 0 ? Qt.rgba(rectFillColor.r, rectFillColor.g,
+                                                         rectFillColor.b, rectFillOpacity * rectFillColor.a) : "transparent"
+                    // Rectangle has no dashed border primitive.  The Canvas
+                    // below draws dashed frames while retaining this item as
+                    // the stable hit target for editing.
+                    border.color: !selected && (rectLineStyle === "dash" || rectLineStyle === "dashed")
+                                  ? "transparent" : (selected ? overlayRoot.selectedColor : rectColor)
+                    border.width: !selected && (rectLineStyle === "dash" || rectLineStyle === "dashed")
+                                  ? 0 : (selected ? Math.max(1, overlayRoot.selectedThickness) : Math.max(1, rectThickness))
+
+                    Canvas {
+                        id: dashCanvas
+                        anchors.fill: parent
+                        visible: !rectItem.selected && (rectItem.rectLineStyle === "dash" || rectItem.rectLineStyle === "dashed")
+                        contextType: "2d"
+                        onPaint: {
+                            const ctx = getContext("2d");
+                            ctx.clearRect(0, 0, width, height);
+                            ctx.strokeStyle = rectItem.selected ? rectItem.overlayRoot.selectedColor : rectItem.rectColor;
+                            ctx.lineWidth = rectItem.selected ? Math.max(1, rectItem.overlayRoot.selectedThickness) : Math.max(1, rectItem.rectThickness);
+                            const dash = Math.max(4, ctx.lineWidth * 2.5);
+                            ctx.setLineDash([dash, dash]);
+                            const inset = ctx.lineWidth / 2;
+                            ctx.strokeRect(inset, inset, Math.max(0, width - ctx.lineWidth), Math.max(0, height - ctx.lineWidth));
+                        }
+                        Component.onCompleted: dashCanvas.requestPaint()
+                    }
+
+                    onRectColorChanged: if (dashCanvas.visible) dashCanvas.requestPaint()
+                    onRectThicknessChanged: if (dashCanvas.visible) dashCanvas.requestPaint()
+                    onRectLineStyleChanged: if (dashCanvas.visible) dashCanvas.requestPaint()
+                    onSelectedChanged: if (dashCanvas.visible) dashCanvas.requestPaint()
+                    onWidthChanged: if (dashCanvas.visible) dashCanvas.requestPaint()
+                    onHeightChanged: if (dashCanvas.visible) dashCanvas.requestPaint()
 
                     Text {
                         anchors.left: parent.left
@@ -389,16 +490,38 @@ Item {
                         visible: !!rectItem.overlayRoot && parent.label.length > 0
                                  && (rectItem.overlayRoot.labelsVisible
                                      || (rectItem.overlayRoot.selectedLabelsVisible && rectItem.selected))
-                        text: parent.label
-                        color: parent.rectColor
+                        text: rectItem.selected ? rectItem.displayKey : parent.label
+                        color: parent.selected ? rectItem.overlayRoot.selectedColor : parent.rectColor
                         font.pixelSize: 12
                         font.family: UTTheme.fontFamily
                         font.weight: parent.selected ? Font.DemiBold : Font.Normal
                         elide: Text.ElideRight
                     }
 
+                    Rectangle {
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        anchors.margins: 3
+                        visible: rectItem.recognizedText.length > 0
+                        width: characterLabel.implicitWidth + 8
+                        height: characterLabel.implicitHeight + 4
+                        color: "#A0000000"
+                        radius: 2
+                        z: 3
+
+                        Text {
+                            id: characterLabel
+                            anchors.centerIn: parent
+                            text: rectItem.recognizedText
+                            color: "#FFF176"
+                            font.pixelSize: 13
+                            font.bold: true
+                            font.family: UTTheme.fontFamily
+                        }
+                    }
+
                     Loader {
-                        active: rectItem.rectangleEditable && (rectItem.selected || rectItem.hovered)
+                        active: rectItem.rectangleEditable && rectItem.selected
                         anchors.fill: rectItem
                         sourceComponent: handlesComponent
                     }
@@ -417,8 +540,8 @@ Item {
                             height: rectItem.overlayRoot ? rectItem.overlayRoot.handleSize : 0
                             x: handleName === "tl" || handleName === "bl" ? -width / 2 : parent.width - width / 2
                             y: handleName === "tl" || handleName === "tr" ? -height / 2 : parent.height - height / 2
-                            visible: rectItem.rectangleEditable && (rectItem.selected || rectItem.hovered)
-                            color: rectItem.rectColor
+                            visible: rectItem.rectangleEditable && rectItem.selected
+                            color: rectItem.selected ? rectItem.overlayRoot.selectedColor : rectItem.rectColor
                             border.color: "#101010"
                             border.width: 1
                             z: 2
@@ -472,7 +595,8 @@ Item {
                             // identical drag/resize behavior.  Keep the
                             // border-only hit target only for read-only overlays
                             // to avoid overlapping gray boxes swallowing clicks.
-                            if (!rectItem.rectangleEditable) {
+                            if (!rectItem.rectangleEditable
+                                    && (!rectItem.overlayRoot || !rectItem.overlayRoot.allowInteriorSelection)) {
                                 const edgeDistance = Math.min(mouse.x, mouse.y,
                                                               width - mouse.x, height - mouse.y);
                                 if (edgeDistance > 8) {
