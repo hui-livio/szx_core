@@ -10,4 +10,5 @@
 | [后端设计文档](04-后端设计文档.md) | Admin/Client 服务分层、认证、鉴权与审计 |
 | [RESTful API 接口文档](05-RESTful-API接口文档.md) | Admin/Client API、错误码、示例与权限要求 |
 | [加密设计改造推进方案](08-加密设计改造推进方案.md) | `szx_crypto`、`CryptoService`、OpenSSL 静态库与 JWT 适配的实施步骤 |
-| [加密设计改造推进方案](08-加密设计改造推进方案.md) | `szx_crypto`、`CryptoService`、OpenSSL 静态库与 JWT 适配的实施步骤 |
+| [软授权工具实现说明](09-软授权工具实现说明.md) | 离线请求、签发、验证流程与 CLI 使用说明 |
+| [许可证签发工具 QML 开发计划](10-许可证签发工具QML开发计划.md) | GUI 功能梳理、界面排版、技术架构、阶段计划与验收标准 |
