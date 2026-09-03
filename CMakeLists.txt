@@ -183,6 +183,7 @@ endif()
 
 if(SZX_COMPONENTS_BUILD_UI_TOOLKITS)
     add_subdirectory(components/UIToolkits)
+    add_subdirectory(tools/license-issuer-gui)
 endif()
 
 if(SZX_COMPONENTS_BUILD_UI_TOOLKITS_APP)
