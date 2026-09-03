@@ -9,4 +9,8 @@ namespace SZX::LICENSE
                                           std::span<const std::uint8_t> issuerPrivateKey,
                                           std::span<const std::uint8_t> issuerPublicKey)
     -> SZX::COMMON::Result<std::vector<std::uint8_t>>;
+[[nodiscard]] SZX_LICENSE_API auto issueFile(std::string_view requestPath, const IssueOptions &options,
+                                             std::span<const std::uint8_t> issuerPrivateKey,
+                                             std::span<const std::uint8_t> issuerPublicKey)
+    -> SZX::COMMON::Result<std::vector<std::uint8_t>>;
 } // namespace SZX::LICENSE

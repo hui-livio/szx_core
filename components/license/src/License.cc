@@ -6,6 +6,8 @@
 #include "SzxCrypto/Random.h"
 #include "SzxCrypto/Rsa.h"
 #include "SzxCryptoService/CryptoService.h"
+#include "FileHelper.hpp"
+#include "TimeHelper.hpp"
 #include "nlohmann/json.hpp"
 
 #include <algorithm>
@@ -31,6 +33,11 @@ constexpr std::size_t kMaxRequest              = 1024 * 1024;
 constexpr std::size_t kMaxMachineFactors       = 8;
 constexpr std::size_t kMaxMachineFactorType    = 64;
 constexpr std::size_t kRequiredMachineMatches  = 2;
+constexpr std::size_t kMaxFileBytes            = 2 * 1024 * 1024;
+constexpr std::uint16_t kRequestVersion        = 1;
+constexpr std::uint16_t kRequestAlgorithm      = 1; // RSA-OAEP-SHA256 + AES-256-GCM
+constexpr std::size_t kRequestNonceSize        = 12;
+constexpr std::size_t kRequestTagSize          = 16;
 
 template <typename T>
 auto fail(LicenseError error, const char *message) -> Result<T>
@@ -39,7 +46,7 @@ auto fail(LicenseError error, const char *message) -> Result<T>
 }
 auto nowUtc() -> std::int64_t
 {
-    return std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+    return SZX::COMMON::TimeHelper::NowTimestamp() / 1000;
 }
 void put16(std::vector<std::uint8_t> &out, std::uint16_t v)
 {
@@ -235,6 +242,128 @@ auto validMachineFactors(const std::vector<MachineFactor> &factors) -> bool
                 return false;
     return true;
 }
+auto writeFileAtomic(const std::filesystem::path &path, std::span<const std::uint8_t> bytes) -> Result<void>
+{
+    std::filesystem::path temporary;
+    try
+    {
+        if (path.empty() || bytes.size() > kMaxFileBytes || SZX::COMMON::FileHelper::Exists(path))
+            return fail<void>(LicenseError::InvalidArgument, "output path is invalid or already exists.");
+        temporary = path;
+        temporary += ".tmp";
+        if (SZX::COMMON::FileHelper::Exists(temporary))
+            return fail<void>(LicenseError::IoError, "temporary output already exists.");
+        const std::vector<std::uint8_t> copy(bytes.begin(), bytes.end());
+        if (!SZX::COMMON::FileHelper::WriteBytes(temporary, copy, false))
+        {
+            std::error_code ignored;
+            std::filesystem::remove(temporary, ignored);
+            return fail<void>(LicenseError::IoError, "failed to write output file.");
+        }
+        std::filesystem::rename(temporary, path);
+        return Result<void>::Success();
+    }
+    catch (...)
+    {
+        if (!temporary.empty())
+        {
+            std::error_code ignored;
+            std::filesystem::remove(temporary, ignored);
+        }
+        return fail<void>(LicenseError::IoError, "failed to commit output file.");
+    }
+}
+auto readFile(const std::filesystem::path &path) -> Result<std::vector<std::uint8_t>>
+{
+    try
+    {
+        if (path.empty() || !SZX::COMMON::FileHelper::IsRegularFile(path))
+            return fail<std::vector<std::uint8_t>>(LicenseError::IoError, "input file is unavailable.");
+        const auto size = SZX::COMMON::FileHelper::Size(path);
+        if (!size)
+            return fail<std::vector<std::uint8_t>>(LicenseError::IoError, "failed to inspect input file.");
+        if (*size > kMaxFileBytes)
+            return fail<std::vector<std::uint8_t>>(LicenseError::InvalidArgument, "input file is too large.");
+        auto bytes = SZX::COMMON::FileHelper::ReadBytes(path, kMaxFileBytes);
+        if (!bytes)
+            return fail<std::vector<std::uint8_t>>(LicenseError::IoError, "failed to read input file.");
+        if (bytes->size() != *size)
+            return fail<std::vector<std::uint8_t>>(LicenseError::IoError, "input file changed while reading.");
+        return Result<std::vector<std::uint8_t>>::Success(std::move(*bytes));
+    }
+    catch (...)
+    {
+        return fail<std::vector<std::uint8_t>>(LicenseError::IoError, "failed to read input file.");
+    }
+}
+auto encryptRequest(std::string_view requestJson, std::span<const std::uint8_t> issuerPublicKey)
+    -> Result<std::vector<std::uint8_t>>
+{
+    auto sessionKey = SZX::CRYPTO::randomBytes(32);
+    if (!sessionKey.ok)
+        return Result<std::vector<std::uint8_t>>::Failure(sessionKey.error, sessionKey.message);
+    SZX::CRYPTO_SERVICE::CryptoService crypto;
+    auto wrapped = crypto.rsaEncrypt(issuerPublicKey, sessionKey.value);
+    if (!wrapped.ok)
+        return Result<std::vector<std::uint8_t>>::Failure(wrapped.error, wrapped.message);
+    std::vector<std::uint8_t> header{'S', 'Z', 'X', 'R'};
+    put16(header, kRequestVersion);
+    put16(header, kRequestAlgorithm);
+    put32(header, static_cast<std::uint32_t>(wrapped.value.size()));
+    put32(header, static_cast<std::uint32_t>(kRequestNonceSize));
+    put32(header, static_cast<std::uint32_t>(kRequestTagSize));
+    put32(header, static_cast<std::uint32_t>(requestJson.size()));
+    auto encrypted = crypto.encrypt(sessionKey.value,
+                                    std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t *>(requestJson.data()), requestJson.size()),
+                                    header);
+    if (!encrypted.ok)
+        return Result<std::vector<std::uint8_t>>::Failure(encrypted.error, encrypted.message);
+    if (encrypted.value.nonce.size() != kRequestNonceSize || encrypted.value.tag.size() != kRequestTagSize ||
+        encrypted.value.ciphertext.size() != requestJson.size())
+        return fail<std::vector<std::uint8_t>>(LicenseError::Unsupported, "unexpected request cipher format.");
+    header.insert(header.end(), wrapped.value.begin(), wrapped.value.end());
+    header.insert(header.end(), encrypted.value.nonce.begin(), encrypted.value.nonce.end());
+    header.insert(header.end(), encrypted.value.tag.begin(), encrypted.value.tag.end());
+    header.insert(header.end(), encrypted.value.ciphertext.begin(), encrypted.value.ciphertext.end());
+    return Result<std::vector<std::uint8_t>>::Success(std::move(header));
+}
+auto decryptRequest(std::span<const std::uint8_t> envelope, std::span<const std::uint8_t> issuerPrivateKey)
+    -> Result<std::string>
+{
+    if (envelope.size() < 24 || !std::equal(envelope.begin(), envelope.begin() + 4, "SZXR"))
+        return fail<std::string>(LicenseError::Malformed, "invalid request envelope.");
+    std::vector<std::uint8_t> encoded(envelope.begin(), envelope.end());
+    std::vector<std::uint8_t> header(encoded.begin(), encoded.begin() + 24);
+    std::size_t p = 8;
+    auto wrappedSize = read32(encoded, p);
+    auto nonceSize = read32(encoded, p);
+    auto tagSize = read32(encoded, p);
+    auto cipherSize = read32(encoded, p);
+    const auto version = static_cast<std::uint16_t>(header[4] | (header[5] << 8));
+    const auto algorithm = static_cast<std::uint16_t>(header[6] | (header[7] << 8));
+    if (version != kRequestVersion || algorithm != kRequestAlgorithm)
+        return fail<std::string>(LicenseError::Unsupported, "unsupported request envelope.");
+    if (!wrappedSize || !nonceSize || !tagSize || !cipherSize || *wrappedSize == 0 || *nonceSize == 0 || *tagSize == 0 ||
+        *cipherSize > kMaxPayload || p > envelope.size() || *wrappedSize > envelope.size() - p ||
+        *nonceSize > envelope.size() - p - *wrappedSize || *tagSize > envelope.size() - p - *wrappedSize - *nonceSize ||
+        *cipherSize != envelope.size() - p - *wrappedSize - *nonceSize - *tagSize)
+        return fail<std::string>(LicenseError::Malformed, "invalid request envelope lengths.");
+    SZX::CRYPTO_SERVICE::CryptoService crypto;
+    auto key = crypto.rsaDecrypt(issuerPrivateKey, envelope.subspan(p, *wrappedSize));
+    if (!key.ok)
+        return Result<std::string>::Failure(key.error, key.message);
+    p += *wrappedSize;
+    SZX::CRYPTO_SERVICE::CryptoCiphertext encrypted;
+    encrypted.nonce.assign(envelope.begin() + p, envelope.begin() + p + *nonceSize);
+    p += *nonceSize;
+    encrypted.tag.assign(envelope.begin() + p, envelope.begin() + p + *tagSize);
+    p += *tagSize;
+    encrypted.ciphertext.assign(envelope.begin() + p, envelope.end());
+    auto plain = crypto.decrypt(key.value, encrypted, header);
+    if (!plain.ok)
+        return Result<std::string>::Failure(plain.error, plain.message);
+    return Result<std::string>::Success(std::string(plain.value.begin(), plain.value.end()));
+}
 } // namespace
 
 auto collectMachineFactors(std::string_view productId) -> Result<std::vector<MachineFactor>>
@@ -298,6 +427,27 @@ auto createRequest(const RequestOptions &options) -> Result<std::string>
     } catch (...)
     {
         return fail<std::string>(LicenseError::Malformed, "request generation failed.");
+    }
+}
+
+auto createRequestFile(const RequestOptions &options, std::string_view outputPath,
+                       std::span<const std::uint8_t> issuerPublicKey) -> Result<void>
+{
+    try
+    {
+        if (issuerPublicKey.empty())
+            return fail<void>(LicenseError::InvalidArgument, "issuer public key is required.");
+        auto request = createRequest(options);
+        if (!request.ok)
+            return Result<void>::Failure(request.error, request.message);
+        auto encrypted = encryptRequest(request.value, issuerPublicKey);
+        if (!encrypted.ok)
+            return Result<void>::Failure(encrypted.error, encrypted.message);
+        return writeFileAtomic(std::filesystem::path(outputPath), encrypted.value);
+    }
+    catch (...)
+    {
+        return fail<void>(LicenseError::IoError, "failed to create request file.");
     }
 }
 
@@ -367,6 +517,26 @@ auto issue(const std::string &requestJson, const IssueOptions &options, std::spa
     } catch (...)
     {
         return fail<std::vector<std::uint8_t>>(LicenseError::Malformed, "license issue failed.");
+    }
+}
+
+auto issueFile(std::string_view requestPath, const IssueOptions &options,
+               std::span<const std::uint8_t> issuerPrivateKey, std::span<const std::uint8_t> issuerPublicKey)
+    -> Result<std::vector<std::uint8_t>>
+{
+    try
+    {
+        auto envelope = readFile(std::filesystem::path(requestPath));
+        if (!envelope.ok)
+            return Result<std::vector<std::uint8_t>>::Failure(envelope.error, envelope.message);
+        auto request = decryptRequest(envelope.value, issuerPrivateKey);
+        if (!request.ok)
+            return Result<std::vector<std::uint8_t>>::Failure(request.error, request.message);
+        return issue(request.value, options, issuerPrivateKey, issuerPublicKey);
+    }
+    catch (...)
+    {
+        return fail<std::vector<std::uint8_t>>(LicenseError::IoError, "failed to issue request file.");
     }
 }
 
@@ -460,6 +630,22 @@ auto verify(std::span<const std::uint8_t> bytes, std::span<const std::uint8_t> i
     } catch (...)
     {
         return fail<LicenseInfo>(LicenseError::Malformed, "license verification failed.");
+    }
+}
+
+auto verifyFile(std::string_view licensePath, std::span<const std::uint8_t> issuerPublicKey,
+                std::string_view expectedProduct) -> Result<LicenseInfo>
+{
+    try
+    {
+        auto bytes = readFile(std::filesystem::path(licensePath));
+        if (!bytes.ok)
+            return Result<LicenseInfo>::Failure(bytes.error, bytes.message);
+        return verify(bytes.value, issuerPublicKey, expectedProduct);
+    }
+    catch (...)
+    {
+        return fail<LicenseInfo>(LicenseError::IoError, "failed to verify license file.");
     }
 }
 

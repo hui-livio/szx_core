@@ -1,12 +1,12 @@
 #include "SzxCrypto/Rsa.h"
 #include "SzxLicense/License.h"
 #include "Issuer.h"
+#include "FileHelper.hpp"
+#include "TimeHelper.hpp"
 
-#include <fstream>
 #include <filesystem>
 #include <iostream>
 #include <chrono>
-#include <ctime>
 #include <exception>
 #include <iterator>
 #include <limits>
@@ -20,19 +20,15 @@ namespace
 constexpr std::uintmax_t kMaxInputFile = 2U * 1024U * 1024U;
 auto readText(const std::string &path) -> std::optional<std::string>
 {
-    std::ifstream file(path, std::ios::binary);
-    if (!file) return std::nullopt;
-    file.seekg(0, std::ios::end);
-    const auto size = file.tellg();
-    if (size < 0 || static_cast<std::uintmax_t>(size) > kMaxInputFile) return std::nullopt;
-    file.seekg(0, std::ios::beg);
-    return std::string(std::istreambuf_iterator<char>(file), {});
+    const auto size = SZX::COMMON::FileHelper::Size(path);
+    if (!size || *size > kMaxInputFile) return std::nullopt;
+    return SZX::COMMON::FileHelper::ReadText(path);
 }
 auto readBytes(const std::string &path) -> std::optional<std::vector<std::uint8_t>>
 {
-    auto text = readText(path);
-    if (!text) return std::nullopt;
-    return std::vector<std::uint8_t>(text->begin(), text->end());
+    const auto size = SZX::COMMON::FileHelper::Size(path);
+    if (!size || *size > kMaxInputFile) return std::nullopt;
+    return SZX::COMMON::FileHelper::ReadBytes(path);
 }
 auto readRsaKey(const std::string &path, bool privateKey) -> std::optional<std::vector<std::uint8_t>>
 {
@@ -49,16 +45,13 @@ auto readRsaKey(const std::string &path, bool privateKey) -> std::optional<std::
 }
 auto writeBytes(const std::string &path, const std::vector<std::uint8_t> &bytes, bool overwrite = false) -> bool
 {
-    if (!overwrite && std::filesystem::exists(path)) return false;
-    std::ofstream file(path, std::ios::binary | std::ios::trunc);
-    if (!file) return false;
-    file.write(reinterpret_cast<const char *>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
-    return file.good();
+    if (!overwrite && SZX::COMMON::FileHelper::Exists(path)) return false;
+    return SZX::COMMON::FileHelper::WriteBytes(path, bytes);
 }
 void usage()
 {
     std::cerr << "usage: szx_license_issuer keygen --private-key <der> --public-key <der> [--force]\n"
-                 "       szx_license_issuer request --product <id> --version <ver> --output <req>\n"
+                 "       szx_license_issuer request --product <id> --version <ver> --public-key <der|pem> --output <req>\n"
                  "       szx_license_issuer issue --request <req> --private-key <der> --public-key <der> --output <lic>"
                  " [--license-id <id>] [--issuer <name>] [--days <n>]\n"
                  "       szx_license_issuer key-info --public-key <der>\n"
@@ -94,11 +87,13 @@ int runMain(int argc, char **argv)
     }
     if (command == "request")
     {
-        auto product = arg("--product"), version = arg("--version"), output = arg("--output");
-        if (!product || !version || !output) { usage(); return 2; }
-        auto result = SZX::LICENSE::createRequest({.productId = *product, .appVersion = *version});
-        if (!result.ok || !writeBytes(*output, std::vector<std::uint8_t>(result.value.begin(), result.value.end())))
-        { std::cerr << (result.ok ? "failed to write request" : result.message) << '\n'; return 1; }
+        auto product = arg("--product"), version = arg("--version"), publicKey = arg("--public-key"), output = arg("--output");
+        if (!product || !version || !publicKey || !output) { usage(); return 2; }
+        auto publicBytes = readRsaKey(*publicKey, false);
+        if (!publicBytes) { std::cerr << "failed to read public key\n"; return 1; }
+        auto result = SZX::LICENSE::createRequestFile({.productId = *product, .appVersion = *version}, *output, *publicBytes);
+        if (!result.ok)
+        { std::cerr << result.message << '\n'; return 1; }
         return 0;
     }
     if (command == "key-info")
@@ -116,12 +111,12 @@ int runMain(int argc, char **argv)
     {
         auto request = arg("--request"), privateKey = arg("--private-key"), publicKey = arg("--public-key"), output = arg("--output");
         if (!request || !privateKey || !publicKey || !output) { usage(); return 2; }
-        auto requestText = readText(*request);
         auto privateBytes = readRsaKey(*privateKey, true);
         auto publicBytes = readRsaKey(*publicKey, false);
-        if (!requestText || !privateBytes || !publicBytes) { std::cerr << "failed to read input\n"; return 1; }
+        if (!privateBytes || !publicBytes) { std::cerr << "failed to read input\n"; return 1; }
         SZX::LICENSE::IssueOptions options;
-        options.licenseId = arg("--license-id").value_or("license-" + std::to_string(std::time(nullptr)));
+        options.licenseId = arg("--license-id").value_or(
+            "license-" + std::to_string(SZX::COMMON::TimeHelper::NowTimestamp() / 1000));
         options.issuer = arg("--issuer").value_or("szx-license-issuer");
         if (auto days = arg("--days"))
         {
@@ -130,7 +125,7 @@ int runMain(int argc, char **argv)
             { std::cerr << "--days is out of range\n"; return 2; }
             options.expiresAtUtc = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()) + count * 86400;
         }
-        auto result = SZX::LICENSE::issue(*requestText, options, *privateBytes, *publicBytes);
+        auto result = SZX::LICENSE::issueFile(*request, options, *privateBytes, *publicBytes);
         if (!result.ok || !writeBytes(*output, result.value)) { std::cerr << (result.ok ? "failed to write license" : result.message) << '\n'; return 1; }
         return 0;
     }
@@ -138,9 +133,9 @@ int runMain(int argc, char **argv)
     {
         auto input = arg("--input"), publicKey = arg("--public-key");
         if (!input || !publicKey) { usage(); return 2; }
-        auto license = readBytes(*input), key = readRsaKey(*publicKey, false);
-        if (!license || !key) { std::cerr << "failed to read input\n"; return 1; }
-        auto result = SZX::LICENSE::verify(*license, *key, arg("--product").value_or(""));
+        auto key = readRsaKey(*publicKey, false);
+        if (!key) { std::cerr << "failed to read input\n"; return 1; }
+        auto result = SZX::LICENSE::verifyFile(*input, *key, arg("--product").value_or(""));
         if (!result.ok) { std::cerr << result.message << '\n'; return 1; }
         std::cout << result.value.licenseId << ' ' << result.value.productId << '\n';
         return 0;

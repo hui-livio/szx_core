@@ -16,6 +16,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <limits>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -126,6 +127,27 @@ public:
         auto content = std::vector<std::uint8_t>(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
         if (input.bad())
             return std::nullopt;
+        return content;
+    }
+
+    /** Reads a regular file with a hard upper bound, returning nullopt on overflow. */
+    static auto ReadBytes(const std::filesystem::path &path, std::uintmax_t maxBytes)
+        -> std::optional<std::vector<std::uint8_t>>
+    {
+        const auto size = Size(path);
+        if (!size || *size > maxBytes || *size > static_cast<std::uintmax_t>(std::numeric_limits<std::size_t>::max()))
+            return std::nullopt;
+        std::ifstream input(path, std::ios::in | std::ios::binary);
+        if (!input.is_open())
+            return std::nullopt;
+        if (*size >= static_cast<std::uintmax_t>(std::numeric_limits<std::size_t>::max()))
+            return std::nullopt;
+        std::vector<std::uint8_t> content(static_cast<std::size_t>(*size) + 1);
+        input.read(reinterpret_cast<char *>(content.data()), static_cast<std::streamsize>(content.size()));
+        const auto count = input.gcount();
+        if (count < 0 || static_cast<std::uintmax_t>(count) > maxBytes || input.bad())
+            return std::nullopt;
+        content.resize(static_cast<std::size_t>(count));
         return content;
     }
 

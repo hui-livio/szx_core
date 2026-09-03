@@ -23,6 +23,7 @@ enum class LicenseError : int
     NotYetValid      = 1805,
     WrongProduct     = 1806,
     MachineMismatch   = 1807,
+    IoError           = 1808,
 };
 
 struct MachineFactor
@@ -67,7 +68,15 @@ struct LicenseInfo
 [[nodiscard]] SZX_LICENSE_API auto collectMachineFactors(std::string_view productId)
     -> SZX::COMMON::Result<std::vector<MachineFactor>>;
 [[nodiscard]] SZX_LICENSE_API auto createRequest(const RequestOptions &options) -> SZX::COMMON::Result<std::string>;
+/** Generates a request and atomically writes the UTF-8 JSON to the requested path. */
+[[nodiscard]] SZX_LICENSE_API auto createRequestFile(const RequestOptions &options, std::string_view outputPath,
+                                                     std::span<const std::uint8_t> issuerPublicKey)
+    -> SZX::COMMON::Result<void>;
 [[nodiscard]] SZX_LICENSE_API auto verify(std::span<const std::uint8_t> envelope, std::span<const std::uint8_t> issuerPublicKey,
                                           std::string_view expectedProduct = {}) -> SZX::COMMON::Result<LicenseInfo>;
+/** Reads a bounded license envelope from disk and verifies it. */
+[[nodiscard]] SZX_LICENSE_API auto verifyFile(std::string_view licensePath,
+                                              std::span<const std::uint8_t> issuerPublicKey,
+                                              std::string_view expectedProduct = {}) -> SZX::COMMON::Result<LicenseInfo>;
 [[nodiscard]] SZX_LICENSE_API auto hasFeature(const LicenseInfo &license, std::string_view feature) noexcept -> bool;
 } // namespace SZX::LICENSE

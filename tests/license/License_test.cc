@@ -3,7 +3,9 @@
 
 #include "SzxCrypto/Rsa.h"
 #include "nlohmann/json.hpp"
+#include "FileHelper.hpp"
 
+#include <filesystem>
 #include <gtest/gtest.h>
 
 
@@ -145,4 +147,39 @@ TEST(LicenseTest, RejectsIssueRequestWithoutMachineFactors)
     IssueOptions options{.licenseId = "unbound", .issuer = "issuer"};
     auto license = issue(json.dump(), options, keys.value.privateKey, keys.value.publicKey);
     EXPECT_EQ(license.error, static_cast<int>(LicenseError::InvalidArgument));
+}
+
+TEST(LicenseTest, RequestFileIsEncryptedAndSupportsPathBasedFlow)
+{
+    const auto requestPath = std::filesystem::temp_directory_path() / "szx-license-test.szxreq";
+    const auto licensePath = std::filesystem::temp_directory_path() / "szx-license-test.szxlic";
+    std::filesystem::remove(requestPath);
+    std::filesystem::remove(requestPath.string() + ".tmp");
+    std::filesystem::remove(licensePath);
+
+    auto keys = SZX::CRYPTO::generateRsa3072KeyPair();
+    ASSERT_TRUE(keys.ok);
+    RequestOptions request{.productId = "product-a", .appVersion = "1.0"};
+    auto created = createRequestFile(request, requestPath.string(), keys.value.publicKey);
+    ASSERT_TRUE(created.ok) << created.message;
+    auto encrypted = SZX::COMMON::FileHelper::ReadBytes(requestPath);
+    ASSERT_TRUE(encrypted);
+    EXPECT_EQ(std::search(encrypted->begin(), encrypted->end(), request.productId.begin(), request.productId.end()), encrypted->end());
+
+    auto tampered = *encrypted;
+    tampered.back() ^= 1;
+    ASSERT_TRUE(SZX::COMMON::FileHelper::WriteBytes(requestPath, tampered, false));
+    IssueOptions options{.licenseId = "file-flow", .issuer = "issuer"};
+    EXPECT_FALSE(issueFile(requestPath.string(), options, keys.value.privateKey, keys.value.publicKey).ok);
+
+    std::filesystem::remove(requestPath);
+    ASSERT_TRUE(createRequestFile(request, requestPath.string(), keys.value.publicKey).ok);
+    auto license = issueFile(requestPath.string(), options, keys.value.privateKey, keys.value.publicKey);
+    ASSERT_TRUE(license.ok) << license.message;
+    ASSERT_TRUE(SZX::COMMON::FileHelper::WriteBytes(licensePath, license.value, false));
+    auto verified = verifyFile(licensePath.string(), keys.value.publicKey, request.productId);
+    EXPECT_TRUE(verified.ok) << verified.message;
+
+    std::filesystem::remove(requestPath);
+    std::filesystem::remove(licensePath);
 }
