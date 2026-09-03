@@ -2,11 +2,27 @@
 #include "../../components/license/src/Issuer.h"
 
 #include "SzxCrypto/Rsa.h"
+#include "nlohmann/json.hpp"
 
 #include <gtest/gtest.h>
 
 
 using namespace SZX::LICENSE;
+
+TEST(LicenseTest, CollectsProductScopedMachineFactors)
+{
+    auto factors = collectMachineFactors("product-a");
+    ASSERT_TRUE(factors.ok) << factors.message;
+    for (const auto &factor : factors.value)
+    {
+        EXPECT_FALSE(factor.type.empty());
+        EXPECT_EQ(factor.hash.size(), 64U);
+    }
+
+    auto request = createRequest(RequestOptions{.productId = "product-a", .appVersion = "1.0"});
+    ASSERT_TRUE(request.ok) << request.message;
+    EXPECT_NE(request.value.find("machine_factors"), std::string::npos);
+}
 
 TEST(LicenseTest, RequestIssueAndVerifyRoundTrip)
 {
@@ -93,4 +109,40 @@ TEST(LicenseTest, RejectsInvalidRequestVersionAndExpiryRange)
                     keys.value.publicKey)
                   .error,
               static_cast<int>(LicenseError::Unsupported));
+}
+
+TEST(LicenseTest, RejectsLicenseForDifferentMachineFactors)
+{
+    RequestOptions request{.productId = "product-a", .appVersion = "1.0"};
+    auto requestJson = createRequest(request);
+    ASSERT_TRUE(requestJson.ok);
+    std::size_t hashPos = 0;
+    std::size_t hashCount = 0;
+    while ((hashPos = requestJson.value.find("\"hash\":\"", hashPos)) != std::string::npos)
+    {
+        requestJson.value.replace(hashPos + 8, 64, 64, '0');
+        hashPos += 8 + 64;
+        ++hashCount;
+    }
+    ASSERT_GT(hashCount, 0U);
+    auto keys = SZX::CRYPTO::generateRsa3072KeyPair();
+    ASSERT_TRUE(keys.ok);
+    IssueOptions options{.licenseId = "machine-bound", .issuer = "issuer"};
+    auto license = issue(requestJson.value, options, keys.value.privateKey, keys.value.publicKey);
+    ASSERT_TRUE(license.ok);
+    EXPECT_EQ(verify(license.value, keys.value.publicKey).error, static_cast<int>(LicenseError::MachineMismatch));
+}
+
+TEST(LicenseTest, RejectsIssueRequestWithoutMachineFactors)
+{
+    RequestOptions request{.productId = "product-a", .appVersion = "1.0"};
+    auto requestJson = createRequest(request);
+    ASSERT_TRUE(requestJson.ok);
+    auto json = nlohmann::json::parse(requestJson.value);
+    json.erase("machine_factors");
+    auto keys = SZX::CRYPTO::generateRsa3072KeyPair();
+    ASSERT_TRUE(keys.ok);
+    IssueOptions options{.licenseId = "unbound", .issuer = "issuer"};
+    auto license = issue(json.dump(), options, keys.value.privateKey, keys.value.publicKey);
+    EXPECT_EQ(license.error, static_cast<int>(LicenseError::InvalidArgument));
 }

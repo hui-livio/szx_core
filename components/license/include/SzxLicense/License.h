@@ -8,6 +8,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace SZX::LICENSE
@@ -21,6 +22,13 @@ enum class LicenseError : int
     Expired          = 1804,
     NotYetValid      = 1805,
     WrongProduct     = 1806,
+    MachineMismatch   = 1807,
+};
+
+struct MachineFactor
+{
+    std::string type;
+    std::string hash;
 };
 
 struct RequestOptions
@@ -51,9 +59,13 @@ struct LicenseInfo
     std::int64_t notBeforeUtc{};
     std::optional<std::int64_t> expiresAtUtc;
     std::vector<std::string> features;
+    std::vector<MachineFactor> machineFactors;
     std::map<std::string, std::string> customFields;
 };
 
+/** Collects normalized, product-scoped machine factor hashes. Raw hardware identifiers are never returned. */
+[[nodiscard]] SZX_LICENSE_API auto collectMachineFactors(std::string_view productId)
+    -> SZX::COMMON::Result<std::vector<MachineFactor>>;
 [[nodiscard]] SZX_LICENSE_API auto createRequest(const RequestOptions &options) -> SZX::COMMON::Result<std::string>;
 [[nodiscard]] SZX_LICENSE_API auto verify(std::span<const std::uint8_t> envelope, std::span<const std::uint8_t> issuerPublicKey,
                                           std::string_view expectedProduct = {}) -> SZX::COMMON::Result<LicenseInfo>;
