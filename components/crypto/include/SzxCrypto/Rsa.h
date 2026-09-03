@@ -1,6 +1,6 @@
 /**
  * @file Rsa.h
- * @brief 基于 Windows CNG 的 RSA 密钥生成及 OAEP/PSS 操作。
+ * @brief 基于 OpenSSL 的 RSA 密钥生成及 OAEP/PSS 操作。
  */
 #pragma once
 
@@ -19,29 +19,29 @@ namespace SZX::CRYPTO
 enum class RsaError : int
 {
     InvalidArgument      = 1710, ///< 输入参数或密钥格式无效。
-    ProviderFailure      = 1711, ///< CNG provider 执行失败。
+    ProviderFailure      = 1711, ///< OpenSSL 密码学操作失败。
     AuthenticationFailed = 1712, ///< OAEP 解密或认证失败。
-    Unsupported          = 1713, ///< 当前平台不支持该 provider。
+    Unsupported          = 1713, ///< OpenSSL 不支持所请求的算法或参数。
 };
 
-/** CNG 导出的 RSA blob；privateKey 必须作为敏感数据保护。 */
+/** DER 编码的 RSA 公钥/私钥；privateKey 必须作为敏感数据保护。 */
 struct RsaKeyPair
 {
     std::vector<std::uint8_t> publicKey;
     std::vector<std::uint8_t> privateKey;
 };
 
-/** 生成 3072 位 RSA 密钥对，返回 CNG blob 格式的公钥和私钥。 */
+/** 生成 3072 位 RSA 密钥对，返回 DER SubjectPublicKeyInfo/PrivateKeyInfo。 */
 [[nodiscard]] SZX_CRYPTO_API auto generateRsa3072KeyPair() -> SZX::COMMON::Result<RsaKeyPair>;
 
-/** 根据 CNG 公钥 blob 计算稳定的小写十六进制 SHA-256 Key ID。 */
+/** 根据 DER 公钥计算稳定的小写十六进制 SHA-256 Key ID。 */
 [[nodiscard]] SZX_CRYPTO_API auto rsaPublicKeyId(std::span<const std::uint8_t> publicKey) -> SZX::COMMON::Result<std::string>;
 /** 校验 DER 公钥并计算其规范字节的 SHA-256 Key ID。 */
 [[nodiscard]] SZX_CRYPTO_API auto rsaPublicKeyIdFromDer(std::span<const std::uint8_t> der) -> SZX::COMMON::Result<std::string>;
-/** 将 CNG RSA 公钥 blob 编码为 DER SubjectPublicKeyInfo。 */
+/** 规范化 DER SubjectPublicKeyInfo 公钥。 */
 [[nodiscard]] SZX_CRYPTO_API auto rsaPublicKeyToDer(std::span<const std::uint8_t> publicKey)
     -> SZX::COMMON::Result<std::vector<std::uint8_t>>;
-/** 将 DER SubjectPublicKeyInfo 解码为 CNG RSA 公钥 blob。 */
+/** 校验并规范化 DER SubjectPublicKeyInfo 公钥。 */
 [[nodiscard]] SZX_CRYPTO_API auto rsaPublicKeyFromDer(std::span<const std::uint8_t> der)
     -> SZX::COMMON::Result<std::vector<std::uint8_t>>;
 /** 使用 RSA-OAEP-SHA256 加密一条消息；大数据应使用混合加密。 */

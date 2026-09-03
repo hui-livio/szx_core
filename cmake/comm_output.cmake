@@ -193,7 +193,7 @@ function(szx_install_components_package)
     endif()
 
     set(_targets szx_common szx_logger szx_crypto)
-    foreach(_crypto_target IN ITEMS szx_keystore szx_crypto_service szx_crypto_file)
+    foreach(_crypto_target IN ITEMS szx_crypto_service szx_crypto_file)
         if(TARGET ${_crypto_target})
             list(APPEND _targets ${_crypto_target})
         endif()
@@ -240,10 +240,6 @@ function(szx_install_components_package)
         DESTINATION szx/common/ext FILE_PATTERN "*.h" "*.hpp")
     szx_install_headers(crypto HEADER_DIR "${CMAKE_SOURCE_DIR}/components/crypto/include"
         DESTINATION . FILE_PATTERN "*.h")
-    if(TARGET szx_keystore)
-        szx_install_headers(keystore HEADER_DIR "${CMAKE_SOURCE_DIR}/components/keystore/include"
-            DESTINATION . FILE_PATTERN "*.h")
-    endif()
     if(TARGET szx_crypto_service)
         szx_install_headers(crypto_service HEADER_DIR "${CMAKE_SOURCE_DIR}/components/crypto_service/include"
             DESTINATION . FILE_PATTERN "*.h")

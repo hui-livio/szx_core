@@ -8,7 +8,6 @@
 |---|---|
 | `szx::common` | C++20 header-only 基础类型、容器和序列化辅助 |
 | `szx::crypto` | Base64、Hash/HMAC、Fernet、AES-GCM、RSA、PBKDF2 |
-| `szx::keystore` | Windows CNG 持久化密钥存储与签名/解密 |
 | `szx::crypto_service` | 面向业务的统一加密服务门面 |
 | `szx::crypto_file` | `.szxe` 内存容器加密、解密、认证与结构解析 |
 | `szx::logger` | spdlog 日志封装 |
@@ -44,7 +43,7 @@ cmake --install build/msvc --config Release
 
 ```cmake
 find_package(SZXComponents 0.1 CONFIG REQUIRED)
-target_link_libraries(MyApp PRIVATE szx::common szx::crypto szx::keystore
+target_link_libraries(MyApp PRIVATE szx::common szx::crypto
     szx::crypto_service szx::crypto_file szx::logger szx::feature_manager
     szx::camera szx::plc szx::compression)
 ```
