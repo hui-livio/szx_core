@@ -7,7 +7,7 @@ using namespace SZX::COMMON;
 namespace SZX::CRYPTO
 {
 using namespace internal;
-auto randomBytes(std::size_t size) -> Result<std::vector<std::uint8_t>>
+auto randomBytesImpl(std::size_t size) -> Result<std::vector<std::uint8_t>>
 {
     if (!fitsInt(size))
         return fail<std::vector<std::uint8_t>>(1720, "random size invalid.");
@@ -16,12 +16,20 @@ auto randomBytes(std::size_t size) -> Result<std::vector<std::uint8_t>>
         return fail<std::vector<std::uint8_t>>(1720, "random generation failed.");
     return Result<std::vector<std::uint8_t>>::Success(std::move(out));
 }
+auto randomBytes(std::size_t size) -> Result<std::vector<std::uint8_t>>
+{
+    return invokeBoundary([&] { return randomBytesImpl(size); });
+}
 auto constantTimeEqual(std::span<const std::uint8_t> a, std::span<const std::uint8_t> b) noexcept -> bool
 {
     return internal::constantTimeEqual(a, b);
 }
-auto sha256KeyId(std::span<const std::uint8_t> k) -> Result<std::string>
+auto sha256KeyIdImpl(std::span<const std::uint8_t> k) -> Result<std::string>
 {
     return digestHex(HashAlgorithm::Sha256, k);
+}
+auto sha256KeyId(std::span<const std::uint8_t> k) -> Result<std::string>
+{
+    return invokeBoundary([&] { return sha256KeyIdImpl(k); });
 }
 } // namespace SZX::CRYPTO

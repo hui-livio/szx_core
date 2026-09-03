@@ -19,22 +19,28 @@ namespace
 
 TEST(CryptoBase64Test, EncodesAndDecodesStandardBase64)
 {
-    EXPECT_EQ(encodeBase64(""), "");
-    EXPECT_EQ(encodeBase64("f"), "Zg==");
-    EXPECT_EQ(encodeBase64("fo"), "Zm8=");
-    EXPECT_EQ(encodeBase64("foo"), "Zm9v");
-    EXPECT_EQ(encodeBase64("hello"), "aGVsbG8=");
+    EXPECT_EQ(encodeBase64("").value, "");
+    EXPECT_EQ(encodeBase64("f").value, "Zg==");
+    EXPECT_EQ(encodeBase64("fo").value, "Zm8=");
+    EXPECT_EQ(encodeBase64("foo").value, "Zm9v");
+    EXPECT_EQ(encodeBase64("hello").value, "aGVsbG8=");
 
     auto decoded = decodeBase64("aGVsbG8=");
     ASSERT_TRUE(decoded.ok) << decoded.message;
     EXPECT_EQ(std::string(decoded.value.begin(), decoded.value.end()), "hello");
 }
 
+TEST(CryptoBase64Test, RejectsNonCanonicalTrailingBits)
+{
+    EXPECT_FALSE(decodeBase64("Zh==").ok);
+    EXPECT_FALSE(decodeBase64("_x", Base64Alphabet::UrlSafe).ok);
+}
+
 TEST(CryptoBase64Test, SupportsUrlSafeAlphabetAndOptionalPadding)
 {
     const std::vector<std::uint8_t> bytes{0xfb, 0xff};
-    EXPECT_EQ(encodeBase64(bytes, Base64Alphabet::UrlSafe), "-_8=");
-    EXPECT_EQ(encodeBase64(bytes, Base64Alphabet::UrlSafe, false), "-_8");
+    EXPECT_EQ(encodeBase64(bytes, Base64Alphabet::UrlSafe).value, "-_8=");
+    EXPECT_EQ(encodeBase64(bytes, Base64Alphabet::UrlSafe, false).value, "-_8");
 
     auto decoded = decodeBase64("-_8", Base64Alphabet::UrlSafe);
     ASSERT_TRUE(decoded.ok) << decoded.message;
@@ -300,6 +306,44 @@ TEST(CryptoRsaTest, RejectsMalformedDerPublicKey)
     EXPECT_FALSE(result.ok);
     EXPECT_EQ(result.error, static_cast<int>(RsaError::InvalidArgument));
     EXPECT_FALSE(rsaPublicKeyIdFromDer(malformed).ok);
+}
+
+TEST(CryptoRsaTest, EnforcesOaepSha256PlaintextBoundary)
+{
+    auto keys = generateRsa3072KeyPair();
+    ASSERT_TRUE(keys.ok) << keys.message;
+    std::vector<std::uint8_t> maxPlaintext(318, 0x5a);
+    auto accepted = rsaOaepSha256Encrypt(keys.value.publicKey, maxPlaintext);
+    ASSERT_TRUE(accepted.ok) << accepted.message;
+    std::vector<std::uint8_t> oversized(319, 0x5a);
+    auto rejected = rsaOaepSha256Encrypt(keys.value.publicKey, oversized);
+    EXPECT_FALSE(rejected.ok);
+    EXPECT_EQ(rejected.error, static_cast<int>(RsaError::InvalidArgument));
+}
+
+TEST(CryptoRsaTest, RejectsTrailingDerAndNonRsaKey)
+{
+    auto keys = generateRsa3072KeyPair();
+    ASSERT_TRUE(keys.ok) << keys.message;
+    auto withTrailing = keys.value.publicKey;
+    withTrailing.push_back(0);
+    EXPECT_FALSE(rsaPublicKeyFromDer(withTrailing).ok);
+    const std::vector<std::uint8_t> nonRsaDer{0x30, 0x03, 0x02, 0x01, 0x00};
+    EXPECT_FALSE(rsaPublicKeyFromDer(nonRsaDer).ok);
+}
+
+TEST(CryptoFernetTest, RejectsUnalignedCiphertext)
+{
+    constexpr std::string_view key = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+    auto encrypted                 = encryptFernet("payload", key);
+    ASSERT_TRUE(encrypted.ok) << encrypted.message;
+    auto decoded = decodeBase64(encrypted.value, Base64Alphabet::UrlSafe);
+    ASSERT_TRUE(decoded.ok) << decoded.message;
+    ASSERT_GT(decoded.value.size(), 48U);
+    decoded.value.erase(decoded.value.begin() + 25);
+    auto malformed = encodeBase64(decoded.value, Base64Alphabet::UrlSafe);
+    ASSERT_TRUE(malformed.ok) << malformed.message;
+    EXPECT_FALSE(decryptFernet(malformed.value, key).ok);
 }
 
 TEST(CryptoRsaTest, SignsAndRejectsTamperedPssSignature)

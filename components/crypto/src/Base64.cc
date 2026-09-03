@@ -6,6 +6,8 @@
 #include "SzxCrypto/Base64.h"
 
 #include <array>
+#include <exception>
+#include <limits>
 #include <utility>
 
 using namespace SZX::COMMON;
@@ -14,7 +16,7 @@ namespace SZX::CRYPTO
 {
 namespace
 {
-constexpr int kBase64Error = 1602;
+constexpr int kBase64Error = static_cast<int>(Base64Error::InvalidArgument);
 
 [[nodiscard]] auto alphabetChars(Base64Alphabet alphabet) -> const char *
 {
@@ -48,32 +50,45 @@ constexpr int kBase64Error = 1602;
 
 } // namespace
 
-auto encodeBase64(std::span<const std::uint8_t> input, Base64Alphabet alphabet, bool padding) -> std::string
+auto encodeBase64(std::span<const std::uint8_t> input, Base64Alphabet alphabet, bool padding) -> Result<std::string>
 {
-    const auto *chars = alphabetChars(alphabet);
-    std::string encoded;
-    encoded.reserve(((input.size() + 2) / 3) * 4);
-    for (std::size_t index = 0; index < input.size(); index += 3)
+    try
     {
-        const auto remaining = input.size() - index;
-        const auto b0        = input[index];
-        const auto b1        = remaining > 1 ? input[index + 1] : 0;
-        const auto b2        = remaining > 2 ? input[index + 2] : 0;
-        encoded.push_back(chars[b0 >> 2]);
-        encoded.push_back(chars[((b0 & 0x03U) << 4U) | (b1 >> 4U)]);
-        if (remaining > 1)
-            encoded.push_back(chars[((b1 & 0x0FU) << 2U) | (b2 >> 6U)]);
-        else if (padding)
-            encoded.push_back('=');
-        if (remaining > 2)
-            encoded.push_back(chars[b2 & 0x3FU]);
-        else if (padding)
-            encoded.push_back('=');
+        const auto *chars = alphabetChars(alphabet);
+        if (input.size() > (std::numeric_limits<std::size_t>::max() - 2) / 4 * 3)
+            return Result<std::string>::Failure(static_cast<int>(Base64Error::EncodingFailed), "base64 input too large.");
+        std::string encoded;
+        encoded.reserve(((input.size() + 2) / 3) * 4);
+        for (std::size_t index = 0; index < input.size(); index += 3)
+        {
+            const auto remaining = input.size() - index;
+            const auto b0        = input[index];
+            const auto b1        = remaining > 1 ? input[index + 1] : 0;
+            const auto b2        = remaining > 2 ? input[index + 2] : 0;
+            encoded.push_back(chars[b0 >> 2]);
+            encoded.push_back(chars[((b0 & 0x03U) << 4U) | (b1 >> 4U)]);
+            if (remaining > 1)
+                encoded.push_back(chars[((b1 & 0x0FU) << 2U) | (b2 >> 6U)]);
+            else if (padding)
+                encoded.push_back('=');
+            if (remaining > 2)
+                encoded.push_back(chars[b2 & 0x3FU]);
+            else if (padding)
+                encoded.push_back('=');
+        }
+        return Result<std::string>::Success(std::move(encoded));
     }
-    return encoded;
+    catch (const std::exception &)
+    {
+        return Result<std::string>::Failure(static_cast<int>(Base64Error::EncodingFailed), "base64 encoding failed.");
+    }
+    catch (...)
+    {
+        return Result<std::string>::Failure(static_cast<int>(Base64Error::EncodingFailed), "base64 encoding failed.");
+    }
 }
 
-auto encodeBase64(std::string_view input, Base64Alphabet alphabet, bool padding) -> std::string
+auto encodeBase64(std::string_view input, Base64Alphabet alphabet, bool padding) -> Result<std::string>
 {
     return encodeBase64(std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t *>(input.data()), input.size()),
                         alphabet, padding);
@@ -118,6 +133,10 @@ auto decodeBase64(std::string_view input, Base64Alphabet alphabet) -> Result<std
     if ((valueChars % 4U) == 1U)
         return Result<std::vector<std::uint8_t>>::Failure(kBase64Error, "invalid base64 data.");
     if (paddingChars > 0 && ((valueChars + paddingChars) % 4U) != 0U)
+        return Result<std::vector<std::uint8_t>>::Failure(kBase64Error, "invalid base64 data.");
+    // Reject non-canonical encodings whose discarded trailing bits are non-zero.
+    // Without this check multiple textual tokens could represent the same bytes.
+    if (bits != 0 && (buffer & ((1U << bits) - 1U)) != 0U)
         return Result<std::vector<std::uint8_t>>::Failure(kBase64Error, "invalid base64 data.");
     return Result<std::vector<std::uint8_t>>::Success(std::move(decoded));
 }

@@ -1,6 +1,6 @@
 #include "SzxCrypto/SecureBytes.h"
 
-#include <algorithm>
+#include <openssl/crypto.h>
 #include <utility>
 
 namespace SZX::CRYPTO
@@ -26,7 +26,10 @@ SecureBytes::SecureBytes(SecureBytes &&other) noexcept :
 auto SecureBytes::operator=(SecureBytes &&other) noexcept -> SecureBytes &
 {
     if (this != &other)
+    {
+        clear();
         impl_ = std::move(other.impl_);
+    }
     return *this;
 }
 
@@ -63,7 +66,8 @@ void SecureBytes::clear() noexcept
 {
     if (!impl_)
         return;
-    std::fill(impl_->bytes.begin(), impl_->bytes.end(), std::uint8_t{0});
+    if (!impl_->bytes.empty())
+        OPENSSL_cleanse(impl_->bytes.data(), impl_->bytes.size());
     impl_->bytes.clear();
 }
 

@@ -1,6 +1,3 @@
-#include <cstring>
-#include <openssl/core_names.h>
-#include <openssl/param_build.h>
 #include <openssl/rsa.h>
 #include <openssl/x509.h>
 #include "OpenSslInternal.hpp"
@@ -13,45 +10,18 @@ namespace SZX::CRYPTO
 using namespace internal;
 namespace
 {
+constexpr std::size_t kRsa3072ModulusBytes       = 384;
+constexpr std::size_t kRsaOaepSha256MaxPlaintext = kRsa3072ModulusBytes - 2 * 32 - 2;
 auto derPublic(std::span<const std::uint8_t> der) -> Pkey
 {
     if (der.empty() || !fitsInt(der.size()))
         return {};
     const unsigned char *p = der.data(), *end = p + der.size();
-    if (auto *k = d2i_PUBKEY(nullptr, &p, static_cast<long>(der.size())); k && p == end)
+    auto *k = d2i_PUBKEY(nullptr, &p, static_cast<long>(der.size()));
+    if (k && p == end && EVP_PKEY_is_a(k, "RSA") == 1)
         return Pkey(k);
-    if (der.size() < 24)
-        return {};
-    std::uint32_t magic = 0, bits = 0, ce = 0, cm = 0;
-    std::memcpy(&magic, der.data(), 4);
-    std::memcpy(&bits, der.data() + 4, 4);
-    std::memcpy(&ce, der.data() + 8, 4);
-    std::memcpy(&cm, der.data() + 12, 4);
-    if (magic != 0x31415352u || !bits || !ce || !cm || 24ull + ce + cm > der.size())
-        return {};
-    std::vector<unsigned char> e(der.begin() + 24, der.begin() + 24 + ce), n(der.begin() + 24 + ce, der.begin() + 24 + ce + cm);
-    std::reverse(e.begin(), e.end());
-    std::reverse(n.begin(), n.end());
-    PkeyCtx c(EVP_PKEY_CTX_new_from_name(nullptr, "RSA", nullptr));
-    BIGNUM *bnN       = BN_bin2bn(n.data(), static_cast<int>(n.size()), nullptr),
-           *bnE       = BN_bin2bn(e.data(), static_cast<int>(e.size()), nullptr);
-    OSSL_PARAM_BLD *b = OSSL_PARAM_BLD_new();
-    if (!c || !b || !bnN || !bnE || EVP_PKEY_fromdata_init(c.get()) != 1 ||
-        OSSL_PARAM_BLD_push_BN(b, OSSL_PKEY_PARAM_RSA_N, bnN) != 1 || OSSL_PARAM_BLD_push_BN(b, OSSL_PKEY_PARAM_RSA_E, bnE) != 1)
-    {
-        BN_free(bnN);
-        BN_free(bnE);
-        OSSL_PARAM_BLD_free(b);
-        return {};
-    }
-    OSSL_PARAM *ps = OSSL_PARAM_BLD_to_param(b);
-    EVP_PKEY *raw  = nullptr;
-    int ok         = ps && EVP_PKEY_fromdata(c.get(), &raw, EVP_PKEY_PUBLIC_KEY, ps) == 1;
-    OSSL_PARAM_free(ps);
-    OSSL_PARAM_BLD_free(b);
-    BN_free(bnN);
-    BN_free(bnE);
-    return ok ? Pkey(raw) : Pkey{};
+    EVP_PKEY_free(k);
+    return {};
 }
 auto derPrivate(std::span<const std::uint8_t> der) -> Pkey
 {
@@ -59,7 +29,10 @@ auto derPrivate(std::span<const std::uint8_t> der) -> Pkey
         return {};
     const unsigned char *p = der.data(), *end = p + der.size();
     auto *k = d2i_AutoPrivateKey(nullptr, &p, static_cast<long>(der.size()));
-    return k && p == end ? Pkey(k) : Pkey{};
+    if (k && p == end && EVP_PKEY_is_a(k, "RSA") == 1)
+        return Pkey(k);
+    EVP_PKEY_free(k);
+    return {};
 }
 auto serializePublic(EVP_PKEY *k) -> Result<std::vector<std::uint8_t>>
 {
@@ -81,9 +54,10 @@ auto serializePrivate(EVP_PKEY *k) -> Result<std::vector<std::uint8_t>>
     i2d_PrivateKey(k, &p);
     return Result<std::vector<std::uint8_t>>::Success(std::move(o));
 }
-auto rsaCrypt(bool enc, std::span<const std::uint8_t> key, std::span<const std::uint8_t> in) -> Result<std::vector<std::uint8_t>>
+auto rsaCryptImpl(bool enc, std::span<const std::uint8_t> key, std::span<const std::uint8_t> in)
+    -> Result<std::vector<std::uint8_t>>
 {
-    if (!validRsaInput(key, in))
+    if (!validRsaInput(key, in) || (enc ? in.size() > kRsaOaepSha256MaxPlaintext : in.size() != kRsa3072ModulusBytes))
         return fail<std::vector<std::uint8_t>>(1710, "RSA parameters invalid.");
     Pkey p = enc ? derPublic(key) : derPrivate(key);
     if (!p)
@@ -104,8 +78,12 @@ auto rsaCrypt(bool enc, std::span<const std::uint8_t> key, std::span<const std::
     o.resize(n);
     return Result<std::vector<std::uint8_t>>::Success(std::move(o));
 }
+auto rsaCrypt(bool enc, std::span<const std::uint8_t> key, std::span<const std::uint8_t> in) -> Result<std::vector<std::uint8_t>>
+{
+    return invokeBoundary([&] { return rsaCryptImpl(enc, key, in); });
+}
 } // namespace
-auto generateRsa3072KeyPair() -> Result<RsaKeyPair>
+auto generateRsa3072KeyPairImpl() -> Result<RsaKeyPair>
 {
     PkeyCtx c(EVP_PKEY_CTX_new_id(EVP_PKEY_RSA, nullptr));
     EVP_PKEY *raw = nullptr;
@@ -118,10 +96,18 @@ auto generateRsa3072KeyPair() -> Result<RsaKeyPair>
         return fail<RsaKeyPair>(1711, "RSA key serialization failed.");
     return Result<RsaKeyPair>::Success({std::move(pub.value), std::move(priv.value)});
 }
+auto generateRsa3072KeyPair() -> Result<RsaKeyPair>
+{
+    return invokeBoundary([] { return generateRsa3072KeyPairImpl(); });
+}
 auto rsaPublicKeyToDer(std::span<const std::uint8_t> k) -> Result<std::vector<std::uint8_t>>
 {
-    auto p = derPublic(k);
-    return p ? serializePublic(p.get()) : fail<std::vector<std::uint8_t>>(1710, "invalid RSA public key.");
+    return invokeBoundary(
+        [&]
+        {
+            auto p = derPublic(k);
+            return p ? serializePublic(p.get()) : fail<std::vector<std::uint8_t>>(1710, "invalid RSA public key.");
+        });
 }
 auto rsaPublicKeyFromDer(std::span<const std::uint8_t> k) -> Result<std::vector<std::uint8_t>>
 {
@@ -129,8 +115,12 @@ auto rsaPublicKeyFromDer(std::span<const std::uint8_t> k) -> Result<std::vector<
 }
 auto rsaPublicKeyId(std::span<const std::uint8_t> k) -> Result<std::string>
 {
-    auto d = rsaPublicKeyToDer(k);
-    return d.ok ? sha256KeyId(d.value) : Result<std::string>::Failure(d.error, d.message);
+    return invokeBoundary(
+        [&]
+        {
+            auto d = rsaPublicKeyToDer(k);
+            return d.ok ? sha256KeyId(d.value) : Result<std::string>::Failure(d.error, d.message);
+        });
 }
 auto rsaPublicKeyIdFromDer(std::span<const std::uint8_t> k) -> Result<std::string>
 {
@@ -144,7 +134,7 @@ auto rsaOaepSha256Decrypt(std::span<const std::uint8_t> k, std::span<const std::
 {
     return rsaCrypt(false, k, d);
 }
-auto rsaPssSha256Sign(std::span<const std::uint8_t> k, std::span<const std::uint8_t> d) -> Result<std::vector<std::uint8_t>>
+auto rsaPssSha256SignImpl(std::span<const std::uint8_t> k, std::span<const std::uint8_t> d) -> Result<std::vector<std::uint8_t>>
 {
     Pkey p = derPrivate(k);
     if (!p)
@@ -163,7 +153,11 @@ auto rsaPssSha256Sign(std::span<const std::uint8_t> k, std::span<const std::uint
     o.resize(n);
     return Result<std::vector<std::uint8_t>>::Success(std::move(o));
 }
-auto rsaPssSha256Verify(std::span<const std::uint8_t> k, std::span<const std::uint8_t> d, std::span<const std::uint8_t> s)
+auto rsaPssSha256Sign(std::span<const std::uint8_t> k, std::span<const std::uint8_t> d) -> Result<std::vector<std::uint8_t>>
+{
+    return invokeBoundary([&] { return rsaPssSha256SignImpl(k, d); });
+}
+auto rsaPssSha256VerifyImpl(std::span<const std::uint8_t> k, std::span<const std::uint8_t> d, std::span<const std::uint8_t> s)
     -> Result<bool>
 {
     auto p = derPublic(k);
@@ -174,5 +168,10 @@ auto rsaPssSha256Verify(std::span<const std::uint8_t> k, std::span<const std::ui
         EVP_PKEY_CTX_set_signature_md(c.get(), EVP_sha256()) != 1 || EVP_PKEY_CTX_set_rsa_pss_saltlen(c.get(), 32) != 1)
         return fail<bool>(1711, "RSA verification failed.");
     return Result<bool>::Success(EVP_PKEY_verify(c.get(), s.data(), s.size(), h.value.data(), h.value.size()) == 1);
+}
+auto rsaPssSha256Verify(std::span<const std::uint8_t> k, std::span<const std::uint8_t> d, std::span<const std::uint8_t> s)
+    -> Result<bool>
+{
+    return invokeBoundary([&] { return rsaPssSha256VerifyImpl(k, d, s); });
 }
 } // namespace SZX::CRYPTO

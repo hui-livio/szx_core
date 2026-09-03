@@ -7,7 +7,7 @@ using namespace SZX::COMMON;
 namespace SZX::CRYPTO
 {
 using namespace internal;
-auto digest(HashAlgorithm a, std::span<const std::uint8_t> data) -> Result<std::vector<std::uint8_t>>
+auto digestImpl(HashAlgorithm a, std::span<const std::uint8_t> data) -> Result<std::vector<std::uint8_t>>
 {
     if (!md(a) || !fitsInt(data.size()))
         return fail<std::vector<std::uint8_t>>(1600, "digest parameters invalid.");
@@ -22,20 +22,28 @@ auto digest(HashAlgorithm a, std::span<const std::uint8_t> data) -> Result<std::
     out.resize(n);
     return Result<std::vector<std::uint8_t>>::Success(std::move(out));
 }
+auto digest(HashAlgorithm a, std::span<const std::uint8_t> data) -> Result<std::vector<std::uint8_t>>
+{
+    return invokeBoundary([&] { return digestImpl(a, data); });
+}
 auto digest(HashAlgorithm a, std::string_view s) -> Result<std::vector<std::uint8_t>>
 {
     return digest(a, {reinterpret_cast<const std::uint8_t *>(s.data()), s.size()});
 }
 auto digestHex(HashAlgorithm a, std::span<const std::uint8_t> d) -> Result<std::string>
 {
-    auto r = digest(a, d);
-    return r.ok ? Result<std::string>::Success(hex(r.value)) : Result<std::string>::Failure(r.error, r.message);
+    return invokeBoundary(
+        [&]
+        {
+            auto r = digest(a, d);
+            return r.ok ? Result<std::string>::Success(hex(r.value)) : Result<std::string>::Failure(r.error, r.message);
+        });
 }
 auto digestHex(HashAlgorithm a, std::string_view s) -> Result<std::string>
 {
     return digestHex(a, {reinterpret_cast<const std::uint8_t *>(s.data()), s.size()});
 }
-auto hmac(HashAlgorithm a, std::span<const std::uint8_t> key, std::span<const std::uint8_t> data)
+auto hmacImpl(HashAlgorithm a, std::span<const std::uint8_t> key, std::span<const std::uint8_t> data)
     -> Result<std::vector<std::uint8_t>>
 {
     if (!md(a) || !fitsIntPair(key.size(), data.size()))
@@ -50,6 +58,11 @@ auto hmac(HashAlgorithm a, std::span<const std::uint8_t> key, std::span<const st
     out.resize(n);
     return Result<std::vector<std::uint8_t>>::Success(std::move(out));
 }
+auto hmac(HashAlgorithm a, std::span<const std::uint8_t> key, std::span<const std::uint8_t> data)
+    -> Result<std::vector<std::uint8_t>>
+{
+    return invokeBoundary([&] { return hmacImpl(a, key, data); });
+}
 auto hmac(HashAlgorithm a, std::string_view k, std::string_view d) -> Result<std::vector<std::uint8_t>>
 {
     return hmac(a, {reinterpret_cast<const std::uint8_t *>(k.data()), k.size()},
@@ -57,8 +70,12 @@ auto hmac(HashAlgorithm a, std::string_view k, std::string_view d) -> Result<std
 }
 auto hmacHex(HashAlgorithm a, std::span<const std::uint8_t> k, std::span<const std::uint8_t> d) -> Result<std::string>
 {
-    auto r = hmac(a, k, d);
-    return r.ok ? Result<std::string>::Success(hex(r.value)) : Result<std::string>::Failure(r.error, r.message);
+    return invokeBoundary(
+        [&]
+        {
+            auto r = hmac(a, k, d);
+            return r.ok ? Result<std::string>::Success(hex(r.value)) : Result<std::string>::Failure(r.error, r.message);
+        });
 }
 auto hmacHex(HashAlgorithm a, std::string_view k, std::string_view d) -> Result<std::string>
 {

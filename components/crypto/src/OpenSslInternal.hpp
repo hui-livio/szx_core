@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <climits>
+#include <exception>
 #include <iomanip>
 #include <memory>
 #include <openssl/evp.h>
@@ -33,6 +34,23 @@ template <typename T>
 auto fail(int code, const char *message) -> SZX::COMMON::Result<T>
 {
     return SZX::COMMON::Result<T>::Failure(code, message);
+}
+// Boundary used by exported crypto entry points.  The public API is Result based;
+// no allocation/provider exception is allowed to escape across the DLL boundary.
+template <typename Function>
+auto invokeBoundary(Function &&function) noexcept -> decltype(function())
+{
+    using Return = decltype(function());
+    try
+    {
+        return function();
+    } catch (const std::exception &)
+    {
+        return Return::Failure(1799, "crypto internal exception.");
+    } catch (...)
+    {
+        return Return::Failure(1799, "crypto internal exception.");
+    }
 }
 inline auto fitsInt(std::size_t value) noexcept -> bool
 {

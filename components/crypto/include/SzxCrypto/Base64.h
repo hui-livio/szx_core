@@ -30,19 +30,24 @@ enum class Base64Alphabet
     UrlSafe   ///< RFC 4648 URL 安全字母表，使用 '-' 和 '_'.
 };
 
+/** Base64 操作返回的稳定错误码。 */
+enum class Base64Error : int
+{
+    InvalidArgument = 1602,
+    EncodingFailed  = 1603,
+};
+
 /**
  * @brief 将二进制数据编码为 Base64 文本。
  *
  * @param[in] input 待编码的输入字节。
  * @param[in] alphabet 输出所使用的字母表。
  * @param[in] padding 是否输出 '=' 填充字符。
- * @return 编码后的 Base64 字符串。
- *
- * @note 该函数是确定性的，不会失败。
+ * @return 成功时返回编码后的 Base64 字符串；分配失败时返回错误。
  */
 [[nodiscard]] SZX_CRYPTO_API auto encodeBase64(std::span<const std::uint8_t> input,
                                                Base64Alphabet alphabet = Base64Alphabet::Standard, bool padding = true)
-    -> std::string;
+    -> SZX::COMMON::Result<std::string>;
 
 /**
  * @brief 将字符串字节编码为 Base64 文本。
@@ -52,12 +57,10 @@ enum class Base64Alphabet
  * @param[in] input 待编码的字符串字节。
  * @param[in] alphabet 输出所使用的字母表。
  * @param[in] padding 是否输出 '=' 填充字符。
- * @return 编码后的 Base64 字符串。
- *
- * @note This function is deterministic and does not fail.
+ * @return 成功时返回编码后的 Base64 字符串；分配失败时返回错误。
  */
 [[nodiscard]] SZX_CRYPTO_API auto encodeBase64(std::string_view input, Base64Alphabet alphabet = Base64Alphabet::Standard,
-                                               bool padding = true) -> std::string;
+                                               bool padding = true) -> SZX::COMMON::Result<std::string>;
 
 /**
  * @brief 将 Base64 文本解码为二进制字节。
