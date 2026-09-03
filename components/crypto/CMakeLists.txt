@@ -1,5 +1,10 @@
 add_library(szx_crypto SHARED
-    src/OpenSsl.cc
+    src/OpenSslHash.cc
+    src/OpenSslRandom.cc
+    src/OpenSslKdf.cc
+    src/OpenSslAead.cc
+    src/OpenSslFernet.cc
+    src/OpenSslRsa.cc
     src/Base64.cc
     src/SecureBytes.cc
     include/SzxCrypto/Base64.h

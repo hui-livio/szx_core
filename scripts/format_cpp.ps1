@@ -71,6 +71,12 @@ function Resolve-ClangFormat {
 function Test-BusinessSourcePath {
     param([string]$RelativePath)
 
+    # git may list a tracked file that is deleted in the working tree; do not
+    # pass such paths to clang-format.
+    if (-not (Test-Path -LiteralPath (Join-Path $repoRoot $RelativePath) -PathType Leaf)) {
+        return $false
+    }
+
     $normalized = $RelativePath.Replace("\", "/")
     $segments = $normalized.Split("/", [System.StringSplitOptions]::RemoveEmptyEntries)
     foreach ($segment in $segments) {
