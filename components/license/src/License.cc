@@ -1,14 +1,14 @@
 #include "SzxLicense/License.h"
 #include "Issuer.h"
+#include "LicenseJson.hpp"
 
+#include "FileHelper.hpp"
 #include "SzxCrypto/Base64.h"
 #include "SzxCrypto/Hash.h"
 #include "SzxCrypto/Random.h"
 #include "SzxCrypto/Rsa.h"
 #include "SzxCryptoService/CryptoService.h"
-#include "FileHelper.hpp"
 #include "TimeHelper.hpp"
-#include "nlohmann/json.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -17,13 +17,13 @@
 #include <fstream>
 
 #ifdef _WIN32
-#    include <windows.h>
+    #include <windows.h>
 #endif
 
 namespace SZX::LICENSE
 {
 using SZX::COMMON::Result;
-using Json = nlohmann::json;
+using namespace SZX::LICENSE::internal;
 namespace
 {
 constexpr std::uint16_t kVersion               = 1;
@@ -75,17 +75,6 @@ auto read32(const std::vector<std::uint8_t> &in, std::size_t &p) -> std::optiona
         v |= static_cast<std::uint32_t>(in[p++]) << (i * 8);
     return v;
 }
-auto jsonArray(const std::vector<std::string> &values) -> Json
-{
-    return Json(values);
-}
-auto fieldsJson(const std::map<std::string, std::string> &fields) -> Json
-{
-    Json out = Json::object();
-    for (const auto &[key, value] : fields)
-        out[key] = value;
-    return out;
-}
 auto hexBytes(std::string_view text) -> std::optional<std::vector<std::uint8_t>>
 {
     if (text.size() != 64)
@@ -117,17 +106,19 @@ auto trim(std::string value) -> std::string
     if (first == std::string::npos)
         return {};
     const auto last = value.find_last_not_of(" \t\r\n");
-    value            = value.substr(first, last - first + 1);
-    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+    value           = value.substr(first, last - first + 1);
+    std::transform(value.begin(), value.end(), value.begin(),
+                   [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
     return value;
 }
 auto rawMachineFactors() -> std::vector<std::pair<std::string, std::string>>
 {
     std::vector<std::pair<std::string, std::string>> factors;
 #ifdef _WIN32
-    const auto appendSmbiosUuid = [&] {
+    const auto appendSmbiosUuid = [&]
+    {
         constexpr DWORD kRawSmbios = 'RSMB';
-        const auto size = GetSystemFirmwareTable(kRawSmbios, 0, nullptr, 0);
+        const auto size            = GetSystemFirmwareTable(kRawSmbios, 0, nullptr, 0);
         if (size == 0)
             return;
         std::vector<std::uint8_t> table(size);
@@ -135,7 +126,7 @@ auto rawMachineFactors() -> std::vector<std::pair<std::string, std::string>>
             return;
         std::uint32_t tableLength = 0;
         std::memcpy(&tableLength, table.data() + 4, sizeof(tableLength));
-        const auto end = std::min<std::size_t>(table.size(), 8ULL + tableLength);
+        const auto end     = std::min<std::size_t>(table.size(), 8ULL + tableLength);
         std::size_t offset = 8;
         while (offset + 4 <= end)
         {
@@ -168,7 +159,8 @@ auto rawMachineFactors() -> std::vector<std::pair<std::string, std::string>>
     };
     appendSmbiosUuid();
     HKEY key{};
-    if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"SOFTWARE\\Microsoft\\Cryptography", 0, KEY_READ | KEY_WOW64_64KEY, &key) == ERROR_SUCCESS)
+    if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"SOFTWARE\\Microsoft\\Cryptography", 0, KEY_READ | KEY_WOW64_64KEY, &key) ==
+        ERROR_SUCCESS)
     {
         wchar_t value[256]{};
         DWORD size = sizeof(value), type = 0;
@@ -177,8 +169,9 @@ auto rawMachineFactors() -> std::vector<std::pair<std::string, std::string>>
         {
             char utf8[768]{};
             const auto chars = std::min<DWORD>(size / sizeof(wchar_t), static_cast<DWORD>(std::size(value) - 1));
-            value[chars] = L'\0';
-            const int length = WideCharToMultiByte(CP_UTF8, 0, value, static_cast<int>(chars), utf8, sizeof(utf8) - 1, nullptr, nullptr);
+            value[chars]     = L'\0';
+            const int length =
+                WideCharToMultiByte(CP_UTF8, 0, value, static_cast<int>(chars), utf8, sizeof(utf8) - 1, nullptr, nullptr);
             if (length > 1)
                 factors.emplace_back("machine_guid", utf8);
         }
@@ -188,7 +181,7 @@ auto rawMachineFactors() -> std::vector<std::pair<std::string, std::string>>
     wchar_t root[MAX_PATH]{};
     if (GetWindowsDirectoryW(windowsDir, MAX_PATH) != 0 && GetVolumePathNameW(windowsDir, root, MAX_PATH) != 0)
     {
-        DWORD serial    = 0;
+        DWORD serial = 0;
         if (GetVolumeInformationW(root, nullptr, 0, &serial, nullptr, nullptr, nullptr, 0) != 0)
             factors.emplace_back("system_volume", std::to_string(serial));
     }
@@ -200,47 +193,42 @@ auto rawMachineFactors() -> std::vector<std::pair<std::string, std::string>>
 #endif
     return factors;
 }
-auto machineFactorsJson(const std::vector<MachineFactor> &factors) -> Json
+auto toJsonFactors(const std::vector<MachineFactor> &factors) -> std::vector<MachineFactorJson>
 {
-    Json out = Json::array();
+    std::vector<MachineFactorJson> out;
+    out.reserve(factors.size());
     for (const auto &factor : factors)
-        out.push_back(Json{{"type", factor.type}, {"hash", factor.hash}});
+        out.push_back({factor.type, factor.hash});
     return out;
 }
-auto parseMachineFactors(const Json &value) -> std::optional<std::vector<MachineFactor>>
+auto fromJsonFactors(const std::vector<MachineFactorJson> &factors) -> std::optional<std::vector<MachineFactor>>
 {
-    if (!value.is_array())
+    if (factors.empty() || factors.size() > kMaxMachineFactors)
         return std::nullopt;
     std::vector<MachineFactor> out;
-    for (const auto &entry : value)
+    for (const auto &factor : factors)
     {
-        if (!entry.is_object() || !entry.contains("type") || !entry.contains("hash") || !entry.at("type").is_string() ||
-            !entry.at("hash").is_string())
+        if (!factor.type || !factor.hash || factor.type->empty() || factor.type->size() > kMaxMachineFactorType ||
+            factor.hash->size() != 64 || !hexBytes(*factor.hash) ||
+            std::any_of(out.begin(), out.end(), [&](const auto &item) { return item.type == *factor.type; }))
             return std::nullopt;
-        auto type = entry.at("type").get<std::string>();
-        auto hash = entry.at("hash").get<std::string>();
-        if (type.empty() || type.size() > kMaxMachineFactorType || hash.size() != 64 || !hexBytes(hash))
-            return std::nullopt;
-        if (std::any_of(out.begin(), out.end(), [&](const auto &factor) { return factor.type == type; }))
-            return std::nullopt;
-        out.push_back({std::move(type), std::move(hash)});
-        if (out.size() > kMaxMachineFactors)
-            return std::nullopt;
+        out.push_back({*factor.type, *factor.hash});
     }
     return out;
 }
-auto validMachineFactors(const std::vector<MachineFactor> &factors) -> bool
+template <typename T>
+auto serializeJson(const T &value) -> std::string
 {
-    if (factors.empty() || factors.size() > kMaxMachineFactors)
-        return false;
-    for (const auto &factor : factors)
-        if (factor.type.empty() || factor.type.size() > kMaxMachineFactorType || factor.hash.size() != 64 || !hexBytes(factor.hash))
-            return false;
-    for (std::size_t i = 0; i < factors.size(); ++i)
-        for (std::size_t j = i + 1; j < factors.size(); ++j)
-            if (factors[i].type == factors[j].type)
-                return false;
-    return true;
+    std::string text;
+    SZX::COMMON::Serializer::to_json(value, text);
+    return text;
+}
+template <typename T>
+auto parseJson(std::string_view text, T &value) -> bool
+{
+    std::error_code error;
+    SZX::COMMON::Serializer::from_json(value, text, error);
+    return !error;
 }
 auto writeFileAtomic(const std::filesystem::path &path, std::span<const std::uint8_t> bytes) -> Result<void>
 {
@@ -249,7 +237,7 @@ auto writeFileAtomic(const std::filesystem::path &path, std::span<const std::uin
     {
         if (path.empty() || bytes.size() > kMaxFileBytes || SZX::COMMON::FileHelper::Exists(path))
             return fail<void>(LicenseError::InvalidArgument, "output path is invalid or already exists.");
-        temporary = path;
+        temporary  = path;
         temporary += ".tmp";
         if (SZX::COMMON::FileHelper::Exists(temporary))
             return fail<void>(LicenseError::IoError, "temporary output already exists.");
@@ -262,8 +250,7 @@ auto writeFileAtomic(const std::filesystem::path &path, std::span<const std::uin
         }
         std::filesystem::rename(temporary, path);
         return Result<void>::Success();
-    }
-    catch (...)
+    } catch (...)
     {
         if (!temporary.empty())
         {
@@ -290,8 +277,7 @@ auto readFile(const std::filesystem::path &path) -> Result<std::vector<std::uint
         if (bytes->size() != *size)
             return fail<std::vector<std::uint8_t>>(LicenseError::IoError, "input file changed while reading.");
         return Result<std::vector<std::uint8_t>>::Success(std::move(*bytes));
-    }
-    catch (...)
+    } catch (...)
     {
         return fail<std::vector<std::uint8_t>>(LicenseError::IoError, "failed to read input file.");
     }
@@ -313,9 +299,9 @@ auto encryptRequest(std::string_view requestJson, std::span<const std::uint8_t> 
     put32(header, static_cast<std::uint32_t>(kRequestNonceSize));
     put32(header, static_cast<std::uint32_t>(kRequestTagSize));
     put32(header, static_cast<std::uint32_t>(requestJson.size()));
-    auto encrypted = crypto.encrypt(sessionKey.value,
-                                    std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t *>(requestJson.data()), requestJson.size()),
-                                    header);
+    auto encrypted = crypto.encrypt(
+        sessionKey.value,
+        std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t *>(requestJson.data()), requestJson.size()), header);
     if (!encrypted.ok)
         return Result<std::vector<std::uint8_t>>::Failure(encrypted.error, encrypted.message);
     if (encrypted.value.nonce.size() != kRequestNonceSize || encrypted.value.tag.size() != kRequestTagSize ||
@@ -327,19 +313,18 @@ auto encryptRequest(std::string_view requestJson, std::span<const std::uint8_t> 
     header.insert(header.end(), encrypted.value.ciphertext.begin(), encrypted.value.ciphertext.end());
     return Result<std::vector<std::uint8_t>>::Success(std::move(header));
 }
-auto decryptRequest(std::span<const std::uint8_t> envelope, std::span<const std::uint8_t> issuerPrivateKey)
-    -> Result<std::string>
+auto decryptRequest(std::span<const std::uint8_t> envelope, std::span<const std::uint8_t> issuerPrivateKey) -> Result<std::string>
 {
     if (envelope.size() < 24 || !std::equal(envelope.begin(), envelope.begin() + 4, "SZXR"))
         return fail<std::string>(LicenseError::Malformed, "invalid request envelope.");
     std::vector<std::uint8_t> encoded(envelope.begin(), envelope.end());
     std::vector<std::uint8_t> header(encoded.begin(), encoded.begin() + 24);
-    std::size_t p = 8;
-    auto wrappedSize = read32(encoded, p);
-    auto nonceSize = read32(encoded, p);
-    auto tagSize = read32(encoded, p);
-    auto cipherSize = read32(encoded, p);
-    const auto version = static_cast<std::uint16_t>(header[4] | (header[5] << 8));
+    std::size_t p        = 8;
+    auto wrappedSize     = read32(encoded, p);
+    auto nonceSize       = read32(encoded, p);
+    auto tagSize         = read32(encoded, p);
+    auto cipherSize      = read32(encoded, p);
+    const auto version   = static_cast<std::uint16_t>(header[4] | (header[5] << 8));
     const auto algorithm = static_cast<std::uint16_t>(header[6] | (header[7] << 8));
     if (version != kRequestVersion || algorithm != kRequestAlgorithm)
         return fail<std::string>(LicenseError::Unsupported, "unsupported request envelope.");
@@ -379,7 +364,8 @@ auto collectMachineFactors(std::string_view productId) -> Result<std::vector<Mac
             if (normalizedType.empty() || normalizedRaw.empty())
                 continue;
             auto hashed = SZX::CRYPTO::digestHex(SZX::CRYPTO::HashAlgorithm::Sha256,
-                                                 "SZX-LICENSE-MACHINE-V1|" + std::string(productId) + "|" + normalizedType + "|" + normalizedRaw);
+                                                 "SZX-LICENSE-MACHINE-V1|" + std::string(productId) + "|" + normalizedType + "|" +
+                                                     normalizedRaw);
             if (!hashed.ok)
                 return Result<std::vector<MachineFactor>>::Failure(hashed.error, hashed.message);
             out.push_back({normalizedType, std::move(hashed.value)});
@@ -387,8 +373,7 @@ auto collectMachineFactors(std::string_view productId) -> Result<std::vector<Mac
         if (out.empty())
             return fail<std::vector<MachineFactor>>(LicenseError::Unsupported, "machine identifiers are unavailable.");
         return Result<std::vector<MachineFactor>>::Success(std::move(out));
-    }
-    catch (...)
+    } catch (...)
     {
         return fail<std::vector<MachineFactor>>(LicenseError::Malformed, "machine factor collection failed.");
     }
@@ -409,18 +394,19 @@ auto createRequest(const RequestOptions &options) -> Result<std::string>
         auto machineFactors = collectMachineFactors(options.productId);
         if (!machineFactors.ok)
             return Result<std::string>::Failure(machineFactors.error, machineFactors.message);
-        if (!validMachineFactors(machineFactors.value))
+        if (!fromJsonFactors(toJsonFactors(machineFactors.value)))
             return fail<std::string>(LicenseError::InvalidArgument, "invalid machine factors.");
-        Json j{{"app_version", options.appVersion},
-               {"created_at", nowUtc()},
-               {"custom_fields", fieldsJson(options.customFields)},
-               {"nonce", encoded.value},
-               {"machine_factors", machineFactorsJson(machineFactors.value)},
-               {"product_id", options.productId},
-               {"requested_features", jsonArray(options.requestedFeatures)},
-               {"request_id", encoded.value},
-               {"schema_version", 1}};
-        auto text = j.dump();
+        RequestDocument document;
+        document.schema_version     = 1;
+        document.request_id         = encoded.value;
+        document.product_id         = options.productId;
+        document.app_version        = options.appVersion;
+        document.created_at         = nowUtc();
+        document.nonce              = encoded.value;
+        document.machine_factors    = toJsonFactors(machineFactors.value);
+        document.requested_features = options.requestedFeatures;
+        document.custom_fields      = options.customFields;
+        auto text                   = serializeJson(document);
         if (text.size() > kMaxRequest)
             return fail<std::string>(LicenseError::InvalidArgument, "request payload too large.");
         return Result<std::string>::Success(std::move(text));
@@ -430,8 +416,8 @@ auto createRequest(const RequestOptions &options) -> Result<std::string>
     }
 }
 
-auto createRequestFile(const RequestOptions &options, std::string_view outputPath,
-                       std::span<const std::uint8_t> issuerPublicKey) -> Result<void>
+auto createRequestFile(const RequestOptions &options, std::string_view outputPath, std::span<const std::uint8_t> issuerPublicKey)
+    -> Result<void>
 {
     try
     {
@@ -444,8 +430,7 @@ auto createRequestFile(const RequestOptions &options, std::string_view outputPat
         if (!encrypted.ok)
             return Result<void>::Failure(encrypted.error, encrypted.message);
         return writeFileAtomic(std::filesystem::path(outputPath), encrypted.value);
-    }
-    catch (...)
+    } catch (...)
     {
         return fail<void>(LicenseError::IoError, "failed to create request file.");
     }
@@ -458,17 +443,23 @@ auto issue(const std::string &requestJson, const IssueOptions &options, std::spa
     {
         if (requestJson.empty() || requestJson.size() > kMaxRequest)
             return fail<std::vector<std::uint8_t>>(LicenseError::InvalidArgument, "request payload size invalid.");
-        auto req           = Json::parse(requestJson);
-        if (req.value("schema_version", 0) != 1)
+        RequestDocument req;
+        if (!parseJson(requestJson, req))
+            return fail<std::vector<std::uint8_t>>(LicenseError::Malformed, "invalid request JSON.");
+        if (!req.schema_version || *req.schema_version != 1)
             return fail<std::vector<std::uint8_t>>(LicenseError::Unsupported, "unsupported request format.");
-        const auto product = req.at("product_id").get<std::string>();
-        const auto version = req.at("app_version").get<std::string>();
-        const auto requestMachineFactors = req.contains("machine_factors") ? parseMachineFactors(req.at("machine_factors"))
-                                                                              : std::optional<std::vector<MachineFactor>>{};
-        if (!requestMachineFactors || requestMachineFactors->empty())
+        if (!req.request_id || !req.product_id || !req.app_version || !req.created_at || !req.nonce || !req.machine_factors ||
+            !req.requested_features || !req.custom_fields)
+            return fail<std::vector<std::uint8_t>>(LicenseError::InvalidArgument, "request fields are required.");
+        if (req.request_id->empty() || req.product_id->empty() || req.app_version->empty() || req.nonce->empty())
+            return fail<std::vector<std::uint8_t>>(LicenseError::InvalidArgument, "request fields are invalid.");
+        const auto product         = *req.product_id;
+        const auto version         = *req.app_version;
+        auto requestMachineFactors = fromJsonFactors(*req.machine_factors);
+        if (!requestMachineFactors)
             return fail<std::vector<std::uint8_t>>(LicenseError::InvalidArgument, "machine factors are required.");
-        if (product.empty() || version.empty() || options.licenseId.empty() || options.issuer.empty() || issuerPrivateKey.empty() ||
-            issuerPublicKey.empty())
+        if (product.empty() || version.empty() || options.licenseId.empty() || options.issuer.empty() ||
+            issuerPrivateKey.empty() || issuerPublicKey.empty())
             return fail<std::vector<std::uint8_t>>(LicenseError::InvalidArgument, "invalid issue parameters.");
         auto keyId = SZX::CRYPTO::rsaPublicKeyId(issuerPublicKey);
         if (!keyId.ok)
@@ -480,20 +471,20 @@ auto issue(const std::string &requestJson, const IssueOptions &options, std::spa
         const auto notBefore = options.notBeforeUtc ? options.notBeforeUtc : issued;
         if (options.expiresAtUtc && *options.expiresAtUtc <= notBefore)
             return fail<std::vector<std::uint8_t>>(LicenseError::InvalidArgument, "license expiry must be after start.");
-        const auto features =
-            options.features.empty() ? req.value("requested_features", std::vector<std::string>{}) : options.features;
-        Json payload{{"app_version", version},
-                     {"custom_fields", fieldsJson(options.customFields)},
-                     {"expires_at", options.expiresAtUtc ? Json(*options.expiresAtUtc) : Json(nullptr)},
-                     {"features", jsonArray(features)},
-                     {"issued_at", issued},
-                     {"issuer", options.issuer},
-                     {"license_id", options.licenseId},
-                     {"machine_factors", machineFactorsJson(*requestMachineFactors)},
-                     {"not_before", notBefore},
-                     {"product_id", product},
-                     {"schema_version", 1}};
-        const auto text = payload.dump();
+        const auto features = options.features.empty() ? *req.requested_features : options.features;
+        LicensePayload payload;
+        payload.schema_version  = 1;
+        payload.license_id      = options.licenseId;
+        payload.product_id      = product;
+        payload.app_version     = version;
+        payload.issuer          = options.issuer;
+        payload.issued_at       = issued;
+        payload.not_before      = notBefore;
+        payload.expires_at      = options.expiresAtUtc;
+        payload.features        = features;
+        payload.machine_factors = toJsonFactors(*requestMachineFactors);
+        payload.custom_fields   = options.customFields;
+        const auto text         = serializeJson(payload);
         if (text.size() > kMaxPayload)
             return fail<std::vector<std::uint8_t>>(LicenseError::InvalidArgument, "license payload too large.");
         std::vector<std::uint8_t> signedBytes{'S', 'Z', 'X', 'L'};
@@ -520,9 +511,8 @@ auto issue(const std::string &requestJson, const IssueOptions &options, std::spa
     }
 }
 
-auto issueFile(std::string_view requestPath, const IssueOptions &options,
-               std::span<const std::uint8_t> issuerPrivateKey, std::span<const std::uint8_t> issuerPublicKey)
-    -> Result<std::vector<std::uint8_t>>
+auto issueFile(std::string_view requestPath, const IssueOptions &options, std::span<const std::uint8_t> issuerPrivateKey,
+               std::span<const std::uint8_t> issuerPublicKey) -> Result<std::vector<std::uint8_t>>
 {
     try
     {
@@ -533,8 +523,7 @@ auto issueFile(std::string_view requestPath, const IssueOptions &options,
         if (!request.ok)
             return Result<std::vector<std::uint8_t>>::Failure(request.error, request.message);
         return issue(request.value, options, issuerPrivateKey, issuerPublicKey);
-    }
-    catch (...)
+    } catch (...)
     {
         return fail<std::vector<std::uint8_t>>(LicenseError::IoError, "failed to issue request file.");
     }
@@ -574,28 +563,31 @@ auto verify(std::span<const std::uint8_t> bytes, std::span<const std::uint8_t> i
         auto valid = crypto.verify(issuerPublicKey, signedBytes, std::span<const std::uint8_t>(in).subspan(p, *sigSize));
         if (!valid.ok || !valid.value)
             return fail<LicenseInfo>(LicenseError::SignatureInvalid, "license signature invalid.");
-        auto payload = Json::parse(text);
-        if (payload.value("schema_version", 0) != 1 || !payload.contains("expires_at") ||
-            !payload.contains("issuer") || !payload.contains("license_id") || !payload.contains("product_id") ||
-            !payload.contains("app_version") || !payload.contains("issued_at") || !payload.contains("not_before") ||
-            !payload.contains("features") || !payload.contains("custom_fields"))
+        LicensePayload payload;
+        // `expires_at` is a required member; a null value represents a perpetual license.
+        // Iguana maps both a missing optional member and JSON null to an empty optional, so
+        // retain an explicit presence check before consuming the DTO.
+        if (text.find("\"expires_at\"") == std::string_view::npos || !parseJson(text, payload) || !payload.schema_version ||
+            *payload.schema_version != 1 ||
+            !payload.issuer || !payload.license_id || !payload.product_id || !payload.app_version ||
+            !payload.issued_at || !payload.not_before || !payload.features || !payload.machine_factors ||
+            !payload.custom_fields)
             return fail<LicenseInfo>(LicenseError::Malformed, "license payload fields invalid.");
-        auto machineFactors = payload.contains("machine_factors") ? parseMachineFactors(payload.at("machine_factors"))
-                                                                     : std::optional<std::vector<MachineFactor>>(std::vector<MachineFactor>{});
+        auto machineFactors = fromJsonFactors(*payload.machine_factors);
         if (!machineFactors)
             return fail<LicenseInfo>(LicenseError::Malformed, "license machine factors invalid.");
-        LicenseInfo out{payload.at("license_id").get<std::string>(),
-                        payload.at("product_id").get<std::string>(),
-                        payload.at("app_version").get<std::string>(),
-                        payload.value("issuer", ""),
-                        payload.at("issued_at").get<std::int64_t>(),
-                        payload.at("not_before").get<std::int64_t>(),
+        LicenseInfo out{*payload.license_id,
+                        *payload.product_id,
+                        *payload.app_version,
+                        *payload.issuer,
+                        *payload.issued_at,
+                        *payload.not_before,
                         std::nullopt,
-                        payload.value("features", std::vector<std::string>{}),
+                        *payload.features,
                         *machineFactors,
-                        payload.value("custom_fields", std::map<std::string, std::string>{})};
-        if (!payload.at("expires_at").is_null())
-            out.expiresAtUtc = payload.at("expires_at").get<std::int64_t>();
+                        *payload.custom_fields};
+        if (payload.expires_at)
+            out.expiresAtUtc = *payload.expires_at;
         if (out.licenseId.empty() || out.productId.empty() || out.appVersion.empty() || out.issuer.empty() ||
             (out.expiresAtUtc && *out.expiresAtUtc <= out.notBeforeUtc))
             return fail<LicenseInfo>(LicenseError::Malformed, "license payload values invalid.");
@@ -609,9 +601,8 @@ auto verify(std::span<const std::uint8_t> bytes, std::span<const std::uint8_t> i
             std::size_t matches = 0;
             std::vector<std::pair<std::string, std::string>> matched;
             for (const auto &expected : out.machineFactors)
-                if (std::any_of(local.value.begin(), local.value.end(), [&](const auto &actual) {
-                        return actual.type == expected.type && actual.hash == expected.hash;
-                    }) &&
+                if (std::any_of(local.value.begin(), local.value.end(), [&](const auto &actual)
+                                { return actual.type == expected.type && actual.hash == expected.hash; }) &&
                     std::find(matched.begin(), matched.end(), std::pair{expected.type, expected.hash}) == matched.end())
                 {
                     ++matches;
@@ -633,8 +624,8 @@ auto verify(std::span<const std::uint8_t> bytes, std::span<const std::uint8_t> i
     }
 }
 
-auto verifyFile(std::string_view licensePath, std::span<const std::uint8_t> issuerPublicKey,
-                std::string_view expectedProduct) -> Result<LicenseInfo>
+auto verifyFile(std::string_view licensePath, std::span<const std::uint8_t> issuerPublicKey, std::string_view expectedProduct)
+    -> Result<LicenseInfo>
 {
     try
     {
@@ -642,8 +633,7 @@ auto verifyFile(std::string_view licensePath, std::span<const std::uint8_t> issu
         if (!bytes.ok)
             return Result<LicenseInfo>::Failure(bytes.error, bytes.message);
         return verify(bytes.value, issuerPublicKey, expectedProduct);
-    }
-    catch (...)
+    } catch (...)
     {
         return fail<LicenseInfo>(LicenseError::IoError, "failed to verify license file.");
     }
