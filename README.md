@@ -9,7 +9,6 @@
 | `szx::common` | C++20 header-only 基础类型、容器和序列化辅助 |
 | `szx::crypto` | Base64、Hash/HMAC、Fernet、AES-GCM、RSA、PBKDF2 |
 | `szx::crypto_service` | 面向业务的统一加密服务门面 |
-| `szx::crypto_file` | `.szxe` 内存容器加密、解密、认证与结构解析 |
 | `szx::logger` | spdlog 日志封装 |
 | `szx::camera` | 相机生命周期、采集管道和可选 OpenCV/IKap 适配 |
 | `szx::plc` | 可选 libmodbus PLC 控制 |
@@ -44,13 +43,9 @@ cmake --install build/msvc --config Release
 ```cmake
 find_package(SZXComponents 0.1 CONFIG REQUIRED)
 target_link_libraries(MyApp PRIVATE szx::common szx::crypto
-    szx::crypto_service szx::crypto_file szx::logger szx::feature_manager
+    szx::crypto_service szx::logger szx::feature_manager
     szx::camera szx::plc szx::compression)
 ```
-
-`szx::crypto_file` 当前提供单块 `.szxe` 内存容器 API。容器使用 AES-256-GCM，
-头部包含 magic、版本、nonce 和密文长度；`inspectBuffer` 只做结构解析，
-`verifyBuffer`/`decryptBuffer` 才执行认证。多块容器和文件事务 API 将在后续版本提供。
 
 `szx::compression` is the exported entity target.  Product-source integration
 also provides the compatibility target `SZX::compression` for existing PCB

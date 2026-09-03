@@ -1,7 +1,6 @@
 add_subdirectory(common)
 add_subdirectory(crypto)
 add_subdirectory(crypto_service)
-add_subdirectory(crypto_file)
 add_subdirectory(license)
 add_subdirectory(camera)
 add_subdirectory(logger)
