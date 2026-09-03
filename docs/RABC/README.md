@@ -9,3 +9,5 @@
 | [前端设计文档](03-前端设计文档.md) | HTML + Vue 管理后台页面、状态与交互 |
 | [后端设计文档](04-后端设计文档.md) | Admin/Client 服务分层、认证、鉴权与审计 |
 | [RESTful API 接口文档](05-RESTful-API接口文档.md) | Admin/Client API、错误码、示例与权限要求 |
+| [加密设计改造推进方案](08-加密设计改造推进方案.md) | `szx_crypto`、`CryptoService`、OpenSSL 静态库与 JWT 适配的实施步骤 |
+| [加密设计改造推进方案](08-加密设计改造推进方案.md) | `szx_crypto`、`CryptoService`、OpenSSL 静态库与 JWT 适配的实施步骤 |
