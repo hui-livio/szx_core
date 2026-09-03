@@ -44,6 +44,12 @@ struct RsaKeyPair
 /** 校验并规范化 DER SubjectPublicKeyInfo 公钥。 */
 [[nodiscard]] SZX_CRYPTO_API auto rsaPublicKeyFromDer(std::span<const std::uint8_t> der)
     -> SZX::COMMON::Result<std::vector<std::uint8_t>>;
+/** 将 PEM SubjectPublicKeyInfo 公钥转换为 DER。 */
+[[nodiscard]] SZX_CRYPTO_API auto rsaPublicKeyFromPem(std::span<const std::uint8_t> pem)
+    -> SZX::COMMON::Result<std::vector<std::uint8_t>>;
+/** 将 PEM 私钥转换为 DER PKCS#8。 */
+[[nodiscard]] SZX_CRYPTO_API auto rsaPrivateKeyFromPem(std::span<const std::uint8_t> pem)
+    -> SZX::COMMON::Result<std::vector<std::uint8_t>>;
 /** 使用 RSA-OAEP-SHA256 加密一条消息；大数据应使用混合加密。 */
 [[nodiscard]] SZX_CRYPTO_API auto rsaOaepSha256Encrypt(std::span<const std::uint8_t> publicKey,
                                                        std::span<const std::uint8_t> plaintext)

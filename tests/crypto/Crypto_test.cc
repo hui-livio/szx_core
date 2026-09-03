@@ -8,6 +8,7 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -306,6 +307,14 @@ TEST(CryptoRsaTest, RejectsMalformedDerPublicKey)
     EXPECT_FALSE(result.ok);
     EXPECT_EQ(result.error, static_cast<int>(RsaError::InvalidArgument));
     EXPECT_FALSE(rsaPublicKeyIdFromDer(malformed).ok);
+}
+
+TEST(CryptoRsaTest, RejectsMalformedPemKeys)
+{
+    const std::string pemText = "-----BEGIN RSA PUBLIC KEY-----\n";
+    const std::span<const std::uint8_t> malformedPem(reinterpret_cast<const std::uint8_t *>(pemText.data()), pemText.size());
+    EXPECT_FALSE(rsaPublicKeyFromPem(malformedPem).ok);
+    EXPECT_FALSE(rsaPrivateKeyFromPem(malformedPem).ok);
 }
 
 TEST(CryptoRsaTest, EnforcesOaepSha256PlaintextBoundary)

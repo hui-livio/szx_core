@@ -77,12 +77,10 @@ auto encodeBase64(std::span<const std::uint8_t> input, Base64Alphabet alphabet, 
                 encoded.push_back('=');
         }
         return Result<std::string>::Success(std::move(encoded));
-    }
-    catch (const std::exception &)
+    } catch (const std::exception &)
     {
         return Result<std::string>::Failure(static_cast<int>(Base64Error::EncodingFailed), "base64 encoding failed.");
-    }
-    catch (...)
+    } catch (...)
     {
         return Result<std::string>::Failure(static_cast<int>(Base64Error::EncodingFailed), "base64 encoding failed.");
     }

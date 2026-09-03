@@ -8,6 +8,7 @@
 #include <exception>
 #include <iomanip>
 #include <memory>
+#include <openssl/bio.h>
 #include <openssl/evp.h>
 #include <span>
 #include <sstream>
@@ -29,6 +30,12 @@ using MdCtx     = Handle<EVP_MD_CTX, EVP_MD_CTX_free>;
 using CipherCtx = Handle<EVP_CIPHER_CTX, EVP_CIPHER_CTX_free>;
 using Pkey      = Handle<EVP_PKEY, EVP_PKEY_free>;
 using PkeyCtx   = Handle<EVP_PKEY_CTX, EVP_PKEY_CTX_free>;
+inline void freeBio(BIO *bio) noexcept
+{
+    if (bio)
+        (void)BIO_free(bio);
+}
+using Bio = Handle<BIO, freeBio>;
 
 template <typename T>
 auto fail(int code, const char *message) -> SZX::COMMON::Result<T>

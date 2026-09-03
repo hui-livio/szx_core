@@ -1,3 +1,4 @@
+#include <openssl/pem.h>
 #include <openssl/rsa.h>
 #include <openssl/x509.h>
 #include "OpenSslInternal.hpp"
@@ -112,6 +113,34 @@ auto rsaPublicKeyToDer(std::span<const std::uint8_t> k) -> Result<std::vector<st
 auto rsaPublicKeyFromDer(std::span<const std::uint8_t> k) -> Result<std::vector<std::uint8_t>>
 {
     return rsaPublicKeyToDer(k);
+}
+auto rsaPublicKeyFromPemImpl(std::span<const std::uint8_t> pem) -> Result<std::vector<std::uint8_t>>
+{
+    if (pem.empty() || !fitsInt(pem.size()))
+        return fail<std::vector<std::uint8_t>>(1710, "invalid RSA public key PEM.");
+    Bio bio(BIO_new_mem_buf(pem.data(), static_cast<int>(pem.size())));
+    Pkey key(bio ? PEM_read_bio_PUBKEY(bio.get(), nullptr, nullptr, nullptr) : nullptr);
+    if (!key || EVP_PKEY_is_a(key.get(), "RSA") != 1)
+        return fail<std::vector<std::uint8_t>>(1710, "invalid RSA public key PEM.");
+    return serializePublic(key.get());
+}
+auto rsaPublicKeyFromPem(std::span<const std::uint8_t> pem) -> Result<std::vector<std::uint8_t>>
+{
+    return invokeBoundary([&] { return rsaPublicKeyFromPemImpl(pem); });
+}
+auto rsaPrivateKeyFromPemImpl(std::span<const std::uint8_t> pem) -> Result<std::vector<std::uint8_t>>
+{
+    if (pem.empty() || !fitsInt(pem.size()))
+        return fail<std::vector<std::uint8_t>>(1710, "invalid RSA private key PEM.");
+    Bio bio(BIO_new_mem_buf(pem.data(), static_cast<int>(pem.size())));
+    Pkey key(bio ? PEM_read_bio_PrivateKey(bio.get(), nullptr, nullptr, nullptr) : nullptr);
+    if (!key || EVP_PKEY_is_a(key.get(), "RSA") != 1)
+        return fail<std::vector<std::uint8_t>>(1710, "invalid RSA private key PEM.");
+    return serializePrivate(key.get());
+}
+auto rsaPrivateKeyFromPem(std::span<const std::uint8_t> pem) -> Result<std::vector<std::uint8_t>>
+{
+    return invokeBoundary([&] { return rsaPrivateKeyFromPemImpl(pem); });
 }
 auto rsaPublicKeyId(std::span<const std::uint8_t> k) -> Result<std::string>
 {
