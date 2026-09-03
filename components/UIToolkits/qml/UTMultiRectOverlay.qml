@@ -3,12 +3,16 @@
  * @brief UIToolkits 的 UTMultiRectOverlay.qml 组件。
  */
 
-pragma ComponentBehavior: Bound
-
 import QtQuick
 
 Item {
     id: root
+
+    // The overlay shares the image viewport, including when the image is
+    // zoomed or panned.  Clip all ROI frames/labels/handles to that viewport;
+    // otherwise a valid source rectangle can paint into the surrounding page
+    // once its transformed coordinates fall outside the visible canvas.
+    clip: true
 
     // Each group: { key, color, thickness, visible, rectangles: [{ key, x, y, width, height, label, color, thickness, hidden }] }
     property var groups: []
@@ -305,6 +309,11 @@ Item {
                     // symptom was "ReferenceError: root is not defined" on
                     // rectangleEditFinished).  Keep an explicit object
                     // reference on the rectangle instead.
+                    // This component intentionally uses the top-level root
+                    // for image transforms, selection and edit signals.  Do
+                    // not compile it as a Bound delegate: Qt 6.10 may resolve
+                    // the outer `root` id as null in nested Repeaters, which
+                    // collapses every child ROI to 0x0 while self still draws.
                     property var overlayRoot: root
 
                     readonly property string rectKey: String(modelData.key || modelData.id || "")
@@ -367,12 +376,19 @@ Item {
 
                     function resolvedStackingOrder() {
                         const key = rectKey.toLowerCase();
+                        // Multi-view renders body-self and child ROIs in one
+                        // overlay, unlike single-view's two z-separated
+                        // overlays.  Keep body-self at the bottom explicitly:
+                        // selected-weight must never lift the enclosing body
+                        // rectangle above a pin/character/polarity child,
+                        // otherwise the body MouseArea swallows child clicks.
                         let value = 20;
-                        if (key.indexOf("solder_detection") >= 0 || key.indexOf("detection_rect") >= 0
+                        if (key === "body-self" || key === "self")
+                            value = 5;
+                        else if (key.indexOf("solder_detection") >= 0 || key.indexOf("detection_rect") >= 0
                                 || key.indexOf("solder_area_") >= 0)
                             value = 30;
-                        else if (key === "body-self" || key === "self" || key.indexOf("margin") >= 0
-                                 || key.indexOf("polarity") >= 0 || key.indexOf("char") >= 0)
+                        else if (key.indexOf("margin") >= 0 || key.indexOf("polarity") >= 0 || key.indexOf("char") >= 0)
                             value = 25;
                         else if (key.indexOf("pad") >= 0)
                             value = 20;
@@ -571,6 +587,11 @@ Item {
                         anchors.fill: parent
                         enabled: !!rectItem.overlayRoot && (rectItem.overlayRoot.interactive || rectItem.rectangleEditable)
                         acceptedButtons: Qt.LeftButton | Qt.RightButton
+                        // A parent card has a TapHandler for selecting the
+                        // component.  Once the pointer is over a ROI, the
+                        // ROI must retain the grab so multi-view selection and
+                        // drag/resize are not stolen by that card handler.
+                        preventStealing: true
                         hoverEnabled: enabled
                         cursorShape: rectItem.editHandle.length > 0 ? Qt.ClosedHandCursor :
                                      (rectItem.rectangleEditable ? Qt.SizeAllCursor : Qt.PointingHandCursor)
