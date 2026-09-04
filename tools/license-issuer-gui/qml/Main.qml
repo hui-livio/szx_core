@@ -17,7 +17,7 @@ UTAppWindow {
     property int currentPage: 0
     readonly property var pages: [
         { title: qsTr("主页"), description: qsTr("软授权工具框架") },
-        { title: qsTr("密钥管理"), description: qsTr("密钥管理功能将在后续版本实现") },
+        { title: qsTr("密钥管理"), description: qsTr("生成并检查 RSA-3072 签发密钥") },
         { title: qsTr("签发许可证"), description: qsTr("许可证签发功能将在后续版本实现") },
         { title: qsTr("验证许可证"), description: qsTr("许可证验证功能将在后续版本实现") }
     ]
@@ -108,12 +108,27 @@ UTAppWindow {
                         UTLabel { text: qsTr("密钥管理"); textRole: UTLabel.TextRole.H2 }
                         UTLineEdit { id: privatePath; Layout.fillWidth: true; placeholderText: qsTr("私钥路径") }
                         UTLineEdit { id: publicPath; Layout.fillWidth: true; placeholderText: qsTr("公钥路径") }
+                        UTCheckBox { id: overwriteKeys; text: qsTr("覆盖已存在的密钥文件"); enabled: !IssuerController.busy }
                         RowLayout {
                             spacing: 12
-                            UTButton { text: qsTr("生成 RSA-3072 密钥"); onClicked: IssuerController.generateKeyPair(privatePath.text, publicPath.text, false) }
-                            UTButton { text: qsTr("检查密钥"); onClicked: IssuerController.inspectKeyPair(privatePath.text, publicPath.text) }
+                            UTButton {
+                                text: IssuerController.busy ? qsTr("处理中…") : qsTr("生成 RSA-3072 密钥")
+                                enabled: !IssuerController.busy
+                                onClicked: IssuerController.generateKeyPair(privatePath.text, publicPath.text, overwriteKeys.checked)
+                            }
+                            UTButton {
+                                text: qsTr("检查密钥")
+                                enabled: !IssuerController.busy
+                                onClicked: IssuerController.inspectKeyPair(privatePath.text, publicPath.text)
+                            }
                         }
                         UTLabel { text: IssuerController.statusMessage; color: IssuerController.status === "error" ? "#d9534f" : UTTheme.secondaryTextColor }
+                        UTLabel {
+                            Layout.fillWidth: true
+                            text: IssuerController.issuerKeyId === "" ? qsTr("尚未生成或检查密钥") : qsTr("Key ID：%1").arg(IssuerController.issuerKeyId)
+                            color: IssuerController.keyPairMatched ? UTTheme.primaryColor : UTTheme.secondaryTextColor
+                            wrapMode: Text.Wrap
+                        }
                     }
 
                     ColumnLayout {

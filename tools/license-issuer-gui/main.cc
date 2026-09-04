@@ -1,4 +1,5 @@
 #include <QApplication>
+#include <QIcon>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QtQml/qqml.h>
@@ -8,6 +9,7 @@
 int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
+    app.setWindowIcon(QIcon(QStringLiteral(":/qt/qml/SzxLicenseIssuer/app.svg")));
     QQmlApplicationEngine engine;
     IssuerGuiController controller;
     qmlRegisterSingletonInstance("SzxLicenseIssuerBackend", 1, 0, "IssuerController", &controller);

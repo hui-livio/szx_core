@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <span>
 
 namespace
 {
@@ -91,15 +92,68 @@ bool IssuerGuiController::generateKeyPair(const QString &privatePath, const QStr
     if (!beginOperation()) return false;
     try
     {
+        const auto privatePathString = privatePath.toStdString();
+        const auto publicPathString = publicPath.toStdString();
+        if (privatePathString.empty() || publicPathString.empty() || privatePathString == publicPathString)
+        {
+            finish(false, 1710, QStringLiteral("请填写不同的私钥和公钥路径。"));
+            return false;
+        }
+        const auto privateTarget = std::filesystem::absolute(std::filesystem::path(privatePathString)).lexically_normal();
+        const auto publicTarget = std::filesystem::absolute(std::filesystem::path(publicPathString)).lexically_normal();
+        if (privateTarget == publicTarget)
+        {
+            finish(false, 1710, QStringLiteral("请填写不同的私钥和公钥路径。"));
+            return false;
+        }
+        if (!overwrite && (std::filesystem::exists(privateTarget) || std::filesystem::exists(publicTarget)))
+        {
+            finish(false, 1710, QStringLiteral("密钥文件已存在，请勾选覆盖后重试。"));
+            return false;
+        }
+
         auto keys = SZX::CRYPTO::generateRsa3072KeyPair();
-        if (!keys.ok || !SzxLicenseIssuerGui::writeBytes(privatePath.toStdString(), keys.value.privateKey, overwrite) ||
-            !SzxLicenseIssuerGui::writeBytes(publicPath.toStdString(), keys.value.publicKey, overwrite))
+        if (!keys.ok)
         { finish(false, 1710, QStringLiteral("密钥生成或写入失败。")); return false; }
+
+        // Confirm the generated material before publishing it to disk.
+        const std::span<const std::uint8_t> emptyData;
+        const auto probe = SZX::CRYPTO::rsaPssSha256Sign(keys.value.privateKey, emptyData);
+        const auto verified = probe.ok
+                                  ? SZX::CRYPTO::rsaPssSha256Verify(keys.value.publicKey, emptyData, probe.value)
+                                  : SZX::COMMON::Result<bool>::Failure(1711, "key probe failed");
+        if (!probe.ok || !verified.ok || !verified.value)
+        {
+            clear(keys.value.privateKey);
+            finish(false, 1711, QStringLiteral("生成的密钥对校验失败。"));
+            return false;
+        }
+
+        const auto privateWritten = SzxLicenseIssuerGui::writeBytes(privatePathString, keys.value.privateKey, overwrite);
+        const auto publicWritten = privateWritten && SzxLicenseIssuerGui::writeBytes(publicPathString, keys.value.publicKey, overwrite);
+        if (!publicWritten)
+        {
+            if (privateWritten && !overwrite)
+            {
+                std::error_code cleanupError;
+                std::filesystem::remove(privateTarget, cleanupError);
+            }
+            clear(keys.value.privateKey);
+            finish(false, 1710, QStringLiteral("密钥生成或写入失败。"));
+            return false;
+        }
         auto id = SZX::CRYPTO::rsaPublicKeyId(keys.value.publicKey);
-        issuerKeyId_ = id.ok ? QString::fromStdString(id.value) : QString{};
+        if (!id.ok)
+        {
+            clear(keys.value.privateKey);
+            finish(false, id.error, QStringLiteral("无法计算生成公钥的 Key ID。"));
+            return false;
+        }
+        issuerKeyId_ = QString::fromStdString(id.value);
         keyPairMatched_ = true;
+        clear(keys.value.privateKey);
         emit keyInfoChanged();
-        finish(true, 0, QStringLiteral("RSA-3072 密钥对生成成功。"));
+        finish(true, 0, QStringLiteral("RSA-3072 密钥对生成成功，已写入并校验。"));
         return true;
     }
     catch (...) { finish(false, 1711, QStringLiteral("密钥生成失败。")); return false; }

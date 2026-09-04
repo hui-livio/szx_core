@@ -12,6 +12,9 @@ qt_add_executable(${TARGET_NAME}
 )
 
 if(WIN32)
+    target_sources(${TARGET_NAME} PRIVATE
+        app.rc
+    )
     set_target_properties(${TARGET_NAME} PROPERTIES WIN32_EXECUTABLE TRUE)
 endif()
 
@@ -21,6 +24,8 @@ qt_add_qml_module(${TARGET_NAME}
     QML_FILES
     qml/Main.qml
     qml/PlaceholderPage.qml
+    RESOURCES
+    app.svg
 )
 
 target_link_libraries(${TARGET_NAME}
