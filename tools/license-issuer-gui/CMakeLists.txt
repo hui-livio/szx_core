@@ -11,31 +11,26 @@ qt_add_executable(${TARGET_NAME}
     src/KeyFileHelper.cc
 )
 
+if(WIN32)
+    set_target_properties(${TARGET_NAME} PROPERTIES WIN32_EXECUTABLE TRUE)
+endif()
+
 qt_add_qml_module(${TARGET_NAME}
     URI SzxLicenseIssuer
     VERSION 1.0
     QML_FILES
-        qml/Main.qml
-        qml/PlaceholderPage.qml
+    qml/Main.qml
+    qml/PlaceholderPage.qml
 )
 
 target_link_libraries(${TARGET_NAME}
     PRIVATE
-        Qt6::Quick
-        Qt6::QuickControls2
-        Qt6::Widgets
-        UIToolkits
-        szx::license
-        szx::crypto
-)
-
-target_include_directories(${TARGET_NAME}
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/src
-        ${CMAKE_SOURCE_DIR}/components/common
-        ${CMAKE_SOURCE_DIR}/components/license/src
-        ${CMAKE_SOURCE_DIR}/components/license/include
-        ${CMAKE_SOURCE_DIR}/components/crypto/include
+    Qt6::Quick
+    Qt6::QuickControls2
+    Qt6::Widgets
+    UIToolkits
+    szx::license
+    szx::crypto
 )
 
 szx_apply_default_compile_policy(${TARGET_NAME})

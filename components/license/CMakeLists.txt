@@ -1,6 +1,8 @@
 add_library(szx_license SHARED
     src/License.cc
+    src/LicenseJson.hpp
     include/SzxLicense/License.h
+    include/SzxLicense/Issuer.h
     include/SzxLicense/LicenseExport.h
 )
 add_library(szx::license ALIAS szx_license)

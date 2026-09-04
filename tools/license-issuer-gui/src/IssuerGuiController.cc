@@ -1,6 +1,6 @@
 #include "IssuerGuiController.h"
 
-#include "Issuer.h"
+#include "SzxLicense/Issuer.h"
 #include "KeyFileHelper.h"
 #include "SzxCrypto/Rsa.h"
 #include "SzxLicense/License.h"

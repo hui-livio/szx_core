@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import UIToolkits
+import SzxLicenseIssuerBackend
 
 UTAppWindow {
     id: window
@@ -109,10 +110,10 @@ UTAppWindow {
                         UTLineEdit { id: publicPath; Layout.fillWidth: true; placeholderText: qsTr("公钥路径") }
                         RowLayout {
                             spacing: 12
-                            UTButton { text: qsTr("生成 RSA-3072 密钥"); onClicked: issuerController.generateKeyPair(privatePath.text, publicPath.text, false) }
-                            UTButton { text: qsTr("检查密钥"); onClicked: issuerController.inspectKeyPair(privatePath.text, publicPath.text) }
+                            UTButton { text: qsTr("生成 RSA-3072 密钥"); onClicked: IssuerController.generateKeyPair(privatePath.text, publicPath.text, false) }
+                            UTButton { text: qsTr("检查密钥"); onClicked: IssuerController.inspectKeyPair(privatePath.text, publicPath.text) }
                         }
-                        UTLabel { text: issuerController.statusMessage; color: issuerController.status === "error" ? "#d9534f" : UTTheme.secondaryTextColor }
+                        UTLabel { text: IssuerController.statusMessage; color: IssuerController.status === "error" ? "#d9534f" : UTTheme.secondaryTextColor }
                     }
 
                     ColumnLayout {
@@ -129,7 +130,7 @@ UTAppWindow {
                         UTLineEdit { id: issueOutput; Layout.fillWidth: true; placeholderText: qsTr("输出许可证路径") }
                         UTButton {
                             text: qsTr("签发")
-                            onClicked: issuerController.issueLicense(requestPath.text, issuePrivate.text, issuePublic.text,
+                            onClicked: IssuerController.issueLicense(requestPath.text, issuePrivate.text, issuePublic.text,
                                                                       {licenseId: licenseId.text, issuer: issuerName.text}, issueOutput.text, false)
                         }
                     }
@@ -143,8 +144,8 @@ UTAppWindow {
                         UTLineEdit { id: verifyPath; Layout.fillWidth: true; placeholderText: qsTr("许可证路径") }
                         UTLineEdit { id: verifyPublic; Layout.fillWidth: true; placeholderText: qsTr("公钥路径") }
                         UTLineEdit { id: expectedProduct; Layout.fillWidth: true; placeholderText: qsTr("预期产品（可选）") }
-                        UTButton { text: qsTr("验证"); onClicked: issuerController.verifyLicense(verifyPath.text, verifyPublic.text, expectedProduct.text) }
-                        UTLabel { text: issuerController.statusMessage; color: issuerController.status === "error" ? "#d9534f" : UTTheme.secondaryTextColor }
+                        UTButton { text: qsTr("验证"); onClicked: IssuerController.verifyLicense(verifyPath.text, verifyPublic.text, expectedProduct.text) }
+                        UTLabel { text: IssuerController.statusMessage; color: IssuerController.status === "error" ? "#d9534f" : UTTheme.secondaryTextColor }
                     }
                 }
             }

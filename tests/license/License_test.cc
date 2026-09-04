@@ -1,5 +1,5 @@
 #include "SzxLicense/License.h"
-#include "../../components/license/src/Issuer.h"
+#include "SzxLicense/Issuer.h"
 
 #include "SzxCrypto/Rsa.h"
 #include "nlohmann/json.hpp"

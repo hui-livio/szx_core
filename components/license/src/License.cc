@@ -1,5 +1,5 @@
 #include "SzxLicense/License.h"
-#include "Issuer.h"
+#include "SzxLicense/Issuer.h"
 #include "LicenseJson.hpp"
 
 #include "FileHelper.hpp"
