@@ -368,9 +368,14 @@ Item {
                     }
 
                     function resolvedFillOpacity() {
+                        // A delegate can briefly outlive its overlay during a
+                        // model reset.  Resolve the local/group value first
+                        // and use a literal fallback instead of dereferencing
+                        // a transient null root (which used to spam QML
+                        // warnings during multi-view refresh).
                         const value = modelData && modelData.fillOpacity !== undefined
                                 ? modelData.fillOpacity
-                                : (group && group.fillOpacity !== undefined ? group.fillOpacity : (overlayRoot ? overlayRoot.defaultFillOpacity : 0));
+                                : (group && group.fillOpacity !== undefined ? group.fillOpacity : 0);
                         return Math.max(0, Math.min(1, Number(value || 0)));
                     }
 
