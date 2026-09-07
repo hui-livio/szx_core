@@ -22,6 +22,7 @@ qt_add_qml_module(UIToolkits
     qml/UTLabel.qml
     qml/UTMarqueeLabel.qml
     qml/UTCheckBox.qml
+    qml/UTRadioButton.qml
     qml/UTCombobox.qml
     qml/UTSpinBox.qml
     qml/UTDoubleSpinBox.qml
