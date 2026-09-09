@@ -158,40 +158,8 @@ elseif(SZX_COMPONENTS_BUILD_COMPRESSION AND NOT SZX_COMPRESSION_BACKEND STREQUAL
         "expected 'minizip-ng' or 'none'.")
 endif()
 
-add_subdirectory(components/common)
-add_subdirectory(components/logger)
-add_subdirectory(components/crypto)
-add_subdirectory(components/crypto_service)
-add_subdirectory(components/license)
-add_subdirectory(tools/license-issuer)
-add_subdirectory(tools/license-request-demo)
-if(SZX_COMPONENTS_BUILD_COMPRESSION)
-    add_subdirectory(components/compression)
-endif()
-
-if(SZX_COMPONENTS_BUILD_FEATURE_MANAGER)
-    add_subdirectory(components/feature_manager)
-endif()
-
-if(SZX_COMPONENTS_BUILD_CAMERA)
-    add_subdirectory(components/camera)
-endif()
-
-if(SZX_COMPONENTS_BUILD_PLC)
-    add_subdirectory(components/plc)
-endif()
-
-if(SZX_COMPONENTS_BUILD_UI_TOOLKITS)
-    add_subdirectory(components/UIToolkits)
-    add_subdirectory(tools/license-issuer-gui)
-endif()
-
-if(SZX_COMPONENTS_BUILD_UI_TOOLKITS_APP)
-    if(NOT SZX_COMPONENTS_BUILD_UI_TOOLKITS)
-        message(FATAL_ERROR "SZX_COMPONENTS_BUILD_UI_TOOLKITS_APP requires SZX_COMPONENTS_BUILD_UI_TOOLKITS=ON")
-    endif()
-    add_subdirectory(tools/UIToolkitsApp)
-endif()
+add_subdirectory(components)
+add_subdirectory(tools)
 
 szx_install_components_package()
 
