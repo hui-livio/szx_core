@@ -17,6 +17,23 @@ UTAppWindow {
     title: qsTr("SZX 许可证签发工具")
 
     property int currentPage: 0
+    property var verifiedLicense: ({})
+    readonly property bool hasVerifiedLicense: verifiedLicense && verifiedLicense.licenseId !== undefined
+
+    function formatUtcTimestamp(value) {
+        if (value === undefined || value === null || value === "")
+            return qsTr("未设置");
+        const date = new Date(Number(value) * 1000);
+        return isNaN(date.getTime()) ? qsTr("无效时间") : date.toISOString();
+    }
+
+    Connections {
+        target: IssuerController
+        function onLicenseVerified(license) {
+            window.verifiedLicense = license;
+        }
+    }
+
     readonly property var projectCandidates: {
         var values = [];
         for (var i = 0; i < IssuerController.keyRecords.length; ++i) {
@@ -401,28 +418,142 @@ UTAppWindow {
                             text: qsTr("验证许可证")
                             textRole: UTLabel.TextRole.H2
                         }
+                        UTLabel {
+                            Layout.fillWidth: true
+                            text: qsTr("读取并校验许可证文件，查看许可证的签发信息和有效期。")
+                            color: UTTheme.secondaryTextColor
+                            wrapMode: Text.WordWrap
+                        }
                         UTLineEdit {
                             id: verifyPath
                             Layout.fillWidth: true
-                            placeholderText: qsTr("许可证路径")
+                            placeholderText: qsTr("许可证文件路径（必填）")
                         }
                         UTLineEdit {
                             id: verifyPublic
                             Layout.fillWidth: true
-                            placeholderText: qsTr("公钥路径")
+                            placeholderText: qsTr("签发公钥路径（必填）")
                         }
                         UTLineEdit {
                             id: expectedProduct
                             Layout.fillWidth: true
                             placeholderText: qsTr("预期产品（可选）")
                         }
-                        UTButton {
-                            text: qsTr("验证")
-                            onClicked: IssuerController.verifyLicense(verifyPath.text, verifyPublic.text, expectedProduct.text)
+                        RowLayout {
+                            Layout.fillWidth: true
+                            UTButton {
+                                Layout.preferredWidth: 110
+                                text: qsTr("获取信息")
+                                textElide: Text.ElideNone
+                                enabled: !IssuerController.busy && verifyPath.text.trim() !== "" && verifyPublic.text.trim() !== ""
+                                onClicked: {
+                                    window.verifiedLicense = ({});
+                                    IssuerController.verifyLicense(verifyPath.text.trim(), verifyPublic.text.trim(), expectedProduct.text.trim());
+                                }
+                            }
+                            Item {
+                                Layout.fillWidth: true
+                            }
                         }
                         UTLabel {
+                            Layout.fillWidth: true
                             text: IssuerController.statusMessage
                             color: IssuerController.status === "error" ? "#d9534f" : UTTheme.secondaryTextColor
+                            wrapMode: Text.WordWrap
+                        }
+                        Rectangle {
+                            visible: window.hasVerifiedLicense
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            Layout.minimumHeight: 180
+                            color: UTTheme.surfaceColor
+                            radius: UTTheme.radius || 8
+                            border.width: 1
+                            border.color: UTTheme.borderColor
+
+                            ScrollView {
+                                anchors.fill: parent
+                                anchors.margins: 16
+                                clip: true
+
+                                ColumnLayout {
+                                    width: parent.width
+                                    spacing: 8
+
+                                    UTLabel {
+                                        text: qsTr("许可证信息")
+                                        textRole: UTLabel.TextRole.H3
+                                    }
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        UTLabel { Layout.preferredWidth: 110; text: qsTr("许可证 ID"); color: UTTheme.secondaryTextColor }
+                                        UTLabel { Layout.fillWidth: true; text: String(window.verifiedLicense.licenseId || "—") }
+                                    }
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        UTLabel { Layout.preferredWidth: 110; text: qsTr("产品 ID"); color: UTTheme.secondaryTextColor }
+                                        UTLabel { Layout.fillWidth: true; text: String(window.verifiedLicense.productId || "—") }
+                                    }
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        UTLabel { Layout.preferredWidth: 110; text: qsTr("应用版本"); color: UTTheme.secondaryTextColor }
+                                        UTLabel { Layout.fillWidth: true; text: String(window.verifiedLicense.appVersion || "—") }
+                                    }
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        UTLabel { Layout.preferredWidth: 110; text: qsTr("签发方"); color: UTTheme.secondaryTextColor }
+                                        UTLabel { Layout.fillWidth: true; text: String(window.verifiedLicense.issuer || "—") }
+                                    }
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        UTLabel { Layout.preferredWidth: 110; text: qsTr("签发时间"); color: UTTheme.secondaryTextColor }
+                                        UTLabel { Layout.fillWidth: true; text: window.formatUtcTimestamp(window.verifiedLicense.issuedAtUtc) }
+                                    }
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        UTLabel { Layout.preferredWidth: 110; text: qsTr("生效时间"); color: UTTheme.secondaryTextColor }
+                                        UTLabel { Layout.fillWidth: true; text: window.formatUtcTimestamp(window.verifiedLicense.notBeforeUtc) }
+                                    }
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        UTLabel { Layout.preferredWidth: 110; text: qsTr("到期时间"); color: UTTheme.secondaryTextColor }
+                                        UTLabel {
+                                            Layout.fillWidth: true
+                                            text: window.verifiedLicense.expiresAtUtc === undefined || window.verifiedLicense.expiresAtUtc === null
+                                                  ? qsTr("永久") : window.formatUtcTimestamp(window.verifiedLicense.expiresAtUtc)
+                                        }
+                                    }
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        UTLabel { Layout.preferredWidth: 110; text: qsTr("功能"); color: UTTheme.secondaryTextColor }
+                                        UTLabel {
+                                            Layout.fillWidth: true
+                                            text: window.verifiedLicense.features && window.verifiedLicense.features.length > 0
+                                                  ? window.verifiedLicense.features.join(", ") : qsTr("无")
+                                            wrapMode: Text.WordWrap
+                                        }
+                                    }
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        UTLabel { Layout.preferredWidth: 110; text: qsTr("机器因子"); color: UTTheme.secondaryTextColor }
+                                        UTLabel {
+                                            Layout.fillWidth: true
+                                            text: window.verifiedLicense.machineFactors && window.verifiedLicense.machineFactors.length > 0
+                                                  ? qsTr("已绑定 %1 项").arg(window.verifiedLicense.machineFactors.length) : qsTr("无")
+                                        }
+                                    }
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        UTLabel { Layout.preferredWidth: 110; text: qsTr("自定义字段"); color: UTTheme.secondaryTextColor }
+                                        UTLabel {
+                                            Layout.fillWidth: true
+                                            text: window.verifiedLicense.customFields && Object.keys(window.verifiedLicense.customFields).length > 0
+                                                  ? JSON.stringify(window.verifiedLicense.customFields) : qsTr("无")
+                                            wrapMode: Text.WordWrap
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }

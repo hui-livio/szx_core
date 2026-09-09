@@ -812,6 +812,19 @@ bool IssuerGuiController::verifyLicense(const QString &licensePath, const QStrin
         for (const auto &feature : result.value.features)
             features.append(QString::fromStdString(feature));
         view.insert("features", features);
+        QVariantList machineFactors;
+        for (const auto &factor : result.value.machineFactors)
+        {
+            QVariantMap item;
+            item.insert("type", QString::fromStdString(factor.type));
+            item.insert("hash", QString::fromStdString(factor.hash));
+            machineFactors.append(item);
+        }
+        view.insert("machineFactors", machineFactors);
+        QVariantMap customFields;
+        for (const auto &[key, value] : result.value.customFields)
+            customFields.insert(QString::fromStdString(key), QString::fromStdString(value));
+        view.insert("customFields", customFields);
         emit licenseVerified(view);
         finish(true, 0, QStringLiteral("许可证验证成功。"));
         return true;
