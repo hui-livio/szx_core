@@ -28,6 +28,16 @@ ctest --test-dir build/msvc -C Release --output-on-failure
 cmake --install build/msvc --config Release
 ```
 
+许可证请求、签发和验证的端到端测试（同时覆盖错误产品、篡改文件、损坏请求和非法参数）：
+
+```powershell
+py -3 scripts/test_license_flow.py --build-dir build/msvc
+```
+
+脚本默认查找 `build/bin` 或多配置构建的 `build/bin/RelWithDebInfo`、
+`build/bin/Release`（以及对应的 `out/bin` 路径）。也可以使用 `--user-demo` 和
+`--issuer` 显式指定两个可执行文件。
+
 启用 Qt 组件时使用 Qt 6.8 或更高版本的 `qt-cmake`，并增加：
 
 ```powershell
