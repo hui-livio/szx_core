@@ -27,6 +27,18 @@ UTAppWindow {
         }
         return values;
     }
+    readonly property var keyCandidates: {
+        var values = [];
+        for (var i = 0; i < IssuerController.keyRecords.length; ++i) {
+            var record = IssuerController.keyRecords[i];
+            values.push({
+                label: qsTr("%1 / %2").arg(String(record.projectId)).arg(String(record.id)),
+                privatePath: String(record.privatePath),
+                publicPath: String(record.publicPath)
+            });
+        }
+        return values;
+    }
     readonly property var pages: [
         {
             title: qsTr("主页"),
@@ -38,7 +50,7 @@ UTAppWindow {
         },
         {
             title: qsTr("签发许可证"),
-            description: qsTr("许可证签发功能将在后续版本实现")
+            description: qsTr("根据请求文件签发许可证")
         },
         {
             title: qsTr("验证许可证"),
@@ -180,7 +192,7 @@ UTAppWindow {
                             }
                             UTLabel {
                                 Layout.fillWidth: true
-                                text: qsTr("公钥路径")
+                                text: qsTr("密钥信息")
                                 textRole: UTLabel.TextRole.Caption
                             }
                             UTLabel {
@@ -229,9 +241,8 @@ UTAppWindow {
                                     }
                                     UTLabel {
                                         Layout.fillWidth: true
-                                        text: modelData.publicPath
+                                        text: qsTr("已归档")
                                         color: UTTheme.secondaryTextColor
-                                        elide: Text.ElideMiddle
                                     }
                                     RowLayout {
                                         Layout.preferredWidth: 180
@@ -257,6 +268,38 @@ UTAppWindow {
                     }
 
                     ColumnLayout {
+                        readonly property var selectedKey: {
+                            const index = issueKeyField.currentIndex;
+                            return index >= 0 && index < window.keyCandidates.length ? window.keyCandidates[index] : null;
+                        }
+                        function issueDeadlineEpoch() {
+                            const value = issueDeadline.dateTimeValue.trim();
+                            if (value === "" || !issueDeadline.valueValid)
+                                return NaN;
+                            const date = new Date(value.replace(" ", "T"));
+                            return isNaN(date.getTime()) ? NaN : Math.floor(date.getTime() / 1000);
+                        }
+                        readonly property string issueValidationMessage: {
+                            if (requestPath.text.trim() === "")
+                                return qsTr("请输入请求文件路径。");
+                            if (!selectedKey)
+                                return qsTr("请选择签发密钥对。");
+                            if (licenseId.text.trim() === "")
+                                return qsTr("请输入许可证 ID。");
+                            if (issuerName.text.trim() === "")
+                                return qsTr("请输入签发方。");
+                            if (issueOutput.text.trim() === "")
+                                return qsTr("请输入输出许可证路径。");
+                            if (!issuePermanent.checked) {
+                                const expiresAt = issueDeadlineEpoch();
+                                if (!isFinite(expiresAt))
+                                    return qsTr("请选择有效的截止时间。");
+                                if (expiresAt <= Math.floor(Date.now() / 1000))
+                                    return qsTr("截止时间必须晚于当前时间。");
+                            }
+                            return "";
+                        }
+                        readonly property bool canIssue: !IssuerController.busy && issueValidationMessage === ""
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         Layout.margins: 32
@@ -265,20 +308,24 @@ UTAppWindow {
                             text: qsTr("签发许可证")
                             textRole: UTLabel.TextRole.H2
                         }
+                        UTLabel {
+                            Layout.fillWidth: true
+                            text: qsTr("选择请求文件和签发密钥，填写许可证元数据后生成许可证文件。")
+                            color: UTTheme.secondaryTextColor
+                            wrapMode: Text.WordWrap
+                        }
                         UTLineEdit {
                             id: requestPath
                             Layout.fillWidth: true
-                            placeholderText: qsTr("请求文件路径")
+                            placeholderText: qsTr("请求文件路径（必填）")
                         }
-                        UTLineEdit {
-                            id: issuePrivate
+                        UTCombobox {
+                            id: issueKeyField
                             Layout.fillWidth: true
-                            placeholderText: qsTr("私钥路径")
-                        }
-                        UTLineEdit {
-                            id: issuePublic
-                            Layout.fillWidth: true
-                            placeholderText: qsTr("公钥路径")
+                            model: window.keyCandidates
+                            textRole: "label"
+                            currentIndex: -1
+                            placeholderText: qsTr("签发密钥对（必选）")
                         }
                         UTLineEdit {
                             id: licenseId
@@ -295,12 +342,53 @@ UTAppWindow {
                             Layout.fillWidth: true
                             placeholderText: qsTr("输出许可证路径")
                         }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            UTLabel {
+                                Layout.preferredWidth: 72
+                                text: qsTr("有效期")
+                                color: UTTheme.secondaryTextColor
+                            }
+                            UTCheckBox {
+                                id: issuePermanent
+                                text: qsTr("永久")
+                                checked: true
+                            }
+                            UTDateTimePicker {
+                                id: issueDeadline
+                                Layout.fillWidth: true
+                                enabled: !issuePermanent.checked
+                                showSeconds: false
+                                placeholderText: qsTr("选择截止日期和时间")
+                                invalidDateTimeText: qsTr("截止时间格式无效")
+                            }
+                            Item {
+                                Layout.fillWidth: true
+                            }
+                        }
                         UTButton {
+                            Layout.preferredWidth: 110
                             text: qsTr("签发")
-                            onClicked: IssuerController.issueLicense(requestPath.text, issuePrivate.text, issuePublic.text, {
-                                licenseId: licenseId.text,
-                                issuer: issuerName.text
-                            }, issueOutput.text, false)
+                            textElide: Text.ElideNone
+                            enabled: canIssue
+                            onClicked: {
+                                if (!canIssue)
+                                    return;
+                                var options = {
+                                    licenseId: licenseId.text.trim(),
+                                    issuer: issuerName.text.trim()
+                                };
+                                if (!issuePermanent.checked)
+                                    options.expiresAtUtc = issueDeadlineEpoch();
+                                IssuerController.issueLicense(requestPath.text.trim(), selectedKey.privatePath, selectedKey.publicPath, options, issueOutput.text, false);
+                            }
+                        }
+                        UTLabel {
+                            Layout.fillWidth: true
+                            text: IssuerController.statusMessage
+                            color: IssuerController.status === "error" ? "#d9534f" : UTTheme.secondaryTextColor
+                            wrapMode: Text.WordWrap
                         }
                     }
 

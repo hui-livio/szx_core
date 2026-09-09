@@ -99,6 +99,19 @@ TEST_F(common_FileFolderHelperTest, FileHelperReadsWritesBytes)
     EXPECT_EQ(*loaded, content);
 }
 
+TEST_F(common_FileFolderHelperTest, FileHelperComparesEquivalentPaths)
+{
+    const auto existing = root_ / "same.txt";
+    ASSERT_TRUE(FileHelper::WriteText(existing, "same"));
+    ASSERT_TRUE(FolderHelper::EnsureExists(root_ / "folder"));
+
+    EXPECT_TRUE(FileHelper::IsSamePath(existing, root_ / "folder" / ".." / "same.txt"));
+    EXPECT_TRUE(FileHelper::isSamePath(existing, root_ / "same.txt"));
+    EXPECT_TRUE(FileHelper::IsSamePath(root_ / "folder" / ".." / "future.txt", root_ / "future.txt"));
+    EXPECT_FALSE(FileHelper::IsSamePath(existing, root_ / "other.txt"));
+    EXPECT_FALSE(FileHelper::IsSamePath({}, existing));
+}
+
 TEST_F(common_FileFolderHelperTest, FileHelperHandlesExtensionsAndRemove)
 {
     const auto filePath = root_ / "Image.PNG";

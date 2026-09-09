@@ -22,6 +22,9 @@
 #include <string_view>
 #include <system_error>
 #include <vector>
+#ifdef _WIN32
+    #include <cwchar>
+#endif
 
 namespace SZX::COMMON
 {
@@ -42,6 +45,44 @@ public:
     static auto IsRegularFile(const std::filesystem::path &path) -> bool
     {
         return Exists(path);
+    }
+
+    /**
+     * Compares two paths after resolving absolute components and existing
+     * symlinks. Missing paths are compared lexically; Windows comparisons are
+     * case-insensitive to match the native filesystem semantics.
+     */
+    static auto IsSamePath(const std::filesystem::path &left, const std::filesystem::path &right) -> bool
+    {
+        if (left.empty() || right.empty())
+            return false;
+
+        const auto normalize = [](const std::filesystem::path &path)
+        {
+            std::error_code error;
+            const auto absolute = std::filesystem::absolute(path, error);
+            if (error)
+                return path.lexically_normal();
+            error.clear();
+            const auto canonical = std::filesystem::weakly_canonical(absolute, error);
+            return (error ? absolute : canonical).lexically_normal();
+        };
+        const auto leftPath  = normalize(left);
+        const auto rightPath = normalize(right);
+
+        std::error_code error;
+        if (std::filesystem::equivalent(leftPath, rightPath, error) && !error)
+            return true;
+#ifdef _WIN32
+        return _wcsicmp(leftPath.native().c_str(), rightPath.native().c_str()) == 0;
+#else
+        return leftPath == rightPath;
+#endif
+    }
+
+    static auto isSamePath(const std::filesystem::path &left, const std::filesystem::path &right) -> bool
+    {
+        return IsSamePath(left, right);
     }
 
     static auto Size(const std::filesystem::path &path) -> std::optional<std::uintmax_t>

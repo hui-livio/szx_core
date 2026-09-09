@@ -703,12 +703,56 @@ bool IssuerGuiController::removeKeyRecord(const QString &projectId, const QStrin
 bool IssuerGuiController::issueLicense(const QString &requestPath, const QString &privatePath, const QString &publicPath,
                                        const QVariantMap &options, const QString &outputPath, bool overwrite)
 {
+    const auto request = requestPath.trimmed();
+    const auto privateKeyPath = privatePath.trimmed();
+    const auto publicKeyPath = publicPath.trimmed();
+    const auto output = outputPath.trimmed();
+    const auto licenseId = options.value(QStringLiteral("licenseId")).toString().trimmed();
+    const auto issuer = options.value(QStringLiteral("issuer")).toString().trimmed();
+    const auto failValidation = [this](const QString &message) {
+        if (!beginOperation())
+            return false;
+        finish(false, 1710, message);
+        return false;
+    };
+
+    if (request.isEmpty() || privateKeyPath.isEmpty() || publicKeyPath.isEmpty() || output.isEmpty())
+        return failValidation(QStringLiteral("请求文件、密钥文件和输出路径不能为空。"));
+    if (licenseId.isEmpty() || issuer.isEmpty())
+        return failValidation(QStringLiteral("许可证 ID 和签发方不能为空。"));
+    if (SZX::COMMON::FileHelper::isSamePath(std::filesystem::path(privateKeyPath.toStdWString()),
+                                            std::filesystem::path(publicKeyPath.toStdWString())))
+        return failValidation(QStringLiteral("私钥和公钥路径不能相同。"));
+    const auto outputFile = std::filesystem::path(output.toStdWString());
+    if (SZX::COMMON::FileHelper::isSamePath(outputFile, std::filesystem::path(request.toStdWString())) ||
+        SZX::COMMON::FileHelper::isSamePath(outputFile, std::filesystem::path(privateKeyPath.toStdWString())) ||
+        SZX::COMMON::FileHelper::isSamePath(outputFile, std::filesystem::path(publicKeyPath.toStdWString())))
+        return failValidation(QStringLiteral("输出路径不能覆盖请求文件或密钥文件。"));
+
+    bool notBeforeOk = true;
+    qint64 notBefore = 0;
+    if (options.contains(QStringLiteral("notBeforeUtc")))
+    {
+        notBefore = options.value(QStringLiteral("notBeforeUtc")).toLongLong(&notBeforeOk);
+        if (!notBeforeOk || notBefore < 0)
+            return failValidation(QStringLiteral("签发开始时间无效。"));
+    }
+    const auto expiresVariant = options.value(QStringLiteral("expiresAtUtc"));
+    if (expiresVariant.isValid() && !expiresVariant.isNull())
+    {
+        bool expiresOk = false;
+        const auto expires = expiresVariant.toLongLong(&expiresOk);
+        const auto effectiveNotBefore = notBefore > 0 ? notBefore : QDateTime::currentDateTimeUtc().toSecsSinceEpoch();
+        if (!expiresOk || expires <= effectiveNotBefore)
+            return failValidation(QStringLiteral("截止时间必须晚于签发开始时间。"));
+    }
+
     if (!beginOperation())
         return false;
     try
     {
-        auto privateKey = SzxLicenseIssuerGui::readPrivateKey(privatePath.toStdString());
-        auto publicKey  = SzxLicenseIssuerGui::readPublicKey(publicPath.toStdString());
+        auto privateKey = SzxLicenseIssuerGui::readPrivateKey(privateKeyPath.toStdString());
+        auto publicKey  = SzxLicenseIssuerGui::readPublicKey(publicKeyPath.toStdString());
         if (!privateKey || !publicKey)
         {
             finish(false, 1710, QStringLiteral("无法读取密钥文件。"));
@@ -716,13 +760,13 @@ bool IssuerGuiController::issueLicense(const QString &requestPath, const QString
         }
         SensitiveBytesGuard privateGuard{&*privateKey};
         SZX::LICENSE::IssueOptions issueOptions;
-        issueOptions.licenseId    = options.value(QStringLiteral("licenseId")).toString().toStdString();
-        issueOptions.issuer       = options.value(QStringLiteral("issuer")).toString().toStdString();
-        issueOptions.notBeforeUtc = options.value(QStringLiteral("notBeforeUtc")).toLongLong();
+        issueOptions.licenseId    = licenseId.toStdString();
+        issueOptions.issuer       = issuer.toStdString();
+        issueOptions.notBeforeUtc = notBefore;
         if (options.value(QStringLiteral("expiresAtUtc")).isValid())
             issueOptions.expiresAtUtc = options.value(QStringLiteral("expiresAtUtc")).toLongLong();
-        auto result = SZX::LICENSE::issueFile(requestPath.toStdString(), issueOptions, *privateKey, *publicKey);
-        if (!result.ok || !SzxLicenseIssuerGui::writeBytes(outputPath.toStdString(), result.value, overwrite))
+        auto result = SZX::LICENSE::issueFile(request.toStdString(), issueOptions, *privateKey, *publicKey);
+        if (!result.ok || !SzxLicenseIssuerGui::writeBytes(output.toStdString(), result.value, overwrite))
         {
             finish(false, result.ok ? 1808 : result.error,
                    result.ok ? QStringLiteral("许可证写入失败。") : QString::fromStdString(result.message));
