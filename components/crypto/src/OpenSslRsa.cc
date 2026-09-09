@@ -142,6 +142,65 @@ auto rsaPrivateKeyFromPem(std::span<const std::uint8_t> pem) -> Result<std::vect
 {
     return invokeBoundary([&] { return rsaPrivateKeyFromPemImpl(pem); });
 }
+auto rsaPublicKeyFromEncoded(std::span<const std::uint8_t> encoded) -> Result<std::vector<std::uint8_t>>
+{
+    return invokeBoundary(
+        [&]
+        {
+            if (encoded.empty())
+                return fail<std::vector<std::uint8_t>>(1710, "invalid RSA public key.");
+            const std::string_view text(reinterpret_cast<const char *>(encoded.data()), encoded.size());
+            return text.find("-----BEGIN") != std::string_view::npos ? rsaPublicKeyFromPemImpl(encoded) :
+                                                                       rsaPublicKeyFromDer(encoded);
+        });
+}
+auto rsaPrivateKeyFromEncoded(std::span<const std::uint8_t> encoded) -> Result<std::vector<std::uint8_t>>
+{
+    return invokeBoundary(
+        [&]
+        {
+            if (encoded.empty())
+                return fail<std::vector<std::uint8_t>>(1710, "invalid RSA private key.");
+            const std::string_view text(reinterpret_cast<const char *>(encoded.data()), encoded.size());
+            if (text.find("-----BEGIN") != std::string_view::npos)
+                return rsaPrivateKeyFromPemImpl(encoded);
+            auto key = derPrivate(encoded);
+            return key ? serializePrivate(key.get()) : fail<std::vector<std::uint8_t>>(1710, "invalid RSA private key.");
+        });
+}
+auto bioBytes(BIO *bio) -> Result<std::vector<std::uint8_t>>
+{
+    char *data      = nullptr;
+    const auto size = BIO_get_mem_data(bio, &data);
+    if (size <= 0 || data == nullptr)
+        return fail<std::vector<std::uint8_t>>(1711, "PEM serialization failed.");
+    return Result<std::vector<std::uint8_t>>::Success(
+        std::vector<std::uint8_t>(reinterpret_cast<std::uint8_t *>(data), reinterpret_cast<std::uint8_t *>(data) + size));
+}
+auto rsaPublicKeyToPemImpl(std::span<const std::uint8_t> der) -> Result<std::vector<std::uint8_t>>
+{
+    auto key = derPublic(der);
+    Bio bio(BIO_new(BIO_s_mem()));
+    if (!key || !bio || PEM_write_bio_PUBKEY(bio.get(), key.get()) != 1)
+        return fail<std::vector<std::uint8_t>>(1710, "invalid RSA public key.");
+    return bioBytes(bio.get());
+}
+auto rsaPrivateKeyToPemImpl(std::span<const std::uint8_t> der) -> Result<std::vector<std::uint8_t>>
+{
+    auto key = derPrivate(der);
+    Bio bio(BIO_new(BIO_s_mem()));
+    if (!key || !bio || PEM_write_bio_PrivateKey(bio.get(), key.get(), nullptr, nullptr, 0, nullptr, nullptr) != 1)
+        return fail<std::vector<std::uint8_t>>(1710, "invalid RSA private key.");
+    return bioBytes(bio.get());
+}
+auto rsaPublicKeyToPem(std::span<const std::uint8_t> der) -> Result<std::vector<std::uint8_t>>
+{
+    return invokeBoundary([&] { return rsaPublicKeyToPemImpl(der); });
+}
+auto rsaPrivateKeyToPem(std::span<const std::uint8_t> der) -> Result<std::vector<std::uint8_t>>
+{
+    return invokeBoundary([&] { return rsaPrivateKeyToPemImpl(der); });
+}
 auto rsaPublicKeyId(std::span<const std::uint8_t> k) -> Result<std::string>
 {
     return invokeBoundary(

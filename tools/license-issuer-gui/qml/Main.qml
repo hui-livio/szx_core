@@ -1,3 +1,5 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
@@ -15,11 +17,33 @@ UTAppWindow {
     title: qsTr("SZX 许可证签发工具")
 
     property int currentPage: 0
+    readonly property var projectCandidates: {
+        var values = [];
+        for (var i = 0; i < IssuerController.keyRecords.length; ++i) {
+            var projectId = String(IssuerController.keyRecords[i].projectId);
+            if (projectId !== "" && values.indexOf(projectId) < 0) {
+                values.push(projectId);
+            }
+        }
+        return values;
+    }
     readonly property var pages: [
-        { title: qsTr("主页"), description: qsTr("软授权工具框架") },
-        { title: qsTr("密钥管理"), description: qsTr("生成并检查 RSA-3072 签发密钥") },
-        { title: qsTr("签发许可证"), description: qsTr("许可证签发功能将在后续版本实现") },
-        { title: qsTr("验证许可证"), description: qsTr("许可证验证功能将在后续版本实现") }
+        {
+            title: qsTr("主页"),
+            description: qsTr("软授权工具框架")
+        },
+        {
+            title: qsTr("密钥管理"),
+            description: qsTr("生成并检查 RSA-3072 签发密钥")
+        },
+        {
+            title: qsTr("签发许可证"),
+            description: qsTr("许可证签发功能将在后续版本实现")
+        },
+        {
+            title: qsTr("验证许可证"),
+            description: qsTr("许可证验证功能将在后续版本实现")
+        }
     ]
 
     ColumnLayout {
@@ -96,57 +120,139 @@ UTAppWindow {
 
                 StackLayout {
                     anchors.fill: parent
+                    anchors.leftMargin: 24
+                    anchors.rightMargin: 24
                     currentIndex: window.currentPage
 
-                    PlaceholderPage { pageTitle: qsTr("主页"); description: qsTr("选择左侧功能开始操作") }
+                    PlaceholderPage {
+                        pageTitle: qsTr("主页")
+                        description: qsTr("选择左侧功能开始操作")
+                    }
 
                     ColumnLayout {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         Layout.margins: 32
                         spacing: 16
-                        UTLabel { text: qsTr("密钥管理"); textRole: UTLabel.TextRole.H2 }
-                        UTLineEdit { id: privatePath; Layout.fillWidth: true; placeholderText: qsTr("私钥路径") }
-                        UTLineEdit { id: publicPath; Layout.fillWidth: true; placeholderText: qsTr("公钥路径") }
-                        UTCheckBox { id: overwriteKeys; text: qsTr("覆盖已存在的密钥文件"); enabled: !IssuerController.busy }
+                        UTLabel {
+                            text: qsTr("密钥管理")
+                            textRole: UTLabel.TextRole.H2
+                        }
                         RowLayout {
-                            spacing: 12
+                            Layout.fillWidth: true
                             UTButton {
-                                text: IssuerController.busy ? qsTr("处理中…") : qsTr("生成 RSA-3072 密钥")
+                                Layout.preferredWidth: 104
+                                text: qsTr("导入密钥对")
+                                textElide: Text.ElideNone
                                 enabled: !IssuerController.busy
-                                onClicked: IssuerController.generateKeyPair(privatePath.text, publicPath.text, overwriteKeys.checked)
+                                onClicked: keyDialog.open()
                             }
                             UTButton {
-                                text: qsTr("检查密钥")
+                                Layout.preferredWidth: 104
+                                text: qsTr("生成密钥对")
+                                textElide: Text.ElideNone
                                 enabled: !IssuerController.busy
-                                onClicked: IssuerController.inspectKeyPair(privatePath.text, publicPath.text)
+                                onClicked: generateDialog.open()
+                            }
+                            UTLineEdit {
+                                id: searchField
+                                Layout.fillWidth: true
+                                placeholderText: qsTr("查询：密钥对 ID、项目 ID 或路径")
                             }
                         }
-                        UTLabel { text: IssuerController.statusMessage; color: IssuerController.status === "error" ? "#d9534f" : UTTheme.secondaryTextColor }
                         UTLabel {
-                            Layout.fillWidth: true
-                            text: IssuerController.issuerKeyId === "" ? qsTr("尚未生成或检查密钥") : qsTr("Key ID：%1").arg(IssuerController.issuerKeyId)
-                            color: IssuerController.keyPairMatched ? UTTheme.primaryColor : UTTheme.secondaryTextColor
+                            text: IssuerController.statusMessage
+                            color: IssuerController.status === "error" ? "#d9534f" : UTTheme.secondaryTextColor
                             wrapMode: Text.Wrap
                         }
-                    }
-
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        Layout.margins: 32
-                        spacing: 14
-                        UTLabel { text: qsTr("签发许可证"); textRole: UTLabel.TextRole.H2 }
-                        UTLineEdit { id: requestPath; Layout.fillWidth: true; placeholderText: qsTr("请求文件路径") }
-                        UTLineEdit { id: issuePrivate; Layout.fillWidth: true; placeholderText: qsTr("私钥路径") }
-                        UTLineEdit { id: issuePublic; Layout.fillWidth: true; placeholderText: qsTr("公钥路径") }
-                        UTLineEdit { id: licenseId; Layout.fillWidth: true; placeholderText: qsTr("许可证 ID") }
-                        UTLineEdit { id: issuerName; Layout.fillWidth: true; placeholderText: qsTr("签发方") }
-                        UTLineEdit { id: issueOutput; Layout.fillWidth: true; placeholderText: qsTr("输出许可证路径") }
-                        UTButton {
-                            text: qsTr("签发")
-                            onClicked: IssuerController.issueLicense(requestPath.text, issuePrivate.text, issuePublic.text,
-                                                                      {licenseId: licenseId.text, issuer: issuerName.text}, issueOutput.text, false)
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 8
+                            UTLabel {
+                                Layout.preferredWidth: 150
+                                text: qsTr("密钥对 ID")
+                                textRole: UTLabel.TextRole.Caption
+                            }
+                            UTLabel {
+                                Layout.preferredWidth: 150
+                                text: qsTr("项目 ID")
+                                textRole: UTLabel.TextRole.Caption
+                            }
+                            UTLabel {
+                                Layout.fillWidth: true
+                                text: qsTr("公钥路径")
+                                textRole: UTLabel.TextRole.Caption
+                            }
+                            UTLabel {
+                                Layout.preferredWidth: 180
+                                text: qsTr("操作")
+                                textRole: UTLabel.TextRole.Caption
+                            }
+                        }
+                        ListView {
+                            id: keyList
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            clip: true
+                            model: IssuerController.keyRecords.filter(function (record) {
+                                var query = searchField.text.trim().toLowerCase();
+                                if (query === "")
+                                    return true;
+                                return String(record.id).toLowerCase().indexOf(query) >= 0 || String(record.projectId).toLowerCase().indexOf(query) >= 0 || String(record.privatePath).toLowerCase().indexOf(query) >= 0 || String(record.publicPath).toLowerCase().indexOf(query) >= 0;
+                            })
+                            delegate: Rectangle {
+                                required property var modelData
+                                width: keyList.width
+                                height: 44
+                                color: "transparent"
+                                border.width: 0
+                                Rectangle {
+                                    anchors.left: parent.left
+                                    anchors.right: parent.right
+                                    anchors.bottom: parent.bottom
+                                    height: 1
+                                    color: window.theme.borderColor
+                                }
+                                RowLayout {
+                                    anchors.fill: parent
+                                    anchors.margins: 6
+                                    spacing: 8
+                                    UTLabel {
+                                        Layout.preferredWidth: 150
+                                        text: modelData.id
+                                        color: UTTheme.primaryTextColor
+                                    }
+                                    UTLabel {
+                                        Layout.preferredWidth: 150
+                                        text: modelData.projectId
+                                        color: UTTheme.primaryTextColor
+                                    }
+                                    UTLabel {
+                                        Layout.fillWidth: true
+                                        text: modelData.publicPath
+                                        color: UTTheme.secondaryTextColor
+                                        elide: Text.ElideMiddle
+                                    }
+                                    RowLayout {
+                                        Layout.preferredWidth: 180
+                                        spacing: 8
+                                        UTButton {
+                                            Layout.preferredWidth: 78
+                                            text: qsTr("编辑")
+                                            textElide: Text.ElideNone
+                                            enabled: !IssuerController.busy
+                                            onClicked: keyDialog.editRecord(modelData)
+                                        }
+                                        UTButton {
+                                            Layout.preferredWidth: 78
+                                            text: qsTr("删除")
+                                            textElide: Text.ElideNone
+                                            enabled: !IssuerController.busy
+                                            onClicked: IssuerController.removeKeyRecord(modelData.projectId, modelData.id)
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
 
@@ -155,13 +261,212 @@ UTAppWindow {
                         Layout.fillHeight: true
                         Layout.margins: 32
                         spacing: 14
-                        UTLabel { text: qsTr("验证许可证"); textRole: UTLabel.TextRole.H2 }
-                        UTLineEdit { id: verifyPath; Layout.fillWidth: true; placeholderText: qsTr("许可证路径") }
-                        UTLineEdit { id: verifyPublic; Layout.fillWidth: true; placeholderText: qsTr("公钥路径") }
-                        UTLineEdit { id: expectedProduct; Layout.fillWidth: true; placeholderText: qsTr("预期产品（可选）") }
-                        UTButton { text: qsTr("验证"); onClicked: IssuerController.verifyLicense(verifyPath.text, verifyPublic.text, expectedProduct.text) }
-                        UTLabel { text: IssuerController.statusMessage; color: IssuerController.status === "error" ? "#d9534f" : UTTheme.secondaryTextColor }
+                        UTLabel {
+                            text: qsTr("签发许可证")
+                            textRole: UTLabel.TextRole.H2
+                        }
+                        UTLineEdit {
+                            id: requestPath
+                            Layout.fillWidth: true
+                            placeholderText: qsTr("请求文件路径")
+                        }
+                        UTLineEdit {
+                            id: issuePrivate
+                            Layout.fillWidth: true
+                            placeholderText: qsTr("私钥路径")
+                        }
+                        UTLineEdit {
+                            id: issuePublic
+                            Layout.fillWidth: true
+                            placeholderText: qsTr("公钥路径")
+                        }
+                        UTLineEdit {
+                            id: licenseId
+                            Layout.fillWidth: true
+                            placeholderText: qsTr("许可证 ID")
+                        }
+                        UTLineEdit {
+                            id: issuerName
+                            Layout.fillWidth: true
+                            placeholderText: qsTr("签发方")
+                        }
+                        UTLineEdit {
+                            id: issueOutput
+                            Layout.fillWidth: true
+                            placeholderText: qsTr("输出许可证路径")
+                        }
+                        UTButton {
+                            text: qsTr("签发")
+                            onClicked: IssuerController.issueLicense(requestPath.text, issuePrivate.text, issuePublic.text, {
+                                licenseId: licenseId.text,
+                                issuer: issuerName.text
+                            }, issueOutput.text, false)
+                        }
                     }
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        Layout.margins: 32
+                        spacing: 14
+                        UTLabel {
+                            text: qsTr("验证许可证")
+                            textRole: UTLabel.TextRole.H2
+                        }
+                        UTLineEdit {
+                            id: verifyPath
+                            Layout.fillWidth: true
+                            placeholderText: qsTr("许可证路径")
+                        }
+                        UTLineEdit {
+                            id: verifyPublic
+                            Layout.fillWidth: true
+                            placeholderText: qsTr("公钥路径")
+                        }
+                        UTLineEdit {
+                            id: expectedProduct
+                            Layout.fillWidth: true
+                            placeholderText: qsTr("预期产品（可选）")
+                        }
+                        UTButton {
+                            text: qsTr("验证")
+                            onClicked: IssuerController.verifyLicense(verifyPath.text, verifyPublic.text, expectedProduct.text)
+                        }
+                        UTLabel {
+                            text: IssuerController.statusMessage
+                            color: IssuerController.status === "error" ? "#d9534f" : UTTheme.secondaryTextColor
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    UTDialog {
+        id: keyDialog
+        property var editingRecord: null
+        titleText: editingRecord ? qsTr("编辑密钥对") : qsTr("导入密钥对")
+        modal: true
+        initialDialogWidth: 520
+        initialDialogHeight: 500
+        width: 520
+        height: 500
+        standardButtons: Dialog.NoButton
+        function editRecord(record) {
+            editingRecord = record;
+            projectField.currentIndex = projectCandidates.indexOf(record.projectId);
+            projectField.editText = record.projectId;
+            pairIdField.text = record.id;
+            privateField.text = record.privatePath;
+            publicField.text = record.publicPath;
+            open();
+        }
+        onAccepted: {
+            var projectId = projectField.editText.trim();
+            if (editingRecord)
+                IssuerController.updateKeyRecord(editingRecord.projectId, editingRecord.id, projectId, pairIdField.text, privateField.text, publicField.text);
+            else
+                IssuerController.importKeyPair(privateField.text, publicField.text, projectId, pairIdField.text, false);
+            editingRecord = null;
+        }
+        onRejected: editingRecord = null
+        dialogContent: ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: 16
+            spacing: 10
+            UTCombobox {
+                id: projectField
+                Layout.fillWidth: true
+                editable: true
+                model: window.projectCandidates
+                currentIndex: -1
+                placeholderText: qsTr("所属项目 ID")
+            }
+            UTLineEdit {
+                id: pairIdField
+                Layout.fillWidth: true
+                placeholderText: qsTr("密钥对 ID")
+            }
+            UTLineEdit {
+                id: privateField
+                Layout.fillWidth: true
+                placeholderText: qsTr("私钥文件路径")
+            }
+            UTLineEdit {
+                id: publicField
+                Layout.fillWidth: true
+                placeholderText: qsTr("公钥文件路径")
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                Item {
+                    Layout.fillWidth: true
+                }
+                UTButton {
+                    text: qsTr("取消")
+                    buttonType: UTButton.ButtonType.Outlined
+                    enabled: !IssuerController.busy
+                    onClicked: keyDialog.reject()
+                }
+                UTButton {
+                    text: qsTr("确定")
+                    buttonType: UTButton.ButtonType.Filled
+                    enabled: !IssuerController.busy
+                    onClicked: keyDialog.accept()
+                }
+            }
+        }
+    }
+
+    UTDialog {
+        id: generateDialog
+        titleText: qsTr("生成 RSA-3072 密钥对")
+        modal: true
+        initialDialogWidth: 520
+        initialDialogHeight: 380
+        width: 520
+        height: 380
+        standardButtons: Dialog.NoButton
+        onAccepted: {
+            IssuerController.generateProjectKeyPair(generateProjectField.editText.trim(), generatePairIdField.text, generateOverwrite.checked);
+        }
+        dialogContent: ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: 16
+            spacing: 10
+            UTCombobox {
+                id: generateProjectField
+                Layout.fillWidth: true
+                editable: true
+                model: window.projectCandidates
+                currentIndex: -1
+                placeholderText: qsTr("所属项目 ID")
+            }
+            UTLineEdit {
+                id: generatePairIdField
+                Layout.fillWidth: true
+                placeholderText: qsTr("密钥对 ID")
+            }
+            UTCheckBox {
+                id: generateOverwrite
+                text: qsTr("覆盖已存在的密钥文件")
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                Item {
+                    Layout.fillWidth: true
+                }
+                UTButton {
+                    text: qsTr("取消")
+                    buttonType: UTButton.ButtonType.Outlined
+                    enabled: !IssuerController.busy
+                    onClicked: generateDialog.reject()
+                }
+                UTButton {
+                    text: qsTr("确定")
+                    buttonType: UTButton.ButtonType.Filled
+                    enabled: !IssuerController.busy
+                    onClicked: generateDialog.accept()
                 }
             }
         }

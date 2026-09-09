@@ -1,6 +1,6 @@
 #include "SzxLicense/License.h"
-#include "SzxLicense/Issuer.h"
 #include "LicenseJson.hpp"
+#include "SzxLicense/Issuer.h"
 
 #include "FileHelper.hpp"
 #include "SzxCrypto/Base64.h"
@@ -568,24 +568,15 @@ auto verify(std::span<const std::uint8_t> bytes, std::span<const std::uint8_t> i
         // Iguana maps both a missing optional member and JSON null to an empty optional, so
         // retain an explicit presence check before consuming the DTO.
         if (text.find("\"expires_at\"") == std::string_view::npos || !parseJson(text, payload) || !payload.schema_version ||
-            *payload.schema_version != 1 ||
-            !payload.issuer || !payload.license_id || !payload.product_id || !payload.app_version ||
-            !payload.issued_at || !payload.not_before || !payload.features || !payload.machine_factors ||
+            *payload.schema_version != 1 || !payload.issuer || !payload.license_id || !payload.product_id ||
+            !payload.app_version || !payload.issued_at || !payload.not_before || !payload.features || !payload.machine_factors ||
             !payload.custom_fields)
             return fail<LicenseInfo>(LicenseError::Malformed, "license payload fields invalid.");
         auto machineFactors = fromJsonFactors(*payload.machine_factors);
         if (!machineFactors)
             return fail<LicenseInfo>(LicenseError::Malformed, "license machine factors invalid.");
-        LicenseInfo out{*payload.license_id,
-                        *payload.product_id,
-                        *payload.app_version,
-                        *payload.issuer,
-                        *payload.issued_at,
-                        *payload.not_before,
-                        std::nullopt,
-                        *payload.features,
-                        *machineFactors,
-                        *payload.custom_fields};
+        LicenseInfo out{*payload.license_id, *payload.product_id, *payload.app_version, *payload.issuer, *payload.issued_at,
+                        *payload.not_before, std::nullopt,        *payload.features,    *machineFactors, *payload.custom_fields};
         if (payload.expires_at)
             out.expiresAtUtc = *payload.expires_at;
         if (out.licenseId.empty() || out.productId.empty() || out.appVersion.empty() || out.issuer.empty() ||

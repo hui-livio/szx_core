@@ -300,6 +300,36 @@ TEST(CryptoRsaTest, ConvertsPublicKeyToDerAndBack)
 #endif
 }
 
+TEST(CryptoRsaTest, ConvertsRsaKeysBetweenDerAndPem)
+{
+    auto keys = generateRsa3072KeyPair();
+#if defined(_WIN32)
+    ASSERT_TRUE(keys.ok) << keys.message;
+    auto publicPem  = rsaPublicKeyToPem(keys.value.publicKey);
+    auto privatePem = rsaPrivateKeyToPem(keys.value.privateKey);
+    ASSERT_TRUE(publicPem.ok) << publicPem.message;
+    ASSERT_TRUE(privatePem.ok) << privatePem.message;
+    const std::string publicText(publicPem.value.begin(), publicPem.value.end());
+    const std::string privateText(privatePem.value.begin(), privatePem.value.end());
+    EXPECT_NE(publicText.find("-----BEGIN PUBLIC KEY-----"), std::string::npos);
+    EXPECT_NE(privateText.find("-----BEGIN PRIVATE KEY-----"), std::string::npos);
+    auto publicDer  = rsaPublicKeyFromEncoded(publicPem.value);
+    auto privateDer = rsaPrivateKeyFromEncoded(privatePem.value);
+    ASSERT_TRUE(publicDer.ok) << publicDer.message;
+    ASSERT_TRUE(privateDer.ok) << privateDer.message;
+    EXPECT_EQ(publicDer.value, keys.value.publicKey);
+    EXPECT_EQ(privateDer.value, keys.value.privateKey);
+    const std::vector<std::uint8_t> data{'p', 'e', 'm'};
+    auto signature = rsaPssSha256Sign(privateDer.value, data);
+    ASSERT_TRUE(signature.ok) << signature.message;
+    auto verified = rsaPssSha256Verify(publicDer.value, data, signature.value);
+    ASSERT_TRUE(verified.ok) << verified.message;
+    EXPECT_TRUE(verified.value);
+#else
+    EXPECT_FALSE(keys.ok);
+#endif
+}
+
 TEST(CryptoRsaTest, RejectsMalformedDerPublicKey)
 {
     const std::vector<std::uint8_t> malformed{0x30, 0x01, 0x00};
@@ -315,6 +345,19 @@ TEST(CryptoRsaTest, RejectsMalformedPemKeys)
     const std::span<const std::uint8_t> malformedPem(reinterpret_cast<const std::uint8_t *>(pemText.data()), pemText.size());
     EXPECT_FALSE(rsaPublicKeyFromPem(malformedPem).ok);
     EXPECT_FALSE(rsaPrivateKeyFromPem(malformedPem).ok);
+}
+
+TEST(CryptoRsaTest, RejectsNonRsaDerKey)
+{
+    // P-256 SubjectPublicKeyInfo (SEC 2 generator point), not an RSA key.
+    const std::vector<std::uint8_t> ecPublic = {
+        0x30, 0x59, 0x30, 0x13, 0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01, 0x06, 0x08, 0x2a, 0x86, 0x48, 0xce,
+        0x3d, 0x03, 0x01, 0x07, 0x03, 0x42, 0x00, 0x04, 0x6b, 0x17, 0xd1, 0xf2, 0xe1, 0x2c, 0x42, 0x47, 0xf8, 0xbc, 0xe6,
+        0xe5, 0x63, 0xa4, 0x40, 0xf2, 0x77, 0x03, 0x7d, 0x81, 0x2d, 0xeb, 0x33, 0xa0, 0xf4, 0xa1, 0x39, 0x45, 0xd8, 0x98,
+        0xc2, 0x96, 0x4f, 0xe3, 0x42, 0xe2, 0xfe, 0x1a, 0x7f, 0x9b, 0x8e, 0xe7, 0xeb, 0x4a, 0x7c, 0x0f, 0x9e, 0x16, 0x2b,
+        0xce, 0x33, 0x57, 0x6b, 0x31, 0x5e, 0xce, 0xcb, 0xb6, 0x40, 0x68, 0x37, 0xbf, 0x51, 0xf5};
+    EXPECT_FALSE(rsaPublicKeyFromEncoded(ecPublic).ok);
+    EXPECT_FALSE(rsaPublicKeyToPem(ecPublic).ok);
 }
 
 TEST(CryptoRsaTest, EnforcesOaepSha256PlaintextBoundary)

@@ -9,6 +9,8 @@
 int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
+    QCoreApplication::setOrganizationName(QStringLiteral("SZX"));
+    QCoreApplication::setApplicationName(QStringLiteral("LicenseIssuer"));
     app.setWindowIcon(QIcon(QStringLiteral(":/qt/qml/SzxLicenseIssuer/app.svg")));
     QQmlApplicationEngine engine;
     IssuerGuiController controller;

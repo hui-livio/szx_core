@@ -50,6 +50,18 @@ struct RsaKeyPair
 /** 将 PEM 私钥转换为 DER PKCS#8。 */
 [[nodiscard]] SZX_CRYPTO_API auto rsaPrivateKeyFromPem(std::span<const std::uint8_t> pem)
     -> SZX::COMMON::Result<std::vector<std::uint8_t>>;
+/** 自动识别 PEM/DER 并转换为规范 DER 公钥。 */
+[[nodiscard]] SZX_CRYPTO_API auto rsaPublicKeyFromEncoded(std::span<const std::uint8_t> encoded)
+    -> SZX::COMMON::Result<std::vector<std::uint8_t>>;
+/** 自动识别 PEM/DER 并转换为规范 DER 私钥。 */
+[[nodiscard]] SZX_CRYPTO_API auto rsaPrivateKeyFromEncoded(std::span<const std::uint8_t> encoded)
+    -> SZX::COMMON::Result<std::vector<std::uint8_t>>;
+/** 将 DER SubjectPublicKeyInfo 公钥编码为标准 PEM。 */
+[[nodiscard]] SZX_CRYPTO_API auto rsaPublicKeyToPem(std::span<const std::uint8_t> der)
+    -> SZX::COMMON::Result<std::vector<std::uint8_t>>;
+/** 将 DER PKCS#8 私钥编码为标准 PEM。 */
+[[nodiscard]] SZX_CRYPTO_API auto rsaPrivateKeyToPem(std::span<const std::uint8_t> der)
+    -> SZX::COMMON::Result<std::vector<std::uint8_t>>;
 /** 使用 RSA-OAEP-SHA256 加密一条消息；大数据应使用混合加密。 */
 [[nodiscard]] SZX_CRYPTO_API auto rsaOaepSha256Encrypt(std::span<const std::uint8_t> publicKey,
                                                        std::span<const std::uint8_t> plaintext)

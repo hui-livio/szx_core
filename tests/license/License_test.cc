@@ -1,9 +1,9 @@
 #include "SzxLicense/License.h"
 #include "SzxLicense/Issuer.h"
 
+#include "FileHelper.hpp"
 #include "SzxCrypto/Rsa.h"
 #include "nlohmann/json.hpp"
-#include "FileHelper.hpp"
 
 #include <filesystem>
 #include <gtest/gtest.h>
@@ -29,21 +29,21 @@ TEST(LicenseTest, CollectsProductScopedMachineFactors)
 TEST(LicenseTest, RequestIssueAndVerifyRoundTrip)
 {
     RequestOptions request;
-    request.productId = "szx.crypto-tool";
-    request.appVersion = "1.2.3";
-    request.requestedFeatures = {"crypto.symmetric", "crypto.asymmetric"};
+    request.productId                = "szx.crypto-tool";
+    request.appVersion               = "1.2.3";
+    request.requestedFeatures        = {"crypto.symmetric", "crypto.asymmetric"};
     request.customFields["customer"] = "acme";
-    auto requestJson = createRequest(request);
+    auto requestJson                 = createRequest(request);
     ASSERT_TRUE(requestJson.ok) << requestJson.message;
 
     auto keys = SZX::CRYPTO::generateRsa3072KeyPair();
     ASSERT_TRUE(keys.ok) << keys.message;
     IssueOptions issueOptions;
-    issueOptions.licenseId = "lic-test-001";
-    issueOptions.issuer = "szx-internal";
-    issueOptions.features = request.requestedFeatures;
+    issueOptions.licenseId                = "lic-test-001";
+    issueOptions.issuer                   = "szx-internal";
+    issueOptions.features                 = request.requestedFeatures;
     issueOptions.customFields["customer"] = "acme";
-    auto license = issue(requestJson.value, issueOptions, keys.value.privateKey, keys.value.publicKey);
+    auto license                          = issue(requestJson.value, issueOptions, keys.value.privateKey, keys.value.publicKey);
     ASSERT_TRUE(license.ok) << license.message;
 
     auto verified = verify(license.value, keys.value.publicKey, request.productId);
@@ -63,8 +63,8 @@ TEST(LicenseTest, RejectsTamperingAndWrongProduct)
     IssueOptions options{.licenseId = "lic-1", .issuer = "issuer"};
     auto license = issue(requestJson.value, options, keys.value.privateKey, keys.value.publicKey);
     ASSERT_TRUE(license.ok);
-    auto tampered = license.value;
-    tampered[20] ^= 1;
+    auto tampered  = license.value;
+    tampered[20]  ^= 1;
     EXPECT_FALSE(verify(tampered, keys.value.publicKey).ok);
     EXPECT_EQ(verify(license.value, keys.value.publicKey, "product-b").error, static_cast<int>(LicenseError::WrongProduct));
 
@@ -98,11 +98,11 @@ TEST(LicenseTest, RejectsInvalidRequestVersionAndExpiryRange)
     RequestOptions request{.productId = "product-a", .appVersion = "1.0"};
     auto requestJson = createRequest(request);
     ASSERT_TRUE(requestJson.ok);
-    auto unsupported = requestJson.value;
+    auto unsupported      = requestJson.value;
     const auto versionPos = unsupported.find("\"schema_version\":1");
     ASSERT_NE(versionPos, std::string::npos);
     unsupported[versionPos + 17] = '2';
-    auto keys = SZX::CRYPTO::generateRsa3072KeyPair();
+    auto keys                    = SZX::CRYPTO::generateRsa3072KeyPair();
     ASSERT_TRUE(keys.ok);
     IssueOptions options{.licenseId = "bad-range", .issuer = "issuer", .notBeforeUtc = 100, .expiresAtUtc = 100};
     EXPECT_EQ(issue(requestJson.value, options, keys.value.privateKey, keys.value.publicKey).error,
@@ -118,7 +118,7 @@ TEST(LicenseTest, RejectsLicenseForDifferentMachineFactors)
     RequestOptions request{.productId = "product-a", .appVersion = "1.0"};
     auto requestJson = createRequest(request);
     ASSERT_TRUE(requestJson.ok);
-    std::size_t hashPos = 0;
+    std::size_t hashPos   = 0;
     std::size_t hashCount = 0;
     while ((hashPos = requestJson.value.find("\"hash\":\"", hashPos)) != std::string::npos)
     {
@@ -164,9 +164,10 @@ TEST(LicenseTest, RequestFileIsEncryptedAndSupportsPathBasedFlow)
     ASSERT_TRUE(created.ok) << created.message;
     auto encrypted = SZX::COMMON::FileHelper::ReadBytes(requestPath);
     ASSERT_TRUE(encrypted);
-    EXPECT_EQ(std::search(encrypted->begin(), encrypted->end(), request.productId.begin(), request.productId.end()), encrypted->end());
+    EXPECT_EQ(std::search(encrypted->begin(), encrypted->end(), request.productId.begin(), request.productId.end()),
+              encrypted->end());
 
-    auto tampered = *encrypted;
+    auto tampered    = *encrypted;
     tampered.back() ^= 1;
     ASSERT_TRUE(SZX::COMMON::FileHelper::WriteBytes(requestPath, tampered, false));
     IssueOptions options{.licenseId = "file-flow", .issuer = "issuer"};

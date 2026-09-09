@@ -47,6 +47,6 @@ struct LicensePayload
 SZX_REFL(MachineFactorJson, type, hash)
 SZX_REFL(RequestDocument, schema_version, request_id, product_id, app_version, created_at, nonce, machine_factors,
          requested_features, custom_fields)
-SZX_REFL(LicensePayload, schema_version, license_id, product_id, app_version, issuer, issued_at, not_before, expires_at,
-         features, machine_factors, custom_fields)
+SZX_REFL(LicensePayload, schema_version, license_id, product_id, app_version, issuer, issued_at, not_before, expires_at, features,
+         machine_factors, custom_fields)
 } // namespace SZX::LICENSE::internal

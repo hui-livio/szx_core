@@ -131,8 +131,7 @@ public:
     }
 
     /** Reads a regular file with a hard upper bound, returning nullopt on overflow. */
-    static auto ReadBytes(const std::filesystem::path &path, std::uintmax_t maxBytes)
-        -> std::optional<std::vector<std::uint8_t>>
+    static auto ReadBytes(const std::filesystem::path &path, std::uintmax_t maxBytes) -> std::optional<std::vector<std::uint8_t>>
     {
         const auto size = Size(path);
         if (!size || *size > maxBytes || *size > static_cast<std::uintmax_t>(std::numeric_limits<std::size_t>::max()))
