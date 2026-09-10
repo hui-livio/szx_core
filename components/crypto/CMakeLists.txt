@@ -2,6 +2,7 @@ add_library(szx_crypto SHARED
     src/OpenSslHash.cc
     src/OpenSslRandom.cc
     src/OpenSslKdf.cc
+    src/OpenSslArgon2.cc
     src/OpenSslAead.cc
     src/OpenSslFernet.cc
     src/OpenSslRsa.cc
@@ -9,6 +10,7 @@ add_library(szx_crypto SHARED
     src/SecureBytes.cc
     include/SzxCrypto/Base64.h
     include/SzxCrypto/Aead.h
+    include/SzxCrypto/Argon2.h
     include/SzxCrypto/Crypto.h
     include/SzxCrypto/CryptoExport.h
     include/SzxCrypto/Fernet.h

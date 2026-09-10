@@ -6,6 +6,33 @@ namespace SZX::CRYPTO_SERVICE
 {
 namespace
 {
+auto mapCryptoError(int error) -> int
+{
+    switch (error)
+    {
+    case static_cast<int>(SZX::CRYPTO::Argon2Error::InvalidArgument):
+    case static_cast<int>(SZX::CRYPTO::RsaError::InvalidArgument):
+        return static_cast<int>(CryptoServiceError::InvalidArgument);
+    case static_cast<int>(SZX::CRYPTO::Argon2Error::MalformedHash):
+        return static_cast<int>(CryptoServiceError::MalformedHash);
+    case static_cast<int>(SZX::CRYPTO::Argon2Error::AuthenticationFailed):
+    case static_cast<int>(SZX::CRYPTO::RsaError::AuthenticationFailed):
+        return static_cast<int>(CryptoServiceError::AuthenticationFailed);
+    case static_cast<int>(SZX::CRYPTO::Argon2Error::Unsupported):
+    case static_cast<int>(SZX::CRYPTO::RsaError::Unsupported):
+        return static_cast<int>(CryptoServiceError::Unsupported);
+    default:
+        return static_cast<int>(CryptoServiceError::ProviderFailure);
+    }
+}
+
+template <typename T>
+auto mapCryptoResult(const SZX::COMMON::Result<T> &result) -> SZX::COMMON::Result<T>
+{
+    return result.ok ? SZX::COMMON::Result<T>::Success(result.value) :
+                       SZX::COMMON::Result<T>::Failure(mapCryptoError(result.error), result.message);
+}
+
 template <typename Function>
 auto invokeBoundary(Function &&function) -> decltype(function())
 {
@@ -24,7 +51,13 @@ auto invokeBoundary(Function &&function) -> decltype(function())
 } // namespace
 auto CryptoService::capabilities() const -> CryptoCapabilities
 {
-    return {.aes256Gcm = true, .rsaOaepSha256 = true, .rsaPssSha256 = true, .pbkdf2Sha256 = true};
+    return {.aes256Gcm     = true,
+            .rsaOaepSha256 = true,
+            .rsaPssSha256  = true,
+            .pbkdf2Sha256  = true,
+            .argon2id      = true,
+            .ps256Jwt      = true,
+            .publicKeyId   = true};
 }
 
 auto CryptoService::encrypt(std::span<const std::uint8_t> key, std::span<const std::uint8_t> data,
@@ -76,12 +109,59 @@ auto CryptoService::derive(std::span<const std::uint8_t> password, std::span<con
 {
     return invokeBoundary([&] { return SZX::CRYPTO::derivePbkdf2Sha256(password, salt, iterations, length); });
 }
+
+auto CryptoService::hashPassword(std::span<const std::uint8_t> password, const Argon2idParameters &parameters)
+    -> SZX::COMMON::Result<std::string>
+{
+    return invokeBoundary(
+        [&]
+        {
+            const SZX::CRYPTO::Argon2idParameters cryptoParameters{
+                parameters.memoryCostKiB, parameters.iterations, parameters.lanes, parameters.saltLength, parameters.hashLength};
+            return mapCryptoResult(SZX::CRYPTO::hashArgon2id(password, cryptoParameters));
+        });
+}
+
+auto CryptoService::verifyPassword(std::span<const std::uint8_t> password, std::string_view encodedHash)
+    -> SZX::COMMON::Result<bool>
+{
+    return invokeBoundary(
+        [&]
+        {
+            const auto result = SZX::CRYPTO::verifyArgon2id(password, encodedHash);
+            return result.ok ? SZX::COMMON::Result<bool>::Success(result.value) :
+                               SZX::COMMON::Result<bool>::Failure(mapCryptoError(result.error), result.message);
+        });
+}
+
+auto CryptoService::publicKeyId(std::span<const std::uint8_t> publicKey) -> SZX::COMMON::Result<std::string>
+{
+    return invokeBoundary(
+        [&]
+        {
+            const auto result = SZX::CRYPTO::rsaPublicKeyId(publicKey);
+            return result.ok ? SZX::COMMON::Result<std::string>::Success(std::move(result.value)) :
+                               SZX::COMMON::Result<std::string>::Failure(mapCryptoError(result.error), result.message);
+        });
+}
+
+auto CryptoService::signPs256(std::span<const std::uint8_t> key, std::span<const std::uint8_t> data)
+    -> SZX::COMMON::Result<std::vector<std::uint8_t>>
+{
+    return sign(key, data);
+}
+
+auto CryptoService::verifyPs256(std::span<const std::uint8_t> key, std::span<const std::uint8_t> data,
+                                std::span<const std::uint8_t> signature) -> SZX::COMMON::Result<bool>
+{
+    return verify(key, data, signature);
+}
 namespace
 {
 template <class T>
 auto fakeUnsupported() -> SZX::COMMON::Result<T>
 {
-    return SZX::COMMON::Result<T>::Failure(-1, "FakeCryptoService 未配置实现。");
+    return SZX::COMMON::Result<T>::Failure(static_cast<int>(CryptoServiceError::Unsupported), "FakeCryptoService 未配置实现。");
 }
 } // namespace
 auto FakeCryptoService::encrypt(std::span<const std::uint8_t>, std::span<const std::uint8_t>, std::span<const std::uint8_t>)
@@ -120,5 +200,28 @@ auto FakeCryptoService::derive(std::span<const std::uint8_t>, std::span<const st
     -> SZX::COMMON::Result<std::vector<std::uint8_t>>
 {
     return fakeUnsupported<std::vector<std::uint8_t>>();
+}
+auto FakeCryptoService::hashPassword(std::span<const std::uint8_t>, const Argon2idParameters &)
+    -> SZX::COMMON::Result<std::string>
+{
+    return fakeUnsupported<std::string>();
+}
+auto FakeCryptoService::verifyPassword(std::span<const std::uint8_t>, std::string_view) -> SZX::COMMON::Result<bool>
+{
+    return fakeUnsupported<bool>();
+}
+auto FakeCryptoService::publicKeyId(std::span<const std::uint8_t>) -> SZX::COMMON::Result<std::string>
+{
+    return fakeUnsupported<std::string>();
+}
+auto FakeCryptoService::signPs256(std::span<const std::uint8_t>, std::span<const std::uint8_t>)
+    -> SZX::COMMON::Result<std::vector<std::uint8_t>>
+{
+    return fakeUnsupported<std::vector<std::uint8_t>>();
+}
+auto FakeCryptoService::verifyPs256(std::span<const std::uint8_t>, std::span<const std::uint8_t>, std::span<const std::uint8_t>)
+    -> SZX::COMMON::Result<bool>
+{
+    return fakeUnsupported<bool>();
 }
 } // namespace SZX::CRYPTO_SERVICE

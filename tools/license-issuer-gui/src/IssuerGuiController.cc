@@ -703,13 +703,14 @@ bool IssuerGuiController::removeKeyRecord(const QString &projectId, const QStrin
 bool IssuerGuiController::issueLicense(const QString &requestPath, const QString &privatePath, const QString &publicPath,
                                        const QVariantMap &options, const QString &outputPath, bool overwrite)
 {
-    const auto request = requestPath.trimmed();
+    const auto request        = requestPath.trimmed();
     const auto privateKeyPath = privatePath.trimmed();
-    const auto publicKeyPath = publicPath.trimmed();
-    const auto output = outputPath.trimmed();
-    const auto licenseId = options.value(QStringLiteral("licenseId")).toString().trimmed();
-    const auto issuer = options.value(QStringLiteral("issuer")).toString().trimmed();
-    const auto failValidation = [this](const QString &message) {
+    const auto publicKeyPath  = publicPath.trimmed();
+    const auto output         = outputPath.trimmed();
+    const auto licenseId      = options.value(QStringLiteral("licenseId")).toString().trimmed();
+    const auto issuer         = options.value(QStringLiteral("issuer")).toString().trimmed();
+    const auto failValidation = [this](const QString &message)
+    {
         if (!beginOperation())
             return false;
         finish(false, 1710, message);
@@ -740,8 +741,8 @@ bool IssuerGuiController::issueLicense(const QString &requestPath, const QString
     const auto expiresVariant = options.value(QStringLiteral("expiresAtUtc"));
     if (expiresVariant.isValid() && !expiresVariant.isNull())
     {
-        bool expiresOk = false;
-        const auto expires = expiresVariant.toLongLong(&expiresOk);
+        bool expiresOk                = false;
+        const auto expires            = expiresVariant.toLongLong(&expiresOk);
         const auto effectiveNotBefore = notBefore > 0 ? notBefore : QDateTime::currentDateTimeUtc().toSecsSinceEpoch();
         if (!expiresOk || expires <= effectiveNotBefore)
             return failValidation(QStringLiteral("截止时间必须晚于签发开始时间。"));

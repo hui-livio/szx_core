@@ -10,6 +10,7 @@
 #include <memory>
 #include <openssl/bio.h>
 #include <openssl/evp.h>
+#include <openssl/kdf.h>
 #include <span>
 #include <sstream>
 
@@ -30,6 +31,8 @@ using MdCtx     = Handle<EVP_MD_CTX, EVP_MD_CTX_free>;
 using CipherCtx = Handle<EVP_CIPHER_CTX, EVP_CIPHER_CTX_free>;
 using Pkey      = Handle<EVP_PKEY, EVP_PKEY_free>;
 using PkeyCtx   = Handle<EVP_PKEY_CTX, EVP_PKEY_CTX_free>;
+using Kdf       = Handle<EVP_KDF, EVP_KDF_free>;
+using KdfCtx    = Handle<EVP_KDF_CTX, EVP_KDF_CTX_free>;
 inline void freeBio(BIO *bio) noexcept
 {
     if (bio)

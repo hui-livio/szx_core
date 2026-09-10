@@ -227,6 +227,30 @@ TEST(CryptoKdfTest, RejectsUnsafeParameters)
     EXPECT_FALSE(derivePbkdf2Sha256(password, salt, 1, 0).ok);
 }
 
+TEST(CryptoArgon2Test, HashesAndVerifiesPhcPassword)
+{
+    const std::vector<std::uint8_t> password{'p', 'a', 's', 's', 'w', 'o', 'r', 'd'};
+    Argon2idParameters parameters{.memoryCostKiB = 8192, .iterations = 2, .lanes = 1, .saltLength = 16, .hashLength = 32};
+    auto encoded = hashArgon2id(password, parameters);
+#if defined(_WIN32)
+    ASSERT_TRUE(encoded.ok) << encoded.message;
+    EXPECT_TRUE(encoded.value.starts_with("$argon2id$v=19$m=8192,t=2,p=1$"));
+    auto valid = verifyArgon2id(password, encoded.value);
+    ASSERT_TRUE(valid.ok) << valid.message;
+    EXPECT_TRUE(valid.value);
+    const std::vector<std::uint8_t> wrongPassword{'w', 'r', 'o', 'n', 'g'};
+    auto invalid = verifyArgon2id(wrongPassword, encoded.value);
+    ASSERT_TRUE(invalid.ok) << invalid.message;
+    EXPECT_FALSE(invalid.value);
+    auto malformed = verifyArgon2id(password, "$argon2id$invalid");
+    EXPECT_FALSE(malformed.ok);
+    EXPECT_EQ(malformed.error, static_cast<int>(Argon2Error::MalformedHash));
+#else
+    EXPECT_FALSE(encoded.ok);
+    EXPECT_EQ(encoded.error, static_cast<int>(Argon2Error::Unsupported));
+#endif
+}
+
 TEST(CryptoRsaTest, GeneratesKeyPairAndRoundTripsOaep)
 {
     auto keys = generateRsa3072KeyPair();

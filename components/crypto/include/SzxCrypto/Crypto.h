@@ -8,6 +8,7 @@
 #pragma once
 
 #include "SzxCrypto/Aead.h"
+#include "SzxCrypto/Argon2.h"
 #include "SzxCrypto/Base64.h"
 #include "SzxCrypto/Fernet.h"
 #include "SzxCrypto/Hash.h"
