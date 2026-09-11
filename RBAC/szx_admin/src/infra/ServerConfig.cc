@@ -2,6 +2,8 @@
 
 #include "SzxAdmin/Infra/ErrorCode.h"
 
+#include <filesystem>
+
 namespace SZX::ADMIN::INFRA
 {
 namespace
@@ -27,6 +29,14 @@ auto ServerConfig::validate() const -> SZX::COMMON::Result<void>
     if (apiPrefix.empty() || apiPrefix.front() != '/' || apiPrefix.find('?') != std::string::npos ||
         apiPrefix.find('#') != std::string::npos || (apiPrefix.size() > 1 && apiPrefix.back() == '/'))
         return failure("Invalid HTTP API prefix configuration.");
+    if (staticRoot.find('?') != std::string::npos || staticRoot.find('#') != std::string::npos)
+        return failure("Invalid static web root configuration.");
+    if (staticHomePage.empty() || staticHomePage.find('?') != std::string::npos || staticHomePage.find('#') != std::string::npos ||
+        std::filesystem::path{staticHomePage}.is_absolute())
+        return failure("Invalid static web home page configuration.");
+    for (const auto &part : std::filesystem::path{staticHomePage})
+        if (part == "..")
+            return failure("Invalid static web home page configuration.");
     return SZX::COMMON::Result<void>::Success();
 }
 

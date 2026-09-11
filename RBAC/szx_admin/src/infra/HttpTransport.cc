@@ -8,7 +8,9 @@
 #include <algorithm>
 #include <atomic>
 #include <exception>
+#include <filesystem>
 #include <mutex>
+#include <string_view>
 #include <utility>
 
 namespace SZX::ADMIN::INFRA
@@ -38,6 +40,22 @@ auto validPath(std::string_view path) noexcept -> bool
 {
     return !path.empty() && path.front() == '/' && path.find('?') == std::string_view::npos &&
         path.find('#') == std::string_view::npos;
+}
+
+auto isApiPath(std::string_view path, std::string_view prefix) noexcept -> bool
+{
+    return prefix == "/" || path == prefix ||
+        (path.size() > prefix.size() && path.starts_with(prefix) && path[prefix.size()] == '/');
+}
+
+auto spaIndexPath(const ServerConfig &config, std::string_view requestPath) -> std::filesystem::path
+{
+    if (!config.spaFallback || config.staticRoot.empty() || isApiPath(requestPath, config.apiPrefix) ||
+        std::filesystem::path{std::string{requestPath}}.has_extension())
+        return {};
+    const auto index = std::filesystem::path{config.staticRoot} / config.staticHomePage;
+    std::error_code error;
+    return std::filesystem::is_regular_file(index, error) ? index : std::filesystem::path{};
 }
 
 auto convertRequest(::HttpRequest *request) -> HttpRequest
@@ -78,6 +96,11 @@ public:
                         const auto requestId = resolveRequestId(request->GetHeader(std::string{kRequestIdHeader}.c_str()));
                         return applyResponse(HttpTransport::healthResponse(requestId), response, requestId);
                     });
+        if (!config_.staticRoot.empty())
+        {
+            router_.Static("/", config_.staticRoot.c_str());
+            router_.home_page = config_.staticHomePage;
+        }
         router_.Use(
             [this](::HttpRequest *request, ::HttpResponse *response)
             {
@@ -91,12 +114,19 @@ public:
                 return HTTP_STATUS_NEXT;
             });
         router_.enable_access_log = config_.accessLog;
-        router_.errorHandler      = [](::HttpRequest *request, ::HttpResponse *response)
+        router_.errorHandler      = [this](::HttpRequest *request, ::HttpResponse *response)
         {
             const auto requestId = resolveRequestId(request->GetHeader(std::string{kRequestIdHeader}.c_str()));
+            if (response->status_code == HTTP_STATUS_NOT_FOUND &&
+                (request->method == HTTP_GET || request->method == HTTP_HEAD))
+            {
+                const auto index = spaIndexPath(config_, request->Path());
+                if (!index.empty() && response->File(index.string().c_str()) == HTTP_STATUS_OK)
+                    return HTTP_STATUS_OK;
+            }
             const auto code      = response->status_code == HTTP_STATUS_METHOD_NOT_ALLOWED ? ErrorCode::MethodNotAllowed :
                                                                                              ErrorCode::ResourceNotFound;
-            return applyResponse(errorResponse(code, requestId), response, requestId);
+            return static_cast<http_status>(applyResponse(errorResponse(code, requestId), response, requestId));
         };
     }
 

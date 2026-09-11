@@ -17,6 +17,9 @@ server:
   maxConnections: 1024
   apiPrefix: /api/v1
   accessLog: false
+  staticRoot: web
+  staticHomePage: index.html
+  spaFallback: true
 
 database:
   host: 127.0.0.1

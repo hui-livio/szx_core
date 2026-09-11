@@ -17,8 +17,12 @@ struct ServerConfig final
     std::uint32_t maxConnections{1024};
     std::string apiPrefix{"/api/v1"};
     bool accessLog{};
+    std::string staticRoot{"web"};
+    std::string staticHomePage{"index.html"};
+    bool spaFallback{true};
 
     [[nodiscard]] auto validate() const -> SZX::COMMON::Result<void>;
 };
-SZX_REFL(ServerConfig, host, port, workerThreads, maxRequestBodyBytes, maxConnections, apiPrefix, accessLog);
+SZX_REFL(ServerConfig, host, port, workerThreads, maxRequestBodyBytes, maxConnections, apiPrefix, accessLog, staticRoot,
+         staticHomePage, spaFallback);
 } // namespace SZX::ADMIN::INFRA

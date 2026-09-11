@@ -102,3 +102,11 @@ add_custom_command(TARGET szx_admin_service POST_BUILD
         "$<TARGET_FILE_DIR:szx_admin_service>/migrations"
     COMMENT "Copying szx_admin_service configuration"
 )
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/web")
+    add_custom_command(TARGET szx_admin_service POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_CURRENT_SOURCE_DIR}/web"
+            "$<TARGET_FILE_DIR:szx_admin_service>/web"
+        COMMENT "Copying szx_admin_service web assets"
+    )
+endif()
