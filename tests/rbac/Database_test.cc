@@ -3,6 +3,7 @@
 
 #include <gtest/gtest.h>
 
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -13,6 +14,8 @@ using SZX::ADMIN::INFRA::DatabaseConnection;
 using SZX::ADMIN::INFRA::ErrorCode;
 using SZX::ADMIN::INFRA::MigrationDefinition;
 using SZX::ADMIN::INFRA::MigrationRunner;
+using SZX::ADMIN::INFRA::BootstrapAdminService;
+using SZX::ADMIN::INFRA::BootstrapAdministrator;
 
 namespace
 {
@@ -68,6 +71,29 @@ public:
         return SZX::COMMON::Result<void>::Success();
     }
 
+    auto bootstrapCompleted() -> SZX::COMMON::Result<bool> override
+    {
+        return SZX::COMMON::Result<bool>::Success(bootstrapDone);
+    }
+
+    auto findBootstrapAdministrator() -> SZX::COMMON::Result<std::optional<BootstrapAdministrator>> override
+    {
+        return SZX::COMMON::Result<std::optional<BootstrapAdministrator>>::Success(existingAdmin);
+    }
+
+    auto insertBootstrapAdministrator(const BootstrapAdministrator &administrator) -> SZX::COMMON::Result<void> override
+    {
+        insertedAdmin = administrator;
+        return SZX::COMMON::Result<void>::Success();
+    }
+
+    auto recordBootstrapCompletion(std::string_view userId) -> SZX::COMMON::Result<void> override
+    {
+        bootstrapDone = true;
+        bootstrapUserId = std::string{userId};
+        return SZX::COMMON::Result<void>::Success();
+    }
+
     std::vector<std::string> statements;
     std::vector<AppliedMigration> applied;
     std::vector<AppliedMigration> recorded;
@@ -78,6 +104,10 @@ public:
     int acquireLockCount{};
     int releaseLockCount{};
     bool lockAcquired{true};
+    bool bootstrapDone{};
+    std::optional<BootstrapAdministrator> existingAdmin;
+    std::optional<BootstrapAdministrator> insertedAdmin;
+    std::string bootstrapUserId;
 };
 
 } // namespace
@@ -178,4 +208,40 @@ TEST(MigrationRunnerTest, DoesNotStartTransactionWhenDdlFails)
     EXPECT_EQ(connection.beginCount, 0);
     EXPECT_EQ(connection.commitCount, 0);
     EXPECT_EQ(connection.rollbackCount, 0);
+}
+
+TEST(BootstrapAdminTest, ExistingStateIsIdempotent)
+{
+    FakeDatabaseConnection connection;
+    connection.bootstrapDone = true;
+
+    const auto result = BootstrapAdminService{}.run(connection);
+
+    ASSERT_TRUE(result.ok) << result.message;
+    EXPECT_FALSE(result.value);
+    EXPECT_FALSE(connection.insertedAdmin.has_value());
+}
+
+TEST(BootstrapAdminTest, ExistingSuperAdminIsMarkedWithoutReset)
+{
+    FakeDatabaseConnection connection;
+    connection.existingAdmin = BootstrapAdministrator{"existing-id", "renamed", "hash", "super_admin", "active", true};
+
+    const auto result = BootstrapAdminService{}.run(connection);
+
+    ASSERT_TRUE(result.ok) << result.message;
+    EXPECT_FALSE(result.value);
+    EXPECT_FALSE(connection.insertedAdmin.has_value());
+    EXPECT_EQ(connection.bootstrapUserId, "existing-id");
+}
+
+TEST(BootstrapAdminTest, RejectsNonSuperAdminBootstrapUsername)
+{
+    FakeDatabaseConnection connection;
+    connection.existingAdmin = BootstrapAdministrator{"existing-id", "admin", "hash", "operator", "active", false};
+
+    const auto result = BootstrapAdminService{}.run(connection);
+
+    ASSERT_FALSE(result.ok);
+    EXPECT_EQ(result.error, static_cast<int>(ErrorCode::UserIdentityConflict));
 }
