@@ -26,7 +26,7 @@ Apply this skill together with `aoi-repository-development`. For PCB DetectEngin
    ```
 
 4. Choose or add a code in the owning public domain. Reuse an existing code only when its observable semantics, retryability, and scope match exactly.
-5. For a composed business module, assign every child module a unique numeric offset and qualify its local code exactly once at the business boundary: `published_code = module_offset + local_code`. Preserve the module-local code inside its owning module; do not let each nested layer add the offset.
+5. The business aggregation layer assigns and maintains every child module's unique numeric offset; child modules must not define, change, or infer their own business offset. Qualify a child local code exactly once at that business boundary: `published_code = business_assigned_offset + local_code`. Preserve the module-local code inside its owning module; do not let each nested layer add the offset.
 6. Convert internal/common/third-party failures once at the owning module boundary. Preserve an already-public code unchanged when no new business meaning is introduced, and do not apply an offset a second time.
 7. Carry only the typed code and the normal success value across the boundary. Add structured parameters only when they are a deliberate, versioned part of the public contract and are required by the consumer; never forward arbitrary lower-layer error fields.
 8. Log the diagnostic once at the source or conversion boundary with stable correlation fields. Never use the log text as a protocol.
@@ -51,7 +51,7 @@ Read [error-boundary-patterns.md](references/error-boundary-patterns.md) when de
 ### Module error-code namespaces and offsets
 
 - Each module owns a stable local error-code range and its meanings. Local codes are valid inside that module and must not be renamed merely because an outer business module qualifies them.
-- A composed business module must maintain one explicit offset registry, with one unique offset per child module. Reserve non-overlapping ranges large enough for current and planned local codes; document the owner and range together.
+- The business aggregation layer must maintain one explicit offset registry, with one unique offset per child module. Reserve non-overlapping ranges large enough for current and planned local codes; document the business owner, child module, and range together. A child module's local error-code definition must not contain or depend on the business offset.
 - At the aggregation boundary, qualify a child failure with `published_code = module_offset + local_code`. For example, with offsets A=`20000`, B=`30000`, C=`40000`, and D=`50000`, local `1801`/`1802` become A `21801`/`21802`, B `31801`/`31802`, C `41801`/`41802`, and D `51801`/`51802`.
 - Apply the offset exactly once, at the boundary where the child module's identity is known. Never add offsets in leaf code, generic adapters, every hop of an async chain, or multiple nested aggregators.
 - Do not offset success, cancellation markers, or codes outside the child module's declared local range. Validate range membership and integer overflow before qualification; map invalid or unknown child codes to a stable owning-module fallback instead of producing an ambiguous number.
@@ -100,7 +100,7 @@ Do not add a code that no production path can emit. Do not add UI mapping withou
 - Reject free-form or translated text in public DTOs, futures, callbacks, signals, progress, and status structures.
 - Reject string codes, numeric parsing, `contains()` routing, and stage-name conventions used as control logic.
 - Confirm the originating domain code survives without accidental reclassification.
-- Confirm every composed-module code uses a registered, collision-free offset exactly once and can be reverse-mapped to its owner/local code.
+- Confirm every composed-module code uses a business-layer-registered, collision-free offset exactly once and can be reverse-mapped to its owner/local code; child modules must not own the offset.
 - Confirm all switch mappings cover new codes and have a safe fallback.
 - Confirm exceptions are contained at each boundary and `what()` never enters a returned payload.
 - Confirm diagnostics are logged once, redacted, and correlated without entering the returned payload.
