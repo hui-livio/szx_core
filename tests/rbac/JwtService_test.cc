@@ -50,9 +50,9 @@ TEST(JwtServiceTest, RejectsTamperedToken)
     const auto issue = service.issue({.subject = "user-1", .jti = "token-1", .authzVersion = 1}, makeKey(keys.value));
     ASSERT_TRUE(issue.ok) << issue.message;
 
-    auto tampered = issue.value;
+    auto tampered                                            = issue.value;
     tampered[tampered.find('.', tampered.find('.') + 1) + 1] = tampered.back() == 'A' ? 'B' : 'A';
-    const auto verified = service.verify(tampered, makeKey(keys.value));
+    const auto verified                                      = service.verify(tampered, makeKey(keys.value));
     ASSERT_FALSE(verified.ok);
     EXPECT_EQ(verified.error, static_cast<int>(JwtError::SignatureInvalid));
 }
@@ -67,8 +67,8 @@ TEST(JwtServiceTest, RejectsWrongKeyId)
     const auto issue = service.issue({.subject = "user-1", .jti = "token-1", .authzVersion = 1}, makeKey(keys.value));
     ASSERT_TRUE(issue.ok) << issue.message;
 
-    auto key = makeKey(keys.value);
-    key.keyId = "rotated-key";
+    auto key            = makeKey(keys.value);
+    key.keyId           = "rotated-key";
     const auto verified = service.verify(issue.value, key);
     ASSERT_FALSE(verified.ok);
     EXPECT_EQ(verified.error, static_cast<int>(JwtError::KeyRejected));
