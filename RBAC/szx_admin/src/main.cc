@@ -51,18 +51,9 @@ struct ServiceConfig final
     } logging;
     ServerConfig server;
     DatabaseConfig database;
-    struct Bootstrap final
-    {
-        bool enabled{true};
-        std::string username{"admin"};
-        std::string password{"superadmin"};
-        std::string displayName{"System Administrator"};
-    } bootstrap;
-    std::string migrations{"RBAC/szx_admin/migrations"};
 };
 SZX_REFL(ServiceConfig::Logging, level, flushLevel, loggerName, pattern, filePath, maxFileSize, maxFiles, truncate, console);
-SZX_REFL(ServiceConfig::Bootstrap, enabled, username, password, displayName);
-SZX_REFL(ServiceConfig, logging, server, database, bootstrap, migrations);
+SZX_REFL(ServiceConfig, logging, server, database);
 
 auto logLevel(std::string_view value) -> std::optional<SZX::LOGGER::LogLevel>
 {
@@ -174,7 +165,7 @@ int main(int argc, char **argv)
     const auto databaseValid = options.database.validate();
     if (!databaseValid.ok)
         return reportFailure("database configuration", databaseValid);
-    const auto migrationDirectory = std::filesystem::path{options.migrations};
+    const auto migrationDirectory = std::filesystem::path{"migrations"};
     if (!std::filesystem::is_directory(migrationDirectory))
     {
         LOGM_ERROR("szx_admin", "migration directory does not exist: {}", migrationDirectory.string());

@@ -30,11 +30,3 @@ database:
   poolSize: 8
   connectTimeoutSeconds: 5
   lockWaitTimeoutSeconds: 5
-
-bootstrap:
-  enabled: true
-  username: admin
-  password: superadmin
-  displayName: System Administrator
-
-migrations: migrations
