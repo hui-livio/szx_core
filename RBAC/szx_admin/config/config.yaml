@@ -35,7 +35,6 @@ bootstrap:
   enabled: true
   username: admin
   password: superadmin
-  passwordEnv: SZX_ADMIN_BOOTSTRAP_PASSWORD
   displayName: System Administrator
 
 migrations: migrations

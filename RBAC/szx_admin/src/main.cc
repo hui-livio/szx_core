@@ -56,13 +56,12 @@ struct ServiceConfig final
         bool enabled{true};
         std::string username{"admin"};
         std::string password{"superadmin"};
-        std::string passwordEnv{"SZX_ADMIN_BOOTSTRAP_PASSWORD"};
         std::string displayName{"System Administrator"};
     } bootstrap;
     std::string migrations{"RBAC/szx_admin/migrations"};
 };
 SZX_REFL(ServiceConfig::Logging, level, flushLevel, loggerName, pattern, filePath, maxFileSize, maxFiles, truncate, console);
-SZX_REFL(ServiceConfig::Bootstrap, enabled, username, password, passwordEnv, displayName);
+SZX_REFL(ServiceConfig::Bootstrap, enabled, username, password, displayName);
 SZX_REFL(ServiceConfig, logging, server, database, bootstrap, migrations);
 
 auto logLevel(std::string_view value) -> std::optional<SZX::LOGGER::LogLevel>
