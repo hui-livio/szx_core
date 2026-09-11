@@ -55,6 +55,7 @@ add_library(szx_rbac_infra STATIC
     src/infra/ServerConfig.cc
 )
 add_library(szx::rbac_infra ALIAS szx_rbac_infra)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/EmbedMigrations.cmake")
 
 target_include_directories(szx_rbac_infra
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -62,7 +63,7 @@ target_include_directories(szx_rbac_infra
 
 target_link_libraries(szx_rbac_infra
     PUBLIC szx::common
-    PRIVATE hv_static szx_rbac_ormpp szx::crypto
+    PRIVATE hv_static szx_rbac_ormpp szx::crypto szx::crypto_service
 )
 
 target_compile_features(szx_rbac_infra PUBLIC cxx_std_20)
@@ -71,8 +72,8 @@ szx_apply_default_compile_policy(szx_rbac_infra)
 target_include_directories(szx_rbac_auth
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
     PRIVATE
-        ${CMAKE_CURRENT_LIST_DIR}/../../third_party/jwt-cpp/include
-        ${SZX_OPENSSL_ROOT}/include
+    ${CMAKE_CURRENT_LIST_DIR}/../../third_party/jwt-cpp/include
+    ${SZX_OPENSSL_ROOT}/include
 )
 
 target_link_libraries(szx_rbac_auth
@@ -95,18 +96,15 @@ szx_apply_default_compile_policy(szx_admin_service)
 
 add_custom_command(TARGET szx_admin_service POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
-        "${CMAKE_CURRENT_SOURCE_DIR}/config"
-        "$<TARGET_FILE_DIR:szx_admin_service>/config"
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        "${CMAKE_CURRENT_SOURCE_DIR}/migrations"
-        "$<TARGET_FILE_DIR:szx_admin_service>/migrations"
+    "${CMAKE_CURRENT_SOURCE_DIR}/config"
+    "$<TARGET_FILE_DIR:szx_admin_service>/config"
     COMMENT "Copying szx_admin_service configuration"
 )
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/web")
     add_custom_command(TARGET szx_admin_service POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_directory
-            "${CMAKE_CURRENT_SOURCE_DIR}/web"
-            "$<TARGET_FILE_DIR:szx_admin_service>/web"
+        "${CMAKE_CURRENT_SOURCE_DIR}/web"
+        "$<TARGET_FILE_DIR:szx_admin_service>/web"
         COMMENT "Copying szx_admin_service web assets"
     )
 endif()

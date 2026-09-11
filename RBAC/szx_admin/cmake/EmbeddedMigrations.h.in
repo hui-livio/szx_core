@@ -1,0 +1,10 @@
+#pragma once
+
+#include "SzxAdmin/Infra/Database.h"
+
+namespace SZX::ADMIN::INFRA::DETAIL
+{
+inline constexpr MigrationDefinition kMigrations[] = {
+@SZX_MIGRATION_ENTRIES@
+};
+}

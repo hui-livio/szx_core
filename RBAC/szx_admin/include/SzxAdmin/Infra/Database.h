@@ -6,6 +6,8 @@
 #include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -39,6 +41,27 @@ struct MigrationSummary final
     std::uint32_t appliedCount{};
 };
 
+/** Immutable compiled migration. checksum is the SHA-256 of LF-normalized SQL. */
+struct MigrationDefinition final
+{
+    std::uint32_t version{};
+    std::string_view sql;
+    std::string_view checksum;
+};
+
+[[nodiscard]] auto embeddedMigrations() noexcept -> std::span<const MigrationDefinition>;
+
+/** Repository projection for initialization; defaults are applied only on insertion. */
+struct BootstrapAdministrator final
+{
+    std::string id;
+    std::string username{"admin"};
+    std::string passwordHash;
+    std::string role{"super_admin"};
+    std::string status{"active"};
+    bool forcePasswordChange{true};
+};
+
 class DatabaseConnection
 {
 public:
@@ -53,6 +76,24 @@ public:
     [[nodiscard]] virtual auto begin() -> SZX::COMMON::Result<void>                                     = 0;
     [[nodiscard]] virtual auto commit() -> SZX::COMMON::Result<void>                                    = 0;
     [[nodiscard]] virtual auto rollback() -> SZX::COMMON::Result<void>                                  = 0;
+    [[nodiscard]] virtual auto bootstrapCompleted() -> SZX::COMMON::Result<bool>
+    {
+        return SZX::COMMON::Result<bool>::Failure(2221, "Bootstrap repository is not implemented.");
+    }
+    [[nodiscard]] virtual auto findBootstrapAdministrator()
+        -> SZX::COMMON::Result<std::optional<BootstrapAdministrator>>
+    {
+        return SZX::COMMON::Result<std::optional<BootstrapAdministrator>>::Failure(2221, "Bootstrap repository is not implemented.");
+    }
+    [[nodiscard]] virtual auto insertBootstrapAdministrator(const BootstrapAdministrator &administrator)
+        -> SZX::COMMON::Result<void>
+    {
+        return SZX::COMMON::Result<void>::Failure(2221, "Bootstrap repository is not implemented.");
+    }
+    [[nodiscard]] virtual auto recordBootstrapCompletion(std::string_view) -> SZX::COMMON::Result<void>
+    {
+        return SZX::COMMON::Result<void>::Failure(2221, "Bootstrap repository is not implemented.");
+    }
 };
 
 class DatabasePool final
@@ -79,7 +120,17 @@ private:
 class MigrationRunner final
 {
 public:
+    [[nodiscard]] auto run(DatabaseConnection &connection,
+                           std::span<const MigrationDefinition> definitions = embeddedMigrations())
+        -> SZX::COMMON::Result<MigrationSummary>;
     [[nodiscard]] auto run(DatabaseConnection &connection, const std::filesystem::path &directory)
         -> SZX::COMMON::Result<MigrationSummary>;
+};
+
+class BootstrapAdminService final
+{
+public:
+    /** Returns true only when a new administrator was created. Never resets an existing account. */
+    [[nodiscard]] auto run(DatabaseConnection &connection) -> SZX::COMMON::Result<bool>;
 };
 } // namespace SZX::ADMIN::INFRA

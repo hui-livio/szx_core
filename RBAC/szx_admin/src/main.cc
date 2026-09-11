@@ -165,12 +165,6 @@ int main(int argc, char **argv)
     const auto databaseValid = options.database.validate();
     if (!databaseValid.ok)
         return reportFailure("database configuration", databaseValid);
-    const auto migrationDirectory = std::filesystem::path{"migrations"};
-    if (!std::filesystem::is_directory(migrationDirectory))
-    {
-        LOGM_ERROR("szx_admin", "migration directory does not exist: {}", migrationDirectory.string());
-        return 2;
-    }
 
     DatabasePool database(options.database);
     auto result = database.start();
@@ -180,14 +174,15 @@ int main(int argc, char **argv)
     result = database.withConnection(
         [&](auto &connection)
         {
-            const auto migration = MigrationRunner{}.run(connection, migrationDirectory);
-            return migration.ok ? SZX::COMMON::Result<void>::Success() :
-                                  SZX::COMMON::Result<void>::Failure(migration.error, migration.message);
+            const auto migration = MigrationRunner{}.run(connection);
+            if (!migration.ok)
+                return SZX::COMMON::Result<void>::Failure(migration.error, migration.message);
+            return SZX::COMMON::Result<void>::Success();
         });
     if (!result.ok)
     {
         (void)database.stop();
-        return reportFailure("database migration", result);
+        return reportFailure("database initialization", result);
     }
 
     HttpTransport transport(options.server);

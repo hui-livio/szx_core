@@ -3,6 +3,7 @@
 #include "FileHelper.hpp"
 #include "SzxAdmin/Infra/ErrorCode.h"
 #include "SzxCrypto/Random.h"
+#include "EmbeddedMigrations.h"
 
 #include <ormpp/mysql.hpp>
 
@@ -502,142 +503,87 @@ auto DatabasePool::withConnection(const ConnectionCallback &callback) -> SZX::CO
     }
 }
 
+auto embeddedMigrations() noexcept -> std::span<const MigrationDefinition>
+{
+    return DETAIL::kMigrations;
+}
+
+auto MigrationRunner::run(DatabaseConnection &connection, std::span<const MigrationDefinition> definitions)
+    -> SZX::COMMON::Result<MigrationSummary>
+{
+    try
+    {
+        constexpr std::string_view lockName = "szx_rbac_schema_migrations";
+        const auto acquired = connection.acquireMigrationLock(lockName, 10);
+        if (!acquired.ok) return SZX::COMMON::Result<MigrationSummary>::Failure(acquired.error, acquired.message);
+        if (!acquired.value) return SZX::COMMON::Result<MigrationSummary>::Failure(static_cast<int>(ErrorCode::MigrationFailed), "Migration is being executed by another instance.");
+        MigrationLockGuard lock(connection, lockName); lock.lock();
+        const auto schema = connection.executeMigrationStatement("CREATE TABLE IF NOT EXISTS schema_migrations (version INT UNSIGNED NOT NULL PRIMARY KEY, checksum CHAR(64) NOT NULL, applied_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci");
+        if (!schema.ok) return SZX::COMMON::Result<MigrationSummary>::Failure(schema.error, schema.message);
+        const auto applied = connection.loadAppliedMigrations();
+        if (!applied.ok) return SZX::COMMON::Result<MigrationSummary>::Failure(applied.error, applied.message);
+        std::unordered_map<std::uint32_t, std::string> recorded;
+        for (const auto &migration : applied.value)
+            if (!recorded.emplace(migration.version, migration.checksum).second)
+                return SZX::COMMON::Result<MigrationSummary>::Failure(static_cast<int>(ErrorCode::MigrationConflict), "schema_migrations contains duplicate versions.");
+        std::uint32_t latest{}; std::uint32_t appliedCount{};
+        for (const auto &migration : definitions)
+        {
+            if (migration.version == 0 || migration.version <= latest || migration.sql.empty() || migration.checksum.empty())
+                return SZX::COMMON::Result<MigrationSummary>::Failure(static_cast<int>(ErrorCode::MigrationFailed), "Invalid embedded migration definition.");
+            latest = migration.version;
+            const auto recordedMigration = recorded.find(migration.version);
+            if (recordedMigration != recorded.end())
+            {
+                if (recordedMigration->second != migration.checksum)
+                    return SZX::COMMON::Result<MigrationSummary>::Failure(static_cast<int>(ErrorCode::MigrationConflict), "Checksum mismatch for an applied migration.");
+                continue;
+            }
+            for (const auto &statement : splitStatements(migration.sql))
+            {
+                const auto result = connection.executeMigrationStatement(statement);
+                if (!result.ok) return SZX::COMMON::Result<MigrationSummary>::Failure(static_cast<int>(ErrorCode::MigrationFailed), result.message);
+            }
+            const auto started = connection.begin();
+            if (!started.ok) return SZX::COMMON::Result<MigrationSummary>::Failure(started.error, started.message);
+            const auto journal = connection.recordMigration(AppliedMigration{migration.version, std::string{migration.checksum}});
+            if (!journal.ok) { (void)connection.rollback(); return SZX::COMMON::Result<MigrationSummary>::Failure(static_cast<int>(ErrorCode::MigrationFailed), journal.message); }
+            const auto committed = connection.commit();
+            if (!committed.ok) { (void)connection.rollback(); return SZX::COMMON::Result<MigrationSummary>::Failure(static_cast<int>(ErrorCode::MigrationFailed), committed.message); }
+            ++appliedCount;
+        }
+        return SZX::COMMON::Result<MigrationSummary>::Success(MigrationSummary{latest, appliedCount});
+    }
+    catch (...) { return SZX::COMMON::Result<MigrationSummary>::Failure(static_cast<int>(ErrorCode::MigrationFailed), "Migration execution threw an exception."); }
+}
+
 auto MigrationRunner::run(DatabaseConnection &connection, const std::filesystem::path &directory)
     -> SZX::COMMON::Result<MigrationSummary>
 {
     try
     {
         if (!std::filesystem::is_directory(directory))
-        {
-            return SZX::COMMON::Result<MigrationSummary>::Failure(static_cast<int>(ErrorCode::MigrationFailed),
-                                                                  "Migration directory does not exist.");
-        }
-
-        constexpr std::string_view lockName = "szx_rbac_schema_migrations";
-        const auto acquired                 = connection.acquireMigrationLock(lockName, 10);
-        if (!acquired.ok)
-            return SZX::COMMON::Result<MigrationSummary>::Failure(acquired.error, acquired.message);
-        if (!acquired.value)
-            return SZX::COMMON::Result<MigrationSummary>::Failure(static_cast<int>(ErrorCode::MigrationFailed),
-                                                                  "Migration is being executed by another instance.");
-        MigrationLockGuard lock(connection, lockName);
-        lock.lock();
-
-        const auto schema = connection.executeMigrationStatement(
-            "CREATE TABLE IF NOT EXISTS schema_migrations (version INT UNSIGNED NOT NULL PRIMARY KEY, "
-            "checksum CHAR(64) NOT NULL, applied_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)) "
-            "ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci");
-        if (!schema.ok)
-            return SZX::COMMON::Result<MigrationSummary>::Failure(schema.error, schema.message);
-
-        const auto applied = connection.loadAppliedMigrations();
-        if (!applied.ok)
-            return SZX::COMMON::Result<MigrationSummary>::Failure(applied.error, applied.message);
-        std::unordered_map<std::uint32_t, std::string> recorded;
-        for (const auto &migration : applied.value)
-        {
-            if (!recorded.emplace(migration.version, migration.checksum).second)
-            {
-                return SZX::COMMON::Result<MigrationSummary>::Failure(static_cast<int>(ErrorCode::MigrationConflict),
-                                                                      "schema_migrations contains duplicate versions.");
-            }
-        }
-
-        struct PendingMigration
-        {
-            std::uint32_t version;
-            std::string checksum;
-            std::vector<std::string> statements;
-        };
-        std::vector<PendingMigration> migrations;
-        const std::regex filenamePattern(R"(^([0-9]+)[_-].+\.sql$)", std::regex::icase);
+            return SZX::COMMON::Result<MigrationSummary>::Failure(static_cast<int>(ErrorCode::MigrationFailed), "Migration directory does not exist.");
+        std::vector<MigrationDefinition> definitions;
         for (const auto &entry : std::filesystem::directory_iterator(directory))
         {
             if (!entry.is_regular_file() || entry.path().extension() != ".sql")
                 continue;
-            std::smatch match;
-            const auto filename = entry.path().filename().string();
-            if (!std::regex_match(filename, match, filenamePattern))
-                return SZX::COMMON::Result<MigrationSummary>::Failure(static_cast<int>(ErrorCode::MigrationFailed),
-                                                                      "Invalid migration filename format.");
-
-            std::uint64_t parsed{};
-            const auto versionText  = match[1].str();
-            const auto [end, error] = std::from_chars(versionText.data(), versionText.data() + versionText.size(), parsed);
-            if (error != std::errc{} || end != versionText.data() + versionText.size() || parsed == 0 ||
-                parsed > (std::numeric_limits<std::uint32_t>::max)())
-                return SZX::COMMON::Result<MigrationSummary>::Failure(static_cast<int>(ErrorCode::MigrationFailed),
-                                                                      "Invalid migration version.");
-
             const auto content = readFile(entry.path());
-            if (!content.ok)
-                return SZX::COMMON::Result<MigrationSummary>::Failure(content.error, content.message);
-            const auto statements = splitStatements(content.value);
-            if (statements.empty())
-                return SZX::COMMON::Result<MigrationSummary>::Failure(static_cast<int>(ErrorCode::MigrationFailed),
-                                                                      "Migration file is empty.");
+            if (!content.ok) return SZX::COMMON::Result<MigrationSummary>::Failure(content.error, content.message);
+            const auto stem = entry.path().filename().string();
+            const auto separator = stem.find_first_of("_-");
+            if (separator == std::string::npos) return SZX::COMMON::Result<MigrationSummary>::Failure(static_cast<int>(ErrorCode::MigrationFailed), "Invalid migration filename format.");
+            std::uint32_t version{};
+            const auto parsed = std::from_chars(stem.data(), stem.data() + separator, version);
+            if (parsed.ec != std::errc{} || version == 0) return SZX::COMMON::Result<MigrationSummary>::Failure(static_cast<int>(ErrorCode::MigrationFailed), "Invalid migration version.");
             const auto digest = checksum(content.value);
-            if (!digest.ok)
-                return SZX::COMMON::Result<MigrationSummary>::Failure(digest.error, digest.message);
-            migrations.push_back(PendingMigration{static_cast<std::uint32_t>(parsed), digest.value, statements});
+            if (!digest.ok) return SZX::COMMON::Result<MigrationSummary>::Failure(digest.error, digest.message);
+            definitions.push_back(MigrationDefinition{version, std::move(content.value), std::move(digest.value)});
         }
-
-        std::sort(migrations.begin(), migrations.end(),
-                  [](const auto &left, const auto &right) { return left.version < right.version; });
-        std::uint32_t latest{};
-        std::uint32_t appliedCount{};
-        for (const auto &migration : migrations)
-        {
-            if (migration.version == latest)
-                return SZX::COMMON::Result<MigrationSummary>::Failure(static_cast<int>(ErrorCode::MigrationFailed),
-                                                                      "Duplicate migration version.");
-            latest                       = migration.version;
-            const auto recordedMigration = recorded.find(migration.version);
-            if (recordedMigration != recorded.end())
-            {
-                if (recordedMigration->second != migration.checksum)
-                    return SZX::COMMON::Result<MigrationSummary>::Failure(static_cast<int>(ErrorCode::MigrationConflict),
-                                                                          "Checksum mismatch for an applied migration.");
-                continue;
-            }
-
-            for (const auto &statement : migration.statements)
-            {
-                const auto result = connection.executeMigrationStatement(statement);
-                if (!result.ok)
-                    return SZX::COMMON::Result<MigrationSummary>::Failure(static_cast<int>(ErrorCode::MigrationFailed),
-                                                                          result.message);
-            }
-
-            const auto started = connection.begin();
-            if (!started.ok)
-                return SZX::COMMON::Result<MigrationSummary>::Failure(started.error, started.message);
-            const auto journal = connection.recordMigration(AppliedMigration{migration.version, migration.checksum});
-            if (!journal.ok)
-            {
-                (void)connection.rollback();
-                return SZX::COMMON::Result<MigrationSummary>::Failure(static_cast<int>(ErrorCode::MigrationFailed),
-                                                                      journal.message);
-            }
-            const auto committed = connection.commit();
-            if (!committed.ok)
-            {
-                (void)connection.rollback();
-                return SZX::COMMON::Result<MigrationSummary>::Failure(static_cast<int>(ErrorCode::MigrationFailed),
-                                                                      committed.message);
-            }
-            ++appliedCount;
-        }
-
-        return SZX::COMMON::Result<MigrationSummary>::Success(MigrationSummary{latest, appliedCount});
-    } catch (const std::exception &)
-    {
-        return SZX::COMMON::Result<MigrationSummary>::Failure(static_cast<int>(ErrorCode::MigrationFailed),
-                                                              "Migration execution threw an exception.");
-    } catch (...)
-    {
-        return SZX::COMMON::Result<MigrationSummary>::Failure(static_cast<int>(ErrorCode::MigrationFailed),
-                                                              "Migration execution threw an exception.");
+        std::sort(definitions.begin(), definitions.end(), [](const auto &left, const auto &right) { return left.version < right.version; });
+        return run(connection, definitions);
     }
+    catch (...) { return SZX::COMMON::Result<MigrationSummary>::Failure(static_cast<int>(ErrorCode::MigrationFailed), "Migration execution threw an exception."); }
 }
 } // namespace SZX::ADMIN::INFRA
