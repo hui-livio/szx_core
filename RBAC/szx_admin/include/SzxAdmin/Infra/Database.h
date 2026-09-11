@@ -4,7 +4,6 @@
 #include "Serializer.hpp"
 
 #include <cstdint>
-#include <filesystem>
 #include <functional>
 #include <optional>
 #include <span>
@@ -122,8 +121,6 @@ class MigrationRunner final
 public:
     [[nodiscard]] auto run(DatabaseConnection &connection,
                            std::span<const MigrationDefinition> definitions = embeddedMigrations())
-        -> SZX::COMMON::Result<MigrationSummary>;
-    [[nodiscard]] auto run(DatabaseConnection &connection, const std::filesystem::path &directory)
         -> SZX::COMMON::Result<MigrationSummary>;
 };
 

@@ -1,9 +1,10 @@
 #include "SzxAdmin/Infra/Database.h"
 
-#include "FileHelper.hpp"
+#include "UUID.hpp"
 #include "SzxAdmin/Infra/ErrorCode.h"
 #include "SzxCrypto/Random.h"
 #include "EmbeddedMigrations.h"
+#include "SzxCryptoService/CryptoService.h"
 
 #include <ormpp/mysql.hpp>
 
@@ -34,6 +35,26 @@ struct schema_migrations final
     std::string checksum;
 };
 YLT_REFL(schema_migrations, version, checksum);
+struct admin_bootstrap final
+{
+    std::uint32_t id{};
+    std::string user_id;
+};
+YLT_REFL(admin_bootstrap, id, user_id);
+struct users final
+{
+    std::string id;
+    std::string username;
+    std::string username_canonical;
+    std::string display_name;
+    std::string password_hash;
+    std::string role;
+    std::string status;
+    bool force_password_change{};
+};
+// Deliberately project only initialized columns. Nullable identities and timestamps
+// are supplied by MySQL defaults, rather than empty strings.
+YLT_REFL(users, id, username, username_canonical, display_name, password_hash, role, status, force_password_change);
 
 auto failure(ErrorCode code, const std::string &message) -> SZX::COMMON::Result<void>
 {
@@ -99,15 +120,6 @@ auto ensureDatabase(const DatabaseConfig &config) -> SZX::COMMON::Result<void>
     {
         return failure(ErrorCode::DatabaseUnavailable, "Database server connection threw an exception.");
     }
-}
-
-auto readFile(const std::filesystem::path &path) -> SZX::COMMON::Result<std::string>
-{
-    const auto contents = SZX::COMMON::FileHelper::ReadText(path);
-    if (!contents)
-        return SZX::COMMON::Result<std::string>::Failure(static_cast<int>(ErrorCode::MigrationFailed),
-                                                         "Unable to read migration file.");
-    return SZX::COMMON::Result<std::string>::Success(*contents);
 }
 
 auto checksum(std::string_view text) -> SZX::COMMON::Result<std::string>
@@ -286,6 +298,51 @@ public:
         return connection_.rollback() ?
             SZX::COMMON::Result<void>::Success() :
             databaseFailure(ErrorCode::DatabaseTransactionFailed, "Failed to roll back database transaction", connection_.get_last_error());
+    }
+
+    auto bootstrapCompleted() -> SZX::COMMON::Result<bool> override
+    {
+        const auto rows = connection_.query_s<admin_bootstrap>("id = ? FOR UPDATE", 1);
+        if (connection_.has_error())
+            return SZX::COMMON::Result<bool>::Failure(static_cast<int>(ErrorCode::DatabaseQueryFailed),
+                                                      "Failed to read bootstrap state.");
+        return SZX::COMMON::Result<bool>::Success(!rows.empty());
+    }
+
+    auto findBootstrapAdministrator() -> SZX::COMMON::Result<std::optional<BootstrapAdministrator>> override
+    {
+        const auto rows = connection_.query_s<users>(
+            "(username_canonical = ? OR role = ?) ORDER BY (role = ?) DESC, id LIMIT 1 FOR UPDATE",
+            std::string{"admin"}, std::string{"super_admin"}, std::string{"super_admin"});
+        if (connection_.has_error())
+            return SZX::COMMON::Result<std::optional<BootstrapAdministrator>>::Failure(
+                static_cast<int>(ErrorCode::DatabaseQueryFailed), "Failed to read bootstrap administrator.");
+        if (rows.empty())
+            return SZX::COMMON::Result<std::optional<BootstrapAdministrator>>::Success(std::nullopt);
+        const auto &row = rows.front();
+        return SZX::COMMON::Result<std::optional<BootstrapAdministrator>>::Success(
+            BootstrapAdministrator{row.id, row.username, row.password_hash, row.role, row.status, row.force_password_change});
+    }
+
+    auto insertBootstrapAdministrator(const BootstrapAdministrator &administrator) -> SZX::COMMON::Result<void> override
+    {
+        if (administrator.username != "admin" || administrator.role != "super_admin" ||
+            administrator.status != "active" || !administrator.forcePasswordChange || administrator.passwordHash.empty())
+            return failure(ErrorCode::ValidationError, "Invalid bootstrap administrator.");
+        const users row{administrator.id, administrator.username, administrator.username, "System Administrator",
+                        administrator.passwordHash, administrator.role, administrator.status, administrator.forcePasswordChange};
+        const auto affected = connection_.insert(row);
+        if (affected != 1 || connection_.has_error())
+            return databaseFailure(ErrorCode::DatabaseQueryFailed, "Failed to create bootstrap administrator", connection_.get_last_error());
+        return SZX::COMMON::Result<void>::Success();
+    }
+
+    auto recordBootstrapCompletion(std::string_view userId) -> SZX::COMMON::Result<void> override
+    {
+        const auto affected = connection_.insert(admin_bootstrap{1, std::string{userId}});
+        if (affected != 1 || connection_.has_error())
+            return databaseFailure(ErrorCode::DatabaseQueryFailed, "Failed to record bootstrap state", connection_.get_last_error());
+        return SZX::COMMON::Result<void>::Success();
     }
 
 private:
@@ -554,36 +611,50 @@ auto MigrationRunner::run(DatabaseConnection &connection, std::span<const Migrat
         }
         return SZX::COMMON::Result<MigrationSummary>::Success(MigrationSummary{latest, appliedCount});
     }
+
     catch (...) { return SZX::COMMON::Result<MigrationSummary>::Failure(static_cast<int>(ErrorCode::MigrationFailed), "Migration execution threw an exception."); }
 }
 
-auto MigrationRunner::run(DatabaseConnection &connection, const std::filesystem::path &directory)
-    -> SZX::COMMON::Result<MigrationSummary>
+auto BootstrapAdminService::run(DatabaseConnection &connection) -> SZX::COMMON::Result<bool>
 {
     try
     {
-        if (!std::filesystem::is_directory(directory))
-            return SZX::COMMON::Result<MigrationSummary>::Failure(static_cast<int>(ErrorCode::MigrationFailed), "Migration directory does not exist.");
-        std::vector<MigrationDefinition> definitions;
-        for (const auto &entry : std::filesystem::directory_iterator(directory))
+        constexpr std::string_view lockName = "szx_rbac_bootstrap";
+        const auto acquired = connection.acquireMigrationLock(lockName, 10);
+        if (!acquired.ok) return SZX::COMMON::Result<bool>::Failure(acquired.error, acquired.message);
+        if (!acquired.value)
+            return SZX::COMMON::Result<bool>::Failure(static_cast<int>(ErrorCode::DatabaseTransactionFailed),
+                                                      "Bootstrap initialization is being executed by another instance.");
+        MigrationLockGuard lock(connection, lockName);
+        lock.lock();
+        const auto completed = connection.bootstrapCompleted();
+        if (!completed.ok) return SZX::COMMON::Result<bool>::Failure(completed.error, completed.message);
+        if (completed.value) return SZX::COMMON::Result<bool>::Success(false);
+        const auto existing = connection.findBootstrapAdministrator();
+        if (!existing.ok) return SZX::COMMON::Result<bool>::Failure(existing.error, existing.message);
+        if (existing.value)
         {
-            if (!entry.is_regular_file() || entry.path().extension() != ".sql")
-                continue;
-            const auto content = readFile(entry.path());
-            if (!content.ok) return SZX::COMMON::Result<MigrationSummary>::Failure(content.error, content.message);
-            const auto stem = entry.path().filename().string();
-            const auto separator = stem.find_first_of("_-");
-            if (separator == std::string::npos) return SZX::COMMON::Result<MigrationSummary>::Failure(static_cast<int>(ErrorCode::MigrationFailed), "Invalid migration filename format.");
-            std::uint32_t version{};
-            const auto parsed = std::from_chars(stem.data(), stem.data() + separator, version);
-            if (parsed.ec != std::errc{} || version == 0) return SZX::COMMON::Result<MigrationSummary>::Failure(static_cast<int>(ErrorCode::MigrationFailed), "Invalid migration version.");
-            const auto digest = checksum(content.value);
-            if (!digest.ok) return SZX::COMMON::Result<MigrationSummary>::Failure(digest.error, digest.message);
-            definitions.push_back(MigrationDefinition{version, std::move(content.value), std::move(digest.value)});
+            if (existing.value->role != "super_admin")
+                return SZX::COMMON::Result<bool>::Failure(static_cast<int>(ErrorCode::UserIdentityConflict),
+                                                          "The bootstrap username belongs to a non-super-admin user.");
+            const auto marked = connection.recordBootstrapCompletion(existing.value->id);
+            if (!marked.ok) return SZX::COMMON::Result<bool>::Failure(marked.error, marked.message);
+            return SZX::COMMON::Result<bool>::Success(false);
         }
-        std::sort(definitions.begin(), definitions.end(), [](const auto &left, const auto &right) { return left.version < right.version; });
-        return run(connection, definitions);
+        constexpr std::string_view username = "admin";
+        constexpr std::string_view password = "superadmin";
+        SZX::CRYPTO_SERVICE::CryptoService cryptoService;
+        const auto hash = cryptoService.hashPassword(
+            std::span<const std::uint8_t>{reinterpret_cast<const std::uint8_t *>(password.data()), password.size()});
+        if (!hash.ok) return SZX::COMMON::Result<bool>::Failure(hash.error, hash.message);
+        const auto id = SZX::COMMON::Uuid::v4().toString();
+        const auto inserted = connection.insertBootstrapAdministrator(
+            BootstrapAdministrator{id, std::string{username}, hash.value, "super_admin", "active", true});
+        if (!inserted.ok) return SZX::COMMON::Result<bool>::Failure(inserted.error, inserted.message);
+        const auto marked = connection.recordBootstrapCompletion(id);
+        if (!marked.ok) { (void)connection.rollback(); return SZX::COMMON::Result<bool>::Failure(marked.error, marked.message); }
+        return SZX::COMMON::Result<bool>::Success(true);
     }
-    catch (...) { return SZX::COMMON::Result<MigrationSummary>::Failure(static_cast<int>(ErrorCode::MigrationFailed), "Migration execution threw an exception."); }
+    catch (...) { return SZX::COMMON::Result<bool>::Failure(static_cast<int>(ErrorCode::DatabaseQueryFailed), "Bootstrap administrator initialization failed."); }
 }
 } // namespace SZX::ADMIN::INFRA

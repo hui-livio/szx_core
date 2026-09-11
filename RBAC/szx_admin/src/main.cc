@@ -177,7 +177,11 @@ int main(int argc, char **argv)
             const auto migration = MigrationRunner{}.run(connection);
             if (!migration.ok)
                 return SZX::COMMON::Result<void>::Failure(migration.error, migration.message);
-            return SZX::COMMON::Result<void>::Success();
+            const auto transaction = connection.begin();
+            if (!transaction.ok) return transaction;
+            const auto bootstrap = SZX::ADMIN::INFRA::BootstrapAdminService{}.run(connection);
+            if (!bootstrap.ok) { (void)connection.rollback(); return SZX::COMMON::Result<void>::Failure(bootstrap.error, bootstrap.message); }
+            return connection.commit();
         });
     if (!result.ok)
     {

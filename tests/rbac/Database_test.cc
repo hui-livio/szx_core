@@ -3,8 +3,6 @@
 
 #include <gtest/gtest.h>
 
-#include <filesystem>
-#include <fstream>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -13,6 +11,7 @@ using SZX::ADMIN::INFRA::AppliedMigration;
 using SZX::ADMIN::INFRA::DatabaseConfig;
 using SZX::ADMIN::INFRA::DatabaseConnection;
 using SZX::ADMIN::INFRA::ErrorCode;
+using SZX::ADMIN::INFRA::MigrationDefinition;
 using SZX::ADMIN::INFRA::MigrationRunner;
 
 namespace
@@ -81,29 +80,6 @@ public:
     bool lockAcquired{true};
 };
 
-class TemporaryMigrationDirectory final
-{
-public:
-    TemporaryMigrationDirectory()
-    {
-        path_ = std::filesystem::temp_directory_path() / "szx_rbac_migration_test";
-        std::filesystem::remove_all(path_);
-        std::filesystem::create_directories(path_);
-    }
-
-    ~TemporaryMigrationDirectory()
-    {
-        std::filesystem::remove_all(path_);
-    }
-
-    auto path() const -> const std::filesystem::path &
-    {
-        return path_;
-    }
-
-private:
-    std::filesystem::path path_;
-};
 } // namespace
 
 TEST(DatabaseConfigTest, RequiresDatabaseIdentity)
@@ -139,14 +115,11 @@ TEST(DatabaseConfigTest, RejectsUnsafeDatabaseIdentifier)
 
 TEST(MigrationRunnerTest, AppliesPendingMigrationAndRecordsIt)
 {
-    TemporaryMigrationDirectory directory;
-    std::ofstream migration(directory.path() / "001_initial.sql");
-    migration << "CREATE TABLE test_table (name VARCHAR(32));\n"
-                 "INSERT INTO test_table(name) VALUES ('semi;colon');\n";
-    migration.close();
+    const std::string sql = "CREATE TABLE test_table (name VARCHAR(32)); INSERT INTO test_table(name) VALUES ('semi;colon');";
+    const MigrationDefinition migration{1, sql, "checksum"};
 
     FakeDatabaseConnection connection;
-    const auto result = MigrationRunner{}.run(connection, directory.path());
+    const auto result = MigrationRunner{}.run(connection, std::span{&migration, 1});
 
     ASSERT_TRUE(result.ok) << result.message;
     EXPECT_EQ(result.value.currentVersion, 1U);
@@ -164,14 +137,12 @@ TEST(MigrationRunnerTest, AppliesPendingMigrationAndRecordsIt)
 
 TEST(MigrationRunnerTest, RejectsChecksumConflict)
 {
-    TemporaryMigrationDirectory directory;
-    std::ofstream migration(directory.path() / "001_initial.sql");
-    migration << "CREATE TABLE test_table (id INT);\n";
-    migration.close();
+    const std::string sql = "CREATE TABLE test_table (id INT);";
+    const MigrationDefinition migration{1, sql, "checksum"};
 
     FakeDatabaseConnection connection;
     connection.applied.push_back(AppliedMigration{1, "0000000000000000"});
-    const auto result = MigrationRunner{}.run(connection, directory.path());
+    const auto result = MigrationRunner{}.run(connection, std::span{&migration, 1});
 
     ASSERT_FALSE(result.ok);
     EXPECT_EQ(result.error, static_cast<int>(ErrorCode::MigrationConflict));
@@ -180,14 +151,12 @@ TEST(MigrationRunnerTest, RejectsChecksumConflict)
 
 TEST(MigrationRunnerTest, StopsWhenAnotherInstanceOwnsMigrationLock)
 {
-    TemporaryMigrationDirectory directory;
-    std::ofstream migration(directory.path() / "001_initial.sql");
-    migration << "CREATE TABLE test_table (id INT);\n";
-    migration.close();
+    const std::string sql = "CREATE TABLE test_table (id INT);";
+    const MigrationDefinition migration{1, sql, "checksum"};
 
     FakeDatabaseConnection connection;
     connection.lockAcquired = false;
-    const auto result       = MigrationRunner{}.run(connection, directory.path());
+    const auto result       = MigrationRunner{}.run(connection, std::span{&migration, 1});
 
     ASSERT_FALSE(result.ok);
     EXPECT_EQ(result.error, static_cast<int>(ErrorCode::MigrationFailed));
@@ -197,15 +166,12 @@ TEST(MigrationRunnerTest, StopsWhenAnotherInstanceOwnsMigrationLock)
 
 TEST(MigrationRunnerTest, DoesNotStartTransactionWhenDdlFails)
 {
-    TemporaryMigrationDirectory directory;
-    std::ofstream migration(directory.path() / "001_initial.sql");
-    migration << "CREATE TABLE test_table (id INT);\n"
-                 "FAIL THIS STATEMENT;\n";
-    migration.close();
+    const std::string sql = "CREATE TABLE test_table (id INT); FAIL THIS STATEMENT;";
+    const MigrationDefinition migration{1, sql, "checksum"};
 
     FakeDatabaseConnection connection;
     connection.failOn = "FAIL THIS STATEMENT";
-    const auto result = MigrationRunner{}.run(connection, directory.path());
+    const auto result = MigrationRunner{}.run(connection, std::span{&migration, 1});
 
     ASSERT_FALSE(result.ok);
     EXPECT_EQ(result.error, static_cast<int>(ErrorCode::MigrationFailed));
