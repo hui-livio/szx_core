@@ -25,15 +25,14 @@ class mysql {
 
   bool has_error() const { return has_error_; }
 
-  static void reset_error() {
+  void reset_error() {
     has_error_ = false;
     last_error_ = {};
   }
 
-  static void set_last_error(std::string last_error) {
+  void set_last_error(std::string last_error) {
     has_error_ = true;
     last_error_ = std::move(last_error);
-    std::cout << last_error_ << std::endl;
   }
 
   std::string get_last_error() const { return last_error_; }
@@ -397,7 +396,7 @@ class mysql {
       return 0;
     }
 
-    auto guard = guard_statment(stmt_);
+    auto guard = guard_statment(this, stmt_);
     if (mysql_stmt_prepare(stmt_, sql.c_str(), (unsigned long)sql.size())) {
       set_last_error(mysql_stmt_error(stmt_));
       return 0;
@@ -436,7 +435,7 @@ class mysql {
       return {};
     }
 
-    auto guard = guard_statment(stmt_);
+    auto guard = guard_statment(this, stmt_);
 
     if (mysql_stmt_prepare(stmt_, sql.c_str(), (unsigned long)sql.size())) {
       set_last_error(mysql_stmt_error(stmt_));
@@ -531,7 +530,7 @@ class mysql {
       return {};
     }
 
-    auto guard = guard_statment(stmt_);
+    auto guard = guard_statment(this, stmt_);
 
     if (mysql_stmt_prepare(stmt_, sql.c_str(), (int)sql.size())) {
       set_last_error(mysql_stmt_error(stmt_));
@@ -705,7 +704,7 @@ class mysql {
       return {};
     }
 
-    auto guard = guard_statment(stmt_);
+    auto guard = guard_statment(this, stmt_);
 
     if (mysql_stmt_prepare(stmt_, sql.c_str(), (unsigned long)sql.size())) {
       set_last_error(mysql_stmt_error(stmt_));
@@ -804,7 +803,7 @@ class mysql {
       return {};
     }
 
-    auto guard = guard_statment(stmt_);
+    auto guard = guard_statment(this, stmt_);
 
     if (mysql_stmt_prepare(stmt_, sql.c_str(), (int)sql.size())) {
       set_last_error(mysql_stmt_error(stmt_));
@@ -954,7 +953,7 @@ class mysql {
       return false;
     }
 
-    auto guard = guard_statment(stmt_);
+    auto guard = guard_statment(this, stmt_);
     if (mysql_stmt_prepare(stmt_, sql.c_str(), (unsigned long)sql.size())) {
       set_last_error(mysql_stmt_error(stmt_));
       return false;
@@ -1212,7 +1211,7 @@ class mysql {
       return std::nullopt;
     }
 
-    auto guard = guard_statment(stmt_);
+    auto guard = guard_statment(this, stmt_);
 
     if (stmt_execute<members...>(t, type, std::forward<Args>(args)...) ==
         INT_MIN) {
@@ -1242,7 +1241,7 @@ class mysql {
       return std::nullopt;
     }
 
-    auto guard = guard_statment(stmt_);
+    auto guard = guard_statment(this, stmt_);
 
     if (transaction_ && !get_insert_id && !begin()) {
       return std::nullopt;
@@ -1267,17 +1266,18 @@ class mysql {
 
  private:
   struct guard_statment {
-    guard_statment(MYSQL_STMT *stmt) : stmt_(stmt) { reset_error(); }
+    guard_statment(mysql *owner, MYSQL_STMT *stmt) : owner_(owner), stmt_(stmt) { owner_->reset_error(); }
     ~guard_statment() {
       if (stmt_ != nullptr) {
         auto status = mysql_stmt_close(stmt_);
         if (status) {
-          set_last_error("close statment error code " + std::to_string(status));
+          owner_->set_last_error("close statment error code " + std::to_string(status));
         }
       }
     }
 
    private:
+    mysql *owner_ = nullptr;
     MYSQL_STMT *stmt_ = nullptr;
   };
 
@@ -1298,10 +1298,10 @@ class mysql {
   MYSQL_STMT *stmt_ = nullptr;
   MYSQL_RES *meta_ = nullptr;
   int last_affect_rows_ = 0;
-  inline static std::string sv_;
-  inline static std::string last_error_;
-  inline static bool has_error_ = false;
-  inline static bool transaction_ = true;
+  std::string sv_;
+  std::string last_error_;
+  bool has_error_ = false;
+  bool transaction_ = true;
 };
 }  // namespace ormpp
 

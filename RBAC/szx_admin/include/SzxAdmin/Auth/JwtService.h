@@ -39,17 +39,6 @@ struct JwtConfig
     std::string audience;                ///< 受众标识，对应 aud 声明。
     std::int64_t lifetimeSeconds{900};   ///< token 有效期，必须大于零。
     std::int64_t clockLeewaySeconds{30}; ///< 验证时允许的时钟偏差，不能为负数。
-
-    /**
-     * @brief 从环境变量加载 JWT 配置。
-     *
-     * 必需变量为 RBAC_JWT_ISSUER 和 RBAC_JWT_AUDIENCE；生命周期和时钟偏差
-     * 分别从 RBAC_JWT_LIFETIME_SECONDS、RBAC_JWT_CLOCK_LEEWAY_SECONDS 读取，
-     * 未设置时使用结构体默认值。
-     *
-     * @return 成功返回配置，失败返回 InvalidArgument 或 InternalFailure。
-     */
-    [[nodiscard]] static auto loadFromEnvironment() -> SZX::COMMON::Result<JwtConfig>;
 };
 
 /** @brief JWT 签名和验证所需的密钥材料。 */

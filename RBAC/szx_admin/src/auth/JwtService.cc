@@ -3,9 +3,7 @@
 #include <jwt-cpp/jwt.h>
 
 #include <algorithm>
-#include <charconv>
 #include <chrono>
-#include <cstdlib>
 #include <exception>
 #include <limits>
 #include <mutex>
@@ -97,69 +95,11 @@ auto effectiveSeconds(std::int64_t value) -> std::int64_t
     return value == 0 ? currentSeconds() : value;
 }
 
-auto environmentValue(const char *name) -> std::string
-{
-#if defined(_WIN32)
-    char *value       = nullptr;
-    std::size_t length = 0;
-    if (_dupenv_s(&value, &length, name) != 0 || value == nullptr)
-        return {};
-    std::string result{value};
-    std::free(value);
-    return result;
-#else
-    const auto *value = std::getenv(name);
-    return value == nullptr ? std::string{} : std::string{value};
-#endif
-}
-
-auto parseEnvironmentInteger(const char *name, std::int64_t defaultValue, bool positive) -> SZX::COMMON::Result<std::int64_t>
-{
-    const auto text = environmentValue(name);
-    if (text.empty())
-        return SZX::COMMON::Result<std::int64_t>::Success(defaultValue);
-
-    std::int64_t value{};
-    const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), value);
-    if (error != std::errc{} || end != text.data() + text.size() || (positive ? value <= 0 : value < 0))
-        return SZX::COMMON::Result<std::int64_t>::Failure(static_cast<int>(JwtError::InvalidArgument), "JWT 配置数值无效。");
-    return SZX::COMMON::Result<std::int64_t>::Success(value);
-}
 } // namespace
 
 JwtKeyStore::JwtKeyStore(SZX::CRYPTO_SERVICE::ICryptoService &crypto) :
     crypto_(crypto)
 {
-}
-
-auto JwtConfig::loadFromEnvironment() -> SZX::COMMON::Result<JwtConfig>
-{
-    try
-    {
-        JwtConfig config{.issuer             = environmentValue("RBAC_JWT_ISSUER"),
-                         .audience           = environmentValue("RBAC_JWT_AUDIENCE"),
-                         .lifetimeSeconds    = 900,
-                         .clockLeewaySeconds = 30};
-        if (config.issuer.empty() || config.audience.empty())
-            return SZX::COMMON::Result<JwtConfig>::Failure(static_cast<int>(JwtError::InvalidArgument),
-                                                           "JWT issuer/audience 未配置。");
-
-        const auto lifetime = parseEnvironmentInteger("RBAC_JWT_LIFETIME_SECONDS", config.lifetimeSeconds, true);
-        if (!lifetime.ok)
-            return SZX::COMMON::Result<JwtConfig>::Failure(lifetime.error, lifetime.message);
-        const auto leeway = parseEnvironmentInteger("RBAC_JWT_CLOCK_LEEWAY_SECONDS", config.clockLeewaySeconds, false);
-        if (!leeway.ok)
-            return SZX::COMMON::Result<JwtConfig>::Failure(leeway.error, leeway.message);
-        config.lifetimeSeconds    = lifetime.value;
-        config.clockLeewaySeconds = leeway.value;
-        return SZX::COMMON::Result<JwtConfig>::Success(std::move(config));
-    } catch (const std::exception &)
-    {
-        return SZX::COMMON::Result<JwtConfig>::Failure(static_cast<int>(JwtError::InternalFailure), "JWT 配置加载失败。");
-    } catch (...)
-    {
-        return SZX::COMMON::Result<JwtConfig>::Failure(static_cast<int>(JwtError::InternalFailure), "JWT 配置加载失败。");
-    }
 }
 
 auto JwtKeyStore::addKey(JwtKeyRecord record) -> SZX::COMMON::Result<void>
@@ -241,12 +181,10 @@ auto JwtKeyStore::signingKey(std::int64_t now) const -> SZX::COMMON::Result<JwtS
                 return SZX::COMMON::Result<JwtSigningKey>::Success(record.key);
         }
         return SZX::COMMON::Result<JwtSigningKey>::Failure(static_cast<int>(JwtError::KeyRejected), "没有可用的 JWT 签名密钥。");
-    }
-    catch (const std::exception &)
+    } catch (const std::exception &)
     {
         return SZX::COMMON::Result<JwtSigningKey>::Failure(static_cast<int>(JwtError::InternalFailure), "JWT 签名密钥读取失败。");
-    }
-    catch (...)
+    } catch (...)
     {
         return SZX::COMMON::Result<JwtSigningKey>::Failure(static_cast<int>(JwtError::InternalFailure), "JWT 签名密钥读取失败。");
     }
@@ -266,12 +204,10 @@ auto JwtKeyStore::verificationKey(std::string_view keyId, std::int64_t now) cons
         auto verificationKey = found->second.key;
         verificationKey.privateKey.clear();
         return SZX::COMMON::Result<JwtSigningKey>::Success(std::move(verificationKey));
-    }
-    catch (const std::exception &)
+    } catch (const std::exception &)
     {
         return SZX::COMMON::Result<JwtSigningKey>::Failure(static_cast<int>(JwtError::InternalFailure), "JWT 验证密钥读取失败。");
-    }
-    catch (...)
+    } catch (...)
     {
         return SZX::COMMON::Result<JwtSigningKey>::Failure(static_cast<int>(JwtError::InternalFailure), "JWT 验证密钥读取失败。");
     }
@@ -300,12 +236,10 @@ auto JwtService::issue(const JwtIssueRequest &request) -> SZX::COMMON::Result<st
         if (!key.ok)
             return SZX::COMMON::Result<std::string>::Failure(key.error, key.message);
         return issue(request, key.value);
-    }
-    catch (const std::exception &)
+    } catch (const std::exception &)
     {
         return failure(JwtError::InternalFailure, "JWT 服务内部异常。");
-    }
-    catch (...)
+    } catch (...)
     {
         return failure(JwtError::InternalFailure, "JWT 服务内部异常。");
     }
@@ -381,7 +315,7 @@ auto JwtService::verify(std::string_view token, const JwtSigningKey &key) -> SZX
             const auto signatureError = std::make_error_code(std::errc::permission_denied);
             const auto cryptoError    = std::make_error_code(std::errc::io_error);
             const auto jwtError       = error == signatureError ? JwtError::SignatureInvalid :
-                error == cryptoError                            ? JwtError::CryptoFailure :
+                      error == cryptoError                      ? JwtError::CryptoFailure :
                                                                   JwtError::ClaimsInvalid;
             return SZX::COMMON::Result<JwtClaims>::Failure(static_cast<int>(jwtError),
                                                            jwtError == JwtError::SignatureInvalid  ? "JWT 签名无效。" :
