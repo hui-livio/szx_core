@@ -39,6 +39,11 @@ Item {
     // can translate algorithm keys (for example ``general``) to a
     // user-facing name before rendering the selected-frame badge.
     property var labelResolver: null
+    // Optional owner-provided tooltip resolver. It receives the rectangle
+    // model, persistence key and image-space geometry, allowing application
+    // pages to expose domain metrics without coupling this reusable overlay
+    // to PCB/CAD types.
+    property var tooltipResolver: null
     // Persistence/algorithm keys are not labels. Keep this enabled by
     // default so a legacy DTO cannot leak values such as ``general`` or a
     // numeric database id into the canvas when a page forgot to install a
@@ -927,6 +932,28 @@ Item {
                         overlayRoot.rectangleClicked(rectKey);
                     }
 
+                    function updateTooltip(handler) {
+                        const overlay = rectItem.overlayRoot;
+                        if (!overlay || !handler || !handler.hovered || typeof overlay.tooltipResolver !== "function") {
+                            UTTooltip.hide(rectItem);
+                            return;
+                        }
+                        let text = "";
+                        try {
+                            const value = overlay.tooltipResolver(modelData, rectKey, displayKey,
+                                                                 displayX, displayY, displayWidth, displayHeight);
+                            text = String(value || "").trim();
+                        } catch (error) {
+                            text = "";
+                        }
+                        if (text.length === 0) {
+                            UTTooltip.hide(rectItem);
+                            return;
+                        }
+                        UTTooltip.update(rectItem, text, true, undefined, UTTooltip.Auto,
+                                         handler.point ? handler.point.position : Qt.point(-1, -1));
+                    }
+
                     function beginEdit(handle, viewPoint) {
                         if (!overlayRoot)
                             return;
@@ -1170,6 +1197,18 @@ Item {
                                 rectItem.finishEdit();
                         }
                     }
+
+                    HoverHandler {
+                        id: tooltipHoverHandler
+                        enabled: !!rectItem.overlayRoot && typeof rectItem.overlayRoot.tooltipResolver === "function"
+                        onHoveredChanged: rectItem.updateTooltip(tooltipHoverHandler)
+                        onPointChanged: {
+                            if (hovered)
+                                rectItem.updateTooltip(tooltipHoverHandler);
+                        }
+                    }
+
+                    Component.onDestruction: UTTooltip.hide(rectItem)
                 }
             }
         }
