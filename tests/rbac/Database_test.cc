@@ -125,6 +125,18 @@ TEST(DatabaseConfigTest, AcceptsValidConnectionSettings)
     EXPECT_TRUE(result.ok) << result.message;
 }
 
+TEST(DatabaseConfigTest, RejectsUnsafeDatabaseIdentifier)
+{
+    DatabaseConfig config;
+    config.database = "szx-rbac";
+    config.username = "szx_admin";
+
+    const auto result = config.validate();
+
+    ASSERT_FALSE(result.ok);
+    EXPECT_EQ(result.error, static_cast<int>(ErrorCode::InvalidConfiguration));
+}
+
 TEST(MigrationRunnerTest, AppliesPendingMigrationAndRecordsIt)
 {
     TemporaryMigrationDirectory directory;

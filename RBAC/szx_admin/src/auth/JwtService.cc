@@ -109,26 +109,26 @@ auto JwtKeyStore::addKey(JwtKeyRecord record) -> SZX::COMMON::Result<void>
         if (record.key.keyId.empty() || record.key.publicKey.empty() ||
             (record.activeForSigning && record.key.privateKey.empty()) || record.notBefore < 0 || record.expiresAt < 0 ||
             (record.expiresAt != 0 && record.expiresAt < record.notBefore))
-            return SZX::COMMON::Result<void>::Failure(static_cast<int>(JwtError::InvalidArgument), "JWT 密钥记录无效。");
+            return SZX::COMMON::Result<void>::Failure(static_cast<int>(JwtError::InvalidArgument), "Invalid JWT key record.");
         if (record.activeForSigning)
         {
             const auto timestamp = currentSeconds();
             if (timestamp < record.notBefore || (record.expiresAt != 0 && timestamp > record.expiresAt))
                 return SZX::COMMON::Result<void>::Failure(static_cast<int>(JwtError::KeyRejected),
-                                                          "JWT 签名密钥当前不在有效期内。");
+                                                          "The JWT signing key is not currently valid.");
         }
 
         std::unique_lock lock(mutex_);
         if (keys_.contains(record.key.keyId))
-            return SZX::COMMON::Result<void>::Failure(static_cast<int>(JwtError::KeyRejected), "JWT 密钥标识已存在。");
+            return SZX::COMMON::Result<void>::Failure(static_cast<int>(JwtError::KeyRejected), "The JWT key ID already exists.");
         const auto publicKeyId = crypto_.publicKeyId(record.key.publicKey);
         if (!publicKeyId.ok)
-            return SZX::COMMON::Result<void>::Failure(static_cast<int>(JwtError::CryptoFailure), "JWT 公钥标识计算失败。");
+            return SZX::COMMON::Result<void>::Failure(static_cast<int>(JwtError::CryptoFailure), "Failed to calculate the JWT public key ID.");
         if (publicKeyId.value != record.key.keyId)
-            return SZX::COMMON::Result<void>::Failure(static_cast<int>(JwtError::KeyRejected), "JWT 密钥标识与公钥不匹配。");
+            return SZX::COMMON::Result<void>::Failure(static_cast<int>(JwtError::KeyRejected), "The JWT key ID does not match the public key.");
         const auto inserted = keys_.emplace(record.key.keyId, std::move(record));
         if (!inserted.second)
-            return SZX::COMMON::Result<void>::Failure(static_cast<int>(JwtError::KeyRejected), "JWT 密钥标识已存在。");
+            return SZX::COMMON::Result<void>::Failure(static_cast<int>(JwtError::KeyRejected), "The JWT key ID already exists.");
         if (inserted.first->second.activeForSigning)
         {
             for (auto &[keyId, existing] : keys_)
@@ -138,10 +138,10 @@ auto JwtKeyStore::addKey(JwtKeyRecord record) -> SZX::COMMON::Result<void>
         return SZX::COMMON::Result<void>::Success();
     } catch (const std::exception &)
     {
-        return SZX::COMMON::Result<void>::Failure(static_cast<int>(JwtError::InternalFailure), "JWT 密钥存储失败。");
+        return SZX::COMMON::Result<void>::Failure(static_cast<int>(JwtError::InternalFailure), "JWT key storage failed.");
     } catch (...)
     {
-        return SZX::COMMON::Result<void>::Failure(static_cast<int>(JwtError::InternalFailure), "JWT 密钥存储失败。");
+        return SZX::COMMON::Result<void>::Failure(static_cast<int>(JwtError::InternalFailure), "JWT key storage failed.");
     }
 }
 
@@ -152,19 +152,19 @@ auto JwtKeyStore::activateKey(std::string_view keyId, std::int64_t now) -> SZX::
         std::unique_lock lock(mutex_);
         const auto found = keys_.find(keyId);
         if (found == keys_.end() || found->second.key.privateKey.empty())
-            return SZX::COMMON::Result<void>::Failure(static_cast<int>(JwtError::KeyRejected), "JWT 签名密钥不存在。");
+            return SZX::COMMON::Result<void>::Failure(static_cast<int>(JwtError::KeyRejected), "The JWT signing key does not exist.");
         const auto timestamp = effectiveSeconds(now);
         if (timestamp < found->second.notBefore || (found->second.expiresAt != 0 && timestamp > found->second.expiresAt))
-            return SZX::COMMON::Result<void>::Failure(static_cast<int>(JwtError::KeyRejected), "JWT 签名密钥不在有效期内。");
+            return SZX::COMMON::Result<void>::Failure(static_cast<int>(JwtError::KeyRejected), "The JWT signing key is not valid.");
         for (auto &[currentId, record] : keys_)
             record.activeForSigning = currentId == keyId;
         return SZX::COMMON::Result<void>::Success();
     } catch (const std::exception &)
     {
-        return SZX::COMMON::Result<void>::Failure(static_cast<int>(JwtError::InternalFailure), "JWT 密钥轮换失败。");
+        return SZX::COMMON::Result<void>::Failure(static_cast<int>(JwtError::InternalFailure), "JWT key rotation failed.");
     } catch (...)
     {
-        return SZX::COMMON::Result<void>::Failure(static_cast<int>(JwtError::InternalFailure), "JWT 密钥轮换失败。");
+        return SZX::COMMON::Result<void>::Failure(static_cast<int>(JwtError::InternalFailure), "JWT key rotation failed.");
     }
 }
 
@@ -180,13 +180,13 @@ auto JwtKeyStore::signingKey(std::int64_t now) const -> SZX::COMMON::Result<JwtS
                 (record.expiresAt == 0 || timestamp <= record.expiresAt))
                 return SZX::COMMON::Result<JwtSigningKey>::Success(record.key);
         }
-        return SZX::COMMON::Result<JwtSigningKey>::Failure(static_cast<int>(JwtError::KeyRejected), "没有可用的 JWT 签名密钥。");
+        return SZX::COMMON::Result<JwtSigningKey>::Failure(static_cast<int>(JwtError::KeyRejected), "No usable JWT signing key is available.");
     } catch (const std::exception &)
     {
-        return SZX::COMMON::Result<JwtSigningKey>::Failure(static_cast<int>(JwtError::InternalFailure), "JWT 签名密钥读取失败。");
+        return SZX::COMMON::Result<JwtSigningKey>::Failure(static_cast<int>(JwtError::InternalFailure), "Failed to read the JWT signing key.");
     } catch (...)
     {
-        return SZX::COMMON::Result<JwtSigningKey>::Failure(static_cast<int>(JwtError::InternalFailure), "JWT 签名密钥读取失败。");
+        return SZX::COMMON::Result<JwtSigningKey>::Failure(static_cast<int>(JwtError::InternalFailure), "Failed to read the JWT signing key.");
     }
 }
 
@@ -200,16 +200,16 @@ auto JwtKeyStore::verificationKey(std::string_view keyId, std::int64_t now) cons
         if (found == keys_.end() || timestamp < found->second.notBefore ||
             (found->second.expiresAt != 0 && timestamp > found->second.expiresAt))
             return SZX::COMMON::Result<JwtSigningKey>::Failure(static_cast<int>(JwtError::KeyRejected),
-                                                               "JWT 验证密钥不存在或已过期。");
+                                                               "The JWT verification key does not exist or has expired.");
         auto verificationKey = found->second.key;
         verificationKey.privateKey.clear();
         return SZX::COMMON::Result<JwtSigningKey>::Success(std::move(verificationKey));
     } catch (const std::exception &)
     {
-        return SZX::COMMON::Result<JwtSigningKey>::Failure(static_cast<int>(JwtError::InternalFailure), "JWT 验证密钥读取失败。");
+        return SZX::COMMON::Result<JwtSigningKey>::Failure(static_cast<int>(JwtError::InternalFailure), "Failed to read the JWT verification key.");
     } catch (...)
     {
-        return SZX::COMMON::Result<JwtSigningKey>::Failure(static_cast<int>(JwtError::InternalFailure), "JWT 验证密钥读取失败。");
+        return SZX::COMMON::Result<JwtSigningKey>::Failure(static_cast<int>(JwtError::InternalFailure), "Failed to read the JWT verification key.");
     }
 }
 
@@ -229,7 +229,7 @@ JwtService::JwtService(SZX::CRYPTO_SERVICE::ICryptoService &crypto, JwtConfig co
 auto JwtService::issue(const JwtIssueRequest &request) -> SZX::COMMON::Result<std::string>
 {
     if (keyStore_ == nullptr)
-        return failure(JwtError::KeyRejected, "JWT 密钥存储未配置。");
+        return failure(JwtError::KeyRejected, "JWT key storage is not configured.");
     try
     {
         const auto key = keyStore_->signingKey();
@@ -238,10 +238,10 @@ auto JwtService::issue(const JwtIssueRequest &request) -> SZX::COMMON::Result<st
         return issue(request, key.value);
     } catch (const std::exception &)
     {
-        return failure(JwtError::InternalFailure, "JWT 服务内部异常。");
+        return failure(JwtError::InternalFailure, "Internal JWT service exception.");
     } catch (...)
     {
-        return failure(JwtError::InternalFailure, "JWT 服务内部异常。");
+        return failure(JwtError::InternalFailure, "Internal JWT service exception.");
     }
 }
 
@@ -250,13 +250,13 @@ auto JwtService::issue(const JwtIssueRequest &request, const JwtSigningKey &key)
     try
     {
         if (!validConfig(config_) || request.subject.empty() || request.jti.empty() || !validKey(key, true))
-            return failure(JwtError::InvalidArgument, "JWT 请求或配置无效。");
+            return failure(JwtError::InvalidArgument, "Invalid JWT request or configuration.");
 
         const auto now      = std::chrono::system_clock::now();
         const auto issuedAt = std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch()).count();
         if (request.authzVersion > static_cast<std::uint64_t>((std::numeric_limits<std::int64_t>::max)()) ||
             config_.lifetimeSeconds > (std::numeric_limits<std::int64_t>::max)() - issuedAt)
-            return failure(JwtError::InvalidArgument, "JWT 数值超出允许范围。");
+            return failure(JwtError::InvalidArgument, "JWT numeric value is out of range.");
         const auto expiresAt   = issuedAt + config_.lifetimeSeconds;
         const auto issuedDate  = jwt::date{std::chrono::system_clock::time_point{std::chrono::seconds{issuedAt}}};
         const auto expiresDate = jwt::date{std::chrono::system_clock::time_point{std::chrono::seconds{expiresAt}}};
@@ -279,14 +279,14 @@ auto JwtService::issue(const JwtIssueRequest &request, const JwtSigningKey &key)
         std::error_code error;
         const auto token = builder.sign(Ps256ServiceAlgorithm{crypto_, key.privateKey, true}, error);
         if (error)
-            return failure(JwtError::CryptoFailure, "JWT 签名失败。");
+            return failure(JwtError::CryptoFailure, "JWT signing failed.");
         return SZX::COMMON::Result<std::string>::Success(token);
     } catch (const std::exception &)
     {
-        return failure(JwtError::InternalFailure, "JWT 服务内部异常。");
+        return failure(JwtError::InternalFailure, "Internal JWT service exception.");
     } catch (...)
     {
-        return failure(JwtError::InternalFailure, "JWT 服务内部异常。");
+        return failure(JwtError::InternalFailure, "Internal JWT service exception.");
     }
 }
 
@@ -295,13 +295,13 @@ auto JwtService::verify(std::string_view token, const JwtSigningKey &key) -> SZX
     try
     {
         if (!validConfig(config_) || token.empty() || !validKey(key, false))
-            return SZX::COMMON::Result<JwtClaims>::Failure(static_cast<int>(JwtError::InvalidArgument), "JWT 请求或配置无效。");
+            return SZX::COMMON::Result<JwtClaims>::Failure(static_cast<int>(JwtError::InvalidArgument), "Invalid JWT request or configuration.");
 
         const auto decoded = jwt::decode(std::string{token});
         if (decoded.get_algorithm() != "PS256")
-            return SZX::COMMON::Result<JwtClaims>::Failure(static_cast<int>(JwtError::AlgorithmRejected), "JWT 算法不被允许。");
+            return SZX::COMMON::Result<JwtClaims>::Failure(static_cast<int>(JwtError::AlgorithmRejected), "The JWT algorithm is not allowed.");
         if (!decoded.has_key_id() || decoded.get_key_id() != key.keyId)
-            return SZX::COMMON::Result<JwtClaims>::Failure(static_cast<int>(JwtError::KeyRejected), "JWT 密钥标识无效。");
+            return SZX::COMMON::Result<JwtClaims>::Failure(static_cast<int>(JwtError::KeyRejected), "Invalid JWT key ID.");
 
         auto verifier = jwt::verify()
                             .allow_algorithm(Ps256ServiceAlgorithm{crypto_, key.publicKey, false})
@@ -318,18 +318,18 @@ auto JwtService::verify(std::string_view token, const JwtSigningKey &key) -> SZX
                       error == cryptoError                      ? JwtError::CryptoFailure :
                                                                   JwtError::ClaimsInvalid;
             return SZX::COMMON::Result<JwtClaims>::Failure(static_cast<int>(jwtError),
-                                                           jwtError == JwtError::SignatureInvalid  ? "JWT 签名无效。" :
-                                                               jwtError == JwtError::CryptoFailure ? "JWT 验证密码学操作失败。" :
-                                                                                                     "JWT 声明无效。");
+                                                           jwtError == JwtError::SignatureInvalid  ? "Invalid JWT signature." :
+                                                               jwtError == JwtError::CryptoFailure ? "JWT cryptographic verification failed." :
+                                                                                                     "Invalid JWT claims.");
         }
 
         if (!decoded.has_subject() || !decoded.has_id() || !decoded.has_issued_at() || !decoded.has_not_before() ||
             !decoded.has_expires_at() || !decoded.has_payload_claim("authz_version"))
-            return SZX::COMMON::Result<JwtClaims>::Failure(static_cast<int>(JwtError::ClaimsInvalid), "JWT 缺少必要声明。");
+            return SZX::COMMON::Result<JwtClaims>::Failure(static_cast<int>(JwtError::ClaimsInvalid), "JWT is missing required claims.");
 
         const auto authzVersion = decoded.get_payload_claim("authz_version").as_integer();
         if (authzVersion < 0)
-            return SZX::COMMON::Result<JwtClaims>::Failure(static_cast<int>(JwtError::ClaimsInvalid), "JWT 授权版本无效。");
+            return SZX::COMMON::Result<JwtClaims>::Failure(static_cast<int>(JwtError::ClaimsInvalid), "Invalid JWT authorization version.");
 
         JwtClaims claims{.keyId        = decoded.get_key_id(),
                          .issuer       = decoded.get_issuer(),
@@ -343,26 +343,26 @@ auto JwtService::verify(std::string_view token, const JwtSigningKey &key) -> SZX
         return SZX::COMMON::Result<JwtClaims>::Success(std::move(claims));
     } catch (const std::bad_alloc &)
     {
-        return SZX::COMMON::Result<JwtClaims>::Failure(static_cast<int>(JwtError::InternalFailure), "JWT 服务内部异常。");
+        return SZX::COMMON::Result<JwtClaims>::Failure(static_cast<int>(JwtError::InternalFailure), "Internal JWT service exception.");
     } catch (const std::exception &)
     {
-        return SZX::COMMON::Result<JwtClaims>::Failure(static_cast<int>(JwtError::InvalidToken), "JWT 格式或内容无效。");
+        return SZX::COMMON::Result<JwtClaims>::Failure(static_cast<int>(JwtError::InvalidToken), "Invalid JWT format or content.");
     } catch (...)
     {
-        return SZX::COMMON::Result<JwtClaims>::Failure(static_cast<int>(JwtError::InternalFailure), "JWT 服务内部异常。");
+        return SZX::COMMON::Result<JwtClaims>::Failure(static_cast<int>(JwtError::InternalFailure), "Internal JWT service exception.");
     }
 }
 
 auto JwtService::verify(std::string_view token) -> SZX::COMMON::Result<JwtClaims>
 {
     if (keyStore_ == nullptr)
-        return SZX::COMMON::Result<JwtClaims>::Failure(static_cast<int>(JwtError::KeyRejected), "JWT 密钥存储未配置。");
+        return SZX::COMMON::Result<JwtClaims>::Failure(static_cast<int>(JwtError::KeyRejected), "JWT key storage is not configured.");
 
     try
     {
         const auto decoded = jwt::decode(std::string{token});
         if (!decoded.has_key_id())
-            return SZX::COMMON::Result<JwtClaims>::Failure(static_cast<int>(JwtError::KeyRejected), "JWT 缺少密钥标识。");
+            return SZX::COMMON::Result<JwtClaims>::Failure(static_cast<int>(JwtError::KeyRejected), "JWT is missing a key ID.");
 
         const auto key = keyStore_->verificationKey(decoded.get_key_id());
         if (!key.ok)
@@ -370,13 +370,13 @@ auto JwtService::verify(std::string_view token) -> SZX::COMMON::Result<JwtClaims
         return verify(token, key.value);
     } catch (const std::bad_alloc &)
     {
-        return SZX::COMMON::Result<JwtClaims>::Failure(static_cast<int>(JwtError::InternalFailure), "JWT 服务内部异常。");
+        return SZX::COMMON::Result<JwtClaims>::Failure(static_cast<int>(JwtError::InternalFailure), "Internal JWT service exception.");
     } catch (const std::exception &)
     {
-        return SZX::COMMON::Result<JwtClaims>::Failure(static_cast<int>(JwtError::InvalidToken), "JWT 格式或内容无效。");
+        return SZX::COMMON::Result<JwtClaims>::Failure(static_cast<int>(JwtError::InvalidToken), "Invalid JWT format or content.");
     } catch (...)
     {
-        return SZX::COMMON::Result<JwtClaims>::Failure(static_cast<int>(JwtError::InternalFailure), "JWT 服务内部异常。");
+        return SZX::COMMON::Result<JwtClaims>::Failure(static_cast<int>(JwtError::InternalFailure), "Internal JWT service exception.");
     }
 }
 } // namespace SZX::ADMIN::AUTH

@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <charconv>
 #include <chrono>
 #include <climits>
@@ -48,7 +49,7 @@ auto connectAndConfigure(const DatabaseConfig &config, ormpp::mysql &connection)
 {
     if (!connection.connect(config.host, config.username, config.password, config.database,
                             static_cast<int>(config.connectTimeoutSeconds), static_cast<int>(config.port)))
-        return databaseFailure(ErrorCode::DatabaseUnavailable, "数据库连接失败", connection.get_last_error());
+        return databaseFailure(ErrorCode::DatabaseUnavailable, "Database connection failed", connection.get_last_error());
 
     constexpr std::array<std::string_view, 2> sessionStatements{
         "SET SESSION time_zone = '+00:00'",
@@ -57,11 +58,46 @@ auto connectAndConfigure(const DatabaseConfig &config, ormpp::mysql &connection)
     for (const auto statement : sessionStatements)
     {
         if (!connection.execute(std::string{statement}))
-            return databaseFailure(ErrorCode::DatabaseUnavailable, "数据库会话初始化失败", connection.get_last_error());
+            return databaseFailure(ErrorCode::DatabaseUnavailable, "Database session initialization failed", connection.get_last_error());
     }
     if (!connection.execute("SET SESSION innodb_lock_wait_timeout = " + std::to_string(config.lockWaitTimeoutSeconds)))
-        return databaseFailure(ErrorCode::DatabaseUnavailable, "数据库会话初始化失败", connection.get_last_error());
+        return databaseFailure(ErrorCode::DatabaseUnavailable, "Database session initialization failed", connection.get_last_error());
     return SZX::COMMON::Result<void>::Success();
+}
+
+auto validDatabaseIdentifier(std::string_view value) noexcept -> bool
+{
+    if (value.empty() || value.size() > 64)
+        return false;
+    for (const auto character : value)
+    {
+        if (std::isalnum(static_cast<unsigned char>(character)) == 0 && character != '_' && character != '$')
+            return false;
+    }
+    return true;
+}
+
+auto ensureDatabase(const DatabaseConfig &config) -> SZX::COMMON::Result<void>
+{
+    try
+    {
+        ormpp::mysql connection;
+        if (!connection.connect(config.host, config.username, config.password, "", static_cast<int>(config.connectTimeoutSeconds),
+                                static_cast<int>(config.port)))
+            return databaseFailure(ErrorCode::DatabaseUnavailable, "Database server connection failed", connection.get_last_error());
+
+        const auto statement =
+            "CREATE DATABASE IF NOT EXISTS `" + config.database + "` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci";
+        if (!connection.execute(statement))
+            return databaseFailure(ErrorCode::DatabaseQueryFailed, "Database creation failed", connection.get_last_error());
+        return SZX::COMMON::Result<void>::Success();
+    } catch (const std::exception &error)
+    {
+        return databaseFailure(ErrorCode::DatabaseUnavailable, "Database server connection threw an exception", error.what());
+    } catch (...)
+    {
+        return failure(ErrorCode::DatabaseUnavailable, "Database server connection threw an exception.");
+    }
 }
 
 auto readFile(const std::filesystem::path &path) -> SZX::COMMON::Result<std::string>
@@ -69,7 +105,7 @@ auto readFile(const std::filesystem::path &path) -> SZX::COMMON::Result<std::str
     const auto contents = SZX::COMMON::FileHelper::ReadText(path);
     if (!contents)
         return SZX::COMMON::Result<std::string>::Failure(static_cast<int>(ErrorCode::MigrationFailed),
-                                                         "无法读取 migration 文件。");
+                                                         "Unable to read migration file.");
     return SZX::COMMON::Result<std::string>::Success(*contents);
 }
 
@@ -79,7 +115,7 @@ auto checksum(std::string_view text) -> SZX::COMMON::Result<std::string>
     const auto result = SZX::CRYPTO::sha256KeyId(bytes);
     if (!result.ok)
         return SZX::COMMON::Result<std::string>::Failure(static_cast<int>(ErrorCode::MigrationFailed),
-                                                         "计算 migration checksum 失败。");
+                                                         "Failed to calculate migration checksum.");
     return result;
 }
 
@@ -181,7 +217,7 @@ public:
     {
         if (sql.empty() || connection_.execute(std::string{sql}))
             return SZX::COMMON::Result<void>::Success();
-        return databaseFailure(ErrorCode::DatabaseQueryFailed, "数据库执行失败", connection_.get_last_error());
+        return databaseFailure(ErrorCode::DatabaseQueryFailed, "Database statement execution failed", connection_.get_last_error());
     }
 
     auto loadAppliedMigrations() -> SZX::COMMON::Result<std::vector<AppliedMigration>> override
@@ -190,7 +226,7 @@ public:
         if (connection_.has_error())
         {
             return SZX::COMMON::Result<std::vector<AppliedMigration>>::Failure(static_cast<int>(ErrorCode::DatabaseQueryFailed),
-                                                                               "读取 migration 记录失败。");
+                                                                               "Failed to read migration records.");
         }
 
         std::vector<AppliedMigration> result;
@@ -204,7 +240,7 @@ public:
     {
         const auto affected = connection_.insert(schema_migrations{migration.version, migration.checksum});
         if (affected == INT_MIN || connection_.has_error())
-            return databaseFailure(ErrorCode::DatabaseQueryFailed, "记录 migration 失败", connection_.get_last_error());
+            return databaseFailure(ErrorCode::DatabaseQueryFailed, "Failed to record migration", connection_.get_last_error());
         return SZX::COMMON::Result<void>::Success();
     }
 
@@ -214,10 +250,10 @@ public:
             connection_.query_s<std::tuple<int>>("SELECT GET_LOCK(?, ?)", std::string{name}, static_cast<int>(timeoutSeconds));
         if (connection_.has_error())
             return SZX::COMMON::Result<bool>::Failure(static_cast<int>(ErrorCode::DatabaseQueryFailed),
-                                                      "获取 migration 锁失败。");
+                                                      "Failed to acquire migration lock.");
         if (rows.empty())
             return SZX::COMMON::Result<bool>::Failure(static_cast<int>(ErrorCode::DatabaseQueryFailed),
-                                                      "获取 migration 锁失败。");
+                                                      "Failed to acquire migration lock.");
         return SZX::COMMON::Result<bool>::Success(std::get<0>(rows.front()) == 1);
     }
 
@@ -226,7 +262,7 @@ public:
         const auto rows = connection_.query_s<std::tuple<int>>("SELECT RELEASE_LOCK(?)", std::string{name});
         if (connection_.has_error() || rows.empty() || std::get<0>(rows.front()) != 1)
             return SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::DatabaseQueryFailed),
-                                                      "释放 migration 锁失败。");
+                                                      "Failed to release migration lock.");
         return SZX::COMMON::Result<void>::Success();
     }
 
@@ -234,21 +270,21 @@ public:
     {
         return connection_.begin() ?
             SZX::COMMON::Result<void>::Success() :
-            databaseFailure(ErrorCode::DatabaseTransactionFailed, "开启数据库事务失败", connection_.get_last_error());
+            databaseFailure(ErrorCode::DatabaseTransactionFailed, "Failed to begin database transaction", connection_.get_last_error());
     }
 
     auto commit() -> SZX::COMMON::Result<void> override
     {
         return connection_.commit() ?
             SZX::COMMON::Result<void>::Success() :
-            databaseFailure(ErrorCode::DatabaseTransactionFailed, "提交数据库事务失败", connection_.get_last_error());
+            databaseFailure(ErrorCode::DatabaseTransactionFailed, "Failed to commit database transaction", connection_.get_last_error());
     }
 
     auto rollback() -> SZX::COMMON::Result<void> override
     {
         return connection_.rollback() ?
             SZX::COMMON::Result<void>::Success() :
-            databaseFailure(ErrorCode::DatabaseTransactionFailed, "回滚数据库事务失败", connection_.get_last_error());
+            databaseFailure(ErrorCode::DatabaseTransactionFailed, "Failed to roll back database transaction", connection_.get_last_error());
     }
 
 private:
@@ -300,10 +336,12 @@ public:
 auto DatabaseConfig::validate() const -> SZX::COMMON::Result<void>
 {
     if (host.empty() || host.size() > 253 || database.empty() || database.size() > 64 || username.empty() || username.size() > 64)
-        return failure(ErrorCode::InvalidConfiguration, "数据库 host、database 或 username 配置无效。");
+        return failure(ErrorCode::InvalidConfiguration, "Invalid database host, database, or username configuration.");
+    if (!validDatabaseIdentifier(database))
+        return failure(ErrorCode::InvalidConfiguration, "Database name may contain only letters, digits, underscores, or dollar signs.");
     if (port == 0 || poolSize == 0 || poolSize > 64 || connectTimeoutSeconds == 0 || connectTimeoutSeconds > 120 ||
         lockWaitTimeoutSeconds == 0 || lockWaitTimeoutSeconds > 120)
-        return failure(ErrorCode::InvalidConfiguration, "数据库端口、连接池或超时配置无效。");
+        return failure(ErrorCode::InvalidConfiguration, "Invalid database port, pool, or timeout configuration.");
     return SZX::COMMON::Result<void>::Success();
 }
 
@@ -320,7 +358,7 @@ DatabasePool::~DatabasePool()
 auto DatabasePool::start() -> SZX::COMMON::Result<void>
 {
     if (impl_ == nullptr)
-        return failure(ErrorCode::InternalFailure, "数据库连接池状态无效。");
+        return failure(ErrorCode::InternalFailure, "Invalid database pool state.");
     const auto valid = impl_->config.validate();
     if (!valid.ok)
         return valid;
@@ -329,6 +367,9 @@ auto DatabasePool::start() -> SZX::COMMON::Result<void>
         std::unique_lock lock(impl_->mutex);
         if (impl_->started)
             return SZX::COMMON::Result<void>::Success();
+        const auto database = ensureDatabase(impl_->config);
+        if (!database.ok)
+            return database;
         std::deque<std::unique_ptr<ormpp::mysql>> connections;
         for (std::uint16_t index = 0; index < impl_->config.poolSize; ++index)
         {
@@ -336,7 +377,7 @@ auto DatabasePool::start() -> SZX::COMMON::Result<void>
             if (!connection->connect(impl_->config.host, impl_->config.username, impl_->config.password, impl_->config.database,
                                      static_cast<int>(impl_->config.connectTimeoutSeconds), static_cast<int>(impl_->config.port)))
             {
-                return databaseFailure(ErrorCode::DatabaseUnavailable, "数据库连接失败", connection->get_last_error());
+                return databaseFailure(ErrorCode::DatabaseUnavailable, "Database connection failed", connection->get_last_error());
             }
             connections.push_back(std::move(connection));
         }
@@ -346,10 +387,10 @@ auto DatabasePool::start() -> SZX::COMMON::Result<void>
         return SZX::COMMON::Result<void>::Success();
     } catch (const std::exception &error)
     {
-        return databaseFailure(ErrorCode::DatabaseUnavailable, "数据库连接失败", error.what());
+        return databaseFailure(ErrorCode::DatabaseUnavailable, "Database connection failed", error.what());
     } catch (...)
     {
-        return failure(ErrorCode::DatabaseUnavailable, "数据库连接失败。");
+        return failure(ErrorCode::DatabaseUnavailable, "Database connection failed.");
     }
 }
 
@@ -373,20 +414,20 @@ auto DatabasePool::ping() -> SZX::COMMON::Result<void>
 auto DatabasePool::withConnection(const ConnectionCallback &callback) -> SZX::COMMON::Result<void>
 {
     if (impl_ == nullptr)
-        return failure(ErrorCode::DatabaseUnavailable, "数据库连接池尚未启动。");
+        return failure(ErrorCode::DatabaseUnavailable, "Database pool has not been started.");
     if (!callback)
-        return failure(ErrorCode::InvalidConfiguration, "数据库连接回调为空。");
+        return failure(ErrorCode::InvalidConfiguration, "Database connection callback is empty.");
 
     std::unique_ptr<ormpp::mysql> connection;
     {
         std::unique_lock lock(impl_->mutex);
         if (!impl_->started)
-            return failure(ErrorCode::DatabaseUnavailable, "数据库连接池尚未启动。");
+            return failure(ErrorCode::DatabaseUnavailable, "Database pool has not been started.");
         if (!impl_->condition.wait_for(lock, std::chrono::seconds(3),
                                        [this] { return !impl_->started || !impl_->connections.empty(); }))
-            return failure(ErrorCode::DatabaseUnavailable, "无法从数据库连接池获取连接。");
+            return failure(ErrorCode::DatabaseUnavailable, "Unable to acquire a connection from the database pool.");
         if (!impl_->started)
-            return failure(ErrorCode::DatabaseUnavailable, "数据库连接池已停止。");
+            return failure(ErrorCode::DatabaseUnavailable, "Database pool has been stopped.");
         connection = std::move(impl_->connections.front());
         impl_->connections.pop_front();
     }
@@ -420,13 +461,13 @@ auto DatabasePool::withConnection(const ConnectionCallback &callback) -> SZX::CO
         if (staleConnection)
             connection = std::move(staleConnection);
         returnConnection(true);
-        return databaseFailure(ErrorCode::DatabaseUnavailable, "数据库重连异常", error.what());
+        return databaseFailure(ErrorCode::DatabaseUnavailable, "Database reconnection threw an exception", error.what());
     } catch (...)
     {
         if (staleConnection)
             connection = std::move(staleConnection);
         returnConnection(true);
-        return failure(ErrorCode::DatabaseUnavailable, "数据库重连异常。");
+        return failure(ErrorCode::DatabaseUnavailable, "Database reconnection threw an exception.");
     }
 
     try
@@ -454,10 +495,10 @@ auto DatabasePool::withConnection(const ConnectionCallback &callback) -> SZX::CO
         }
     } catch (const std::exception &error)
     {
-        return databaseFailure(ErrorCode::DatabaseQueryFailed, "数据库操作异常", error.what());
+        return databaseFailure(ErrorCode::DatabaseQueryFailed, "Database operation threw an exception", error.what());
     } catch (...)
     {
-        return failure(ErrorCode::DatabaseQueryFailed, "数据库操作异常。");
+        return failure(ErrorCode::DatabaseQueryFailed, "Database operation threw an exception.");
     }
 }
 
@@ -469,7 +510,7 @@ auto MigrationRunner::run(DatabaseConnection &connection, const std::filesystem:
         if (!std::filesystem::is_directory(directory))
         {
             return SZX::COMMON::Result<MigrationSummary>::Failure(static_cast<int>(ErrorCode::MigrationFailed),
-                                                                  "migration 目录不存在。");
+                                                                  "Migration directory does not exist.");
         }
 
         constexpr std::string_view lockName = "szx_rbac_schema_migrations";
@@ -478,7 +519,7 @@ auto MigrationRunner::run(DatabaseConnection &connection, const std::filesystem:
             return SZX::COMMON::Result<MigrationSummary>::Failure(acquired.error, acquired.message);
         if (!acquired.value)
             return SZX::COMMON::Result<MigrationSummary>::Failure(static_cast<int>(ErrorCode::MigrationFailed),
-                                                                  "migration 正在被其他实例执行。");
+                                                                  "Migration is being executed by another instance.");
         MigrationLockGuard lock(connection, lockName);
         lock.lock();
 
@@ -498,7 +539,7 @@ auto MigrationRunner::run(DatabaseConnection &connection, const std::filesystem:
             if (!recorded.emplace(migration.version, migration.checksum).second)
             {
                 return SZX::COMMON::Result<MigrationSummary>::Failure(static_cast<int>(ErrorCode::MigrationConflict),
-                                                                      "schema_migrations 存在重复版本。");
+                                                                      "schema_migrations contains duplicate versions.");
             }
         }
 
@@ -518,7 +559,7 @@ auto MigrationRunner::run(DatabaseConnection &connection, const std::filesystem:
             const auto filename = entry.path().filename().string();
             if (!std::regex_match(filename, match, filenamePattern))
                 return SZX::COMMON::Result<MigrationSummary>::Failure(static_cast<int>(ErrorCode::MigrationFailed),
-                                                                      "migration 文件名格式无效。");
+                                                                      "Invalid migration filename format.");
 
             std::uint64_t parsed{};
             const auto versionText  = match[1].str();
@@ -526,7 +567,7 @@ auto MigrationRunner::run(DatabaseConnection &connection, const std::filesystem:
             if (error != std::errc{} || end != versionText.data() + versionText.size() || parsed == 0 ||
                 parsed > (std::numeric_limits<std::uint32_t>::max)())
                 return SZX::COMMON::Result<MigrationSummary>::Failure(static_cast<int>(ErrorCode::MigrationFailed),
-                                                                      "migration 版本号无效。");
+                                                                      "Invalid migration version.");
 
             const auto content = readFile(entry.path());
             if (!content.ok)
@@ -534,7 +575,7 @@ auto MigrationRunner::run(DatabaseConnection &connection, const std::filesystem:
             const auto statements = splitStatements(content.value);
             if (statements.empty())
                 return SZX::COMMON::Result<MigrationSummary>::Failure(static_cast<int>(ErrorCode::MigrationFailed),
-                                                                      "migration 文件为空。");
+                                                                      "Migration file is empty.");
             const auto digest = checksum(content.value);
             if (!digest.ok)
                 return SZX::COMMON::Result<MigrationSummary>::Failure(digest.error, digest.message);
@@ -549,14 +590,14 @@ auto MigrationRunner::run(DatabaseConnection &connection, const std::filesystem:
         {
             if (migration.version == latest)
                 return SZX::COMMON::Result<MigrationSummary>::Failure(static_cast<int>(ErrorCode::MigrationFailed),
-                                                                      "migration 版本重复。");
+                                                                      "Duplicate migration version.");
             latest                       = migration.version;
             const auto recordedMigration = recorded.find(migration.version);
             if (recordedMigration != recorded.end())
             {
                 if (recordedMigration->second != migration.checksum)
                     return SZX::COMMON::Result<MigrationSummary>::Failure(static_cast<int>(ErrorCode::MigrationConflict),
-                                                                          "已应用 migration 的 checksum 不一致。");
+                                                                          "Checksum mismatch for an applied migration.");
                 continue;
             }
 
@@ -592,11 +633,11 @@ auto MigrationRunner::run(DatabaseConnection &connection, const std::filesystem:
     } catch (const std::exception &)
     {
         return SZX::COMMON::Result<MigrationSummary>::Failure(static_cast<int>(ErrorCode::MigrationFailed),
-                                                              "migration 执行异常。");
+                                                              "Migration execution threw an exception.");
     } catch (...)
     {
         return SZX::COMMON::Result<MigrationSummary>::Failure(static_cast<int>(ErrorCode::MigrationFailed),
-                                                              "migration 执行异常。");
+                                                              "Migration execution threw an exception.");
     }
 }
 } // namespace SZX::ADMIN::INFRA

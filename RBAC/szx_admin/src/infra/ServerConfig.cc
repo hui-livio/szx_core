@@ -15,18 +15,18 @@ auto failure(const char *message) -> SZX::COMMON::Result<void>
 auto ServerConfig::validate() const -> SZX::COMMON::Result<void>
 {
     if (host.empty() || host.size() > 253)
-        return failure("HTTP host 配置无效。");
+        return failure("Invalid HTTP host configuration.");
     if (port == 0)
-        return failure("HTTP port 配置无效。");
+        return failure("Invalid HTTP port configuration.");
     if (workerThreads > 64)
-        return failure("HTTP worker thread 配置无效。");
+        return failure("Invalid HTTP worker thread configuration.");
     if (maxRequestBodyBytes == 0 || maxRequestBodyBytes > 64U * 1024U * 1024U)
-        return failure("HTTP request body 上限无效。");
+        return failure("Invalid HTTP request body limit.");
     if (maxConnections == 0)
-        return failure("HTTP connection 上限无效。");
+        return failure("Invalid HTTP connection limit.");
     if (apiPrefix.empty() || apiPrefix.front() != '/' || apiPrefix.find('?') != std::string::npos ||
         apiPrefix.find('#') != std::string::npos || (apiPrefix.size() > 1 && apiPrefix.back() == '/'))
-        return failure("HTTP API prefix 配置无效。");
+        return failure("Invalid HTTP API prefix configuration.");
     return SZX::COMMON::Result<void>::Success();
 }
 

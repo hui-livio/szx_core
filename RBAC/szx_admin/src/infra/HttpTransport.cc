@@ -111,11 +111,11 @@ public:
         {
             std::lock_guard lock(mutex_);
             if (started_)
-                return SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::TransportFailure), "HTTP 服务已启动。");
+                return SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::TransportFailure), "HTTP service is already running.");
             if (!validMethod(method) || !validPath(path) || !handler)
-                return SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::ValidationError), "HTTP 路由参数无效。");
+                return SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::ValidationError), "Invalid HTTP route arguments.");
             if (path == healthPath())
-                return SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::RouteConflict), "健康检查路由不可覆盖。");
+                return SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::RouteConflict), "The health route cannot be replaced.");
             const auto route = std::move(path);
             router_.Handle(
                 method.c_str(), route.c_str(),
@@ -164,10 +164,10 @@ public:
             return SZX::COMMON::Result<void>::Success();
         } catch (const std::exception &)
         {
-            return SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::InternalFailure), "HTTP 路由注册失败。");
+            return SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::InternalFailure), "Failed to register HTTP route.");
         } catch (...)
         {
-            return SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::InternalFailure), "HTTP 路由注册失败。");
+            return SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::InternalFailure), "Failed to register HTTP route.");
         }
     }
 
@@ -177,7 +177,7 @@ public:
         {
             std::lock_guard lock(mutex_);
             if (started_)
-                return SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::TransportFailure), "HTTP 服务已启动。");
+                return SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::TransportFailure), "HTTP service is already running.");
             const auto valid = config_.validate();
             if (!valid.ok)
                 return valid;
@@ -186,15 +186,15 @@ public:
             server_.setThreadNum(config_.workerThreads);
             server_.setMaxWorkerConnectionNum(config_.maxConnections);
             if (server_.start() != 0)
-                return SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::TransportFailure), "HTTP 服务启动失败。");
+                return SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::TransportFailure), "Failed to start HTTP service.");
             started_ = true;
             return SZX::COMMON::Result<void>::Success();
         } catch (const std::exception &)
         {
-            return SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::InternalFailure), "HTTP 服务启动失败。");
+            return SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::InternalFailure), "Failed to start HTTP service.");
         } catch (...)
         {
-            return SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::InternalFailure), "HTTP 服务启动失败。");
+            return SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::InternalFailure), "Failed to start HTTP service.");
         }
     }
 
@@ -206,15 +206,15 @@ public:
             if (!started_)
                 return SZX::COMMON::Result<void>::Success();
             if (server_.stop() != 0)
-                return SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::TransportFailure), "HTTP 服务停止失败。");
+                return SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::TransportFailure), "Failed to stop HTTP service.");
             started_ = false;
             return SZX::COMMON::Result<void>::Success();
         } catch (const std::exception &)
         {
-            return SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::InternalFailure), "HTTP 服务停止失败。");
+            return SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::InternalFailure), "Failed to stop HTTP service.");
         } catch (...)
         {
-            return SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::InternalFailure), "HTTP 服务停止失败。");
+            return SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::InternalFailure), "Failed to stop HTTP service.");
         }
     }
 

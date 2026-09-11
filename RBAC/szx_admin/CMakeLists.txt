@@ -81,3 +81,24 @@ target_link_libraries(szx_rbac_auth
 
 target_compile_features(szx_rbac_auth PUBLIC cxx_std_20)
 szx_apply_default_compile_policy(szx_rbac_auth)
+
+add_executable(szx_admin_service
+    src/main.cc
+)
+
+target_link_libraries(szx_admin_service
+    PRIVATE szx::rbac_infra szx::common szx::logger
+)
+
+target_compile_features(szx_admin_service PRIVATE cxx_std_20)
+szx_apply_default_compile_policy(szx_admin_service)
+
+add_custom_command(TARGET szx_admin_service POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/config"
+        "$<TARGET_FILE_DIR:szx_admin_service>/config"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/migrations"
+        "$<TARGET_FILE_DIR:szx_admin_service>/migrations"
+    COMMENT "Copying szx_admin_service configuration"
+)
