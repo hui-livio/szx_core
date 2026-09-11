@@ -15,3 +15,4 @@ target_link_libraries(szx_rbac_auth
 )
 
 target_compile_features(szx_rbac_auth PUBLIC cxx_std_20)
+szx_apply_default_compile_policy(szx_rbac_auth)

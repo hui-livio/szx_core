@@ -145,7 +145,7 @@ function(_szx_add_compression)
 endfunction()
 
 if(SZX_COMPONENTS_BUILD_COMPRESSION AND SZX_COMPRESSION_BACKEND STREQUAL "minizip-ng"
-   AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/zstd/build/cmake/CMakeLists.txt")
+    AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/zstd/build/cmake/CMakeLists.txt")
     _szx_add_compression()
 elseif(SZX_COMPONENTS_BUILD_COMPRESSION AND SZX_COMPRESSION_BACKEND STREQUAL "minizip-ng")
     message(FATAL_ERROR
