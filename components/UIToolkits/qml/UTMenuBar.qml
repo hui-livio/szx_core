@@ -9,7 +9,6 @@
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
-import QtQml.Models
 
 MenuBar {
     id: root
@@ -32,10 +31,8 @@ MenuBar {
         anchors.fill: parent
         spacing: root.spacing
         Repeater {
-            model: DelegateModel {
-                model: root.contentModel
-                delegate: root.delegate
-            }
+            model: root.contentModel
+            delegate: root.delegate
         }
     }
 
