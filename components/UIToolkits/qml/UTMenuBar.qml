@@ -30,7 +30,16 @@ MenuBar {
     contentItem: RowLayout {
         anchors.fill: parent
         spacing: root.spacing
-        Repeater {
+        // MenuBar exposes an object model for its menu items.  Repeater cannot
+        // retain an explicit delegate for that model in Qt 6; ListView is the
+        // supported content presenter and keeps the MenuBar delegate intact.
+        ListView {
+            id: menuItems
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            orientation: ListView.Horizontal
+            interactive: false
+            spacing: root.spacing
             model: root.contentModel
             delegate: root.delegate
         }
