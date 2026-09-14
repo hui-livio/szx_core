@@ -41,7 +41,6 @@ MenuBar {
             interactive: false
             spacing: root.spacing
             model: root.contentModel
-            delegate: root.delegate
         }
     }
 
