@@ -1,6 +1,6 @@
 #pragma once
 /** @file NetworkTypes.h
- * @brief Backend-independent endpoint, TLS and HTTP header types.
+ * @brief 与底层实现无关的端点、TLS 配置和 HTTP 头类型。
  */
 #include <cstdint>
 #include <map>
@@ -12,29 +12,33 @@ namespace SZX::NETWORK
 {
 inline namespace v1
 {
-/** @brief IP address or DNS name and a host-order port. */
+/** @brief IP 地址或 DNS 名称，以及使用主机字节序的端口号。 */
 struct Endpoint final
 {
-    std::string host;       ///< Empty HTTP listen host means loopback (127.0.0.1).
-    std::uint16_t port = 0; ///< Zero selects an ephemeral listening port.
+    std::string host;       ///< HTTP 监听地址为空时使用回环地址 127.0.0.1。
+    std::uint16_t port = 0; ///< 监听端口为 0 时由系统分配临时端口。
 };
-/** @brief TLS configuration, interpreted only when enabled. */
+/** @brief TLS 配置，仅在启用 TLS 时生效。 */
 struct TlsOptions final
 {
-    bool enabled = false;
-    std::string certFile;   ///< PEM certificate path; required for a TLS server.
-    std::string keyFile;    ///< PEM private key path; required for a TLS server.
-    std::string caFile;     ///< Optional peer certificate trust store.
-    bool verifyPeer = true; ///< Verify peer certificates when the TLS backend requests them.
+    bool enabled = false;   ///< 是否启用 TLS；启用时要求当前构建支持 TLS。
+    std::string certFile;   ///< PEM 证书路径；TLS 服务端必填。
+    std::string keyFile;    ///< PEM 私钥路径；TLS 服务端必填。
+    std::string caFile;     ///< 可选的对端证书信任库路径。
+    bool verifyPeer = true; ///< 当 TLS 后端请求对端证书时校验证书。
 };
-/** @brief Locale-independent ASCII ordering for HTTP field names. */
+/** @brief HTTP 头字段名的 ASCII 大小写不敏感排序，不受区域设置影响。 */
 struct SZX_NETWORK_API CaseInsensitiveLess final
 {
-    using is_transparent = void;
-    /** @brief Compare ASCII-folded names without allocation. */
+    using is_transparent = void; ///< 支持使用 string_view 等类型进行异构查找。
+    /** @brief 按 ASCII 大小写折叠规则比较字段名，不分配内存。
+     * @param[in] lhs 左侧字段名。
+     * @param[in] rhs 右侧字段名。
+     * @return 折叠大小写后 lhs 的字典序小于 rhs 时返回 true。
+     */
     auto operator()(std::string_view lhs, std::string_view rhs) const noexcept -> bool;
 };
-/** @brief Case-insensitive HTTP headers; repeated names collapse to one value. */
+/** @brief 头字段名大小写不敏感；同名重复字段仅保留一个值。 */
 using HttpHeaders = std::map<std::string, std::string, CaseInsensitiveLess>;
 } // namespace v1
 } // namespace SZX::NETWORK

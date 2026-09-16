@@ -74,7 +74,12 @@ TEST(HttpTransportTest, RejectsInvalidRouteAndProtectsHealthRoute)
     ASSERT_FALSE(invalid.ok);
     EXPECT_EQ(invalid.error, static_cast<int>(ErrorCode::ValidationError));
 
-    const auto health = transport.registerRoute("GET", "/api/v1/health", [](const auto &) { return HttpResponse{}; });
-    ASSERT_FALSE(health.ok);
-    EXPECT_EQ(health.error, static_cast<int>(ErrorCode::RouteConflict));
+    for (const auto path : {"/api/v1/health", "/api/v1/health/", "//api/v1/health", "///api//v1///health///"})
+    {
+        SCOPED_TRACE(path);
+        const auto health = transport.registerRoute("GET", path, [](const auto &) { return HttpResponse{}; });
+        EXPECT_FALSE(health.ok);
+        EXPECT_EQ(health.error, static_cast<int>(ErrorCode::RouteConflict));
+    }
+    EXPECT_TRUE(transport.registerRoute("GET", "/health", [](const auto &) { return HttpResponse{}; }).ok);
 }

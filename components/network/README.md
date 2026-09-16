@@ -4,6 +4,8 @@
 
 组件 1.1.0 在 v1 中兼容新增行为注入、连接限制与独立文件 handler 接口，已有公共结构体布局和函数签名保持不变，SOVERSION 仍为 1。
 
+组件 1.2.0 在 v1 中兼容新增 `useBeforeRouting()`：调用方可注入路由匹配前的请求改写或短路逻辑。已有 `use()` 继续在路由选定之后执行，仍可读取 `pathParams`。网络库默认保留原始路径；是否合并连续斜杠由应用决定。
+
 ## 构建与链接
 
 独立构建默认开启；作为子项目默认关闭。使用 `-DSZX_COMPONENTS_BUILD_NETWORK=ON` 启用，链接 `szx::network`。组件是共享库，PUBLIC 依赖只有 `szx::common`，PRIVATE 链接已有 bundled `hv_static`，公共头文件与安装导出不依赖 libhv。`SZX_NETWORK_ENABLE_HTTP_CLIENT` 仍默认为 OFF，该后端选项不代表本版提供 HttpClient 门面。
@@ -87,7 +89,7 @@ if (!mounted.ok) return mounted.error;
 
 需要自行决定目录首页或回退条件时，使用 `HttpServer::CreateStaticHandler(directory, homePage)` 创建可复用的文件 handler，再注入 `onNotFound()` 或路由。它复用上述路径安全和大小检查，缺失文件返回 404，不自动执行 SPA 回退。业务层可依据请求和结果决定后续行为。
 
-RBAC admin 使用这些扩展点：`use()` 注入 request ID 与访问日志，`onRequestError()` 注入 JSON 错误，`onNotFound()` 决定 API 路径排除和无扩展名路径的 SPA 回退。所有 RBAC 策略位于 `RBAC/szx_admin`；网络库不依赖 admin、JSON 或 logger。
+RBAC admin 使用这些扩展点：`useBeforeRouting()` 注入路径归一化，`use()` 注入 request ID 与访问日志，`onRequestError()` 注入 JSON 错误，`onNotFound()` 决定 API 路径排除和无扩展名路径的 SPA 回退。所有 RBAC 策略位于 `RBAC/szx_admin`；网络库不依赖 admin、JSON 或 logger。
 
 ## TLS 与后续范围
 
@@ -95,7 +97,7 @@ RBAC admin 使用这些扩展点：`use()` 注入 request ID 与访问日志，`
 
 ## 初版验证记录
 
-在 Windows x64 / MSVC 19.44 / RelWithDebInfo / TLS OFF 下，20 个网络用例全部通过，覆盖真实回环连接、路由参数隔离、二进制 body、中间件顺序和短路、提前 413、超大 chunk 长度与数值溢出拒绝、请求行/头/体分片、大小写混合的 100-continue、HEAD/GET 流水线、报文定界与尾部字段隔离、目标路径解析、异常隔离、错误响应注入、连接上限、重启、端口冲突、并发、停止等待与静态目录约束。已有 `test_rbac_auth`、`test_rbac_infra`、`test_rbac_database` 3 组测试通过，其中 infra 包含 4 个 admin 真实 TCP 集成用例；`szx_admin_service` 构建通过。
+在 Windows x64 / MSVC 19.44 / RelWithDebInfo / TLS OFF 下，21 个网络用例全部通过，覆盖真实回环连接、路由参数隔离、二进制 body、中间件顺序和短路、路由前改写、提前 413、超大 chunk 长度与数值溢出拒绝、请求行/头/体分片、大小写混合的 100-continue、HEAD/GET 流水线、报文定界与尾部字段隔离、目标路径解析、异常隔离、错误响应注入、连接上限、重启、端口冲突、并发、停止等待与静态目录约束。已有 `test_rbac_auth`、`test_rbac_infra`、`test_rbac_database` 3 组测试通过，其中 infra 包含 6 个 admin 真实 TCP 集成用例；`szx_admin_service` 构建通过。
 
 安装树独立消费测试位于 `tests/network/package`，验证 `find_package(... COMPONENTS Network)`、默认/显式 v1 类型和启动/停止。导出依赖只有 `szx::common`；安装目录没有 `hv/` 头文件，DLL 不依赖 libhv DLL，导出符号为网络 v1 API。仓库格式化和差异空白检查通过。TLS ON、真实证书握手及非 Windows 平台尚未验证。
 

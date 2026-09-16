@@ -135,6 +135,58 @@ TEST(HttpServerTest, RoutesPreserveParametersAndMiddlewareOrder)
     EXPECT_NE(head.find("Content-Length: 9"), head.npos);
 }
 
+TEST(HttpServerTest, BeforeRoutingMiddlewareRewritesBeforeSelectionAndPreservesExistingMiddlewareContract)
+{
+    auto server = makeServer();
+    EXPECT_FALSE(server->useBeforeRouting({}).ok);
+    EXPECT_TRUE(server
+                    ->useBeforeRouting(
+                        [](auto &input, const auto &next)
+                        {
+                            EXPECT_TRUE(input.pathParams.empty());
+                            if (input.path == "/blocked")
+                                return HttpServerResponse{.statusCode = 403};
+                            if (input.path == "/entry")
+                                input.path = "/items/a%20b";
+                            input.attributes["order"]    = "A";
+                            auto response                = next(input);
+                            response.headers["X-Before"] = "yes";
+                            return response;
+                        })
+                    .ok);
+    EXPECT_TRUE(server
+                    ->useBeforeRouting(
+                        [](auto &input, const auto &next)
+                        {
+                            input.attributes["order"] += "B";
+                            return next(input);
+                        })
+                    .ok);
+    EXPECT_TRUE(server
+                    ->use(
+                        [](auto &input, const auto &next)
+                        {
+                            if (input.method == "GET" && input.path.starts_with("/items/"))
+                                EXPECT_EQ(input.pathParams.at("id"), "a b");
+                            input.attributes["order"] += "C";
+                            return next(input);
+                        })
+                    .ok);
+    EXPECT_TRUE(server->get("/entry", [](const auto &) { return HttpServerResponse{.body = "wrong route"}; }).ok);
+    EXPECT_TRUE(server
+                    ->get("/items/{id}", [](const auto &input)
+                          { return HttpServerResponse{.body = input.attributes.at("order") + ":" + input.query.at("url")}; })
+                    .ok);
+    EXPECT_TRUE(server->get("/raw//path", ok).ok);
+    EXPECT_TRUE(server->start().ok);
+    EXPECT_EQ(body(request(server->port(), "GET", "/entry?url=https://example.test//file")), "ABC:https://example.test//file");
+    EXPECT_EQ(status(request(server->port(), "POST", "/entry")), 405);
+    EXPECT_EQ(status(request(server->port(), "GET", "/blocked")), 403);
+    EXPECT_EQ(body(request(server->port(), "GET", "/raw//path")), "ok");
+    EXPECT_EQ(server->useBeforeRouting([](auto &input, const auto &next) { return next(input); }).error,
+              static_cast<int>(NetworkError::AlreadyRunning));
+}
+
 TEST(HttpServerTest, HandlesMethodsBinaryBodiesAndShortCircuit)
 {
     auto server = makeServer();

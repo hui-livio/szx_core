@@ -4,8 +4,8 @@
 
 namespace SZX::NETWORK::v1::detail
 {
-// Private adapter. libhv owns sockets/loops; its C HTTP parser is fed directly
-// so length checks run before allocation and every C callback contains exceptions.
+// 私有传输适配器：libhv 管理套接字与事件循环，直接向其 C HTTP 解析器输入数据。
+// 在分配报文体之前检查长度，所有 C 回调均在内部拦截 C++ 异常。
 class HttpTransport final
 {
 public:

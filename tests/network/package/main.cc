@@ -8,7 +8,10 @@ int main()
     auto created = SZX::NETWORK::HttpServer::Create({});
     if (!created.ok)
         return created.error;
-    auto &server       = *created.value;
+    auto &server      = *created.value;
+    const auto before = server.useBeforeRouting([](auto &request, const auto &next) { return next(request); });
+    if (!before.ok)
+        return before.error;
     const auto limited = server.setMaxConnections(8);
     if (!limited.ok)
         return limited.error;

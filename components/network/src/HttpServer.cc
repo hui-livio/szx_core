@@ -323,7 +323,16 @@ public:
         };
         try
         {
-            auto response = dispatch(request);
+            HttpNext next = [this](HttpServerRequest &input)
+            {
+                return dispatch(input);
+            };
+            for (auto it = beforeRouting.rbegin(); it != beforeRouting.rend(); ++it)
+                next = [layer = &*it, inner = std::move(next)](HttpServerRequest &input)
+                {
+                    return (*layer)(input, inner);
+                };
+            auto response = next(request);
             if (validResponse(response))
                 return response;
             return handleRequestError(request, 500, NetworkError::ProtocolError);
@@ -462,6 +471,7 @@ public:
     std::vector<Route> routes;
     std::vector<Mount> mounts;
     std::vector<HttpMiddleware> middleware;
+    std::vector<HttpMiddleware> beforeRouting;
     HttpRouteHandler notFound;
     ErrorCallback errorCallback;
     HttpRequestErrorHandler requestErrorHandler;
@@ -620,6 +630,21 @@ auto HttpServer::use(HttpMiddleware middleware) -> Result<void>
             return Result<void>::Success();
         });
 }
+auto HttpServer::useBeforeRouting(HttpMiddleware middleware) -> Result<void>
+{
+    return boundary(
+        [&]() -> Result<void>
+        {
+            const auto state = impl_->configurable();
+            if (!state.ok)
+                return state;
+            if (!middleware)
+                return failure(NetworkError::InvalidArgument);
+            impl_->beforeRouting.push_back(std::move(middleware));
+            return Result<void>::Success();
+        });
+}
+
 auto HttpServer::onNotFound(HttpRouteHandler handler) -> Result<void>
 {
     return boundary(

@@ -50,7 +50,7 @@ auto errorResponse(ErrorCode code, std::string_view requestId) -> HttpResponse
     HttpResponse response{.statusCode = errorCodeHttpStatus(code)};
     response.headers.emplace("Content-Type", "application/json");
     response.headers.emplace(std::string{kRequestIdHeader}, std::string{requestId});
-    const SZX::COMMON::Json payload{{"code", std::string{errorCodeName(code)}},
+    const SZX::COMMON::Json payload{{"code", static_cast<int>(code)},
                                     {"message", std::string{defaultErrorMessage(code)}},
                                     {"details", SZX::COMMON::Json::object()},
                                     {"request_id", std::string{requestId}}};
@@ -113,6 +113,13 @@ auto validMethod(std::string_view method) noexcept -> bool
     return method == "GET" || method == "HEAD" || method == "POST" || method == "PUT" || method == "PATCH" || method == "DELETE";
 }
 
+void normalizePath(std::string &path)
+{
+    // Collapse only literal separators. Percent-encoded data remains untouched.
+    path.erase(std::unique(path.begin(), path.end(), [](char left, char right) { return left == '/' && right == '/'; }),
+               path.end());
+}
+
 auto isApiPath(std::string_view path, std::string_view prefix) noexcept -> bool
 {
     return prefix == "/" || path == prefix ||
@@ -131,6 +138,13 @@ public:
     auto healthPath() const -> std::string
     {
         return config_.apiPrefix == "/" ? "/health" : config_.apiPrefix + "/health";
+    }
+
+    auto isHealthPath(std::string_view path) const -> bool
+    {
+        if (path.ends_with('/'))
+            path.remove_suffix(1);
+        return path == healthPath();
     }
 
     void accessLog(const Network::HttpServerRequest &request, const std::string &id, int status) const noexcept
@@ -179,6 +193,14 @@ public:
         auto configured = server->setMaxConnections(config_.maxConnections);
         if (!configured.ok)
             return networkResult(configured, ErrorCode::InvalidConfiguration);
+        configured = server->useBeforeRouting(
+            [](auto &request, const auto &next)
+            {
+                normalizePath(request.path);
+                return next(request);
+            });
+        if (!configured.ok)
+            return networkResult(configured);
         configured = server->use(
             [this](auto &request, const auto &next)
             {
@@ -223,12 +245,17 @@ public:
         configured = server->onNotFound([this](const auto &request) { return notFound(request); });
         if (!configured.ok)
             return networkResult(configured);
-        configured = server->get(healthPath(),
-                                 [](const auto &request)
-                                 {
-                                     const auto id = requestId(request);
-                                     return convertResponse(HttpTransport::healthResponse(id), id);
-                                 });
+        const auto health = [](const auto &request)
+        {
+            const auto id = requestId(request);
+            return convertResponse(HttpTransport::healthResponse(id), id);
+        };
+        const auto registerHealth = [&](const std::string &path)
+        {
+            auto result = server->get(path, health);
+            return result.ok ? server->get(path + "/", health) : result;
+        };
+        configured = registerHealth(healthPath());
         if (!configured.ok)
             return networkResult(configured, ErrorCode::InvalidConfiguration);
         server_ = std::move(server);
@@ -246,7 +273,8 @@ public:
                 return failure(ErrorCode::TransportFailure);
             if (!validMethod(method) || !handler)
                 return failure(ErrorCode::ValidationError);
-            if (path == healthPath())
+            normalizePath(path);
+            if (isHealthPath(path))
                 return failure(ErrorCode::RouteConflict);
             const auto ready = ensureServer();
             if (!ready.ok)

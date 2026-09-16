@@ -33,11 +33,12 @@ auto testConfig() -> ServerConfig
     return config;
 }
 
-void expectError(const std::string &response, int expectedStatus, std::string_view code, std::string_view id = "test-id")
+void expectError(const std::string &response, int expectedStatus, int code, std::string_view id = "test-id")
 {
     EXPECT_EQ(status(response), expectedStatus);
     const auto json = SZX::COMMON::Json::parse(body(response));
-    EXPECT_EQ(json.at("code").get<std::string>(), code);
+    EXPECT_TRUE(json.at("code").is_number_integer());
+    EXPECT_EQ(json.at("code"), code);
     EXPECT_EQ(json.at("request_id").get<std::string>(), id);
     EXPECT_TRUE(json.at("details").is_object());
     EXPECT_NE(response.find("X-Request-ID: " + std::string{id}), response.npos);
@@ -108,12 +109,12 @@ TEST(AdminHttpIntegrationTest, PreservesHealthRoutesRequestIdsAndBusinessFailure
     EXPECT_EQ(body(request(transport.port(), "POST", "/api/v1/echo", bytes,
                            std::string{idHeader} + "Authorization: Bearer test-token\r\n")),
               bytes);
-    expectError(request(transport.port(), "GET", "/api/v1/echo", {}, idHeader), 405, "METHOD_NOT_ALLOWED");
-    expectError(request(transport.port(), "GET", "/api/v1/absent", {}, idHeader), 404, "RESOURCE_NOT_FOUND");
+    expectError(request(transport.port(), "GET", "/api/v1/echo", {}, idHeader), 405, 2219);
+    expectError(request(transport.port(), "GET", "/api/v1/absent", {}, idHeader), 404, 2205);
     for (const auto path : {"/api/v1/throws", "/api/v1/bad-header"})
     {
         const auto response = request(transport.port(), "GET", path, {}, idHeader);
-        expectError(response, 500, "INTERNAL_FAILURE");
+        expectError(response, 500, 2299);
         EXPECT_EQ(response.find("SECRET"), response.npos);
         EXPECT_EQ(response.find("Injected"), response.npos);
     }
@@ -145,16 +146,16 @@ TEST(AdminHttpIntegrationTest, FormatsEarlyBodyLimitAndProtocolFailuresThroughIn
         Client client(transport.port());
         client.send(std::string{"POST "} + path + " HTTP/1.1\r\nHost: localhost\r\n" + idHeader +
                     "Content-Length: 1000000\r\nExpect: 100-CONTINUE\r\n\r\n");
-        expectError(client.read(), 413, "PAYLOAD_TOO_LARGE");
+        expectError(client.read(), 413, 2215);
         Client chunked(transport.port());
         chunked.send(std::string{"POST "} + path + " HTTP/1.1\r\nHost: localhost\r\n" + idHeader +
                      "Transfer-Encoding: chunked\r\n\r\n80000000\r\n");
-        expectError(chunked.read(), 413, "PAYLOAD_TOO_LARGE");
+        expectError(chunked.read(), 413, 2215);
     }
     Client expectation(transport.port());
     expectation.send(std::string{"POST /api/v1/echo HTTP/1.1\r\nHost: localhost\r\n"} + idHeader +
                      "Content-Length: 4\r\nExpect: unsupported\r\n\r\n");
-    expectError(expectation.read(), 417, "VALIDATION_ERROR");
+    expectError(expectation.read(), 417, 2206);
     Client continued(transport.port());
     continued.send(std::string{"POST /api/v1/echo HTTP/1.1\r\nHost: localhost\r\n"} + idHeader +
                    "Content-Length: 4\r\nExpect: 100-CONTINUE\r\n\r\n");
@@ -193,7 +194,7 @@ TEST(AdminHttpIntegrationTest, KeepsStaticAndSpaPolicyOutsideNetworkAndExcludesA
         EXPECT_NE(head.find("X-Request-ID: test-id"), head.npos);
         EXPECT_EQ(status(request(transport.port(), "GET", "/custom/health")), 200);
         for (const auto path : {"/custom", "/custom/hidden", "/custom/missing", "/missing.js"})
-            expectError(request(transport.port(), "GET", path, {}, idHeader), 404, "RESOURCE_NOT_FOUND");
+            expectError(request(transport.port(), "GET", path, {}, idHeader), 404, 2205);
         const auto spa = request(transport.port(), "GET", "/dashboard/users", {}, idHeader);
         EXPECT_EQ(status(spa), fallback ? 200 : 404);
         if (fallback)
@@ -201,12 +202,79 @@ TEST(AdminHttpIntegrationTest, KeepsStaticAndSpaPolicyOutsideNetworkAndExcludesA
         for (const auto path : {"/%2e%2e/secret.txt", "/%2e%2e/secret", "/C%3a/secret", "/%00"})
         {
             const auto unsafe = request(transport.port(), "GET", path, {}, idHeader);
-            expectError(unsafe, 403, "FORBIDDEN");
+            expectError(unsafe, 403, 2204);
             EXPECT_EQ(unsafe.find("SECRET"), unsafe.npos);
         }
-        expectError(request(transport.port(), "POST", "/asset.js", {}, idHeader), 404, "RESOURCE_NOT_FOUND");
+        expectError(request(transport.port(), "POST", "/asset.js", {}, idHeader), 404, 2205);
         EXPECT_TRUE(transport.stop().ok);
     }
+}
+
+TEST(AdminHttpIntegrationTest, ConfiguredHealthPathSupportsExtraSlashesWithoutAddingRootAlias)
+{
+    WebRoot files;
+    const auto root = files.directory / "public";
+    EXPECT_TRUE(SZX::COMMON::FileHelper::WriteText(root / "index.html", "SPA"));
+    EXPECT_TRUE(SZX::COMMON::FileHelper::WriteText(root / "health", "STATIC"));
+    for (const std::string prefix : {"/api/v1", "/custom", "/"})
+    {
+        SCOPED_TRACE(prefix);
+        auto config       = testConfig();
+        config.staticRoot = root.string();
+        config.apiPrefix  = prefix;
+        HttpTransport transport(config);
+        EXPECT_TRUE(transport.start().ok);
+        const auto prefixed = prefix == "/" ? "/health" : prefix + "/health";
+        auto repeated       = prefixed;
+        for (std::size_t i = 0; i < repeated.size(); ++i)
+            if (repeated[i] == '/')
+            {
+                repeated.insert(i, "//");
+                i += 2;
+            }
+        for (const auto &path : {prefixed, prefixed + "/", "/" + prefixed, repeated, repeated + "///"})
+        {
+            SCOPED_TRACE(path);
+            const auto response = request(transport.port(), "GET", path, {}, idHeader);
+            EXPECT_EQ(status(response), 200);
+            const auto json = SZX::COMMON::Json::parse(body(response));
+            EXPECT_EQ(json.at("data").at("status"), "ok");
+            EXPECT_EQ(json.at("request_id"), "test-id");
+            const auto head = request(transport.port(), "HEAD", path, {}, idHeader);
+            EXPECT_EQ(status(head), 200);
+            EXPECT_TRUE(body(head).empty());
+            expectError(request(transport.port(), "POST", path, {}, idHeader), 405, 2219);
+        }
+        if (prefix != "/")
+            EXPECT_EQ(body(request(transport.port(), "GET", "/health")), "STATIC");
+        EXPECT_TRUE(transport.stop().ok);
+    }
+}
+
+TEST(AdminHttpIntegrationTest, NormalizesAllRoutePathsBeforeMatchingAndBeforeApiStaticPolicy)
+{
+    WebRoot files;
+    const auto root = files.directory / "public";
+    EXPECT_TRUE(SZX::COMMON::FileHelper::WriteText(root / "index.html", "SPA"));
+    EXPECT_TRUE(SZX::COMMON::FileHelper::WriteText(root / "api" / "v1" / "private", "STATIC SECRET"));
+    auto config       = testConfig();
+    config.staticRoot = root.string();
+    HttpTransport transport(config);
+    EXPECT_TRUE(transport
+                    .registerRoute("POST", "/api/v1/echo",
+                                   [](const auto &input) { return HttpResponse{.body = input.path + ":" + input.body}; })
+                    .ok);
+    EXPECT_EQ(transport.registerRoute("POST", "/api///v1//echo", [](const auto &) { return HttpResponse{}; }).error,
+              static_cast<int>(ErrorCode::RouteConflict));
+    EXPECT_TRUE(transport.start().ok);
+    const std::string payload = "https://example.test///value";
+    EXPECT_EQ(body(request(transport.port(), "POST", "///api//v1///echo?url=https://example.test//value", payload)),
+              "/api/v1/echo:" + payload);
+    expectError(request(transport.port(), "GET", "///api//v1///echo", {}, idHeader), 405, 2219);
+    expectError(request(transport.port(), "GET", "///api//v1///private", {}, idHeader), 404, 2205);
+    expectError(request(transport.port(), "POST", "/api%2Fv1/echo", {}, idHeader), 404, 2205);
+    expectError(request(transport.port(), "GET", "///%2e%2e//secret", {}, idHeader), 403, 2204);
+    EXPECT_TRUE(transport.stop().ok);
 }
 
 TEST(AdminHttpIntegrationTest, EnforcesConfiguredConnectionLimitAndContainsBindFailures)

@@ -9,13 +9,13 @@
 #include <vector>
 
 using SZX::ADMIN::INFRA::AppliedMigration;
+using SZX::ADMIN::INFRA::BootstrapAdministrator;
+using SZX::ADMIN::INFRA::BootstrapAdminService;
 using SZX::ADMIN::INFRA::DatabaseConfig;
 using SZX::ADMIN::INFRA::DatabaseConnection;
 using SZX::ADMIN::INFRA::ErrorCode;
 using SZX::ADMIN::INFRA::MigrationDefinition;
 using SZX::ADMIN::INFRA::MigrationRunner;
-using SZX::ADMIN::INFRA::BootstrapAdminService;
-using SZX::ADMIN::INFRA::BootstrapAdministrator;
 
 namespace
 {
@@ -89,7 +89,7 @@ public:
 
     auto recordBootstrapCompletion(std::string_view userId) -> SZX::COMMON::Result<void> override
     {
-        bootstrapDone = true;
+        bootstrapDone   = true;
         bootstrapUserId = std::string{userId};
         return SZX::COMMON::Result<void>::Success();
     }

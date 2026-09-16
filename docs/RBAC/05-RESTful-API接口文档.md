@@ -95,6 +95,43 @@ Content-Type: application/json
 
 ## 5. 错误码
 
-`AUTH_REQUIRED`、`TOKEN_EXPIRED`、`TOKEN_REPLAYED`、`AUTH_INVALID_CREDENTIALS`、`FORBIDDEN`、`RESOURCE_NOT_FOUND`、`VALIDATION_ERROR`、`USER_IDENTITY_ONE_OF_REQUIRED`、`USER_IDENTITY_CONFLICT`、`CONFLICT_VERSION`、`LAST_SUPER_ADMIN_PROTECTED`、`RATE_LIMITED`、`AUDIT_WRITE_FAILED`。登录时 disabled/locked 统一映射为 `AUTH_INVALID_CREDENTIALS`，不单独暴露账户状态。
+错误响应的 `code` 是 JSON 整数，数值由 `SzxAdmin/Infra/ErrorCode.h` 中的 `ErrorCode` 固定定义。客户端按数值判断错误；`message` 仅用于说明，`request_id` 用于关联请求。例如资源不存在时，HTTP 状态为 404，响应为：
+
+```json
+{"code":2205,"message":"The requested resource was not found.","details":{},"request_id":"..."}
+```
+
+本次修正将初版响应中的字符串名称改为整数。调用方须将字符串比较（如 `code === "RESOURCE_NOT_FOUND"`）改为数字比较（`code === 2205`），不得把数字转为字符串传输。下表名称用于文档和诊断，不作为响应 `code` 的值。
+
+| code | 名称 | 默认 HTTP 状态 |
+|---|---|---|
+| 2200 | AUTH_REQUIRED | 401 |
+| 2201 | TOKEN_EXPIRED | 401 |
+| 2202 | TOKEN_REPLAYED | 409 |
+| 2203 | AUTH_INVALID_CREDENTIALS | 401 |
+| 2204 | FORBIDDEN | 403 |
+| 2205 | RESOURCE_NOT_FOUND | 404 |
+| 2206 | VALIDATION_ERROR | 422 |
+| 2207 | USER_IDENTITY_ONE_OF_REQUIRED | 422 |
+| 2208 | USER_IDENTITY_CONFLICT | 409 |
+| 2209 | CONFLICT_VERSION | 409 |
+| 2210 | LAST_SUPER_ADMIN_PROTECTED | 409 |
+| 2211 | RATE_LIMITED | 429 |
+| 2212 | AUDIT_WRITE_FAILED | 500 |
+| 2213 | REQUEST_ID_INVALID | 422 |
+| 2214 | ROUTE_CONFLICT | 409 |
+| 2215 | PAYLOAD_TOO_LARGE | 413 |
+| 2216 | SERVICE_UNAVAILABLE | 503 |
+| 2217 | TRANSPORT_FAILURE | 500 |
+| 2218 | INVALID_CONFIGURATION | 422 |
+| 2219 | METHOD_NOT_ALLOWED | 405 |
+| 2220 | DATABASE_UNAVAILABLE | 503 |
+| 2221 | DATABASE_QUERY_FAILED | 500 |
+| 2222 | DATABASE_TRANSACTION_FAILED | 500 |
+| 2223 | MIGRATION_FAILED | 500 |
+| 2224 | MIGRATION_CONFLICT | 500 |
+| 2299 | INTERNAL_FAILURE | 500 |
+
+登录时 disabled/locked 统一映射为 `2203`（AUTH_INVALID_CREDENTIALS），不单独暴露账户状态。协议解析错误保留网络层 HTTP 状态，例如 400、417、431 对应业务错误码 `2206`，不会统一改成 422。
 
 HTTP 映射固定为：401（未认证、过期或 refresh 失败）、403（权限/目标角色限制）、404（资源不存在）、409（版本冲突、最后超管保护或 refresh 重放）、422（参数校验失败）、429（限流）。错误 `details` 不得包含密码、token、密钥或内部堆栈。
