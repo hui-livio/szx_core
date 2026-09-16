@@ -34,18 +34,7 @@ if(NOT TARGET szx_rbac_ormpp)
     target_link_libraries(szx_rbac_ormpp INTERFACE szx::rbac_mysqlclient)
 endif()
 
-set(BUILD_SHARED ON)
-set(BUILD_STATIC ON)
-set(BUILD_EXAMPLES OFF)
-set(BUILD_UNITTEST OFF)
-set(WITH_PROTOCOL OFF)
-set(WITH_EVPP ON)
-set(WITH_HTTP ON)
-set(WITH_HTTP_SERVER ON)
-set(WITH_HTTP_CLIENT OFF)
-if(NOT TARGET hv_static)
-    add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/../../third_party/libhv ${CMAKE_BINARY_DIR}/third_party/libhv EXCLUDE_FROM_ALL)
-endif()
+szx_add_libhv()
 
 add_library(szx_rbac_infra STATIC
     src/infra/ErrorCode.cc

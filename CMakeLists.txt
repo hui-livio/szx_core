@@ -17,6 +17,7 @@ include(comm_compile)
 include(comm_output)
 include(comm_util)
 include(core_deps)
+include(core_network)
 include(core_summary)
 include(comm_testing)
 
