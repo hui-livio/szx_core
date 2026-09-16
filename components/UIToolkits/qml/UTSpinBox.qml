@@ -9,6 +9,9 @@ import QtQuick.Controls.Basic
 SpinBox {
     id: root
 
+    property alias horizontalAlignment: valueInput.horizontalAlignment
+    property bool keyboardTracking: false
+    property bool updatingFromInput: false
     property string accName: root.displayText
     property int accRole: Accessible.SpinBox
     property color primaryColor: UTTheme.primaryColor
@@ -31,8 +34,20 @@ SpinBox {
     bottomPadding: 8
     font.pixelSize: 14
 
+    function commitInput() {
+        const next = root.valueFromText(valueInput.text, root.locale);
+        if (next !== root.value) {
+            root.value = next;
+            root.valueModified();
+        }
+    }
+    onDisplayTextChanged: {
+        if (valueInput && !root.updatingFromInput) valueInput.text = root.displayText;
+    }
+
     contentItem: TextInput {
-        text: root.displayText
+        id: valueInput
+        Component.onCompleted: text = root.displayText
         font: root.font
         color: root.enabled ? root.textColor : root.borderDisabled
         selectionColor: root.primaryColor
@@ -43,12 +58,15 @@ SpinBox {
         selectByMouse: root.editable
         inputMethodHints: Qt.ImhFormattedNumbersOnly
         validator: root.validator
+        onTextEdited: {
+            if (!root.keyboardTracking || !acceptableInput) return;
+            root.updatingFromInput = true;
+            root.commitInput();
+            root.updatingFromInput = false;
+        }
         onEditingFinished: {
-            const next = root.valueFromText(text, root.locale)
-            if (next !== root.value) {
-                root.value = next
-                root.valueModified()
-            }
+            root.commitInput();
+            text = root.displayText;
         }
     }
 

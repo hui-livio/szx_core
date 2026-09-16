@@ -13,6 +13,11 @@ FocusScope {
     property real value: 0
     property real stepSize: 1
     property int decimals: 2
+    property alias horizontalAlignment: spinBox.horizontalAlignment
+    property alias keyboardTracking: spinBox.keyboardTracking
+    property alias wheelEnabled: spinBox.wheelEnabled
+    property alias topPadding: spinBox.topPadding
+    property alias bottomPadding: spinBox.bottomPadding
     readonly property int scaleFactor: Math.pow(10, Math.max(0, decimals))
     readonly property real effectiveValue: Math.round(Math.max(from, Math.min(to, value)) * scaleFactor) / scaleFactor
 
@@ -25,6 +30,12 @@ FocusScope {
     function toInteger(number) {
         return Math.round(Number(number) * scaleFactor);
     }
+
+    function syncValue() {
+        if (spinBox) spinBox.value = root.toInteger(root.effectiveValue);
+    }
+    onEffectiveValueChanged: syncValue()
+    Component.onCompleted: syncValue()
 
     UTSpinBox {
         id: spinBox
