@@ -11,7 +11,7 @@ logging:
 
 server:
   host: 127.0.0.1
-  port: 8080
+  port: 7364
   workerThreads: 0
   maxRequestBodyBytes: 1048576
   maxConnections: 1024
