@@ -51,6 +51,7 @@ else()
     set(_SZX_COMPONENTS_DEFAULT_COMPRESSION OFF)
 endif()
 
+option(SZX_COMPONENTS_BUILD_NETWORK "Build the HTTP server network component" ${SZX_COMPONENTS_STANDALONE_BUILD})
 option(SZX_COMPONENTS_BUILD_TESTS "Build component smoke tests" ${_SZX_COMPONENTS_DEFAULT_TESTS})
 option(SZX_COMPONENTS_INSTALL "Generate install tree and package config" ${_SZX_COMPONENTS_DEFAULT_INSTALL})
 option(SZX_COMPONENTS_BUILD_CAMERA "Build camera component" ${_SZX_COMPONENTS_DEFAULT_CAMERA})

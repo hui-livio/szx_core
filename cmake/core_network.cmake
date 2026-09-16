@@ -2,8 +2,8 @@ include_guard(GLOBAL)
 
 # Single source of truth for the bundled libhv build.
 #
-# libhv is consumed by more than one target (szx_rbac_infra today, szx::network
-# later).  Each consumer used to set its own libhv options right before calling
+# libhv is consumed by szx_rbac_infra and szx::network.
+# Each consumer used to set its own libhv options right before calling
 # add_subdirectory(), so whichever directory was configured first silently
 # decided what the shared hv_static target contained; a consumer that expected
 # WITH_HTTP_CLIENT=ON would only find out at link time.  Every consumer calls
@@ -64,7 +64,7 @@ function(szx_add_libhv)
             set(_szx_openssl_root "${SZX_OPENSSL_ROOT}")
         else()
             set(_szx_openssl_root
-                "${CMAKE_CURRENT_LIST_DIR}/../third_party/OpenSSL/WIN64_Static")
+                "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../third_party/OpenSSL/WIN64_Static")
         endif()
         set(OPENSSL_ROOT_DIR "${_szx_openssl_root}")
     else()
@@ -73,6 +73,7 @@ function(szx_add_libhv)
 
     add_subdirectory("${SZX_LIBHV_ROOT}" "${CMAKE_BINARY_DIR}/third_party/libhv"
         EXCLUDE_FROM_ALL)
+    set_target_properties(hv_static PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
     message(STATUS
         "libhv: consumers link hv_static, http_server=ON"

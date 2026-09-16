@@ -10,6 +10,7 @@
 | `szx::crypto` | Base64、Hash/HMAC、Fernet、AES-GCM、RSA、PBKDF2 |
 | `szx::crypto_service` | 面向业务的统一加密服务门面 |
 | `szx::logger` | spdlog 日志封装 |
+| `szx::network` | HTTP/1.1 服务端：路由、中间件、请求体限制和静态目录；libhv 为私有实现，见 [接入说明](components/network/README.md) |
 | `szx::camera` | 相机生命周期、采集管道和可选 OpenCV/IKap 适配 |
 | `szx::plc` | 可选 libmodbus PLC 控制 |
 | `szx::feature_manager` | Feature 配置读取、持久化、组合 Provider 与订阅 |
