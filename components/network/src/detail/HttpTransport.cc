@@ -4,6 +4,7 @@
 #include "hv/HttpMessage.h"
 #include "hv/TcpServer.h"
 
+#include <atomic>
 #include <utility>
 
 namespace SZX::NETWORK::v1::detail
@@ -28,6 +29,7 @@ public:
         {
         }
         std::unique_ptr<Connection> http;
+        bool admitted = false;
     };
 
     class Connection final
@@ -261,10 +263,9 @@ public:
         {
             if (stopped_)
                 return;
-            owner_.report(error);
             try
             {
-                send(HttpServerResponse{.statusCode = status}, false);
+                send(owner_.requestErrorHandler(request_, status, error), false);
             } catch (...)
             {
                 close();
@@ -283,18 +284,31 @@ public:
         bool stopped_      = false;
     };
 
-    Impl(HttpServerOptions value, Handler callback, ErrorHandler onError) :
+    Impl(HttpServerOptions value, std::uint32_t maxConnections, Handler callback, ErrorHandler onError,
+         HttpRequestErrorHandler onRequestError) :
         options(std::move(value)),
         handler(std::move(callback)),
-        errorHandler(std::move(onError))
+        errorHandler(std::move(onError)),
+        requestErrorHandler(std::move(onRequestError)),
+        connectionLimit(maxConnections)
     {
         server.setThreadNum(static_cast<int>(options.ioThreadCount - 1));
-        server.setMaxConnectionNum(static_cast<std::uint32_t>(options.ioThreadCount * 1024));
         server.onConnection = [this](const std::shared_ptr<Channel> &incoming) noexcept
         {
             const auto channel = incoming;
             if (!channel->isConnected())
+            {
+                if (channel->admitted)
+                    connectionCount.fetch_sub(1);
                 return;
+            }
+            if (connectionCount.fetch_add(1) >= connectionLimit)
+            {
+                connectionCount.fetch_sub(1);
+                channel->close(true);
+                return;
+            }
+            channel->admitted = true;
             try
             {
                 channel->http = std::make_unique<Connection>(*this, *channel);
@@ -327,12 +341,17 @@ public:
     HttpServerOptions options;
     Handler handler;
     ErrorHandler errorHandler;
+    HttpRequestErrorHandler requestErrorHandler;
+    const std::uint32_t connectionLimit;
+    std::atomic<std::uint64_t> connectionCount{0};
     std::unique_ptr<void, decltype(&hssl_ctx_free)> tls{nullptr, &hssl_ctx_free};
     hv::TcpServerTmpl<Channel> server; // Destroy/join loops before callbacks and TLS context.
 };
 
-HttpTransport::HttpTransport(HttpServerOptions options, Handler handler, ErrorHandler onError) :
-    impl_(std::make_unique<Impl>(std::move(options), std::move(handler), std::move(onError)))
+HttpTransport::HttpTransport(HttpServerOptions options, std::uint32_t maxConnections, Handler handler, ErrorHandler onError,
+                             HttpRequestErrorHandler onRequestError) :
+    impl_(std::make_unique<Impl>(std::move(options), maxConnections, std::move(handler), std::move(onError),
+                                 std::move(onRequestError)))
 {
 }
 HttpTransport::~HttpTransport() = default;

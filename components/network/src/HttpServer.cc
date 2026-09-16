@@ -207,6 +207,41 @@ auto contentType(const std::filesystem::path &path) -> std::string
     return "application/octet-stream";
 }
 
+// Shared by mounted directories and application-owned static routing policies.
+auto staticResponse(const std::filesystem::path &root, const std::string &relative, const std::string &homePage,
+                    const std::string &fallback = {}) -> HttpServerResponse
+{
+    const auto decoded = decodePath(relative);
+    if (!decoded)
+        return {.statusCode = 403};
+    auto file = confinedPath(root, *decoded);
+    if (!file)
+        return {.statusCode = 403};
+    std::error_code error;
+    if (std::filesystem::is_directory(*file, error))
+        file = confinedPath(root, decoded->empty() ? homePage : *decoded + "/" + homePage);
+    if (!file)
+        return {.statusCode = 403};
+    if (!SZX::COMMON::FileHelper::Exists(*file) && !fallback.empty())
+        file = confinedPath(root, fallback);
+    if (!file)
+        return {.statusCode = 403};
+    if (!SZX::COMMON::FileHelper::Exists(*file))
+        return {.statusCode = 404};
+    const auto size = SZX::COMMON::FileHelper::Size(*file);
+    if (!size)
+        return {.statusCode = 500};
+    if (*size > maxStaticBytes)
+        return {.statusCode = 413};
+    const auto bytes = SZX::COMMON::FileHelper::ReadBytes(*file, maxStaticBytes);
+    if (!bytes)
+        return {.statusCode = 500};
+    HttpServerResponse response;
+    response.body.assign(bytes->begin(), bytes->end());
+    response.headers["Content-Type"] = contentType(*file);
+    return response;
+}
+
 auto validResponse(const HttpServerResponse &response) -> bool
 {
     if (response.statusCode < 200 || response.statusCode > 599)
@@ -247,7 +282,8 @@ public:
     };
 
     explicit Impl(HttpServerOptions value) :
-        options(std::move(value))
+        options(std::move(value)),
+        maxConnections(static_cast<std::uint32_t>(options.ioThreadCount * 1024))
     {
     }
 
@@ -290,12 +326,35 @@ public:
             auto response = dispatch(request);
             if (validResponse(response))
                 return response;
-            report(NetworkError::ProtocolError);
+            return handleRequestError(request, 500, NetworkError::ProtocolError);
         } catch (...)
         {
-            report(NetworkError::Internal);
+            return handleRequestError(request, 500, NetworkError::Internal);
         }
-        return HttpServerResponse{.statusCode = 500};
+    }
+
+    auto handleRequestError(const HttpServerRequest &request, int status, NetworkError code) noexcept -> HttpServerResponse
+    {
+        const auto previous = inNetworkCallback;
+        inNetworkCallback   = true;
+        defer
+        {
+            inNetworkCallback = previous;
+        };
+        report(code);
+        try
+        {
+            if (requestErrorHandler)
+            {
+                auto response       = requestErrorHandler(request, status, code);
+                response.statusCode = status;
+                if (validResponse(response))
+                    return response;
+            }
+        } catch (...)
+        {
+        }
+        return {.statusCode = status};
     }
 
     auto terminal(HttpServerRequest &request, const Route *selected) -> HttpServerResponse
@@ -313,36 +372,9 @@ public:
                 auto relative = request.path.substr(mount->prefix == "/" ? 1 : mount->prefix.size());
                 if (!relative.empty() && relative.front() == '/')
                     relative.erase(0, 1);
-                const auto decoded = decodePath(relative);
-                if (!decoded)
-                    return {.statusCode = 403};
-                auto file = confinedPath(mount->root, *decoded);
-                if (!file)
-                    return {.statusCode = 403};
-                std::error_code error;
-                if (std::filesystem::is_directory(*file, error))
-                    file = confinedPath(mount->root, (*decoded).empty() ? "index.html" : *decoded + "/index.html");
-                if (!file)
-                    return {.statusCode = 403};
-                if (!SZX::COMMON::FileHelper::Exists(*file) && !mount->fallback.empty())
-                    file = confinedPath(mount->root, mount->fallback);
-                if (!file)
-                    return {.statusCode = 403};
-                if (SZX::COMMON::FileHelper::Exists(*file))
-                {
-                    const auto size = SZX::COMMON::FileHelper::Size(*file);
-                    if (!size)
-                        return {.statusCode = 500};
-                    if (*size > maxStaticBytes)
-                        return {.statusCode = 413};
-                    const auto bytes = SZX::COMMON::FileHelper::ReadBytes(*file, maxStaticBytes);
-                    if (!bytes)
-                        return {.statusCode = 500};
-                    HttpServerResponse response;
-                    response.body.assign(bytes->begin(), bytes->end());
-                    response.headers["Content-Type"] = contentType(*file);
+                auto response = staticResponse(mount->root, relative, "index.html", mount->fallback);
+                if (response.statusCode != 404)
                     return response;
-                }
             }
         }
         return notFound ? notFound(request) : HttpServerResponse{.statusCode = 404};
@@ -432,6 +464,8 @@ public:
     std::vector<HttpMiddleware> middleware;
     HttpRouteHandler notFound;
     ErrorCallback errorCallback;
+    HttpRequestErrorHandler requestErrorHandler;
+    std::uint32_t maxConnections;
     std::atomic<bool> active{false};
     std::atomic<std::uint16_t> boundPort{0};
     std::unique_ptr<detail::HttpTransport> transport; // Stop before releasing callback storage.
@@ -471,6 +505,35 @@ auto HttpServer::Create(HttpServerOptions options) -> Result<std::unique_ptr<Htt
             }
             auto impl = std::make_unique<Impl>(std::move(options));
             return Result<std::unique_ptr<HttpServer>>::Success(std::unique_ptr<HttpServer>(new HttpServer(std::move(impl))));
+        });
+}
+
+auto HttpServer::CreateStaticHandler(std::filesystem::path directory, std::string homePage) -> Result<HttpRouteHandler>
+{
+    return boundary(
+        [&]() -> Result<HttpRouteHandler>
+        {
+            if (directory.empty() || homePage.empty())
+                return failure<HttpRouteHandler>(NetworkError::InvalidArgument);
+            std::error_code error;
+            auto root = std::filesystem::canonical(directory, error);
+            if (error || !std::filesystem::is_directory(root, error) || !confinedPath(root, homePage))
+                return failure<HttpRouteHandler>(NetworkError::InvalidArgument);
+            HttpRouteHandler handler = [root = std::move(root), homePage = std::move(homePage)](const HttpServerRequest &request)
+            {
+                try
+                {
+                    if (request.method != "GET" && request.method != "HEAD")
+                        return HttpServerResponse{.statusCode = 404};
+                    if (!request.path.starts_with('/'))
+                        return HttpServerResponse{.statusCode = 404};
+                    return staticResponse(root, request.path.substr(1), homePage);
+                } catch (...)
+                {
+                    return HttpServerResponse{.statusCode = 500};
+                }
+            };
+            return Result<HttpRouteHandler>::Success(std::move(handler));
         });
 }
 
@@ -584,6 +647,34 @@ auto HttpServer::onError(ErrorCallback callback) -> Result<void>
         });
 }
 
+auto HttpServer::onRequestError(HttpRequestErrorHandler handler) -> Result<void>
+{
+    return boundary(
+        [&]() -> Result<void>
+        {
+            const auto state = impl_->configurable();
+            if (!state.ok)
+                return state;
+            impl_->requestErrorHandler = std::move(handler);
+            return Result<void>::Success();
+        });
+}
+
+auto HttpServer::setMaxConnections(std::uint32_t count) -> Result<void>
+{
+    return boundary(
+        [&]() -> Result<void>
+        {
+            const auto state = impl_->configurable();
+            if (!state.ok)
+                return state;
+            if (count == 0)
+                return failure(NetworkError::InvalidArgument);
+            impl_->maxConnections = count;
+            return Result<void>::Success();
+        });
+}
+
 auto HttpServer::start() -> Result<void>
 {
     return boundary(
@@ -593,8 +684,10 @@ auto HttpServer::start() -> Result<void>
             if (!state.ok)
                 return state;
             auto transport = std::make_unique<detail::HttpTransport>(
-                impl_->options, [this](HttpServerRequest &request) { return impl_->handleRequest(request); },
-                [this](NetworkError error) { impl_->report(error); });
+                impl_->options, impl_->maxConnections, [this](HttpServerRequest &request)
+                { return impl_->handleRequest(request); }, [this](NetworkError error) { impl_->report(error); },
+                [this](const HttpServerRequest &request, int status, NetworkError error)
+                { return impl_->handleRequestError(request, status, error); });
             const auto started = transport->start();
             if (!started.ok)
                 return Result<void>::Failure(started.error, started.message);

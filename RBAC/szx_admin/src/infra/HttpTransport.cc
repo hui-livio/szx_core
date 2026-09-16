@@ -1,13 +1,14 @@
 #include "SzxAdmin/Infra/HttpTransport.h"
 
+#include "Defer.hpp"
+#include "Logger.h"
 #include "Serializer.hpp"
 #include "SzxAdmin/Infra/ErrorCode.h"
 #include "SzxAdmin/Infra/RequestContext.h"
-#include "hv/HttpServer.h"
+#include "SzxNetwork/HttpServer.h"
 
 #include <algorithm>
 #include <atomic>
-#include <exception>
 #include <filesystem>
 #include <mutex>
 #include <string_view>
@@ -17,18 +18,94 @@ namespace SZX::ADMIN::INFRA
 {
 namespace
 {
-auto errorResponse(ErrorCode code, std::string_view requestId, std::string_view message = {}) -> HttpResponse
+namespace Network = SZX::NETWORK;
+using SZX::COMMON::Result;
+thread_local bool inTransportCallback         = false;
+constexpr std::string_view requestIdAttribute = "szx.admin.request_id";
+
+auto failure(ErrorCode code) -> Result<void>
 {
-    const auto effectiveMessage = message.empty() ? defaultErrorMessage(code) : message;
+    return Result<void>::Failure(static_cast<int>(code), {});
+}
+
+auto networkResult(const Result<void> &result, ErrorCode invalid = ErrorCode::ValidationError) -> Result<void>
+{
+    if (result.ok)
+        return Result<void>::Success();
+    switch (static_cast<Network::NetworkError>(result.error))
+    {
+    case Network::NetworkError::InvalidArgument:
+        return failure(invalid);
+    case Network::NetworkError::RouteConflict:
+        return failure(ErrorCode::RouteConflict);
+    case Network::NetworkError::Internal:
+        return failure(ErrorCode::InternalFailure);
+    default:
+        return failure(ErrorCode::TransportFailure);
+    }
+}
+
+auto errorResponse(ErrorCode code, std::string_view requestId) -> HttpResponse
+{
     HttpResponse response{.statusCode = errorCodeHttpStatus(code)};
     response.headers.emplace("Content-Type", "application/json");
     response.headers.emplace(std::string{kRequestIdHeader}, std::string{requestId});
     const SZX::COMMON::Json payload{{"code", std::string{errorCodeName(code)}},
-                                    {"message", std::string{effectiveMessage}},
+                                    {"message", std::string{defaultErrorMessage(code)}},
                                     {"details", SZX::COMMON::Json::object()},
                                     {"request_id", std::string{requestId}}};
     response.body = payload.dump();
     return response;
+}
+
+auto responseError(int status) noexcept -> ErrorCode
+{
+    switch (status)
+    {
+    case 400:
+    case 417:
+    case 431:
+        return ErrorCode::ValidationError;
+    case 403:
+        return ErrorCode::Forbidden;
+    case 404:
+        return ErrorCode::ResourceNotFound;
+    case 405:
+        return ErrorCode::MethodNotAllowed;
+    case 413:
+        return ErrorCode::PayloadTooLarge;
+    default:
+        return ErrorCode::InternalFailure;
+    }
+}
+
+auto requestId(const Network::HttpServerRequest &request) -> std::string
+{
+    const auto id = request.attributes.find(std::string{requestIdAttribute});
+    if (id != request.attributes.end())
+        return id->second;
+    const auto header = request.headers.find(kRequestIdHeader);
+    return resolveRequestId(header == request.headers.end() ? std::string_view{} : header->second);
+}
+
+auto convertRequest(const Network::HttpServerRequest &request) -> HttpRequest
+{
+    HttpRequest converted{.method = request.method, .path = request.path, .body = request.body, .requestId = requestId(request)};
+    converted.headers.insert(request.headers.begin(), request.headers.end());
+    converted.headers[std::string{kRequestIdHeader}] = converted.requestId;
+    return converted;
+}
+
+auto convertResponse(HttpResponse response, const std::string &id) -> Network::HttpServerResponse
+{
+    if (response.statusCode < 200 || response.statusCode > 599)
+        response = errorResponse(ErrorCode::InternalFailure, id);
+    Network::HttpServerResponse converted{.statusCode = response.statusCode, .body = std::move(response.body)};
+    converted.headers.insert(response.headers.begin(), response.headers.end());
+    converted.headers[std::string{kRequestIdHeader}] = id;
+    if (!converted.headers.contains("Content-Type"))
+        converted.headers.emplace("Content-Type", "application/json");
+    return converted;
 }
 
 auto validMethod(std::string_view method) noexcept -> bool
@@ -36,257 +113,248 @@ auto validMethod(std::string_view method) noexcept -> bool
     return method == "GET" || method == "HEAD" || method == "POST" || method == "PUT" || method == "PATCH" || method == "DELETE";
 }
 
-auto validPath(std::string_view path) noexcept -> bool
-{
-    return !path.empty() && path.front() == '/' && path.find('?') == std::string_view::npos &&
-        path.find('#') == std::string_view::npos;
-}
-
 auto isApiPath(std::string_view path, std::string_view prefix) noexcept -> bool
 {
     return prefix == "/" || path == prefix ||
         (path.size() > prefix.size() && path.starts_with(prefix) && path[prefix.size()] == '/');
-}
-
-auto spaIndexPath(const ServerConfig &config, std::string_view requestPath) -> std::filesystem::path
-{
-    if (!config.spaFallback || config.staticRoot.empty() || isApiPath(requestPath, config.apiPrefix) ||
-        std::filesystem::path{std::string{requestPath}}.has_extension())
-        return {};
-    const auto index = std::filesystem::path{config.staticRoot} / config.staticHomePage;
-    std::error_code error;
-    return std::filesystem::is_regular_file(index, error) ? index : std::filesystem::path{};
-}
-
-auto convertRequest(::HttpRequest *request) -> HttpRequest
-{
-    HttpRequest converted{.method = request->Method(), .path = request->Path(), .body = request->body};
-    converted.requestId = resolveRequestId(request->GetHeader(std::string{kRequestIdHeader}.c_str()));
-    for (const auto &[name, value] : request->headers)
-        converted.headers.emplace(name, value);
-    return converted;
-}
-
-auto applyResponse(const HttpResponse &source, ::HttpResponse *target, const std::string &requestId) -> int
-{
-    auto response = source;
-    if (response.statusCode < 100 || response.statusCode > 599)
-        response = errorResponse(ErrorCode::InternalFailure, requestId);
-    response.headers[std::string{kRequestIdHeader}] = requestId;
-    if (!response.headers.contains("Content-Type"))
-        response.headers.emplace("Content-Type", "application/json");
-    target->status_code = static_cast<http_status>(response.statusCode);
-    target->body        = std::move(response.body);
-    for (const auto &[name, value] : response.headers)
-        target->SetHeader(name.c_str(), value);
-    return target->status_code;
 }
 } // namespace
 
 class HttpTransport::Impl final
 {
 public:
-    explicit Impl(ServerConfig serverConfig) :
-        config_(std::move(serverConfig)),
-        server_(&router_)
+    explicit Impl(ServerConfig config) :
+        config_(std::move(config))
     {
-        router_.GET(healthPath().c_str(),
-                    [this](::HttpRequest *request, ::HttpResponse *response)
-                    {
-                        const auto requestId = resolveRequestId(request->GetHeader(std::string{kRequestIdHeader}.c_str()));
-                        return applyResponse(HttpTransport::healthResponse(requestId), response, requestId);
-                    });
-        if (!config_.staticRoot.empty())
-        {
-            router_.Static("/", config_.staticRoot.c_str());
-            router_.home_page = config_.staticHomePage;
-        }
-        router_.Use(
-            [this](::HttpRequest *request, ::HttpResponse *response)
-            {
-                const auto requestId = resolveRequestId(request->GetHeader(std::string{kRequestIdHeader}.c_str()));
-                request->SetHeader(std::string{kRequestIdHeader}.c_str(), requestId);
-                response->SetHeader(std::string{kRequestIdHeader}.c_str(), requestId);
-                if (request->ContentLength() > config_.maxRequestBodyBytes || request->body.size() > config_.maxRequestBodyBytes)
-                {
-                    return applyResponse(errorResponse(ErrorCode::PayloadTooLarge, requestId), response, requestId);
-                }
-                return HTTP_STATUS_NEXT;
-            });
-        router_.enable_access_log = config_.accessLog;
-        router_.errorHandler      = [this](::HttpRequest *request, ::HttpResponse *response)
-        {
-            const auto requestId = resolveRequestId(request->GetHeader(std::string{kRequestIdHeader}.c_str()));
-            if (response->status_code == HTTP_STATUS_NOT_FOUND &&
-                (request->method == HTTP_GET || request->method == HTTP_HEAD))
-            {
-                const auto index = spaIndexPath(config_, request->Path());
-                if (!index.empty() && response->File(index.string().c_str()) == HTTP_STATUS_OK)
-                    return HTTP_STATUS_OK;
-            }
-            const auto code      = response->status_code == HTTP_STATUS_METHOD_NOT_ALLOWED ? ErrorCode::MethodNotAllowed :
-                                                                                             ErrorCode::ResourceNotFound;
-            return static_cast<http_status>(applyResponse(errorResponse(code, requestId), response, requestId));
-        };
     }
 
-    [[nodiscard]] auto healthPath() const -> std::string
+    auto healthPath() const -> std::string
     {
         return config_.apiPrefix == "/" ? "/health" : config_.apiPrefix + "/health";
     }
 
-    [[nodiscard]] auto registerRoute(std::string method, std::string path, HttpHandler handler) -> SZX::COMMON::Result<void>
+    void accessLog(const Network::HttpServerRequest &request, const std::string &id, int status) const noexcept
     {
+        if (!config_.accessLog)
+            return;
         try
         {
-            std::lock_guard lock(mutex_);
-            if (started_)
-                return SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::TransportFailure), "HTTP service is already running.");
-            if (!validMethod(method) || !validPath(path) || !handler)
-                return SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::ValidationError), "Invalid HTTP route arguments.");
-            if (path == healthPath())
-                return SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::RouteConflict), "The health route cannot be replaced.");
-            const auto route = std::move(path);
-            router_.Handle(
-                method.c_str(), route.c_str(),
-                [handler = std::move(handler), maxBodyBytes = config_.maxRequestBodyBytes](
-                    const ::HttpContextPtr &context, http_parser_state state, const char *data, std::size_t size)
+            LOGM_INFO("szx_admin.http", "request_id={} method={} status={}", id, request.method, status);
+        } catch (...)
+        {
+        }
+    }
+
+    auto notFound(const Network::HttpServerRequest &request) const -> Network::HttpServerResponse
+    {
+        if (!staticHandler_ || isApiPath(request.path, config_.apiPrefix) ||
+            (request.method != "GET" && request.method != "HEAD"))
+            return {.statusCode = 404};
+        auto response = staticHandler_(request);
+        // Failed confinement never reaches the SPA fallback. Missing assets retain their 404.
+        if (response.statusCode == 404 && config_.spaFallback && !std::filesystem::path{request.path}.has_extension())
+        {
+            auto indexRequest = request;
+            indexRequest.path = "/";
+            response          = staticHandler_(indexRequest);
+        }
+        return response;
+    }
+
+    auto ensureServer() -> Result<void>
+    {
+        if (server_)
+            return Result<void>::Success();
+        const auto valid = config_.validate();
+        if (!valid.ok)
+            return valid;
+        Network::HttpServerOptions options;
+        options.listen        = {config_.host, config_.port};
+        options.ioThreadCount = std::max<std::size_t>(1, config_.workerThreads);
+        options.maxBodyBytes  = config_.maxRequestBodyBytes;
+        auto created          = Network::HttpServer::Create(options);
+        if (!created.ok)
+            return networkResult(Result<void>::Failure(created.error, {}), ErrorCode::InvalidConfiguration);
+        auto server     = std::move(created.value);
+        auto configured = server->setMaxConnections(config_.maxConnections);
+        if (!configured.ok)
+            return networkResult(configured, ErrorCode::InvalidConfiguration);
+        configured = server->use(
+            [this](auto &request, const auto &next)
+            {
+                const auto previous = inTransportCallback;
+                inTransportCallback = true;
+                defer
                 {
-                    auto *request  = context->request.get();
-                    auto *response = context->response.get();
-                    if (state == HP_HEADERS_COMPLETE)
-                    {
-                        if (request->ContentLength() > maxBodyBytes)
-                            response->status_code = HTTP_STATUS_PAYLOAD_TOO_LARGE;
-                        return HTTP_STATUS_NEXT;
-                    }
-                    if (state == HP_BODY)
-                    {
-                        if (response->status_code == HTTP_STATUS_PAYLOAD_TOO_LARGE)
-                            return HTTP_STATUS_NEXT;
-                        if (size > maxBodyBytes || request->body.size() > maxBodyBytes - size)
-                        {
-                            request->body.clear();
-                            response->status_code = HTTP_STATUS_PAYLOAD_TOO_LARGE;
-                            return HTTP_STATUS_NEXT;
-                        }
-                        request->body.append(data, size);
-                        return HTTP_STATUS_NEXT;
-                    }
-                    if (state != HP_MESSAGE_COMPLETE)
-                        return HTTP_STATUS_NEXT;
-
-                    const auto requestId = resolveRequestId(request->GetHeader(std::string{kRequestIdHeader}.c_str()));
-                    try
-                    {
-                        if (response->status_code == HTTP_STATUS_PAYLOAD_TOO_LARGE)
-                            return applyResponse(errorResponse(ErrorCode::PayloadTooLarge, requestId), response, requestId);
-                        const auto converted = convertRequest(request);
-                        return applyResponse(handler(converted), response, converted.requestId);
-                    } catch (const std::exception &)
-                    {
-                        return applyResponse(errorResponse(ErrorCode::InternalFailure, requestId), response, requestId);
-                    } catch (...)
-                    {
-                        return applyResponse(errorResponse(ErrorCode::InternalFailure, requestId), response, requestId);
-                    }
-                });
-            return SZX::COMMON::Result<void>::Success();
-        } catch (const std::exception &)
-        {
-            return SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::InternalFailure), "Failed to register HTTP route.");
-        } catch (...)
-        {
-            return SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::InternalFailure), "Failed to register HTTP route.");
-        }
+                    inTransportCallback = previous;
+                };
+                const auto id                                       = requestId(request);
+                request.attributes[std::string{requestIdAttribute}] = id;
+                request.headers[std::string{kRequestIdHeader}]      = id;
+                auto response                                       = next(request);
+                if (response.body.empty() && response.statusCode >= 400)
+                {
+                    auto error       = convertResponse(errorResponse(responseError(response.statusCode), id), id);
+                    error.statusCode = response.statusCode;
+                    response         = std::move(error);
+                }
+                response.headers[std::string{kRequestIdHeader}] = id;
+                accessLog(request, id, response.statusCode);
+                return response;
+            });
+        if (!configured.ok)
+            return networkResult(configured);
+        configured = server->onRequestError(
+            [this](const auto &request, int status, auto)
+            {
+                const auto previous = inTransportCallback;
+                inTransportCallback = true;
+                defer
+                {
+                    inTransportCallback = previous;
+                };
+                const auto id = requestId(request);
+                auto response = convertResponse(errorResponse(responseError(status), id), id);
+                accessLog(request, id, status);
+                return response;
+            });
+        if (!configured.ok)
+            return networkResult(configured);
+        configured = server->onNotFound([this](const auto &request) { return notFound(request); });
+        if (!configured.ok)
+            return networkResult(configured);
+        configured = server->get(healthPath(),
+                                 [](const auto &request)
+                                 {
+                                     const auto id = requestId(request);
+                                     return convertResponse(HttpTransport::healthResponse(id), id);
+                                 });
+        if (!configured.ok)
+            return networkResult(configured, ErrorCode::InvalidConfiguration);
+        server_ = std::move(server);
+        return Result<void>::Success();
     }
 
-    [[nodiscard]] auto start() -> SZX::COMMON::Result<void>
+    auto registerRoute(std::string method, std::string path, HttpHandler handler) -> Result<void>
     {
+        if (inTransportCallback)
+            return failure(ErrorCode::TransportFailure);
         try
         {
             std::lock_guard lock(mutex_);
             if (started_)
-                return SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::TransportFailure), "HTTP service is already running.");
-            const auto valid = config_.validate();
-            if (!valid.ok)
-                return valid;
-            server_.setHost(config_.host.c_str());
-            server_.setPort(config_.port);
-            server_.setThreadNum(config_.workerThreads);
-            server_.setMaxWorkerConnectionNum(config_.maxConnections);
-            if (server_.start() != 0)
-                return SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::TransportFailure), "Failed to start HTTP service.");
-            started_ = true;
-            return SZX::COMMON::Result<void>::Success();
-        } catch (const std::exception &)
-        {
-            return SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::InternalFailure), "Failed to start HTTP service.");
+                return failure(ErrorCode::TransportFailure);
+            if (!validMethod(method) || !handler)
+                return failure(ErrorCode::ValidationError);
+            if (path == healthPath())
+                return failure(ErrorCode::RouteConflict);
+            const auto ready = ensureServer();
+            if (!ready.ok)
+                return ready;
+            return networkResult(server_->route(std::move(method), std::move(path),
+                                                [handler = std::move(handler)](const auto &request)
+                                                {
+                                                    const auto converted = convertRequest(request);
+                                                    return convertResponse(handler(converted), converted.requestId);
+                                                }));
         } catch (...)
         {
-            return SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::InternalFailure), "Failed to start HTTP service.");
+            return failure(ErrorCode::InternalFailure);
         }
     }
 
-    [[nodiscard]] auto stop() -> SZX::COMMON::Result<void>
+    auto start() -> Result<void>
     {
+        if (inTransportCallback)
+            return failure(ErrorCode::TransportFailure);
+        try
+        {
+            std::lock_guard lock(mutex_);
+            if (started_)
+                return failure(ErrorCode::TransportFailure);
+            const auto ready = ensureServer();
+            if (!ready.ok)
+                return ready;
+            staticHandler_ = {};
+            if (!config_.staticRoot.empty())
+            {
+                std::error_code error;
+                const bool exists = std::filesystem::exists(config_.staticRoot, error);
+                if (error)
+                    return failure(ErrorCode::InvalidConfiguration);
+                if (exists)
+                {
+                    auto files = Network::HttpServer::CreateStaticHandler(config_.staticRoot, config_.staticHomePage);
+                    if (!files.ok)
+                        return networkResult(Result<void>::Failure(files.error, {}), ErrorCode::InvalidConfiguration);
+                    staticHandler_ = std::move(files.value);
+                }
+            }
+            const auto result = server_->start();
+            if (!result.ok)
+                return networkResult(result, ErrorCode::InvalidConfiguration);
+            started_ = true;
+            return Result<void>::Success();
+        } catch (...)
+        {
+            return failure(ErrorCode::InternalFailure);
+        }
+    }
+
+    auto stop() -> Result<void>
+    {
+        // Reject before locking: another thread may be holding the lifecycle lock while joining us.
+        if (inTransportCallback)
+            return failure(ErrorCode::TransportFailure);
         try
         {
             std::lock_guard lock(mutex_);
             if (!started_)
-                return SZX::COMMON::Result<void>::Success();
-            if (server_.stop() != 0)
-                return SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::TransportFailure), "Failed to stop HTTP service.");
+                return Result<void>::Success();
+            const auto result = server_->stop();
+            if (!result.ok)
+                return networkResult(result);
             started_ = false;
-            return SZX::COMMON::Result<void>::Success();
-        } catch (const std::exception &)
-        {
-            return SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::InternalFailure), "Failed to stop HTTP service.");
+            return Result<void>::Success();
         } catch (...)
         {
-            return SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::InternalFailure), "Failed to stop HTTP service.");
+            return failure(ErrorCode::InternalFailure);
         }
     }
 
     ServerConfig config_;
-    hv::HttpService router_;
-    hv::HttpServer server_;
-    mutable std::mutex mutex_;
+    std::mutex mutex_;
     std::atomic_bool started_{};
+    Network::HttpRouteHandler staticHandler_;
+    std::unique_ptr<Network::HttpServer> server_; // Join before releasing captured configuration and file handler.
 };
 
 HttpTransport::HttpTransport(ServerConfig config) :
     impl_(std::make_unique<Impl>(std::move(config)))
 {
 }
-
 HttpTransport::~HttpTransport() = default;
 
-auto HttpTransport::registerRoute(std::string method, std::string path, HttpHandler handler) -> SZX::COMMON::Result<void>
+auto HttpTransport::registerRoute(std::string method, std::string path, HttpHandler handler) -> Result<void>
 {
     return impl_->registerRoute(std::move(method), std::move(path), std::move(handler));
 }
-
-auto HttpTransport::start() -> SZX::COMMON::Result<void>
+auto HttpTransport::start() -> Result<void>
 {
     return impl_->start();
 }
-
-auto HttpTransport::stop() -> SZX::COMMON::Result<void>
+auto HttpTransport::stop() -> Result<void>
 {
     return impl_->stop();
 }
-
 auto HttpTransport::running() const noexcept -> bool
 {
     return impl_->started_;
 }
-
 auto HttpTransport::port() const noexcept -> std::uint16_t
 {
     return impl_->config_.port;
 }
-
 auto HttpTransport::config() const noexcept -> const ServerConfig &
 {
     return impl_->config_;

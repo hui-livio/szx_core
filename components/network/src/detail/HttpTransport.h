@@ -12,7 +12,8 @@ public:
     using Handler      = std::function<HttpServerResponse(HttpServerRequest &)>;
     using ErrorHandler = std::function<void(NetworkError)>;
 
-    HttpTransport(HttpServerOptions options, Handler handler, ErrorHandler onError);
+    HttpTransport(HttpServerOptions options, std::uint32_t maxConnections, Handler handler, ErrorHandler onError,
+                  HttpRequestErrorHandler onRequestError);
     ~HttpTransport();
     HttpTransport(const HttpTransport &)                     = delete;
     auto operator=(const HttpTransport &) -> HttpTransport & = delete;

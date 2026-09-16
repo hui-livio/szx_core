@@ -34,7 +34,9 @@ if(NOT TARGET szx_rbac_ormpp)
     target_link_libraries(szx_rbac_ormpp INTERFACE szx::rbac_mysqlclient)
 endif()
 
-szx_add_libhv()
+if(NOT TARGET szx::network)
+    message(FATAL_ERROR "szx_admin_service requires SZX_COMPONENTS_BUILD_NETWORK=ON")
+endif()
 
 add_library(szx_rbac_infra STATIC
     src/infra/ErrorCode.cc
@@ -52,7 +54,7 @@ target_include_directories(szx_rbac_infra
 
 target_link_libraries(szx_rbac_infra
     PUBLIC szx::common
-    PRIVATE hv_static szx_rbac_ormpp szx::crypto szx::crypto_service
+    PRIVATE szx::network szx::logger szx_rbac_ormpp szx::crypto szx::crypto_service
 )
 
 target_compile_features(szx_rbac_infra PUBLIC cxx_std_20)
@@ -82,6 +84,7 @@ target_link_libraries(szx_admin_service
 
 target_compile_features(szx_admin_service PRIVATE cxx_std_20)
 szx_apply_default_compile_policy(szx_admin_service)
+szx_copy_runtime_dlls(szx_admin_service)
 
 add_custom_command(TARGET szx_admin_service POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory

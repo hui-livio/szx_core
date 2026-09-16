@@ -52,6 +52,7 @@ else()
 endif()
 
 option(SZX_COMPONENTS_BUILD_NETWORK "Build the HTTP server network component" ${SZX_COMPONENTS_STANDALONE_BUILD})
+option(SZX_COMPONENTS_BUILD_RBAC "Build the RBAC admin backend (requires network)" ${SZX_COMPONENTS_STANDALONE_BUILD})
 option(SZX_COMPONENTS_BUILD_TESTS "Build component smoke tests" ${_SZX_COMPONENTS_DEFAULT_TESTS})
 option(SZX_COMPONENTS_INSTALL "Generate install tree and package config" ${_SZX_COMPONENTS_DEFAULT_INSTALL})
 option(SZX_COMPONENTS_BUILD_CAMERA "Build camera component" ${_SZX_COMPONENTS_DEFAULT_CAMERA})
@@ -161,7 +162,9 @@ elseif(SZX_COMPONENTS_BUILD_COMPRESSION AND NOT SZX_COMPRESSION_BACKEND STREQUAL
 endif()
 
 add_subdirectory(components)
-add_subdirectory(RBAC)
+if(SZX_COMPONENTS_BUILD_RBAC)
+    add_subdirectory(RBAC)
+endif()
 add_subdirectory(tools)
 
 szx_install_components_package()

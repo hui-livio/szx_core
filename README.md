@@ -29,6 +29,12 @@ ctest --test-dir build/msvc -C Release --output-on-failure
 cmake --install build/msvc --config Release
 ```
 
+RBAC admin 后端通过 `szx::network` 提供 HTTP 服务。独立构建默认启用
+`SZX_COMPONENTS_BUILD_RBAC` 和 `SZX_COMPONENTS_BUILD_NETWORK`；作为子项目时两者默认关闭，
+需要 admin 时同时设为 ON。仅消费基础库时可保持 RBAC 关闭，从而不引入服务和 MySQL 依赖。
+admin 的 request ID、JSON 错误与 SPA 策略通过网络库回调注入，见
+[RBAC 基础能力计划](docs/RBAC/11-基础能力开发计划.md)。
+
 许可证请求、签发和验证的端到端测试（同时覆盖错误产品、篡改文件、损坏请求和非法参数）：
 
 ```powershell

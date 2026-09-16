@@ -37,6 +37,8 @@ using HttpRouteHandler = std::function<HttpServerResponse(const HttpServerReques
 using HttpNext         = std::function<HttpServerResponse(HttpServerRequest &)>;
 /** @brief First registered middleware is outermost; next must be called synchronously, at most once. */
 using HttpMiddleware = std::function<HttpServerResponse(HttpServerRequest &, const HttpNext &)>;
+/** @brief Customize an error response. The request may be incomplete; its status cannot be changed. */
+using HttpRequestErrorHandler = std::function<HttpServerResponse(const HttpServerRequest &, int, NetworkError)>;
 
 /** @brief HTTP server settings. The first release owns its IO threads; no shared loops. */
 struct HttpServerOptions final
@@ -68,6 +70,15 @@ public:
      * @return Owned server, InvalidArgument, TlsUnavailable or Internal.
      */
     [[nodiscard]] static auto Create(HttpServerOptions options) -> SZX::COMMON::Result<std::unique_ptr<HttpServer>>;
+    /** @brief Create a reusable, confined GET/HEAD file handler for application routing policies.
+     * @param[in] directory Existing root directory; keep it immutable to untrusted writers.
+     * @param[in] homePage Relative directory index path, confined to directory.
+     * @return Owned handler, InvalidArgument or Internal. The handler returns 404 for missing files,
+     * 403 for unsafe paths, 413 above 16 MiB, and 500 for read failures or exceptions.
+     * @note Paths are relative to URL root. No SPA fallback; safe to invoke concurrently.
+     */
+    [[nodiscard]] static auto CreateStaticHandler(std::filesystem::path directory, std::string homePage = "index.html")
+        -> SZX::COMMON::Result<HttpRouteHandler>;
     /** @brief Stop and join all workers. Must execute outside every network callback. */
     ~HttpServer();
     HttpServer(const HttpServer &)                     = delete;
@@ -109,6 +120,20 @@ public:
      * @note Receives callback/protocol/body-limit failures; synchronous API failures are returned directly.
      */
     [[nodiscard]] auto onError(ErrorCallback callback) -> SZX::COMMON::Result<void>;
+    /** @brief Customize parser/body-limit and uncaught handler/middleware error responses.
+     * @param[in] handler Callback, or empty to restore empty error responses.
+     * @return Success, AlreadyRunning or Internal.
+     * @note Runs outside middleware, under the same callback lifetime rules. Partial request data
+     * is untrusted. The original HTTP status and connection framing are preserved. Throwing or
+     * returning invalid headers falls back to an empty response; onError still observes the error.
+     */
+    [[nodiscard]] auto onRequestError(HttpRequestErrorHandler handler) -> SZX::COMMON::Result<void>;
+    /** @brief Set the total accepted connection limit while stopped.
+     * @param[in] count Nonzero limit; excess connections are closed before request processing.
+     * @return Success, InvalidArgument, AlreadyRunning or Internal.
+     * @note The default remains ioThreadCount * 1024. Includes idle keepalive connections.
+     */
+    [[nodiscard]] auto setMaxConnections(std::uint32_t count) -> SZX::COMMON::Result<void>;
     /** @brief Bind and start IO workers; returns BindFailed or AlreadyRunning on failure. */
     [[nodiscard]] auto start() -> SZX::COMMON::Result<void>;
     /** @brief Stop/join workers and close connections. Idempotent; restart retains configuration.

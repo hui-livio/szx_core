@@ -8,7 +8,17 @@ int main()
     auto created = SZX::NETWORK::HttpServer::Create({});
     if (!created.ok)
         return created.error;
-    auto &server    = *created.value;
+    auto &server       = *created.value;
+    const auto limited = server.setMaxConnections(8);
+    if (!limited.ok)
+        return limited.error;
+    const auto errors =
+        server.onRequestError([](const auto &, int, auto) { return SZX::NETWORK::HttpServerResponse{.body = "custom error"}; });
+    if (!errors.ok)
+        return errors.error;
+    const auto files = SZX::NETWORK::HttpServer::CreateStaticHandler(std::filesystem::current_path());
+    if (!files.ok || files.value({.method = "POST", .path = "/"}).statusCode != 404)
+        return 101;
     auto registered = server.get("/hello", [](const auto &) { return SZX::NETWORK::HttpServerResponse{.body = "hello"}; });
     if (!registered.ok)
         return registered.error;

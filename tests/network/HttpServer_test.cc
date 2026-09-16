@@ -11,14 +11,7 @@
 #include "FileHelper.hpp"
 #include "SzxNetwork/HttpServer.h"
 
-#ifdef _WIN32
-    #include <winsock2.h>
-    #include <ws2tcpip.h>
-#else
-    #include <arpa/inet.h>
-    #include <sys/socket.h>
-    #include <unistd.h>
-#endif
+#include "../support/HttpClient.h"
 
 using namespace SZX::NETWORK;
 using namespace std::chrono_literals;
@@ -26,130 +19,8 @@ static_assert(std::is_same_v<HttpServer, SZX::NETWORK::v1::HttpServer>);
 
 namespace
 {
-// Deliberately independent of libhv: exercise the shipped DLL only through public headers and TCP.
-class Client final
-{
-public:
-#ifdef _WIN32
-    using Handle                    = SOCKET;
-    static constexpr Handle invalid = INVALID_SOCKET;
-#else
-    using Handle                    = int;
-    static constexpr Handle invalid = -1;
-#endif
-    explicit Client(std::uint16_t port)
-    {
-#ifdef _WIN32
-        static const auto initialized = []
-        {
-            WSADATA data{};
-            return WSAStartup(MAKEWORD(2, 2), &data);
-        }();
-        if (initialized != 0)
-            throw std::runtime_error("WSAStartup failed");
-#endif
-        fd_ = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-        if (fd_ == invalid)
-            throw std::runtime_error("socket failed");
-#ifdef _WIN32
-        const DWORD timeout = 3000;
-#else
-        const timeval timeout{3, 0};
-#endif
-        setsockopt(fd_, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char *>(&timeout), sizeof(timeout));
-        setsockopt(fd_, SOL_SOCKET, SO_SNDTIMEO, reinterpret_cast<const char *>(&timeout), sizeof(timeout));
-        sockaddr_in address{};
-        address.sin_family = AF_INET;
-        address.sin_port   = htons(port);
-        inet_pton(AF_INET, "127.0.0.1", &address.sin_addr);
-        if (connect(fd_, reinterpret_cast<const sockaddr *>(&address), sizeof(address)) != 0)
-        {
-            close();
-            throw std::runtime_error("connect failed");
-        }
-    }
-    ~Client()
-    {
-        close();
-    }
-    Client(const Client &)                     = delete;
-    auto operator=(const Client &) -> Client & = delete;
-    void send(const std::string &data)
-    {
-        std::size_t offset = 0;
-        while (offset < data.size())
-        {
-            const auto sent = ::send(fd_, data.data() + offset, static_cast<int>(data.size() - offset), 0);
-            if (sent <= 0)
-                throw std::runtime_error("send failed");
-            offset += static_cast<std::size_t>(sent);
-        }
-    }
-    auto read(bool head = false) -> std::string
-    {
-        char buffer[4096];
-        for (;;)
-        {
-            const auto end = received_.find("\r\n\r\n");
-            if (end != received_.npos)
-            {
-                std::size_t responseSize = end + 4;
-                if (!head)
-                {
-                    const auto length = received_.find("Content-Length: ");
-                    if (length == received_.npos || length >= end)
-                        throw std::runtime_error("missing response length");
-                    responseSize += std::stoull(received_.substr(length + 16));
-                }
-                if (received_.size() >= responseSize)
-                {
-                    auto response = received_.substr(0, responseSize);
-                    received_.erase(0, responseSize);
-                    return response;
-                }
-            }
-            const auto n = recv(fd_, buffer, sizeof(buffer), 0);
-            if (n == 0)
-                throw std::runtime_error("connection closed before complete response");
-            if (n < 0)
-                throw std::runtime_error("receive timeout/error");
-            received_.append(buffer, n);
-        }
-    }
+using namespace SZX::TEST::HTTP;
 
-private:
-    void close()
-    {
-        if (fd_ == invalid)
-            return;
-#ifdef _WIN32
-        closesocket(fd_);
-#else
-        ::close(fd_);
-#endif
-        fd_ = invalid;
-    }
-    Handle fd_ = invalid;
-    std::string received_;
-};
-
-auto request(std::uint16_t port, const std::string &method, const std::string &path, const std::string &body = {},
-             const std::string &headers = {}) -> std::string
-{
-    Client client(port);
-    client.send(method + " " + path + " HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nContent-Length: " +
-                std::to_string(body.size()) + "\r\n" + headers + "\r\n" + body);
-    return client.read(method == "HEAD");
-}
-auto status(const std::string &response) -> int
-{
-    return response.size() >= 12 ? std::stoi(response.substr(9, 3)) : 0;
-}
-auto body(const std::string &response) -> std::string
-{
-    const auto position = response.find("\r\n\r\n");
-    return position == response.npos ? std::string{} : response.substr(position + 4);
-}
 auto makeServer(std::size_t limit = 1024) -> std::unique_ptr<HttpServer>
 {
     HttpServerOptions options;
@@ -687,6 +558,73 @@ TEST(HttpServerTest, KeepAliveAndConcurrentRequests)
     EXPECT_TRUE(server->stop().ok); // Also closes the still-open keepalive client.
 }
 
+TEST(HttpServerTest, InjectedErrorResponsesPreserveStatusAndContainCallbackFailures)
+{
+    auto server = makeServer(4);
+    std::atomic<int> observed{0};
+    EXPECT_TRUE(server->onError([&](auto, const auto &) { ++observed; }).ok);
+    EXPECT_TRUE(server
+                    ->onRequestError(
+                        [&](const auto &input, int code, auto error)
+                        {
+                            EXPECT_EQ(code, 413);
+                            EXPECT_EQ(error, NetworkError::MessageTooLarge);
+                            EXPECT_EQ(input.headers.at("X-Custom"), "retained");
+                            EXPECT_FALSE(server->stop().ok);
+                            return HttpServerResponse{.statusCode = 200, .body = "custom", .headers = {{"X-Error", "injected"}}};
+                        })
+                    .ok);
+    EXPECT_TRUE(server->start().ok);
+    auto response = request(server->port(), "POST", "/absent", "12345", "X-Custom: retained\r\n");
+    EXPECT_EQ(status(response), 413);
+    EXPECT_EQ(body(response), "custom");
+    EXPECT_NE(response.find("X-Error: injected"), response.npos);
+    EXPECT_TRUE(server->stop().ok);
+    EXPECT_EQ(observed.load(), 1);
+    for (const bool throws : {false, true})
+    {
+        EXPECT_TRUE(server
+                        ->onRequestError(
+                            [throws](const auto &, int, auto) -> HttpServerResponse
+                            {
+                                if (throws)
+                                    throw std::runtime_error("private diagnostic");
+                                return {.headers = {{"X-Invalid", "value\r\nInjected: true"}}};
+                            })
+                        .ok);
+        EXPECT_TRUE(server->start().ok);
+        response = request(server->port(), "POST", "/absent", "12345");
+        EXPECT_EQ(status(response), 413);
+        EXPECT_TRUE(body(response).empty());
+        EXPECT_EQ(response.find("Injected"), response.npos);
+        EXPECT_TRUE(server->stop().ok);
+    }
+    EXPECT_EQ(observed.load(), 3);
+}
+
+TEST(HttpServerTest, ConnectionLimitIncludesIdleConnectionsAndSurvivesRestart)
+{
+    HttpServerOptions options;
+    options.ioThreadCount = 4;
+    auto created          = HttpServer::Create(options);
+    EXPECT_TRUE(created.ok);
+    auto server = std::move(created.value);
+    EXPECT_EQ(server->setMaxConnections(0).error, static_cast<int>(NetworkError::InvalidArgument));
+    EXPECT_TRUE(server->setMaxConnections(1).ok);
+    EXPECT_TRUE(server->get("/ok", ok).ok);
+    for (int run = 0; run < 2; ++run)
+    {
+        EXPECT_TRUE(server->start().ok);
+        EXPECT_EQ(server->setMaxConnections(2).error, static_cast<int>(NetworkError::AlreadyRunning));
+        Client held(server->port());
+        held.send("GET /ok HTTP/1.1\r\nHost: localhost\r\n\r\n");
+        EXPECT_EQ(body(held.read()), "ok");
+        Client rejected(server->port());
+        EXPECT_TRUE(rejected.peerClosed());
+        EXPECT_TRUE(server->stop().ok);
+    }
+}
+
 TEST(HttpServerTest, StopWaitsForInFlightCallback)
 {
     auto server = makeServer();
@@ -735,7 +673,14 @@ TEST(HttpServerTest, StaticMountIsConfinedAndFallbackStaysWithinPrefix)
     const auto root = directory / "public";
     EXPECT_TRUE(SZX::COMMON::FileHelper::WriteText(root / "index.html", "<html>app</html>"));
     EXPECT_TRUE(SZX::COMMON::FileHelper::WriteText(root / "hello.txt", "hello"));
+    EXPECT_TRUE(SZX::COMMON::FileHelper::WriteText(root / "custom.htm", "custom index"));
     EXPECT_TRUE(SZX::COMMON::FileHelper::WriteText(directory / "secret.txt", "SECRET"));
+    const auto files = HttpServer::CreateStaticHandler(root, "custom.htm");
+    EXPECT_TRUE(files.ok);
+    EXPECT_FALSE(HttpServer::CreateStaticHandler(root, "../secret.txt").ok);
+    EXPECT_EQ(files.value(HttpServerRequest{.method = "GET", .path = "/"}).body, "custom index");
+    EXPECT_EQ(files.value(HttpServerRequest{.method = "GET", .path = "/missing"}).statusCode, 404);
+    EXPECT_EQ(files.value(HttpServerRequest{.method = "GET", .path = "/%2e%2e/secret.txt"}).statusCode, 403);
     EXPECT_TRUE(server->mountStatic("/ui", root, "index.html").ok);
     EXPECT_EQ(server->mountStatic("/ui/", root).error, static_cast<int>(NetworkError::RouteConflict));
     EXPECT_FALSE(server->mountStatic("/bad", root, "../secret.txt").ok);

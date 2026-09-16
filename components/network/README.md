@@ -2,6 +2,8 @@
 
 本版仅发布 HTTP/1.1 服务端 `HttpServer`，不发布 HTTP 客户端、TCP/UDP、WebSocket 或共享 `EventLoopGroup`。公共 API 位于 `SZX::NETWORK::inline v1`；默认写 `SZX::NETWORK::HttpServer`，也可显式写 `SZX::NETWORK::v1::HttpServer`。这是新增组件，没有旧版 ABI 需要迁移。使用方需要与 DLL 保持相同编译器、STL 和运行时配置。
 
+组件 1.1.0 在 v1 中兼容新增行为注入、连接限制与独立文件 handler 接口，已有公共结构体布局和函数签名保持不变，SOVERSION 仍为 1。
+
 ## 构建与链接
 
 独立构建默认开启；作为子项目默认关闭。使用 `-DSZX_COMPONENTS_BUILD_NETWORK=ON` 启用，链接 `szx::network`。组件是共享库，PUBLIC 依赖只有 `szx::common`，PRIVATE 链接已有 bundled `hv_static`，公共头文件与安装导出不依赖 libhv。`SZX_NETWORK_ENABLE_HTTP_CLIENT` 仍默认为 OFF，该后端选项不代表本版提供 HttpClient 门面。
@@ -62,6 +64,8 @@ int main()
 - 空监听地址默认 `127.0.0.1`。端口 0 由系统分配，启动后通过 `port()` 获取。默认 4 个 IO 线程、1 MiB 请求体上限、60 秒 keepalive；线程数范围 1..64。
 - `maxBodyBytes` 同时限制 Content-Length 与 chunked 数据，超过上限即发送 413 并停止读取，不等待剩余数据。超限检查覆盖未注册路径；解析器无法表示的长度或非法报文定界返回 400，头部超限返回 431。支持 `Expect: 100-continue`，其值按 ASCII 大小写不敏感匹配，其他期望值返回 417。
 - handler 与 middleware 抛异常时返回空 500 并通知 `onError(Internal)`；错误观察器自身抛异常会被拦截。非法响应状态或头字段映射为 `ProtocolError`/500；Content-Length、Transfer-Encoding、Connection 由适配层管理。
+- `onRequestError()` 可注入上述异常兜底以及早期解析/请求体超限的响应内容。回调获得可能不完整的请求、HTTP 状态和 `NetworkError`，由调用方决定内容格式；网络库保留原始状态和连接定界。回调抛异常或输出非法头时退回空错误响应，不递归调用。该接口不内置 JSON、request ID 或应用错误码，且不替代 `onError()` 观察器。
+- `setMaxConnections()` 设置非零的全服务连接上限，包含空闲 keepalive 连接；多 IO 线程共用同一个计数。默认保持 `ioThreadCount * 1024`，超限连接在处理请求前关闭。
 - 公共错误用固定数值 `NetworkError` 和 `COMMON::Result<T>`，诊断字符串目前为空，不透传第三方异常、请求体、凭据或文件系统路径。同步 API 失败通过返回值报告。`use/onNotFound/onError` 相比设计草案改为返回 Result，以明确报告非法参数和运行中配置失败。
 
 ## 线程与生命周期
@@ -81,13 +85,17 @@ if (!mounted.ok) return mounted.error;
 
 路径解码一次后拒绝 `..`、盘符/NTFS 流、反斜杠和符号链接逃逸，回退文件也必须位于挂载目录中。目录内容不能由不可信进程在服务期间替换（规范化与打开之间不提供操作系统级抗竞态保证）。文件使用 common 的限长读接口，当前最多 16 MiB，超出返回 413；初版静态文件读取是同步的，适合小型 UI 资源，未提供 Range、缓存协商或大文件流式发送。
 
+需要自行决定目录首页或回退条件时，使用 `HttpServer::CreateStaticHandler(directory, homePage)` 创建可复用的文件 handler，再注入 `onNotFound()` 或路由。它复用上述路径安全和大小检查，缺失文件返回 404，不自动执行 SPA 回退。业务层可依据请求和结果决定后续行为。
+
+RBAC admin 使用这些扩展点：`use()` 注入 request ID 与访问日志，`onRequestError()` 注入 JSON 错误，`onNotFound()` 决定 API 路径排除和无扩展名路径的 SPA 回退。所有 RBAC 策略位于 `RBAC/szx_admin`；网络库不依赖 admin、JSON 或 logger。
+
 ## TLS 与后续范围
 
 默认 `SZX_NETWORK_ENABLE_TLS=OFF`，此时 `tls.enabled=true` 在 Create 返回 `TlsUnavailable`。打开该构建选项时复用 `szx_add_libhv()` 的 OpenSSL 配置，透传 PEM 证书、私钥、CA 与 peer 校验选项，不管理证书轮换。HTTP 服务端每个实例拥有独立 IO 线程；后续增加其他协议时再设计共享循环与异步响应，不提前发布占位接口。
 
 ## 初版验证记录
 
-在 Windows x64 / MSVC 19.44 / RelWithDebInfo / TLS OFF 下，18 个网络用例全部通过，覆盖真实回环连接、路由参数隔离、二进制 body、中间件顺序和短路、提前 413、超大 chunk 长度与数值溢出拒绝、请求行/头/体分片、大小写混合的 100-continue、HEAD/GET 流水线、报文定界与尾部字段隔离、目标路径解析、异常隔离、重启、端口冲突、并发、停止等待与静态目录约束。已有 `test_rbac_auth`、`test_rbac_infra`、`test_rbac_database` 3 组测试通过，`szx_admin_service` 构建通过。
+在 Windows x64 / MSVC 19.44 / RelWithDebInfo / TLS OFF 下，20 个网络用例全部通过，覆盖真实回环连接、路由参数隔离、二进制 body、中间件顺序和短路、提前 413、超大 chunk 长度与数值溢出拒绝、请求行/头/体分片、大小写混合的 100-continue、HEAD/GET 流水线、报文定界与尾部字段隔离、目标路径解析、异常隔离、错误响应注入、连接上限、重启、端口冲突、并发、停止等待与静态目录约束。已有 `test_rbac_auth`、`test_rbac_infra`、`test_rbac_database` 3 组测试通过，其中 infra 包含 4 个 admin 真实 TCP 集成用例；`szx_admin_service` 构建通过。
 
 安装树独立消费测试位于 `tests/network/package`，验证 `find_package(... COMPONENTS Network)`、默认/显式 v1 类型和启动/停止。导出依赖只有 `szx::common`；安装目录没有 `hv/` 头文件，DLL 不依赖 libhv DLL，导出符号为网络 v1 API。仓库格式化和差异空白检查通过。TLS ON、真实证书握手及非 Windows 平台尚未验证。
 

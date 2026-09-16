@@ -2,12 +2,9 @@ include_guard(GLOBAL)
 
 # Single source of truth for the bundled libhv build.
 #
-# libhv is consumed by szx_rbac_infra and szx::network.
-# Each consumer used to set its own libhv options right before calling
-# add_subdirectory(), so whichever directory was configured first silently
-# decided what the shared hv_static target contained; a consumer that expected
-# WITH_HTTP_CLIENT=ON would only find out at link time.  Every consumer calls
-# szx_add_libhv() instead, and the options below are the only place they live.
+# libhv is a private backend of szx::network. Application services, including
+# szx_rbac_infra, consume szx::network instead of linking hv_static directly.
+# Keep all backend build options here.
 
 set(SZX_LIBHV_ROOT "${CMAKE_CURRENT_LIST_DIR}/../third_party/libhv" CACHE PATH
     "Bundled libhv source root")
@@ -30,7 +27,7 @@ function(szx_add_libhv)
     # parent project cache and later SZX components are not modified.  Same
     # approach as _szx_add_compression() in the top-level CMakeLists.
     #
-    # Every consumer links hv_static, but BUILD_SHARED stays ON: on MSVC libhv
+    # The network component links hv_static, but BUILD_SHARED stays ON: on MSVC libhv
     # installs $<TARGET_PDB_FILE:hv> without guarding it on BUILD_SHARED
     # (third_party/libhv/CMakeLists.txt:276-278), so dropping the shared library
     # fails the generate step.  Changing that means patching vendored code.
@@ -47,8 +44,7 @@ function(szx_add_libhv)
     set(WITH_KCP OFF)
 
     # Off until szx::network actually ships HttpClient, so the admin service
-    # keeps its current footprint.  Flipping this option is the whole point of
-    # having one call site: both consumers move together.
+    # keeps its current footprint.
     if(SZX_NETWORK_ENABLE_HTTP_CLIENT)
         set(WITH_HTTP_CLIENT ON)
     else()
