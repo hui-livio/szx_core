@@ -31,14 +31,8 @@ auto sessionResponse(AUTH::LoginService &service, const AUTH::LoginSession &sess
     using SZX::COMMON::Json;
     try
     {
-        const auto nullable = [](const std::optional<std::string> &value)
-        {
-            return value ? Json(*value) : Json(nullptr);
-        };
         const auto &user = session.user;
         Json profile{{"id", user.id},
-                     {"uid", nullable(user.uid)},
-                     {"username", nullable(user.username)},
                      {"display_name", user.display_name},
                      {"role", user.role},
                      {"status", user.status},
@@ -46,18 +40,21 @@ auto sessionResponse(AUTH::LoginService &service, const AUTH::LoginSession &sess
                      {"password_change_recommended", user.force_password_change && user.role != "super_admin"},
                      {"version", user.version},
                      {"authz_version", user.authz_version},
-                     {"last_login_at", nullable(user.last_login_at)},
-                     {"created_at", user.created_at},
-                     {"updated_at", user.updated_at}};
-        auto response =
-            RestApi::success(Json{{"user", std::move(profile)},
-                                  {"access_token", session.accessToken},
-                                  {"token_type", "Bearer"},
-                                  {"expires_in", 900},
-                                  {"expires_at", SZX::COMMON::TimeHelper::TimestampToIso8601(session.expiresAt * 1000)},
-                                  {"authz_version", user.authz_version},
-                                  {"csrf_token", session.csrfToken}},
-                             request.requestId);
+                     {"last_login_at", utcTimestampJson(user.last_login_at)},
+                     {"created_at", utcTimestampJson(user.created_at)},
+                     {"updated_at", utcTimestampJson(user.updated_at)}};
+        if (user.uid)
+            profile["uid"] = *user.uid;
+        if (user.username)
+            profile["username"] = *user.username;
+        auto response = RestApi::success(Json{{"user", std::move(profile)},
+                                              {"access_token", session.accessToken},
+                                              {"token_type", "Bearer"},
+                                              {"expires_in", 900},
+                                              {"expires_at", session.expiresAt * 1000},
+                                              {"authz_version", user.authz_version},
+                                              {"csrf_token", session.csrfToken}},
+                                         request.requestId);
         if (response.statusCode == 200)
             response.headers.emplace(
                 "Set-Cookie",

@@ -1,5 +1,6 @@
 #include "UserRepository.h"
 #include "SzxAdmin/Infra/ErrorCode.h"
+#include "UUID.hpp"
 
 #include <ormpp/mysql.hpp>
 
@@ -33,6 +34,21 @@ YLT_REFL(LogRow, id, actor_user_id, target_user_id, event_name, result, request_
 
 namespace SZX::ADMIN::INFRA::DETAIL
 {
+// JSON metadata reports an unbounded width. The ormpp string binding can overflow
+// that width on Windows; its blob binding retrieves the actual byte length instead.
+struct LogRecord
+{
+    std::string id;
+    std::optional<std::string> actor_user_id;
+    std::optional<std::string> target_user_id;
+    std::string event_name;
+    std::string result;
+    std::string request_id;
+    ormpp::blob details_json;
+    std::string created_at;
+};
+YLT_REFL(LogRecord, id, actor_user_id, target_user_id, event_name, result, request_id, details_json, created_at);
+
 struct UserCredential
 {
     std::string id;
@@ -119,6 +135,10 @@ auto MySqlUserRepository::lockForMutation(const std::string &actorId, const std:
     {
         const std::string superAdmin{kSuperAdmin};
         const std::string active{kActive};
+        const auto actorUuid  = SZX::COMMON::Uuid::parse(actorId);
+        const auto targetUuid = SZX::COMMON::Uuid::parse(targetId);
+        if (!actorUuid || !targetUuid)
+            return Result<USER::MutationLock>::Failure(static_cast<int>(ErrorCode::ValidationError), {});
         // A single id-ordered locking read takes every row this mutation can need, so
         // requests that target each other cannot deadlock on interleaved lock order.
         auto rows = connection_.query_s<USER::UserRow>("(id = ? OR id = ? OR (role = ? AND status = ?)) ORDER BY id FOR UPDATE",
@@ -130,9 +150,10 @@ auto MySqlUserRepository::lockForMutation(const std::string &actorId, const std:
         {
             if (row.role == kSuperAdmin && row.status == kActive)
                 ++locked.activeSuperAdmins;
-            if (row.id == actorId)
+            const auto rowUuid = SZX::COMMON::Uuid::parse(row.id);
+            if (rowUuid == actorUuid)
                 locked.actor = row;
-            if (row.id == targetId)
+            if (rowUuid == targetUuid)
                 locked.target = std::move(row);
         }
         return Result<USER::MutationLock>::Success(std::move(locked));
@@ -284,11 +305,22 @@ auto MySqlUserRepository::queryLogs(const USER::LogFilter &filter) -> Result<USE
         if (page.total > offset)
         {
             auto rows =
-                connection_.query_s<USER::LogRow>(predicate + " ORDER BY created_at DESC, id ASC LIMIT ? OFFSET ?", from, from,
-                                                  to, to, event, event, result, result, actor, actor, limit, offset);
+                connection_.query_s<LogRecord>("SELECT id, actor_user_id, target_user_id, event_name, result, request_id, "
+                                               "CAST(details_json AS BINARY), created_at FROM user_logs WHERE " +
+                                                   predicate + " ORDER BY created_at DESC, id ASC LIMIT ? OFFSET ?",
+                                               from, from, to, to, event, event, result, result, actor, actor, limit, offset);
             if (connection_.has_error())
                 return queryFailed<USER::LogPage>();
-            page.items = std::move(rows);
+            page.items.reserve(rows.size());
+            for (auto &row : rows)
+                page.items.push_back({.id             = std::move(row.id),
+                                      .actor_user_id  = std::move(row.actor_user_id),
+                                      .target_user_id = std::move(row.target_user_id),
+                                      .event_name     = std::move(row.event_name),
+                                      .result         = std::move(row.result),
+                                      .request_id     = std::move(row.request_id),
+                                      .details_json   = std::string(row.details_json.begin(), row.details_json.end()),
+                                      .created_at     = std::move(row.created_at)});
         }
         return Result<USER::LogPage>::Success(std::move(page));
     } catch (...)

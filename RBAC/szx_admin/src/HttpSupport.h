@@ -1,7 +1,9 @@
 #pragma once
 
+#include "JsonHelper.hpp"
 #include "SzxAdmin/Infra/HttpTransport.h"
 
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -23,4 +25,8 @@ namespace SZX::ADMIN
 
 /** 读取查询参数，缺失时返回空字符串。 */
 [[nodiscard]] auto queryValue(const INFRA::HttpRequest &request, std::string_view name) -> std::string;
+
+/** UTC 数据库时间或 ISO 8601 转 JSON 毫秒时间戳；缺失值保留 null。
+ * MySQL 小数秒截断到毫秒；非法持久化时间抛出标准异常，由 HTTP 处理器映射为稳定错误码。 */
+[[nodiscard]] auto utcTimestampJson(const std::optional<std::string> &value) -> SZX::COMMON::Json;
 } // namespace SZX::ADMIN

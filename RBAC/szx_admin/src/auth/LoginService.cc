@@ -35,7 +35,7 @@ auto LoginConfig::validate() const -> Result<void>
     if (issuer.empty() || issuer.size() > 256 || audience.empty() || audience.size() > 256 || privateKeyPath.empty() ||
         publicKeyPath.empty() || refreshLifetimeSeconds < 900 || refreshLifetimeSeconds > 2592000 || failedLoginLimit < 1 ||
         failedLoginLimit > 100 || lockSeconds < 1 || lockSeconds > 86400 || attemptsPerMinute < 1 || attemptsPerMinute > 1000 ||
-        allowedOrigin.empty() ||
+        behaviorEventsPerMinute < 1 || behaviorEventsPerMinute > 1000 || allowedOrigin.empty() ||
         (allowedOrigin != "*" && !allowedOrigin.starts_with("https://") && !allowedOrigin.starts_with("http://")) ||
         allowedOrigin.find_first_of("\r\n") != std::string::npos)
         return failed<void>(ErrorCode::InvalidConfiguration);
@@ -46,7 +46,8 @@ LoginService::LoginService(INFRA::DatabasePool &database, LoginConfig config) :
     database_(database),
     config_(std::move(config)),
     keys_(crypto_),
-    jwt_(crypto_, {.issuer = config_.issuer, .audience = config_.audience}, keys_)
+    jwt_(crypto_, {.issuer = config_.issuer, .audience = config_.audience}, keys_),
+    rateLimiter_(config_.attemptsPerMinute)
 {
 }
 
@@ -125,20 +126,7 @@ auto LoginService::admitCredentialIssue(const std::string &peer) -> Result<void>
 
 auto LoginService::admit(const std::string &peer) -> bool
 {
-    std::lock_guard lock(rateMutex_);
-    const auto now = std::chrono::steady_clock::now();
-    std::erase_if(windows_, [&](const auto &item) { return item.second.expires <= now; });
-    auto found = windows_.find(peer);
-    if (found == windows_.end())
-    {
-        if (windows_.size() >= 4096)
-            return false;
-        found = windows_.emplace(peer, Window{now + std::chrono::minutes{1}, 0}).first;
-    }
-    if (found->second.count >= config_.attemptsPerMinute)
-        return false;
-    ++found->second.count;
-    return true;
+    return rateLimiter_.admit(peer);
 }
 
 auto LoginService::login(const LoginInput &input) -> Result<LoginSession>

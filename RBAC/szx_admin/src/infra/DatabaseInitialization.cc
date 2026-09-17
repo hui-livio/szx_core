@@ -105,9 +105,15 @@ constexpr std::string_view kMigration2 = R"SZXSQL(CREATE TABLE IF NOT EXISTS adm
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 )SZXSQL";
 
+constexpr std::string_view kMigration3 = R"SZXSQL(ALTER TABLE users
+  MODIFY uid_canonical VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_bin NULL,
+  MODIFY username_canonical VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_bin NULL;
+)SZXSQL";
+
 constexpr MigrationDefinition kMigrations[] = {
     {1, kMigration1, "86a4ac820cc8457a2131d0400d4968268576b17113f38fe86b6beceea48c2047"},
     {2, kMigration2, "f4223aadebf005f145941d06b89d2d41e964f4c059d2f765a8e1b3678d389d2d"},
+    {3, kMigration3, "66db48cd7957f45317269dcad13d2c2ac5c47eeacfc8e8bb715d2ca4b7e5f065"},
 };
 
 constexpr DETAIL::InitialAdministratorDefinition kInitialAdministrator{

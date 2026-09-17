@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../RateLimiter.h"
 #include "UserRepository.h"
 
 #include "SzxAdmin/Infra/Database.h"
@@ -135,5 +136,6 @@ private:
     INFRA::DatabasePool &database_;
     AUTH::LoginService &auth_;
     SZX::CRYPTO_SERVICE::CryptoService crypto_;
+    RateLimiter behaviorLimiter_;
 };
 } // namespace SZX::ADMIN::USER

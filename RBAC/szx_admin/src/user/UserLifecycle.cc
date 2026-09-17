@@ -1,6 +1,7 @@
 #include "../auth/LoginRepository.h"
 #include "../auth/LoginService.h"
 #include "../auth/PasswordHash.h"
+#include "AuditDetails.h"
 #include "UserService.h"
 #include "UserValidation.h"
 
@@ -576,6 +577,11 @@ auto UserService::recordBehavior(const ActorContext &context, const BehaviorEven
             reservedEventName(event.eventName) || (event.result != "success" && event.result != "failure") ||
             event.detailsJson.size() > 4096)
             return failed<std::string>(ErrorCode::ValidationError);
+        auto details = SZX::COMMON::JsonHelper::ParseRequiredObject(event.detailsJson);
+        if (!details)
+            return failed<std::string>(ErrorCode::ValidationError);
+        redactAuditDetails(*details);
+        const auto sanitizedDetails = details->dump();
         std::string identifier;
         const auto operation = database_.withConnection(
             [&](INFRA::DatabaseConnection &connection) -> Result<void>
@@ -600,9 +606,11 @@ auto UserService::recordBehavior(const ActorContext &context, const BehaviorEven
                         }
                     }
                 };
-                const auto actor = resolve(context, *users);
+                const auto actor = resolve(context, *users, true);
                 if (!actor.ok)
                     return Result<void>::Failure(actor.error, {});
+                if (!behaviorLimiter_.admit(actor.value.id))
+                    return failed<void>(ErrorCode::RateLimited);
                 const auto id      = SZX::COMMON::Uuid::v4().toString();
                 const auto audited = sessions->insertAudit({.id             = id,
                                                             .actor_user_id  = actor.value.id,
@@ -611,7 +619,7 @@ auto UserService::recordBehavior(const ActorContext &context, const BehaviorEven
                                                             .result         = event.result,
                                                             .request_id     = context.requestId,
                                                             .ip             = context.peerAddress,
-                                                            .details_json   = event.detailsJson});
+                                                            .details_json   = sanitizedDetails});
                 if (!audited.ok)
                     return audited;
                 const auto result = connection.commit();

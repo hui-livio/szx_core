@@ -350,24 +350,23 @@ class mysql {
       memcpy(value.data(), vec.data(), value.size());
     }
     else if constexpr (std::is_same_v<blob, U>) {
-      auto &vec = mp[i];
       const auto blob_len = get_blob_len(i);
       if (blob_len <= 0) {
         value.clear();
         return;
       }
 
-      vec.resize(static_cast<size_t>(blob_len));
+      // Keep the result binding buffer stable across rows, including large blobs.
+      value.resize(static_cast<size_t>(blob_len));
       MYSQL_BIND blob_bind = {};
       blob_bind.buffer_type = MYSQL_TYPE_BLOB;
-      blob_bind.buffer = vec.data();
-      blob_bind.buffer_length = static_cast<unsigned long>(vec.size());
+      blob_bind.buffer = value.data();
+      blob_bind.buffer_length = static_cast<unsigned long>(value.size());
       if (mysql_stmt_fetch_column(stmt_, &blob_bind, i, 0) != 0) {
         set_last_error(mysql_stmt_error(stmt_));
         value.clear();
         return;
       }
-      value.assign(vec.begin(), vec.end());
     }
 #ifdef ORMPP_WITH_CSTRING
     else if constexpr (std::is_same_v<CString, U>) {

@@ -4,13 +4,15 @@
 
 Base URL：`/api/v1`。认证头：`Authorization: Bearer <access_token>`。全站使用 HTTPS。成功使用 200/201/202/204；分页响应 `{items,total,page,page_size}`，`page_size` 服务端限制最大值；错误响应 `{code,message,details,request_id}`。服务端不得向客户端返回 `password_hash`、token 原文或私密密钥。
 
+响应中的绝对时间统一使用 JSON 整数形式的 UTC Unix 毫秒时间戳，包括 `expires_at`、`temporary_credential_expires_at`、`created_at`、`updated_at`、`last_login_at` 和审计日志时间。例如 `2026-09-17T09:15:00Z` 返回 `1789636500000`，数据库微秒小数截断到毫秒。缺失时间仍返回 `null`。业务端负责本地时区显示，例如 JavaScript 使用 `new Date(timestamp).toLocaleString()`。这是对旧版时间字符串响应的类型调整，客户端需同步更新；`expires_in` 和 JWT 标准声明 `iat/nbf/exp` 继续使用秒。
+
 并发约定固定使用 `If-Match: <version>`；所有 PATCH/PUT 和会改变用户状态/密码的 POST 都必须携带该请求头。请求体不再接受可选的 version 字段。版本不一致统一返回 HTTP 409 和 `CONFLICT_VERSION`。
 
 使用 refresh Cookie 的 POST 请求必须同时携带 `X-CSRF-Token`；CSRF token 不等同于 access/refresh token，不能写入日志。logout 未携带 refresh Cookie 时仅清 Cookie 并返回 204，不操作服务端会话，因此不要求 CSRF。
 
 ### 当前实现范围
 
-已实现 REST 协议基础层、健康/就绪检查及四个认证接口：`POST /auth/login`、`POST /auth/change-password`、`POST /auth/refresh`、`POST /auth/logout`。用户管理、权限和日志查询接口仍为待实现的业务契约。
+已实现 REST 协议基础层、健康/就绪检查、四个认证接口、用户管理、当前用户权限、行为事件采集和审计日志查询。
 
 - 服务路由在 `RBAC/szx_admin/src/Routes.cc` 集中注册；`main.cc` 只调用注册入口。`HttpTransport::registerApiRoute()` 接受以 `/` 开头的相对路径，自动拼接配置中的 `apiPrefix`（默认 `/api/v1`）。支持 GET、HEAD、POST、PUT、PATCH、DELETE、OPTIONS；OPTIONS 的响应由注册的处理器定义，不自动启用 CORS。
 - `HttpRequest` 提供解码后的 `pathParams`、`query`，以及忽略大小写的 `header()` 查询。参数和请求头沿用网络层单值映射语义，不提供重复值列表。
@@ -56,7 +58,7 @@ await fetch("/api/v1/auth/login", {
 
 服务端不保存或直接比较传输的 SHA-256 值，而是使用随机盐 Argon2id 再哈希，存储格式为 `sha256-v1:<Argon2id PHC>`。传输 hash 仍是登录凭据，使用 HTTPS 且不得写入日志。既有 `Argon2id(原密码)` 无法直接转换：仍使用默认密码且保留首次改密标记的初始超管在成功登录事务中自动升级；其他旧凭据保持原值，需要通过明确的密码重置迁移，不接受明文回退。该变化不修改既有建表 SQL 或 migration checksum。
 
-当前登录响应 `data` 包含 `user`、`access_token`、`token_type: "Bearer"`、`expires_in: 900`、UTC ISO 8601 `expires_at`、`authz_version` 和 `csrf_token`。用户信息沿用用户对象字段白名单，不包含密码哈希或临时凭据过期时间。首次改密按角色区分：
+当前登录响应 `data` 包含 `user`、`access_token`、`token_type: "Bearer"`、`expires_in: 900`、UTC Unix 毫秒时间戳 `expires_at`、`authz_version` 和 `csrf_token`。用户信息沿用用户对象字段白名单，不包含密码哈希或临时凭据过期时间。首次改密按角色区分：
 
 | 用户状态 | user.force_password_change | user.password_change_recommended | 业务端流程 |
 |---|---|---|---|
@@ -131,7 +133,7 @@ const response = await fetch("/api/v1/auth/refresh", {
 
 用户列表支持 `page`、`page_size`、`search`、`status`、`role` 和固定白名单 `sort` 参数；审计日志支持 `page`、`page_size`、`from`、`to`、`event_name`、`result` 和 `actor_user_id` 过滤。所有分页参数必须有服务端上限。
 
-审计日志条目返回 `id、actor_user_id、target_user_id、event_name、result、request_id、created_at、details`；`details` 已脱敏，不返回密码、token、私钥、原始机器标识或内部堆栈。
+审计日志条目返回 `id、actor_user_id、target_user_id、event_name、result、request_id、created_at、details`；`details` 为 JSON 对象，不是 JSON 字符串。查询历史日志时也执行下述字段脱敏规则，不修改历史记录。
 
 创建用户请求必须且只能提供 `uid` 或 `username`；创建后身份标识不可修改：
 
@@ -144,16 +146,18 @@ const response = await fetch("/api/v1/auth/refresh", {
 创建/重置成功响应只在本次返回临时凭据：
 
 ```json
-{"data":{"user":{...},"temporary_credential":"<show-once>","temporary_credential_expires_at":"2026-09-11T00:00:00Z"}}
+{"data":{"user":{...},"temporary_credential":"<show-once>","temporary_credential_expires_at":1789084800000}}
 ```
 
 客户端不得缓存或再次展示 `temporary_credential`。
 
 创建和重置密码先在事务内校验并锁定当前调用者，再生成临时凭据及 Argon2id 哈希。它们与登录、改密共享按实际对端 IP 计数的 `auth.attemptsPerMinute` 预算；超限返回 `429 / RATE_LIMITED`，不写入账号或凭据变更。
 
-用户对象统一返回 `id、uid、username、display_name、role、status、force_password_change、password_change_recommended、version、authz_version、last_login_at、created_at、updated_at`；临时凭据过期时间不返回给普通用户；缺失的 uid 或 username 返回 `null`，不返回密码哈希。force_password_change 与 password_change_recommended 按角色派生，不直接透传数据库同名字段。
+用户对象统一返回 `id、display_name、role、status、force_password_change、password_change_recommended、version、authz_version、last_login_at、created_at、updated_at`，以及实际设置的 `uid` 或 `username`。`id` 是所有用户稳定的 UUID 主键；`uid` 和 `username` 是二选一的登录标识。未设置的身份字段直接省略，例如默认管理员返回 `username: "admin"`，不返回 `uid: null`。该规则适用于登录、刷新和所有用户管理响应；客户端须按可选字段读取，兼容旧版显式 `null`。临时凭据过期时间不返回给普通用户，不返回密码哈希；`last_login_at` 仍可为 `null`。force_password_change 与 password_change_recommended 按角色派生，不直接透传数据库同名字段。
 
-同时提供或同时缺失返回 `USER_IDENTITY_ONE_OF_REQUIRED`；canonical 标识重复返回 `USER_IDENTITY_CONFLICT`。管理员提交管理员/超管角色返回 `FORBIDDEN`。
+同时提供或同时缺失返回 `422 / 2207 / USER_IDENTITY_ONE_OF_REQUIRED`（`null` 视为缺失）；标识类型错误返回 `422 / 2206`。canonical 标识重复返回 `409 / 2208 / USER_IDENTITY_CONFLICT`。用户名按 trim + Unicode NFC + 不依赖 locale 的小写规则判重，保留重音差异；UID 按 trim + Unicode NFC 判重，区分大小写。管理员提交管理员/超管角色返回 `FORBIDDEN`。
+
+用户路径参数 `{id}` 的 UUID 十六进制字母不区分大小写，读取与修改使用相同匹配语义。
 
 `PATCH /admin/users/{id}/status` 请求体为 `{"status":"active|disabled"}`；`PATCH /admin/users/{id}/unlock` 无业务字段，只能将 locked 转为 active；`PUT /admin/users/{id}/role` 请求体为 `{"role":"operator|engineer|admin|super_admin"}`。以上接口均遵循 `If-Match`，服务端不得覆盖并发更新。
 
@@ -180,6 +184,10 @@ Content-Type: application/json
 ```
 
 返回 `202 Accepted` 和 `event_id`。该接口是非可信 telemetry，不得用于记录登录、角色变更、禁用等安全审计；Admin 查询：`GET /admin/user-logs`，需要 `admin` 或 `super_admin`。
+
+`details` 必须是 JSON 对象，序列化后最多 4096 字节。入库前递归处理对象和数组：字段名转 ASCII 小写并去除分隔符后，删除包含 `password`、`token`、`secret`、`privatekey`、`apikey`、`credential`、`machineid`、`hardwareid`、`fingerprint`、`stack`、`traceback` 或等于 `authorization`、`cookie`、`setcookie` 的字段。深度达到 32 的值替换为 `null`，其余元数据保留。此规则按字段名识别敏感数据，客户端仍不得把凭据写入任意自由文本字段。
+
+采集接口使用独立的每用户固定一分钟计数窗口，默认每分钟 60 次，由 `auth.behaviorEventsPerMinute` 配置（1–1000）。达到上限返回 `429 / 2211 / RATE_LIMITED`，不写入日志；不消耗认证或凭据签发预算。单进程最多保留 4096 个未到期用户计数桶，容量满时拒绝新计数桶，多实例之间不共享计数。
 
 ## 5. 错误码
 

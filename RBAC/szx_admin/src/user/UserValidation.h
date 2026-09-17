@@ -23,7 +23,7 @@ template <typename T>
         return SZX::COMMON::Result<T>::Failure(static_cast<int>(code), {});
 }
 
-/** 小写十六进制 UUID v4 布局；路径参数和 JWT subject 都按此校验。 */
+/** 带连字符的 UUID 布局，十六进制字母不区分大小写。 */
 [[nodiscard]] inline auto validUuid(std::string_view value) noexcept -> bool
 {
     if (value.size() != 36)

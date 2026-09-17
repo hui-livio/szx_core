@@ -45,6 +45,9 @@ def run_user_checks(admin, sql):
         assert user["force_password_change"] is (role == "super_admin"), user
         assert user["password_change_recommended"] is (role != "super_admin"), user
         assert "password_hash" not in user
+        assert user["username"] and "uid" not in user
+        assert all(type(user[field]) is int for field in ("created_at", "updated_at"))
+        assert user["last_login_at"] is None or type(user["last_login_at"]) is int
 
     with admin("user_api") as port:
         session = login(port)
@@ -70,11 +73,21 @@ def run_user_checks(admin, sql):
                     headers={"Origin": "https://evil.example"}), 403, 2204)
 
         users = {}
+        for identity in ({}, {"uid": "U1", "username": "both"}, {"uid": None, "username": None}):
+            expect(call(port, "POST", "/admin/users", {
+                "display_name": "Invalid identity", "role": "operator", **identity,
+            }, token), 422, 2207)
+        expect(call(port, "POST", "/admin/users", {
+            "uid": 123, "display_name": "Invalid type", "role": "operator",
+        }, token), 422, 2206)
         for role in ("operator", "engineer", "admin", "super_admin"):
             data = expect(call(port, "POST", "/admin/users", {
                 "username": "test_" + role, "display_name": role, "role": role,
             }, token), 201)
             profile_flags(data["user"], role)
+            assert data["user"]["last_login_at"] is None
+            assert type(data["temporary_credential_expires_at"]) is int
+            assert abs(data["temporary_credential_expires_at"] - (time.time() + 86400) * 1000) < 10000
             users[role] = data
             read = expect(call(port, "GET", "/admin/users/" + data["user"]["id"], token=token), 200)
             profile_flags(read, role)
@@ -83,6 +96,7 @@ def run_user_checks(admin, sql):
                      "-last_login_at", "role", "status"):
             page = expect(call(port, "GET", "/admin/users?sort=" + sort, token=token), 200)
             assert page["total"] == 5
+            assert all(item["username"] and "uid" not in item for item in page["items"])
             if sort == "display_name":
                 names = [item["display_name"] for item in page["items"]]
                 assert names == sorted(names, key=str.casefold)
@@ -96,6 +110,8 @@ def run_user_checks(admin, sql):
         operator = users["operator"]
         target_id = operator["user"]["id"]
         target_path = "/admin/users/" + target_id
+        upper_path = "/admin/users/" + target_id.upper()
+        expect(call(port, "GET", upper_path, token=token), 200)
         operator_session = login(port, "test_operator", operator["temporary_credential"])
         low_token = operator_session["access_token"]
         expect(call(port, "POST", "/admin/users", {
@@ -109,22 +125,24 @@ def run_user_checks(admin, sql):
             expect(call(port, "POST", target_path + "/reset-password", token=invalid, version=1), 401, 2200)
         assert sql("SELECT COUNT(*) FROM user_api.users;") == "5"
 
-        edited = expect(call(port, "PATCH", target_path, {"display_name": "Renamed"}, token, 1), 200)
+        edited = expect(call(port, "PATCH", upper_path, {"display_name": "Renamed"}, token, 1), 200)
         assert edited["version"] == 2 and edited["authz_version"] == 1
         expect(call(port, "PATCH", target_path, {"display_name": "Stale"}, token, 1), 409, 2209)
-        disabled = expect(call(port, "PATCH", target_path + "/status", {"status": "disabled"}, token, 2), 200)
+        disabled = expect(call(port, "PATCH", upper_path + "/status", {"status": "disabled"}, token, 2), 200)
         assert disabled["status"] == "disabled" and disabled["authz_version"] == 2
         expect(call(port, "GET", "/client/me/permissions", token=low_token), 401, 2200)
         assert sql(f"SELECT COUNT(*) FROM user_api.refresh_tokens WHERE user_id='{target_id}' AND revoked_at IS NULL;") == "0"
         active = expect(call(port, "PATCH", target_path + "/status", {"status": "active"}, token, 3), 200)
         assert active["version"] == 4
         sql(f"UPDATE user_api.users SET status='locked' WHERE id='{target_id}';")
-        unlocked = expect(call(port, "PATCH", target_path + "/unlock", token=token, version=4), 200)
+        unlocked = expect(call(port, "PATCH", upper_path + "/unlock", token=token, version=4), 200)
         assert unlocked["status"] == "active" and unlocked["version"] == 5
-        assigned = expect(call(port, "PUT", target_path + "/role", {"role": "engineer"}, token, 5), 200)
+        assigned = expect(call(port, "PUT", upper_path + "/role", {"role": "engineer"}, token, 5), 200)
         assert assigned["role"] == "engineer" and assigned["version"] == 6
-        reset = expect(call(port, "POST", target_path + "/reset-password", token=token, version=6), 200)
+        reset = expect(call(port, "POST", upper_path + "/reset-password", token=token, version=6), 200)
         profile_flags(reset["user"], "engineer")
+        assert type(reset["temporary_credential_expires_at"]) is int
+        assert abs(reset["temporary_credential_expires_at"] - (time.time() + 86400) * 1000) < 10000
         assert reset["temporary_credential"] != operator["temporary_credential"]
         renewed = login(port, "test_operator", reset["temporary_credential"])
         profile_flags(renewed["user"], "engineer")
@@ -143,6 +161,40 @@ def run_user_checks(admin, sql):
             "event_name": "report.view", "result": "success", "details": {"source": "dashboard"},
         }, renewed["access_token"]), 202)
         assert event["event_id"]
+        page = expect(call(port, "GET", "/admin/user-logs?event_name=report.view", token=token), 200)
+        assert page["items"][0]["details"] == {"source": "dashboard"}
+        assert type(page["items"][0]["created_at"]) is int
+        event_time = sql("SET time_zone='+00:00'; SELECT CAST(FLOOR(UNIX_TIMESTAMP(created_at)*1000) AS SIGNED) "
+                         "FROM user_api.user_logs WHERE event_name='report.view';")
+        assert page["items"][0]["created_at"] == int(event_time)
+        for index, details in enumerate(({}, {"source": "dashboard", "padding": "x" * 2000},
+                                         {"unicode": "中文😀", "items": [{"count": 3}]})):
+            event_name = f"report.roundtrip{index}"
+            expect(call(port, "POST", "/client/behavior-events", {
+                "event_name": event_name, "result": "success", "details": details,
+            }, renewed["access_token"]), 202)
+            page = expect(call(port, "GET", "/admin/user-logs?event_name=" + event_name, token=token), 200)
+            assert page["items"][0]["details"] == details, page
+
+        sensitive = {"source": "dashboard", "Password": "SYNTHETIC_SECRET", "private-key": "SYNTHETIC_SECRET",
+                     "items": [{"access_token": "SYNTHETIC_SECRET", "count": 2}],
+                     "context": {"machine_id": "SYNTHETIC_SECRET", "stack_trace": "SYNTHETIC_SECRET", "count": 1}}
+        expected = {"source": "dashboard", "items": [{"count": 2}], "context": {"count": 1}}
+        expect(call(port, "POST", "/client/behavior-events", {
+            "event_name": "report.redaction", "result": "success", "details": sensitive,
+        }, renewed["access_token"]), 202)
+        stored = sql("SELECT details_json FROM user_api.user_logs WHERE event_name='report.redaction';")
+        assert json.loads(stored) == expected and "SYNTHETIC_SECRET" not in stored
+        # Older rows must be redacted on read too; exercise multiple rows in one blob query.
+        legacy_sizes = [2000, 70000, 150000]
+        for index, size in enumerate(legacy_sizes):
+            sql("INSERT INTO user_api.user_logs(id,event_name,result,request_id,details_json) VALUES "
+                f"(UUID(),'report.legacy','success','legacy-{index}',"
+                f"JSON_OBJECT('password','SYNTHETIC_SECRET','padding',REPEAT('x',{size})));")
+        page = expect(call(port, "GET", "/admin/user-logs?event_name=report.legacy", token=token), 200)
+        assert len(page["items"]) == 3
+        assert all(row["details"] == {"padding": "x" * legacy_sizes[int(row["request_id"].split("-")[1])]}
+                   for row in page["items"])
         expect(call(port, "POST", "/client/behavior-events", {
             "event_name": "auth.login.success", "result": "success", "details": {},
         }, renewed["access_token"]), 422, 2206)
@@ -181,3 +233,41 @@ def run_user_checks(admin, sql):
         assert sql(f"SELECT password_hash,version FROM user_rate.users WHERE id='{target['id']}';") == before
         assert sql("SELECT COUNT(*) FROM user_rate.users;") == "2"
         print("PASS: credential issuance is rate-limited without partial writes", flush=True)
+
+    with admin("user_identity") as port:
+        token = login(port)["access_token"]
+        for identity in ({"username": "resume"}, {"username": "résumé"}, {"uid": "U10086"}, {"uid": "u10086"}):
+            issued = expect(call(port, "POST", "/admin/users", {
+                **identity, "display_name": "Distinct canonical identity", "role": "operator",
+            }, token), 201)
+            logged_in = login(port, next(iter(identity.values())), issued["temporary_credential"])["user"]
+            read = expect(call(port, "GET", "/admin/users/" + issued["user"]["id"], token=token), 200)
+            for profile in (issued["user"], logged_in, read):
+                assert profile["id"] == issued["user"]["id"]
+                assert {key: profile[key] for key in ("uid", "username") if key in profile} == identity
+        for identity in ({"username": "RESUME"}, {"username": "re\u0301sume\u0301"}, {"uid": "U10086"}):
+            expect(call(port, "POST", "/admin/users", {
+                **identity, "display_name": "Duplicate", "role": "operator",
+            }, token), 409, 2208)
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            responses = list(executor.map(lambda _: call(port, "POST", "/admin/users", {
+                "username": "concurrent_duplicate", "display_name": "Duplicate", "role": "operator",
+            }, token), range(2)))
+        assert sorted(response[0] for response in responses) == [201, 409], responses
+        print("PASS: binary canonical indexes preserve accents/UID case and return stable duplicate errors", flush=True)
+
+    with admin("behavior_rate", behavior_events_per_minute=2) as port:
+        token = login(port)["access_token"]
+        payload = {"event_name": "report.view", "result": "success", "details": {}}
+        for _ in range(2):
+            expect(call(port, "POST", "/client/behavior-events", payload, token), 202)
+        expect(call(port, "POST", "/client/behavior-events", payload, token), 429, 2211)
+        assert sql("SELECT COUNT(*) FROM behavior_rate.user_logs WHERE event_name='report.view';") == "2"
+        # Exhausting telemetry cannot lock the caller out of authentication or credential management.
+        login(port)
+        issued = expect(call(port, "POST", "/admin/users", {
+            "username": "independent", "display_name": "Independent", "role": "operator",
+        }, token), 201)
+        other = login(port, "independent", issued["temporary_credential"])["access_token"]
+        expect(call(port, "POST", "/client/behavior-events", payload, other), 202)
+        print("PASS: telemetry limits are per-user and independent of authentication", flush=True)

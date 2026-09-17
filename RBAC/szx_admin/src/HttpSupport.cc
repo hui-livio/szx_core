@@ -1,8 +1,11 @@
 #include "HttpSupport.h"
 #include "StringHelper.hpp"
 #include "SzxAdmin/Infra/RestApi.h"
+#include "TimeHelper.hpp"
 
 #include <algorithm>
+#include <cstdint>
+#include <stdexcept>
 
 namespace SZX::ADMIN
 {
@@ -68,5 +71,30 @@ auto queryValue(const INFRA::HttpRequest &request, std::string_view name) -> std
 {
     const auto found = request.query.find(std::string{name});
     return found != request.query.end() ? found->second : std::string{};
+}
+
+auto utcTimestampJson(const std::optional<std::string> &value) -> SZX::COMMON::Json
+{
+    if (!value)
+        return nullptr;
+    if (const auto iso = SZX::COMMON::TimeHelper::Iso8601ToTimestamp(*value))
+        return *iso;
+
+    const auto &text = *value;
+    if (text.size() != 19 && (text.size() < 21 || text.size() > 26 || text[19] != '.'))
+        throw std::invalid_argument("Invalid persisted UTC timestamp.");
+    const auto seconds = SZX::COMMON::TimeHelper::StringToTimestamp(text.substr(0, 19), "%Y-%m-%d %H:%M:%S", true);
+    if (!seconds)
+        throw std::invalid_argument("Invalid persisted UTC timestamp.");
+    std::int64_t milliseconds{};
+    int scale = 100;
+    for (std::size_t index = 20; index < text.size(); ++index)
+    {
+        if (text[index] < '0' || text[index] > '9')
+            throw std::invalid_argument("Invalid persisted UTC timestamp.");
+        milliseconds += (text[index] - '0') * scale;
+        scale        /= 10;
+    }
+    return *seconds + milliseconds;
 }
 } // namespace SZX::ADMIN

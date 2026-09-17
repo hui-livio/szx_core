@@ -1,12 +1,9 @@
 #pragma once
 
+#include "../RateLimiter.h"
 #include "LoginRepository.h"
 #include "SzxAdmin/Auth/JwtService.h"
 #include "SzxAdmin/Infra/Database.h"
-
-#include <chrono>
-#include <map>
-#include <mutex>
 
 namespace SZX::ADMIN::AUTH
 {
@@ -21,10 +18,11 @@ struct LoginConfig
     int failedLoginLimit{5};
     int lockSeconds{900};
     int attemptsPerMinute{30};
+    int behaviorEventsPerMinute{60};
     [[nodiscard]] auto validate() const -> SZX::COMMON::Result<void>;
 };
 SZX_REFL(LoginConfig, issuer, audience, privateKeyPath, publicKeyPath, allowedOrigin, refreshLifetimeSeconds, failedLoginLimit,
-         lockSeconds, attemptsPerMinute);
+         lockSeconds, attemptsPerMinute, behaviorEventsPerMinute);
 
 struct LoginInput
 {
@@ -117,12 +115,6 @@ private:
     JwtService jwt_;
     std::string dummyPasswordHash_;
     bool initialized_{};
-    struct Window
-    {
-        std::chrono::steady_clock::time_point expires;
-        int count{};
-    };
-    std::mutex rateMutex_;
-    std::map<std::string, Window> windows_;
+    RateLimiter rateLimiter_;
 };
 } // namespace SZX::ADMIN::AUTH

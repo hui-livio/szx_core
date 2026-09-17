@@ -1,6 +1,7 @@
 #include "UserHandler.h"
 #include "../HttpSupport.h"
 #include "../auth/LoginService.h"
+#include "AuditDetails.h"
 #include "UserService.h"
 #include "UserValidation.h"
 
@@ -52,23 +53,22 @@ auto permissionsResponse(UserService &service, const INFRA::HttpRequest &request
 
 auto userRowJson(const UserRow &row) -> Json
 {
-    const auto nullable = [](const std::optional<std::string> &value)
-    {
-        return value ? Json(*value) : Json(nullptr);
-    };
-    return Json{{"id", row.id},
-                {"uid", nullable(row.uid)},
-                {"username", nullable(row.username)},
-                {"display_name", row.display_name},
-                {"role", row.role},
-                {"status", row.status},
-                {"force_password_change", row.force_password_change && row.role == "super_admin"},
-                {"password_change_recommended", row.force_password_change && row.role != "super_admin"},
-                {"version", row.version},
-                {"authz_version", row.authz_version},
-                {"last_login_at", nullable(row.last_login_at)},
-                {"created_at", row.created_at},
-                {"updated_at", row.updated_at}};
+    Json profile{{"id", row.id},
+                 {"display_name", row.display_name},
+                 {"role", row.role},
+                 {"status", row.status},
+                 {"force_password_change", row.force_password_change && row.role == "super_admin"},
+                 {"password_change_recommended", row.force_password_change && row.role != "super_admin"},
+                 {"version", row.version},
+                 {"authz_version", row.authz_version},
+                 {"last_login_at", utcTimestampJson(row.last_login_at)},
+                 {"created_at", utcTimestampJson(row.created_at)},
+                 {"updated_at", utcTimestampJson(row.updated_at)}};
+    if (row.uid)
+        profile["uid"] = *row.uid;
+    if (row.username)
+        profile["username"] = *row.username;
+    return profile;
 }
 
 auto listResponse(UserService &service, const INFRA::HttpRequest &request) -> INFRA::HttpResponse
@@ -131,8 +131,9 @@ auto createResponse(UserService &service, const INFRA::HttpRequest &request) -> 
             return RestApi::error(ErrorCode::ValidationError, request.requestId);
         const bool hasUid      = body.value.contains("uid") && !body.value.at("uid").is_null();
         const bool hasUsername = body.value.contains("username") && !body.value.at("username").is_null();
-        if ((hasUid && hasUsername) || (!hasUid && !hasUsername) || (hasUid && !body.value.at("uid").is_string()) ||
-            (hasUsername && !body.value.at("username").is_string()))
+        if (hasUid == hasUsername)
+            return RestApi::error(ErrorCode::UserIdentityOneOfRequired, request.requestId);
+        if ((hasUid && !body.value.at("uid").is_string()) || (hasUsername && !body.value.at("username").is_string()))
             return RestApi::error(ErrorCode::ValidationError, request.requestId);
         CreateUserInput input{.displayName = body.value.at("display_name").get<std::string>(),
                               .role        = body.value.at("role").get<std::string>()};
@@ -143,10 +144,11 @@ auto createResponse(UserService &service, const INFRA::HttpRequest &request) -> 
         const auto result = service.create(actorContext(request), input);
         if (!result.ok)
             return RestApi::error(static_cast<ErrorCode>(result.error), request.requestId);
-        return RestApi::success(Json{{"user", userRowJson(result.value.user)},
-                                     {"temporary_credential", result.value.temporaryCredential},
-                                     {"temporary_credential_expires_at", result.value.temporaryCredentialExpiresAt}},
-                                request.requestId, 201);
+        return RestApi::success(
+            Json{{"user", userRowJson(result.value.user)},
+                 {"temporary_credential", result.value.temporaryCredential},
+                 {"temporary_credential_expires_at", utcTimestampJson(result.value.temporaryCredentialExpiresAt)}},
+            request.requestId, 201);
     } catch (...)
     {
         return RestApi::error(ErrorCode::InternalFailure, request.requestId);
@@ -276,10 +278,11 @@ auto resetPasswordResponse(UserService &service, const INFRA::HttpRequest &reque
         const auto result = service.resetPassword(actorContext(request), id, version.value);
         if (!result.ok)
             return RestApi::error(static_cast<ErrorCode>(result.error), request.requestId);
-        return RestApi::success(Json{{"user", userRowJson(result.value.user)},
-                                     {"temporary_credential", result.value.temporaryCredential},
-                                     {"temporary_credential_expires_at", result.value.temporaryCredentialExpiresAt}},
-                                request.requestId);
+        return RestApi::success(
+            Json{{"user", userRowJson(result.value.user)},
+                 {"temporary_credential", result.value.temporaryCredential},
+                 {"temporary_credential_expires_at", utcTimestampJson(result.value.temporaryCredentialExpiresAt)}},
+            request.requestId);
     } catch (...)
     {
         return RestApi::error(ErrorCode::InternalFailure, request.requestId);
@@ -310,6 +313,10 @@ auto logsResponse(UserService &service, const INFRA::HttpRequest &request) -> IN
         Json items = Json::array();
         for (const auto &entry : result.value.items)
         {
+            auto details = SZX::COMMON::JsonHelper::ParseRequiredObject(entry.details_json);
+            if (!details)
+                return RestApi::error(ErrorCode::DatabaseQueryFailed, request.requestId);
+            redactAuditDetails(*details);
             items.push_back(Json{{"id", entry.id},
                                  {"event_name", entry.event_name},
                                  {"result", entry.result},
@@ -317,8 +324,8 @@ auto logsResponse(UserService &service, const INFRA::HttpRequest &request) -> IN
                                  {"target_user_id", entry.target_user_id.value_or("")},
                                  {"request_id", entry.request_id},
                                  {"peer_address", ""},
-                                 {"details", entry.details_json},
-                                 {"created_at", entry.created_at}});
+                                 {"details", std::move(*details)},
+                                 {"created_at", utcTimestampJson(entry.created_at)}});
         }
         return RestApi::success(
             Json{{"items", std::move(items)}, {"total", result.value.total}, {"page", query.page}, {"page_size", query.pageSize}},

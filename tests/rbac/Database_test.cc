@@ -190,8 +190,8 @@ TEST(DatabaseInitializationTest, PreservesPublishedMigrationChecksumsAndExisting
     connection.applied    = {{1, "86a4ac820cc8457a2131d0400d4968268576b17113f38fe86b6beceea48c2047"},
                              {2, "f4223aadebf005f145941d06b89d2d41e964f4c059d2f765a8e1b3678d389d2d"}};
     const auto migrations = SZX::ADMIN::INFRA::embeddedMigrations();
-    ASSERT_EQ(migrations.size(), connection.applied.size());
-    for (std::size_t index = 0; index < migrations.size(); ++index)
+    ASSERT_GE(migrations.size(), connection.applied.size());
+    for (std::size_t index = 0; index < connection.applied.size(); ++index)
     {
         const auto &migration = migrations[index];
         const auto digest     = SZX::CRYPTO::sha256KeyId(
@@ -201,11 +201,30 @@ TEST(DatabaseInitializationTest, PreservesPublishedMigrationChecksumsAndExisting
         EXPECT_EQ(digest.value, connection.applied[index].checksum);
         EXPECT_EQ(migration.checksum, digest.value);
     }
-    const auto repeated = MigrationRunner{}.run(connection);
+    const auto repeated = MigrationRunner{}.run(connection, migrations.first(connection.applied.size()));
     ASSERT_TRUE(repeated.ok) << repeated.message;
     EXPECT_EQ(repeated.value.appliedCount, 0U);
     EXPECT_TRUE(connection.recorded.empty());
     EXPECT_EQ(connection.statements.size(), 1U); // Only ensures the journal table exists.
+}
+
+TEST(DatabaseInitializationTest, UpgradesCanonicalIndexesWithoutRewritingPublishedMigrations)
+{
+    const auto migrations = SZX::ADMIN::INFRA::embeddedMigrations();
+    ASSERT_EQ(migrations.size(), 3U);
+    FakeDatabaseConnection connection;
+    for (const auto &migration : migrations.first(2))
+        connection.applied.push_back({migration.version, std::string{migration.checksum}});
+    const auto upgrade = MigrationRunner{}.run(connection);
+    ASSERT_TRUE(upgrade.ok);
+    EXPECT_EQ(upgrade.value.currentVersion, 3U);
+    EXPECT_EQ(upgrade.value.appliedCount, 1U);
+    ASSERT_EQ(connection.recorded.size(), 1U);
+    EXPECT_EQ(connection.recorded.front().checksum, migrationChecksum(migrations[2].sql));
+    EXPECT_NE(connection.statements.back().find("utf8mb4_0900_bin"), std::string::npos);
+    const auto repeated = MigrationRunner{}.run(connection);
+    ASSERT_TRUE(repeated.ok);
+    EXPECT_EQ(repeated.value.appliedCount, 0U);
 }
 
 TEST(MigrationRunnerTest, AppliesPendingMigrationAndRecordsIt)

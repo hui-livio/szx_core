@@ -114,7 +114,7 @@ def main():
 
         @contextmanager
         def admin(database, expect_failure=False, attempts_per_minute=200, private_key_path=None,
-                  allowed_origin="https://admin.example.test"):
+                  allowed_origin="https://admin.example.test", behavior_events_per_minute=60):
             instance = next(counter)
             http_port = free_port()
             config = root / f"config-{instance}.yaml"
@@ -126,6 +126,7 @@ def main():
                 f"auth:\n  privateKeyPath: {json.dumps((private_key_path or private_key).as_posix())}\n"
                 f"  publicKeyPath: {json.dumps(public_key.as_posix())}\n  allowedOrigin: {json.dumps(allowed_origin)}\n"
                 f"  attemptsPerMinute: {attempts_per_minute}\n"
+                f"  behaviorEventsPerMinute: {behavior_events_per_minute}\n"
                 f"database:\n  host: 127.0.0.1\n  port: {port}\n"
                 f"  database: {database}\n  username: admin_test\n  password: disposable-test-password\n  poolSize: 2\n",
                 encoding="utf-8", newline="\r\n" if instance % 2 else "\n",
@@ -159,7 +160,7 @@ def main():
                     assert initial.endswith("\tsuper_admin\tactive\t1")
                     assert sql("SELECT COUNT(*) FROM fresh.users;") == "1"
                     assert sql("SELECT COUNT(*) FROM fresh.admin_bootstrap;") == "1"
-                    assert sql("SELECT COUNT(*) FROM fresh.schema_migrations;") == "2"
+                    assert sql("SELECT COUNT(*) FROM fresh.schema_migrations;") == "3"
                     for variable, value in (("time_zone", "+00:00"), ("transaction_isolation", "READ-COMMITTED"),
                                             ("innodb_lock_wait_timeout", "5")):
                         assert sql("SELECT COUNT(*) FROM performance_schema.variables_by_thread v "
@@ -211,8 +212,23 @@ def main():
                             future.result()
                         assert sql("SELECT COUNT(*) FROM concurrent.users;") == "1"
                         assert sql("SELECT COUNT(*) FROM concurrent.admin_bootstrap;") == "1"
-                        assert sql("SELECT COUNT(*) FROM concurrent.schema_migrations;") == "2"
+                        assert sql("SELECT COUNT(*) FROM concurrent.schema_migrations;") == "3"
                 print("PASS: concurrent first startup creates one administrator and one journal per version", flush=True)
+
+                # Simulate a v2 database, then verify v3 upgrades indexes without touching users.
+                prior = sql("SELECT id,password_hash,version,authz_version FROM concurrent.users;")
+                sql("ALTER TABLE concurrent.users "
+                    "MODIFY uid_canonical VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NULL, "
+                    "MODIFY username_canonical VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NULL; "
+                    "DELETE FROM concurrent.schema_migrations WHERE version=3;")
+                with admin("concurrent"):
+                    assert sql("SELECT id,password_hash,version,authz_version FROM concurrent.users;") == prior
+                    collations = sql("SELECT DISTINCT COLLATION_NAME FROM information_schema.COLUMNS "
+                                     "WHERE TABLE_SCHEMA='concurrent' AND TABLE_NAME='users' "
+                                     "AND COLUMN_NAME IN ('uid_canonical','username_canonical');")
+                    assert collations == "utf8mb4_0900_bin"
+                    assert sql("SELECT COUNT(*) FROM concurrent.schema_migrations;") == "3"
+                print("PASS: v2 canonical indexes upgrade to binary semantics without changing account state", flush=True)
 
                 sql("UPDATE fresh.users SET username='renamed',username_canonical='renamed',"
                     "password_hash='changed-hash',status='disabled',force_password_change=0;")
@@ -230,15 +246,15 @@ def main():
                 # Missing journal simulates interruption after MySQL auto-committed DDL.
                 sql("DELETE FROM concurrent.schema_migrations;")
                 with admin("concurrent"):
-                    assert sql("SELECT COUNT(*) FROM concurrent.schema_migrations;") == "2"
-                    assert sql("SELECT COUNT(*) FROM concurrent.users;") == "1"
-                sql("INSERT INTO concurrent.schema_migrations(version,checksum) VALUES (3,REPEAT('a',64));")
-                with admin("concurrent", expect_failure=True):
                     assert sql("SELECT COUNT(*) FROM concurrent.schema_migrations;") == "3"
                     assert sql("SELECT COUNT(*) FROM concurrent.users;") == "1"
-                sql("DELETE FROM concurrent.schema_migrations WHERE version=3;")
+                sql("INSERT INTO concurrent.schema_migrations(version,checksum) VALUES (4,REPEAT('a',64));")
+                with admin("concurrent", expect_failure=True):
+                    assert sql("SELECT COUNT(*) FROM concurrent.schema_migrations;") == "4"
+                    assert sql("SELECT COUNT(*) FROM concurrent.users;") == "1"
+                sql("DELETE FROM concurrent.schema_migrations WHERE version=4;")
                 with admin("concurrent"):
-                    assert sql("SELECT COUNT(*) FROM concurrent.schema_migrations;") == "2"
+                    assert sql("SELECT COUNT(*) FROM concurrent.schema_migrations;") == "3"
                 sql("UPDATE concurrent.schema_migrations SET checksum=REPEAT('0',64) WHERE version=1;")
                 with admin("concurrent", expect_failure=True):
                     assert sql("SELECT checksum FROM concurrent.schema_migrations WHERE version=1;") == "0" * 64

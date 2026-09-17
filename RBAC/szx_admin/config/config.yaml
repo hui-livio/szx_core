@@ -31,6 +31,7 @@ auth:
   failedLoginLimit: 5
   lockSeconds: 900
   attemptsPerMinute: 30
+  behaviorEventsPerMinute: 60
 
 database:
   host: 127.0.0.1

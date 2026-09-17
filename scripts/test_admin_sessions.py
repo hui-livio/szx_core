@@ -87,6 +87,10 @@ def run_session_checks(admin, sql, root, login, post, verify_token):
         assert response[2]["Access-Control-Allow-Origin"] == "https://business.example.test"
         assert second[0] != first[0] and second[1]["access_token"] != first[1]["access_token"]
         assert second[1]["user"]["force_password_change"] is True
+        assert second[1]["user"]["username"] == "admin" and "uid" not in second[1]["user"]
+        assert type(second[1]["expires_at"]) is int
+        assert second[1]["expires_at"] == verify_token(second[1]["access_token"])["exp"] * 1000
+        assert all(type(second[1]["user"][field]) is int for field in ("created_at", "updated_at", "last_login_at"))
         assert active(first) == "1"
         assert sql("SELECT COUNT(DISTINCT expires_at),COUNT(DISTINCT family_id) FROM sessions.refresh_tokens;") == "1\t1"
         assert sql("SELECT a.last_used_at IS NOT NULL,a.revocation_reason,a.replaced_by=b.id "

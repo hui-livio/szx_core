@@ -104,7 +104,7 @@ def run_login_checks(admin, sql, public_key, root):
         assert headers["Access-Control-Allow-Credentials"] == "true"
         data = body["data"]
         user = data["user"]
-        assert user["username"] == "admin" and user["uid"] is None
+        assert user["username"] == "admin" and "uid" not in user
         assert user["role"] == "super_admin" and user["force_password_change"] is True
         assert "password_hash" not in user and "refresh_token" not in data
         stored_password = sql("SELECT password_hash FROM login.users;")
@@ -112,6 +112,20 @@ def run_login_checks(admin, sql, public_key, root):
         assert stored_password != hashlib.sha256(b"superadmin").hexdigest()
         claims = verify_token(data["access_token"])
         assert claims["sub"] == user["id"] and claims["authz_version"] == user["authz_version"]
+        assert type(data["expires_at"]) is int and data["expires_at"] == claims["exp"] * 1000
+        assert data["expires_in"] == 900
+        for field in ("created_at", "updated_at", "last_login_at"):
+            assert type(user[field]) is int and user[field] > 1_000_000_000_000
+        expected_times = sql("SET time_zone='+00:00'; SELECT "
+            "CAST(FLOOR(UNIX_TIMESTAMP(created_at)*1000) AS SIGNED),"
+            "CAST(FLOOR(UNIX_TIMESTAMP(updated_at)*1000) AS SIGNED),"
+            "CAST(FLOOR(UNIX_TIMESTAMP(last_login_at)*1000) AS SIGNED) FROM login.users;")
+        expected_created, expected_updated, expected_login = map(int, expected_times.split("\t"))
+        assert user["created_at"] == expected_created
+        assert user["last_login_at"] == expected_login
+        # Login reports its application update time at second precision; MySQL's
+        # automatic updated_at includes the fractional part of the write time.
+        assert abs(user["updated_at"] - expected_updated) < 2000, (user["updated_at"], expected_updated)
         cookie = SimpleCookie(headers["Set-Cookie"])["szx_refresh"]
         assert cookie["httponly"] and cookie["secure"] and cookie["samesite"] == "Strict"
         assert cookie["path"] == "/api/v1/auth" and 604790 <= int(cookie["max-age"]) <= 604800

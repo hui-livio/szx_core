@@ -19,7 +19,8 @@ constexpr std::array<std::string_view, 4> kAllRoles{"operator", "engineer", "adm
 
 UserService::UserService(INFRA::DatabasePool &database, AUTH::LoginService &auth) :
     database_(database),
-    auth_(auth)
+    auth_(auth),
+    behaviorLimiter_(auth.config().behaviorEventsPerMinute)
 {
 }
 
