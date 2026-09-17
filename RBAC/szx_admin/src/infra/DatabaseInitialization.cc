@@ -2,6 +2,7 @@
 
 #include "SzxAdmin/Infra/Database.h"
 #include "SzxAdmin/Infra/ErrorCode.h"
+#include "SzxCrypto/Random.h"
 #include "SzxCryptoService/CryptoService.h"
 #include "UUID.hpp"
 
@@ -314,6 +315,26 @@ auto MigrationRunner::run(DatabaseConnection &connection, std::span<const Migrat
 {
     try
     {
+        std::unordered_map<std::uint32_t, std::string_view> supported;
+        std::uint32_t latest{};
+        for (const auto &migration : definitions)
+        {
+            if (migration.version == 0 || migration.version <= latest || migration.sql.empty() || migration.checksum.empty())
+                return SZX::COMMON::Result<MigrationSummary>::Failure(static_cast<int>(ErrorCode::MigrationFailed),
+                                                                      "Invalid embedded migration definition.");
+            const auto bytes =
+                std::span<const std::uint8_t>{reinterpret_cast<const std::uint8_t *>(migration.sql.data()), migration.sql.size()};
+            const auto digest = SZX::CRYPTO::sha256KeyId(bytes);
+            if (!digest.ok)
+                return SZX::COMMON::Result<MigrationSummary>::Failure(static_cast<int>(ErrorCode::MigrationFailed),
+                                                                      "Failed to calculate migration checksum.");
+            if (digest.value != migration.checksum)
+                return SZX::COMMON::Result<MigrationSummary>::Failure(static_cast<int>(ErrorCode::MigrationConflict),
+                                                                      "Embedded migration checksum mismatch.");
+            supported.emplace(migration.version, migration.checksum);
+            latest = migration.version;
+        }
+
         constexpr std::string_view lockName = "szx_rbac_schema_migrations";
         const auto acquired                 = connection.acquireMigrationLock(lockName, 10);
         if (!acquired.ok)
@@ -331,25 +352,24 @@ auto MigrationRunner::run(DatabaseConnection &connection, std::span<const Migrat
             return SZX::COMMON::Result<MigrationSummary>::Failure(applied.error, applied.message);
         std::unordered_map<std::uint32_t, std::string> recorded;
         for (const auto &migration : applied.value)
+        {
             if (!recorded.emplace(migration.version, migration.checksum).second)
                 return SZX::COMMON::Result<MigrationSummary>::Failure(static_cast<int>(ErrorCode::MigrationConflict),
                                                                       "schema_migrations contains duplicate versions.");
-        std::uint32_t latest{};
+            const auto expected = supported.find(migration.version);
+            if (expected == supported.end())
+                return SZX::COMMON::Result<MigrationSummary>::Failure(static_cast<int>(ErrorCode::MigrationConflict),
+                                                                      "Database contains an unsupported migration version.");
+            if (expected->second != migration.checksum)
+                return SZX::COMMON::Result<MigrationSummary>::Failure(static_cast<int>(ErrorCode::MigrationConflict),
+                                                                      "Checksum mismatch for an applied migration.");
+        }
         std::uint32_t appliedCount{};
         for (const auto &migration : definitions)
         {
-            if (migration.version == 0 || migration.version <= latest || migration.sql.empty() || migration.checksum.empty())
-                return SZX::COMMON::Result<MigrationSummary>::Failure(static_cast<int>(ErrorCode::MigrationFailed),
-                                                                      "Invalid embedded migration definition.");
-            latest                       = migration.version;
             const auto recordedMigration = recorded.find(migration.version);
             if (recordedMigration != recorded.end())
-            {
-                if (recordedMigration->second != migration.checksum)
-                    return SZX::COMMON::Result<MigrationSummary>::Failure(static_cast<int>(ErrorCode::MigrationConflict),
-                                                                          "Checksum mismatch for an applied migration.");
                 continue;
-            }
             for (const auto &statement : splitStatements(migration.sql))
             {
                 const auto result = connection.executeMigrationStatement(statement);

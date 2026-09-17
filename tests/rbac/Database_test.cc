@@ -21,6 +21,15 @@ using SZX::ADMIN::INFRA::MigrationRunner;
 
 namespace
 {
+auto migrationChecksum(std::string_view sql) -> std::string
+{
+    const auto digest =
+        SZX::CRYPTO::sha256KeyId(std::span<const std::uint8_t>{reinterpret_cast<const std::uint8_t *>(sql.data()), sql.size()});
+    if (!digest.ok)
+        throw std::runtime_error("Cannot calculate test migration checksum");
+    return digest.value;
+}
+
 class FakeDatabaseConnection final : public DatabaseConnection
 {
 public:
@@ -202,7 +211,8 @@ TEST(DatabaseInitializationTest, PreservesPublishedMigrationChecksumsAndExisting
 TEST(MigrationRunnerTest, AppliesPendingMigrationAndRecordsIt)
 {
     const std::string sql = "CREATE TABLE test_table (name VARCHAR(32)); INSERT INTO test_table(name) VALUES ('semi;colon');";
-    const MigrationDefinition migration{1, sql, "checksum"};
+    const auto checksum   = migrationChecksum(sql);
+    const MigrationDefinition migration{1, sql, checksum};
 
     FakeDatabaseConnection connection;
     const auto result = MigrationRunner{}.run(connection, std::span{&migration, 1});
@@ -224,7 +234,8 @@ TEST(MigrationRunnerTest, AppliesPendingMigrationAndRecordsIt)
 TEST(MigrationRunnerTest, RejectsChecksumConflict)
 {
     const std::string sql = "CREATE TABLE test_table (id INT);";
-    const MigrationDefinition migration{1, sql, "checksum"};
+    const auto checksum   = migrationChecksum(sql);
+    const MigrationDefinition migration{1, sql, checksum};
 
     FakeDatabaseConnection connection;
     connection.applied.push_back(AppliedMigration{1, "0000000000000000"});
@@ -238,7 +249,8 @@ TEST(MigrationRunnerTest, RejectsChecksumConflict)
 TEST(MigrationRunnerTest, StopsWhenAnotherInstanceOwnsMigrationLock)
 {
     const std::string sql = "CREATE TABLE test_table (id INT);";
-    const MigrationDefinition migration{1, sql, "checksum"};
+    const auto checksum   = migrationChecksum(sql);
+    const MigrationDefinition migration{1, sql, checksum};
 
     FakeDatabaseConnection connection;
     connection.lockAcquired = false;
@@ -253,7 +265,8 @@ TEST(MigrationRunnerTest, StopsWhenAnotherInstanceOwnsMigrationLock)
 TEST(MigrationRunnerTest, DoesNotStartTransactionWhenDdlFails)
 {
     const std::string sql = "CREATE TABLE test_table (id INT); FAIL THIS STATEMENT;";
-    const MigrationDefinition migration{1, sql, "checksum"};
+    const auto checksum   = migrationChecksum(sql);
+    const MigrationDefinition migration{1, sql, checksum};
 
     FakeDatabaseConnection connection;
     connection.failOn = "FAIL THIS STATEMENT";
@@ -351,7 +364,9 @@ TEST(BootstrapAdminTest, FailuresRollBackBeforeUnlockAndAllowRetry)
 TEST(MigrationRunnerTest, RepeatedRunSkipsAppliedDdl)
 {
     FakeDatabaseConnection connection;
-    const MigrationDefinition migration{1, "CREATE TABLE IF NOT EXISTS test_table (id INT);", "checksum"};
+    const std::string sql = "CREATE TABLE IF NOT EXISTS test_table (id INT);";
+    const auto checksum   = migrationChecksum(sql);
+    const MigrationDefinition migration{1, sql, checksum};
     ASSERT_TRUE(MigrationRunner{}.run(connection, std::span{&migration, 1}).ok);
     connection.statements.clear();
     const auto repeated = MigrationRunner{}.run(connection, std::span{&migration, 1});
@@ -365,9 +380,95 @@ TEST(MigrationRunnerTest, JournalExceptionRollsBackBeforeUnlock)
 {
     FakeDatabaseConnection connection;
     connection.throwOnJournal = true;
-    const MigrationDefinition migration{1, "CREATE TABLE IF NOT EXISTS test_table (id INT);", "checksum"};
+    const std::string sql     = "CREATE TABLE IF NOT EXISTS test_table (id INT);";
+    const auto checksum       = migrationChecksum(sql);
+    const MigrationDefinition migration{1, sql, checksum};
     const auto result = MigrationRunner{}.run(connection, std::span{&migration, 1});
     EXPECT_FALSE(result.ok);
     EXPECT_EQ(result.error, static_cast<int>(ErrorCode::MigrationFailed));
     EXPECT_EQ(connection.events, (std::vector<std::string>{"lock", "begin", "rollback", "unlock"}));
+}
+
+TEST(MigrationRunnerTest, RejectsChangedSqlWithStaleChecksumBeforeDatabaseAccess)
+{
+    const std::string originalSql = "CREATE TABLE IF NOT EXISTS test_table (id INT);";
+    const std::string changedSql  = "CREATE TABLE IF NOT EXISTS test_table (id BIGINT);";
+    const auto staleChecksum      = migrationChecksum(originalSql);
+    const MigrationDefinition migration{1, changedSql, staleChecksum};
+    for (const auto alreadyApplied : {false, true})
+    {
+        SCOPED_TRACE(alreadyApplied);
+        FakeDatabaseConnection connection;
+        if (alreadyApplied)
+            connection.applied = {{1, staleChecksum}};
+        const auto result = MigrationRunner{}.run(connection, std::span{&migration, 1});
+
+        EXPECT_FALSE(result.ok);
+        EXPECT_EQ(result.error, static_cast<int>(ErrorCode::MigrationConflict));
+        EXPECT_EQ(connection.acquireLockCount, 0);
+        EXPECT_TRUE(connection.statements.empty());
+    }
+}
+
+TEST(MigrationRunnerTest, RejectsDatabaseMigrationNewerThanProgram)
+{
+    const std::string sql = "CREATE TABLE IF NOT EXISTS test_table (id INT);";
+    const auto checksum   = migrationChecksum(sql);
+    const MigrationDefinition migration{1, sql, checksum};
+    FakeDatabaseConnection connection;
+    connection.applied = {{1, checksum}, {2, std::string(64, 'a')}};
+
+    const auto result = MigrationRunner{}.run(connection, std::span{&migration, 1});
+
+    EXPECT_FALSE(result.ok);
+    EXPECT_EQ(result.error, static_cast<int>(ErrorCode::MigrationConflict));
+    EXPECT_EQ(connection.beginCount, 0);
+    EXPECT_TRUE(connection.recorded.empty());
+}
+
+TEST(MigrationRunnerTest, RejectsUnknownJournalVersionInsideSupportedRange)
+{
+    const std::string sql                   = "CREATE TABLE IF NOT EXISTS test_table (id INT);";
+    const auto checksum                     = migrationChecksum(sql);
+    const MigrationDefinition definitions[] = {{1, sql, checksum}, {3, sql, checksum}};
+    FakeDatabaseConnection connection;
+    connection.applied = {{2, checksum}};
+
+    const auto result = MigrationRunner{}.run(connection, definitions);
+
+    EXPECT_FALSE(result.ok);
+    EXPECT_EQ(result.error, static_cast<int>(ErrorCode::MigrationConflict));
+    EXPECT_EQ(connection.statements.size(), 1U);
+    EXPECT_TRUE(connection.recorded.empty());
+}
+
+TEST(MigrationRunnerTest, ValidatesEntireCatalogBeforeApplyingPendingMigrations)
+{
+    const std::string sql                   = "CREATE TABLE IF NOT EXISTS test_table (id INT);";
+    const auto checksum                     = migrationChecksum(sql);
+    const MigrationDefinition definitions[] = {{1, sql, checksum}, {2, sql, std::string_view{"invalid"}}};
+    FakeDatabaseConnection connection;
+
+    const auto result = MigrationRunner{}.run(connection, definitions);
+
+    EXPECT_FALSE(result.ok);
+    EXPECT_EQ(result.error, static_cast<int>(ErrorCode::MigrationConflict));
+    EXPECT_TRUE(connection.statements.empty());
+    EXPECT_TRUE(connection.recorded.empty());
+}
+
+TEST(MigrationRunnerTest, ValidatesEntireJournalBeforeApplyingPendingMigrations)
+{
+    const std::string sql                   = "CREATE TABLE IF NOT EXISTS test_table (id INT);";
+    const auto checksum                     = migrationChecksum(sql);
+    const MigrationDefinition definitions[] = {{1, sql, checksum}, {2, sql, checksum}};
+    FakeDatabaseConnection connection;
+    connection.applied = {{2, std::string(64, 'a')}};
+
+    const auto result = MigrationRunner{}.run(connection, definitions);
+
+    EXPECT_FALSE(result.ok);
+    EXPECT_EQ(result.error, static_cast<int>(ErrorCode::MigrationConflict));
+    EXPECT_EQ(connection.statements.size(), 1U);
+    EXPECT_TRUE(connection.recorded.empty());
 }

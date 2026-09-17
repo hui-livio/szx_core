@@ -189,10 +189,17 @@ def main():
                 with admin("concurrent"):
                     assert sql("SELECT COUNT(*) FROM concurrent.schema_migrations;") == "2"
                     assert sql("SELECT COUNT(*) FROM concurrent.users;") == "1"
+                sql("INSERT INTO concurrent.schema_migrations(version,checksum) VALUES (3,REPEAT('a',64));")
+                with admin("concurrent", expect_failure=True):
+                    assert sql("SELECT COUNT(*) FROM concurrent.schema_migrations;") == "3"
+                    assert sql("SELECT COUNT(*) FROM concurrent.users;") == "1"
+                sql("DELETE FROM concurrent.schema_migrations WHERE version=3;")
+                with admin("concurrent"):
+                    assert sql("SELECT COUNT(*) FROM concurrent.schema_migrations;") == "2"
                 sql("UPDATE concurrent.schema_migrations SET checksum=REPEAT('0',64) WHERE version=1;")
                 with admin("concurrent", expect_failure=True):
                     assert sql("SELECT checksum FROM concurrent.schema_migrations WHERE version=1;") == "0" * 64
-                print("PASS: DDL replay after interruption and checksum conflict blocks startup", flush=True)
+                print("PASS: DDL replay, unsupported database version rejection, and checksum conflict blocks startup", flush=True)
 
                 # Fail the second write to prove account + completion marker are atomic.
                 sql("DELETE FROM fresh.admin_bootstrap; CREATE TRIGGER fresh.fail_bootstrap BEFORE INSERT ON fresh.admin_bootstrap "
