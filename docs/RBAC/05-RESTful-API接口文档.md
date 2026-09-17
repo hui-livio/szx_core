@@ -1,205 +1,653 @@
-# 单项目 RBAC RESTful API 接口文档
+# RBAC REST API 接口参考
 
-## 1. 通用约定
+更新日期：2026-09-17。本文按当前服务实现描述接口，采用“参数表 → 请求示例 → 响应模型 → 错误码”的参考格式。
 
-Base URL：`/api/v1`。认证头：`Authorization: Bearer <access_token>`。全站使用 HTTPS。成功使用 200/201/202/204；分页响应 `{items,total,page,page_size}`，`page_size` 服务端限制最大值；错误响应 `{code,message,details,request_id}`。服务端不得向客户端返回 `password_hash`、token 原文或私密密钥。
+## 1. 接口目录
 
-响应中的绝对时间统一使用 JSON 整数形式的 UTC Unix 毫秒时间戳，包括 `expires_at`、`temporary_credential_expires_at`、`created_at`、`updated_at`、`last_login_at` 和审计日志时间。例如 `2026-09-17T09:15:00Z` 返回 `1789636500000`，数据库微秒小数截断到毫秒。缺失时间仍返回 `null`。业务端负责本地时区显示，例如 JavaScript 使用 `new Date(timestamp).toLocaleString()`。这是对旧版时间字符串响应的类型调整，客户端需同步更新；`expires_in` 和 JWT 标准声明 `iat/nbf/exp` 继续使用秒。
+默认 Base URL 为 `/api/v1`，以下路径均相对于该前缀。部署修改 `server.apiPrefix` 时，客户端同步替换前缀。
 
-并发约定固定使用 `If-Match: <version>`；所有 PATCH/PUT 和会改变用户状态/密码的 POST 都必须携带该请求头。请求体不再接受可选的 version 字段。版本不一致统一返回 HTTP 409 和 `CONFLICT_VERSION`。
+| 分组 | 方法 | 路径 | 功能 | 鉴权 | 成功状态 |
+|---|---|---|---|---|---|
+| 服务 | GET | [/health](#health) | 健康检查 | 无 | 200 |
+| 服务 | GET | [/ready](#ready) | 数据库就绪检查 | 无 | 200 |
+| 认证 | POST | [/auth/login](#auth-login) | 登录 | 登录凭据 | 200 |
+| 认证 | POST | [/auth/refresh](#auth-refresh) | 刷新会话 | Cookie + CSRF | 200 |
+| 认证 | POST | [/auth/logout](#auth-logout) | 退出会话 | 有 Cookie 时校验 CSRF | 204 |
+| 认证 | POST | [/auth/change-password](#auth-change-password) | 修改自己的密码 | Bearer + If-Match | 200 |
+| 用户 | GET | [/admin/users](#users-list) | 用户列表 | Bearer，admin/super_admin | 200 |
+| 用户 | POST | [/admin/users](#users-create) | 创建用户 | Bearer，admin/super_admin | 201 |
+| 用户 | GET | [/admin/users/{id}](#users-get) | 用户详情 | Bearer，admin/super_admin | 200 |
+| 用户 | PATCH | [/admin/users/{id}](#users-update) | 修改展示名 | Bearer + If-Match，admin/super_admin | 200 |
+| 用户 | PATCH | [/admin/users/{id}/status](#users-status) | 启用／禁用 | Bearer + If-Match，admin/super_admin | 200 |
+| 用户 | PATCH | [/admin/users/{id}/unlock](#users-unlock) | 解锁 | Bearer + If-Match，admin/super_admin | 200 |
+| 用户 | PUT | [/admin/users/{id}/role](#users-role) | 修改角色 | Bearer + If-Match，super_admin | 200 |
+| 用户 | POST | [/admin/users/{id}/reset-password](#users-reset-password) | 重置密码 | Bearer + If-Match，admin/super_admin | 200 |
+| 审计 | GET | [/admin/user-logs](#user-logs) | 审计日志列表 | Bearer，admin/super_admin | 200 |
+| 客户端 | GET | [/client/me/permissions](#client-permissions) | 当前用户权限 | Bearer，任意有效角色 | 200 |
+| 客户端 | POST | [/client/behavior-events](#client-behavior) | 上报行为事件 | Bearer，任意有效角色 | 202 |
 
-使用 refresh Cookie 的 POST 请求必须同时携带 `X-CSRF-Token`；CSRF token 不等同于 access/refresh token，不能写入日志。logout 未携带 refresh Cookie 时仅清 Cookie 并返回 204，不操作服务端会话，因此不要求 CSRF。
+认证、用户管理和客户端接口支持 `OPTIONS` 浏览器预检。当前没有删除用户接口。
 
-### 当前实现范围
+## 2. 通用协议
 
-已实现 REST 协议基础层、健康/就绪检查、四个认证接口、用户管理、当前用户权限、行为事件采集和审计日志查询。
+### 2.1 请求头
 
-- 服务路由在 `RBAC/szx_admin/src/Routes.cc` 集中注册；`main.cc` 只调用注册入口。`HttpTransport::registerApiRoute()` 接受以 `/` 开头的相对路径，自动拼接配置中的 `apiPrefix`（默认 `/api/v1`）。支持 GET、HEAD、POST、PUT、PATCH、DELETE、OPTIONS；OPTIONS 的响应由注册的处理器定义，不自动启用 CORS。
-- `HttpRequest` 提供解码后的 `pathParams`、`query`，以及忽略大小写的 `header()` 查询。参数和请求头沿用网络层单值映射语义，不提供重复值列表。
-- 控制器通过 `RestApi::jsonObject()` 要求 `Content-Type: application/json`（允许 UTF-8 charset）和对象类型 JSON；`allowedFields()` 校验字段白名单，必填字段和业务类型由控制器继续校验。校验失败返回 `2206` / HTTP 422。
-- `pagination()` 默认 `page=1`、`page_size=20`，要求正十进制整数；`page` 上限为 4294967295，`page_size` 上限为 100，偏移量使用 64 位整数。
-- `ifMatch()` 接受 `If-Match: 42` 或 `If-Match: "42"`，版本范围 1–2147483647。缺失、弱 ETag、通配符或多个版本均返回 `2206` / HTTP 422；实际版本比较和事务更新由业务层实现。
-- `bearerToken()` 仅提取凭据，限制 Authorization 长度为 8192 字节，缺失或格式错误返回 `2200` / HTTP 401；改密接口进一步校验 JWT 签名、issuer/audience/有效期、用户状态和当前 authz_version，通用业务权限路由尚未实现。
-- `RestApi` 统一产生成功 `{data,request_id}`、错误 `{code,message,details,request_id}` 和空 204 响应，附带 `X-Request-ID`、`Cache-Control: no-store`。错误使用稳定数字码和安全默认消息，不回传内部诊断。
+| 名称 | 类型 | 必填条件 | 说明 |
+|---|---|---|---|
+| `Content-Type` | string | 发送 JSON 请求体时 | `application/json`，允许 UTF-8 charset |
+| `Authorization` | string | Bearer 接口 | `Bearer <access_token>`；请求头值最多 8192 字节 |
+| `If-Match` | string | 改密、用户 PATCH/PUT、重置密码 | 当前目标用户的 version，例如 `1` 或 `"1"`；范围 1–2147483647 |
+| `Cookie` | string | refresh；logout 可选 | `szx_refresh=<refresh_token>`；浏览器自动携带 |
+| `X-CSRF-Token` | string | 携带 refresh Cookie 的 refresh/logout | 最近一次登录或刷新返回的 csrf_token |
+| `X-Request-ID` | string | 否 | 1–128 个字母、数字、`-`、`_`、`.`；未提供或非法时生成新 ID |
+| `Origin` | string | 浏览器自动设置 | 受 auth.allowedOrigin 控制 |
 
-`GET ${apiPrefix}/health` 返回 `{"data":{"status":"ok"},"request_id":"…"}`。`GET ${apiPrefix}/ready` 检查数据库连接，成功返回 `{"data":{"status":"ready"},"request_id":"…"}`，不可用返回 `2220` / HTTP 503。`/ready` 已从原有响应改为统一 envelope，调用方应读取 `data.status`。
+请求体必须为 JSON 对象；未知字段、错误类型、非法枚举通常返回 `422 / 2206`。认证、用户写接口和行为事件的请求体上限为 8192 字节，超过返回 `413 / 2215`；客户端事件的 details 另有 4096 字节限制。
 
-路由访问默认记录 INFO 日志：`request_id=... method=GET path="/api/v1/health" status=200`。`server.accessLog` 默认及随包配置均为 true；包含未命中路由和异常响应。路径截断至 512 字节并转义，不记录 query、Authorization 或请求体。
+If-Match 不接受弱 ETag、通配符或多个版本，也不能用 body 中的 version 字段替代。创建用户、登录、刷新、登出、行为上报不要求 If-Match。
 
-## 2. 认证
+### 2.2 响应包装
 
-| 方法 | 路径 | 说明 |
-|---|---|---|
-| POST | `/auth/login` | 登录，已实现 |
-| POST | `/auth/refresh` | 刷新令牌及轮换 Cookie，已实现 |
-| POST | `/auth/logout` | 撤销当前 refresh 会话族，已实现 |
-| POST | `/auth/change-password` | 首次及自助修改密码，已实现 |
-
-登录请求使用统一的 `identifier`，可匹配用户的 `uid` 或 `username`。客户端对密码原始 UTF-8 字节计算 SHA-256，将 64 位小写十六进制值放入 `password_hash`，不传输明文 `password`：
+成功响应统一使用 `data` 与 `request_id`；分页数据位于 data 内：
 
 ```json
-{"identifier":"U10086","password_hash":"<64 lowercase hexadecimal characters>"}
+{"data":{"items":[],"total":0,"page":1,"page_size":20},"request_id":"users-list-001"}
 ```
 
-登录成功返回当前用户、15 分钟 access token、access 过期时间和当前 `authz_version`；refresh token 通过 HttpOnly、Secure、SameSite Cookie 设置，不在 JSON 中返回。失败统一返回 `AUTH_INVALID_CREDENTIALS`，不区分用户不存在、禁用、锁定或密码错误。
+错误响应不包含 data：
 
-浏览器计算示例（密码不 trim、不转换大小写、不做 Unicode 规范化）：
-
-```javascript
-const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(password));
-const password_hash = Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, "0")).join("");
-await fetch("/api/v1/auth/login", {
-  method: "POST",
-  credentials: "include",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({ identifier, password_hash })
-});
+```json
+{"code":2209,"message":"The resource was changed by another request.","details":{},"request_id":"users-update-001"}
 ```
 
-服务端不保存或直接比较传输的 SHA-256 值，而是使用随机盐 Argon2id 再哈希，存储格式为 `sha256-v1:<Argon2id PHC>`。传输 hash 仍是登录凭据，使用 HTTPS 且不得写入日志。既有 `Argon2id(原密码)` 无法直接转换：仍使用默认密码且保留首次改密标记的初始超管在成功登录事务中自动升级；其他旧凭据保持原值，需要通过明确的密码重置迁移，不接受明文回退。该变化不修改既有建表 SQL 或 migration checksum。
+业务响应携带 `X-Request-ID` 和 `Cache-Control: no-store`。204 没有响应体，客户端不要调用 JSON 解析。按整数 code 判断错误，不依赖英文 message 文本；完整映射见第 7 节。
 
-当前登录响应 `data` 包含 `user`、`access_token`、`token_type: "Bearer"`、`expires_in: 900`、UTC Unix 毫秒时间戳 `expires_at`、`authz_version` 和 `csrf_token`。用户信息沿用用户对象字段白名单，不包含密码哈希或临时凭据过期时间。首次改密按角色区分：
+### 2.3 时间与空值
 
-| 用户状态 | user.force_password_change | user.password_change_recommended | 业务端流程 |
+| 数据 | JSON 类型／单位 | 示例 |
+|---|---|---|
+| 响应 created_at、updated_at、last_login_at | integer，UTC Unix 毫秒 | `1789636500000` |
+| expires_at、temporary_credential_expires_at | integer，UTC Unix 毫秒 | `1789637400000` |
+| 未发生过的 last_login_at | null | `null` |
+| expires_in | integer，秒 | `900` |
+| JWT 内部 iat、nbf、exp | integer，Unix 秒 | `1789636500` |
+| 日志查询参数 from、to | string，UTC ISO 8601 | `2026-09-17T09:15:00Z` |
+
+绝对时间响应不再返回日期字符串，数据库微秒小数截断到毫秒。业务端自行转为本地时间，例如 `new Date(timestamp).toLocaleString()`；处理可空时间前先判断 null。
+
+**查询输入与响应输出的格式不同**：from／to 当前仍要求精确的 `YYYY-MM-DDTHH:mm:ssZ`，不接受毫秒时间戳、小数秒或时区偏移字符串。
+
+uid 和 username 为二选一登录标识，用户响应只返回实际设置的字段，未设置的字段直接省略。id 是所有用户都有的稳定 UUID 主键。
+
+### 2.4 鉴权、角色与版本
+
+Bearer 接口验证 JWT 签名、issuer、audience、有效期，并检查数据库中的用户状态和 authz_version。只有 active 用户及当前授权版本可访问。
+
+| 角色 | 用户管理范围 | 角色分配 | 日志查询 |
 |---|---|---|---|
-| 超管待改密 | true | false | 必须改密，不提供跳过入口 |
-| 非超管待改密 | false | true | 提示改密，允许跳过进入业务 |
-| 已完成改密 | false | false | 正常进入业务 |
+| operator | 无 | 无 | 无 |
+| engineer | 无 | 无 | 无 |
+| admin | 仅 operator/engineer | 无 | 有 |
+| super_admin | 全部四种角色 | 有 | 有 |
 
-该状态来自数据库待改密标记与当前角色，不依赖 last_login_at 是否为空。跳过是业务客户端的会话内操作，不调用改密接口、不清除数据库标记；下次登录仍可提示。当前仓库提供服务端接口和业务端接入契约，尚未实现前端页面或通用业务接口的权限守卫。
+admin 读取或修改 admin/super_admin 用户时返回 `403 / 2204`，不会返回裁剪后的用户对象。最后一个 active 超管不能被禁用或降级，返回 `409 / 2210`。
 
-Cookie 名为 `szx_refresh`，固定 `HttpOnly; Secure`，`allowedOrigin="*"` 时使用 `SameSite=None`，指定单一 Origin 时使用 `SameSite=Strict`。Path 为 `${apiPrefix}/auth`（根前缀时为 `/auth`），默认有效期 7 天。原文由 CSPRNG 生成 32 字节，只在 Cookie 中返回；数据库保存 SHA-256 哈希和新 family ID。`csrf_token` 为 `SHA256("csrf:" + refresh_token)` 的小写十六进制，refresh/logout 以常量时间比较校验；每次 refresh 后必须使用响应中的新 CSRF token。
+version 用于并发更新，冲突后应重新获取用户并使用新版本提交。authz_version 用于使旧 access token 失效。实际角色、状态、解锁和密码变更会递增授权版本并撤销受影响用户的 refresh 会话；仅修改展示名不使会话失效。
 
-请求仅接受 `identifier`、`password_hash` 两个字符串字段；password_hash 必须为 64 位小写十六进制，旧 password 字段、明文、大小写不符或长度不符均返回 `2206` / 422，报文体不超过 8192 字节。identifier 去除首尾 ASCII 空白并做 Unicode NFC；username 使用不依赖 locale 的小写，UID 保持大小写，规范化结果不超过 64 个 Unicode 字符。UID/username 同时匹配不同账号时统一拒绝。未知账号也执行 Argon2id 校验以减少时序差异。临时凭据同样先由客户端计算 SHA-256；过期返回同样的 401。超管临时凭据成功登录时在事务中消费；非超管登录不消费临时凭据，允许跳过改密后在原有效期内再次登录，跳过不会延长有效期。
+### 2.5 浏览器、Cookie 与限流
 
-`auth.allowedOrigin` 默认配置为 `"*"`，允许任意 Origin 访问认证接口；也可指定单一 `http://` 或 `https://` Origin，此时不匹配的请求返回 403。无 Origin 的原生客户端允许访问。四个接口均支持 OPTIONS 预检，允许 POST 及 Content-Type、Authorization、If-Match、X-Request-ID、X-CSRF-Token 请求头。允许的来源在成功和错误响应中均回传具体 `Access-Control-Allow-Origin`、`Access-Control-Allow-Credentials: true` 和 `Vary: Origin`，不对携带凭据的请求返回通配符响应头。浏览器请求使用 `credentials: "include"`，通过 HTTPS 使用 Secure Cookie。
+生产接入使用 HTTPS。szx_refresh 为 `HttpOnly; Secure`，默认有效期 7 天；Path 为 `${apiPrefix}/auth`（前缀为 `/` 时为 `/auth`）。`allowedOrigin="*"` 时使用 `SameSite=None`，配置单一 Origin 时使用 `SameSite=Strict`。刷新轮换 token，不延长当前会话族原到期时间。
 
-默认同一 socket 对端 IP 每分钟最多 30 次认证尝试（四接口共享计数桶，改密在 JWT 校验后计数，refresh/logout 在 Cookie 格式和 CSRF 校验后计数），超出返回 `2211` / 429；无 Cookie 的 logout 不计数。忽略客户端提供的 X-Forwarded-For，代理部署需在入口配置独立限流。单进程最多保留 4096 个未到期 IP 计数桶，多实例计数不共享。连续 5 次登录错误密码将 active 用户置为 locked，同时递增 version/authz_version；locked_until 默认写入当前时间加 900 秒，按账号契约到期不自动解锁。成功登录清零失败计数。阈值均可通过 auth 配置调整。
+浏览器登录、刷新、登出使用 `credentials: "include"`。允许的来源会收到具体 Access-Control-Allow-Origin、Access-Control-Allow-Credentials: true 和 Vary: Origin；来源不匹配返回 `403 / 2204`。无 Origin 的原生客户端可访问。用户和客户端接口沿用同一 Origin 策略。
 
-账号查询使用行锁。失败计数、锁定、最后登录时间、refresh 哈希和安全审计在同一事务中提交，写入失败不返回令牌或 Cookie。事件为 `auth.login.success`、`auth.login.failure`、`auth.account.locked` 和 `auth.login.rate_limited`，审计不包含 identifier、密码或 token。审计失败返回 `2212` / 500。
-
-服务启动前须配置 `auth.privateKeyPath` 和 `auth.publicKeyPath`（支持 PEM/DER，路径相对进程工作目录），缺失或密钥不匹配时启动失败；不自动生成临时密钥。可用 OpenSSL 生成专用 RSA 3072 位密钥：
-
-```sh
-openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out jwt-private.pem
-openssl pkey -in jwt-private.pem -pubout -out jwt-public.pem
-```
-
-将文件放在静态目录之外并配置对应路径。`auth.allowedOrigin: "*"` 允许任意来源，需要限制来源时填写具体 Origin。也可复用仓库 `szx_license_issuer keygen --private-key <path> --public-key <path>` 命令生成独立密钥对，不与许可证签发共用密钥。PS256 issuer/audience 默认 `szx-admin` / `szx-client`；重启继续加载同一密钥，不使未过期 access token 因换钥失效。
-
-`POST /auth/change-password` 仅接受 `{old_password_hash,new_password_hash}`（与登录相同的 SHA-256 编码），必须携带 `Authorization: Bearer <access_token>` 和当前用户 `If-Match`，不接受指定目标用户。仅使用 Bearer 鉴权，不读取 refresh Cookie，因此本接口不要求 X-CSRF-Token。超管首次改密和各角色自助改密均可调用。客户端校验原始密码长度/复杂度；服务端校验摘要格式、新旧不同以及旧密码匹配，不从摘要推断原始密码强度。
-
-成功返回 200：`{"data":{"version":2,"authz_version":2,"force_password_change":false,"password_change_recommended":false,"reauthentication_required":true},"request_id":"…"}`。服务端在同一事务中更新密码、清除待改密标记及临时有效期、设置 password_changed_at、递增 version/authz_version、撤销该用户全部 refresh token 并记录 `auth.password.changed`；清除 refresh Cookie，业务端清除旧 access token 并重新登录。改密接口会拒绝旧 authz_version 的 access token；后续所有受保护接口也必须校验该版本。超管可使用刚登录时已消费的临时密码 hash 完成改密，当前 access 会话仍须有效。
-
-无效/过期 JWT、用户禁用/锁定/不存在、旧授权版本返回 `2200` / 401；旧密码错误返回 `2203` / 401 并记录 `auth.password.change_failed`；缺失/错误 If-Match 或摘要字段返回 `2206` / 422；版本冲突返回 `2209` / 409；审计失败返回 `2212` / 500。密码、会话撤销、审计任一写入失败均回滚；不会返回成功 Cookie。
-
-### 刷新与登出
-
-两个接口均接受空请求体或 `Content-Type: application/json` 的空对象 `{}`；拒绝其他字段，不从请求体、query 或 Authorization 读取 refresh token，不要求 access token 或 If-Match。凭据只从 `Cookie: szx_refresh=<token>` 读取，必须为规范的 32 字节 Base64URL 无填充编码；重复同名 Cookie 返回 `2206` / 422。
-
-`POST /auth/refresh`：携带 Cookie 和当前 `X-CSRF-Token`。成功返回 200，`data` 字段与登录一致，包含新的 access_token、csrf_token、当前用户和改密标记；新 refresh token 只通过 Set-Cookie 返回。数据库在同一事务内锁定用户及 token、检查 active 状态和 token 有效期、创建同 family 的新 token、将旧 token 标记为 rotated 并写入 replaced_by/last_used_at/revoked_at、记录 `auth.refresh.success`。刷新不延长 family 原到期时间，Cookie Max-Age 为剩余秒数。access JWT 仍为 15 分钟，使用当前用户 authz_version；首次改密标记不会因刷新清除。
-
-缺失/格式错误/未知/已撤销 Cookie 或禁用/锁定用户返回 `2200` / 401，过期返回 `2201` / 401，缺失或错误 CSRF 返回 `2204` / 403。重放已被替换的 token，在事务中撤销该 family 的所有未撤销 token，写入 `auth.refresh.replayed`，提交后返回 `2202` / 409；不影响其他登录 family。并发刷新只会有一次成功，另一请求按重放处理，因此客户端必须合并并发刷新。其他已通过协议校验的刷新失败记录 `auth.refresh.failure`。
-
-`POST /auth/logout`：携带 Cookie 时同样必须有匹配的 CSRF，可使用当前 token 或已轮换的祖先 token 撤销整个 family。过期、禁用和锁定状态不阻止退出。成功返回空 204，清除相同 Path/SameSite 的 Cookie，并记录 `auth.logout`。重复退出或格式有效但未知的 token 也返回 204；无 Cookie 时直接返回 204 并清 Cookie。其他 family 保持有效，不修改用户 version/authz_version。
-
-登出与重放只撤销 refresh family，不即时吊销已签发的 access JWT；客户端须清除 access/CSRF，本轮 access 最迟按 15 分钟有效期失效。改密则递增全局 authz_version 并撤销用户全部 refresh。后续角色/状态变更接口必须在同一事务内撤销受影响 refresh，会话表不保存授权版本快照，不能仅更新 authz_version 后留下旧 refresh。
-
-刷新、重放撤销和登出均将状态写入与安全审计原子提交。任一写入失败返回 500 并完整回滚，不发送 Set-Cookie；CSRF 或 Origin 拒绝也不撤销会话。调用方在失败时不得假定服务端已登出。
-
-```javascript
-const response = await fetch("/api/v1/auth/refresh", {
-  method: "POST",
-  credentials: "include",
-  headers: { "X-CSRF-Token": csrfToken }
-});
-// Success: replace the in-memory access and CSRF tokens with response.data values.
-// Logout uses the same headers and credentials with /api/v1/auth/logout.
-```
-
-## 3. 用户管理
-
-| 方法 | 路径 | 权限 | 说明 |
+| 预算 | 默认值 | 配置 | 作用范围 |
 |---|---|---|---|
-| GET | `/admin/users` | admin/super_admin | 用户列表；admin 默认只能查询 operator/engineer，super_admin 可查询全部 |
-| POST | `/admin/users` | admin/super_admin | 创建用户；admin 只能创建 operator/engineer |
-| GET | `/admin/users/{id}` | admin/super_admin | 用户详情；admin 不能读取 admin/super_admin 的敏感字段 |
-| PATCH | `/admin/users/{id}` | admin/super_admin | 编辑用户；不允许修改 uid/username/role |
-| PATCH | `/admin/users/{id}/status` | admin/super_admin | 启用/禁用；admin 不得操作 admin/super_admin |
-| PATCH | `/admin/users/{id}/unlock` | admin/super_admin | 解锁；admin 仅能解锁 operator/engineer |
-| PUT | `/admin/users/{id}/role` | super_admin | 分配四类固定角色 |
-| POST | `/admin/users/{id}/reset-password` | admin/super_admin | 重置密码并设置 force_password_change；admin 仅能操作 operator/engineer |
-| GET | `/admin/user-logs` | admin/super_admin | 分页查询审计日志 |
+| 认证／凭据签发 | 每 IP 每分钟 30 次 | auth.attemptsPerMinute，1–1000 | 登录、改密、刷新、登出、创建用户、重置密码共享 |
+| 行为事件 | 每用户每分钟 60 次 | auth.behaviorEventsPerMinute，1–1000 | 独立于认证预算 |
 
-用户列表支持 `page`、`page_size`、`search`、`status`、`role` 和固定白名单 `sort` 参数；审计日志支持 `page`、`page_size`、`from`、`to`、`event_name`、`result` 和 `actor_user_id` 过滤。所有分页参数必须有服务端上限。
+超限返回 `429 / 2211`。按实际 socket 对端 IP 计数，不信任 X-Forwarded-For。两类计数分别最多保留 4096 个未到期窗口，单进程内有效，多实例不共享。无 Cookie 的 logout 不计数；改密在 JWT 验证后计数；refresh/logout 在 Cookie 格式及 CSRF 校验后计数；创建／重置在事务鉴权后、生成凭据前计数。
 
-审计日志条目返回 `id、actor_user_id、target_user_id、event_name、result、request_id、created_at、details`；`details` 为 JSON 对象，不是 JSON 字符串。查询历史日志时也执行下述字段脱敏规则，不修改历史记录。
+## 3. 响应模型
 
-创建用户请求必须且只能提供 `uid` 或 `username`；创建后身份标识不可修改：
+### 3.1 User
+
+登录、刷新、用户详情、列表元素和用户修改响应共用此模型。
+
+| 字段 | 类型 | 返回规则 | 说明 |
+|---|---|---|---|
+| id | string(UUID) | 必有 | 稳定用户 ID；路径 UUID 字母不区分大小写 |
+| uid | string | UID 账号才有 | UID 登录标识，区分大小写 |
+| username | string | 用户名账号才有 | 展示值；匹配使用规范化后的小写值 |
+| display_name | string | 必有 | 展示名 |
+| role | string | 必有 | operator / engineer / admin / super_admin |
+| status | string | 必有 | active / disabled / locked |
+| force_password_change | boolean | 必有 | 仅待改密超管为 true |
+| password_change_recommended | boolean | 必有 | 待改密非超管为 true，可跳过提示 |
+| version | integer | 必有 | 下次变更时提交到 If-Match |
+| authz_version | integer | 必有 | 当前授权版本 |
+| last_login_at | integer / null | 必有 | 最近登录时间，UTC 毫秒；未登录为 null |
+| created_at | integer | 必有 | 创建时间，UTC 毫秒 |
+| updated_at | integer | 必有 | 更新时间，UTC 毫秒 |
+
+不返回密码哈希、临时凭据过期时间或内部锁定信息。uid／username 只返回其中一个；客户端迁移时兼容旧响应中的显式 null。
+
+### 3.2 Session
+
+作为登录与刷新响应的 data。
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| user | User | 当前用户 |
+| access_token | string | PS256 JWT；有效期 15 分钟 |
+| token_type | string | 固定 Bearer |
+| expires_in | integer | 固定 900，单位秒 |
+| expires_at | integer | access 到期时间，UTC 毫秒；等于 JWT exp × 1000 |
+| authz_version | integer | 当前授权版本，与 user 中一致 |
+| csrf_token | string | 64 位小写十六进制；刷新／登出使用 |
+
+refresh token 只通过 Set-Cookie 返回，不在 JSON 中返回。当前算法仍是 PS256，未切换为 ES256；客户端应把 access token 当作不透明凭据，不依赖字符长度。
+
+### 3.3 CredentialIssue
+
+作为创建用户和重置密码响应的 data。
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| user | User | 创建或重置后的用户 |
+| temporary_credential | string | 随机 20 字符临时密码，仅本次响应可见 |
+| temporary_credential_expires_at | integer | 到期时间，UTC 毫秒；默认 24 小时有效 |
+
+临时密码登录时同样先计算 SHA-256。超管临时密码只能成功登录一次，随后必须改密；其他角色可跳过改密提示，在原有效期内重复登录。跳过不会清除待改密标记或延长有效期。
+
+### 3.4 Page<T> 与 AuditLog
+
+| 分页字段 | 类型 | 说明 |
+|---|---|---|
+| items | array<T> | 本页条目 |
+| total | integer | 过滤后的总条数 |
+| page | integer | 当前页，起始为 1 |
+| page_size | integer | 每页数量 |
+
+| AuditLog 字段 | 类型 | 说明 |
+|---|---|---|
+| id | string(UUID) | 日志 ID |
+| actor_user_id | string | 操作者 ID；缺失时为空字符串 |
+| target_user_id | string | 目标用户 ID；缺失时为空字符串 |
+| event_name | string | 事件名称 |
+| result | string | success / failure / denied |
+| request_id | string | 关联请求 ID |
+| peer_address | string | 当前响应固定为空字符串，不暴露数据库 IP |
+| details | object | 脱敏后的 JSON 对象，不是 JSON 字符串 |
+| created_at | integer | 事件时间，UTC 毫秒 |
+
+## 4. 服务与认证接口
+
+<a id="health"></a>
+
+### GET /health — 健康检查
+
+无需鉴权，无请求参数和请求体。200 响应：
+
+```json
+{"data":{"status":"ok"},"request_id":"health-001"}
+```
+
+<a id="ready"></a>
+
+### GET /ready — 数据库就绪检查
+
+无需鉴权，无请求参数和请求体。200 响应：
+
+```json
+{"data":{"status":"ready"},"request_id":"ready-001"}
+```
+
+数据库不可用时返回 `503 / 2220`。
+
+<a id="auth-login"></a>
+
+### POST /auth/login — 登录
+
+**鉴权：** 无 Bearer；提交登录凭据。
+
+| Body 字段 | 类型 | 必填 | 约束 |
+|---|---|---|---|
+| identifier | string | 是 | UID 或用户名；原始 UTF-8 最多 512 字节；规范化后 1–64 个 Unicode 字符 |
+| password_hash | string | 是 | 原始密码 UTF-8 字节的 SHA-256，64 位小写十六进制 |
+
+identifier 去首尾空白并执行 Unicode NFC，UID 保留大小写，用户名另按不依赖 locale 的规则小写匹配。若 UID 和用户名匹配到不同账号，统一拒绝登录。
+
+请求示例（尖括号内容为占位值）：
+
+```http
+POST /api/v1/auth/login
+Content-Type: application/json
+X-Request-ID: login-001
+```
+
+```json
+{"identifier":"admin","password_hash":"<64位小写SHA-256摘要>"}
+```
+
+**成功：** 200，data 为 Session，同时设置 refresh Cookie。
+
+```json
+{
+  "data": {
+    "access_token": "<access-token>",
+    "token_type": "Bearer",
+    "expires_in": 900,
+    "expires_at": 1789637400000,
+    "authz_version": 1,
+    "csrf_token": "<csrf-token>",
+    "user": {
+      "id": "10000000-0000-4000-8000-000000000001",
+      "username": "admin",
+      "display_name": "System Administrator",
+      "role": "super_admin",
+      "status": "active",
+      "force_password_change": true,
+      "password_change_recommended": false,
+      "version": 1,
+      "authz_version": 1,
+      "last_login_at": 1789636500000,
+      "created_at": 1789550100510,
+      "updated_at": 1789636500000
+    }
+  },
+  "request_id": "login-001"
+}
+```
+
+| HTTP / code | 条件 |
+|---|---|
+| 401 / 2203 | 用户不存在、密码错误、disabled/locked、临时密码已过期或已消费 |
+| 422 / 2206 | 字段、摘要格式或身份标识非法；不接受明文 password 字段 |
+| 429 / 2211 | 认证预算耗尽 |
+| 500 / 2212 | 安全审计写入失败，登录事务回滚 |
+
+默认连续 5 次错误密码将 active 账号置为 locked。locked_until 默认记录 900 秒后，但到期不会自动解锁，必须调用解锁接口。成功登录清零失败计数。未知用户、禁用、锁定不对外区分原因。
+
+<a id="auth-refresh"></a>
+
+### POST /auth/refresh — 刷新会话
+
+**鉴权：** 必须携带 szx_refresh Cookie 和当前 X-CSRF-Token；不要求 Bearer 或 If-Match。
+
+Body 可省略，或发送空对象 `{}`，不接受其他字段。refresh token 只能来自 Cookie，不能放入 body、query 或 Authorization。
+
+```http
+POST /api/v1/auth/refresh
+Cookie: szx_refresh=<refresh-token>
+X-CSRF-Token: <csrf-token>
+```
+
+**成功：** 200，data 为 Session，与登录相同；Set-Cookie 替换 refresh token。客户端须替换 access token 和 CSRF token。
+
+| HTTP / code | 条件 |
+|---|---|
+| 401 / 2200 | 缺失、非法、未知或普通已撤销 Cookie；账号不可用 |
+| 401 / 2201 | refresh token 过期 |
+| 403 / 2204 | CSRF 缺失、不匹配，或 Origin 不允许 |
+| 409 / 2202 | 使用已轮换的旧 token，整个会话族被撤销 |
+| 422 / 2206 | 重复同名 Cookie、非法请求体 |
+| 429 / 2211 | 认证预算耗尽 |
+
+客户端必须合并并发刷新：同一 token 并发刷新只有一次成功，另一请求会按重放处理，撤销同一会话族。其他登录会话族不受影响。写入或审计失败时事务回滚，不发送新的 Cookie。
+
+<a id="auth-logout"></a>
+
+### POST /auth/logout — 退出当前会话
+
+**鉴权：** 有 refresh Cookie 时必须携带匹配的 CSRF；无 Cookie 时直接清除浏览器 Cookie。不要求 Bearer 或 If-Match。
+
+Body 可省略或为 `{}`。请求头与刷新接口相同，路径改为 `/auth/logout`。
+
+**成功：** 204 No Content，清除 refresh Cookie，没有 JSON 响应体。重复退出、格式正确但未知的 token 均可返回 204。
+
+| HTTP / code | 条件 |
+|---|---|
+| 401 / 2200 | refresh Cookie 编码非法 |
+| 403 / 2204 | 携带 Cookie 但 CSRF 缺失／错误，或 Origin 不允许 |
+| 422 / 2206 | 重复同名 Cookie、非法请求体 |
+| 429 / 2211 | 认证预算耗尽；无 Cookie 的退出不计数 |
+| 500 / 2212 | 审计失败，撤销操作回滚 |
+
+退出只撤销当前 refresh 会话族，不即时吊销 access JWT；客户端应清除本地 access/CSRF，旧 access 最迟按 15 分钟有效期失效。过期、锁定或禁用不阻止合法会话退出。失败响应不能视为已退出成功。
+
+<a id="auth-change-password"></a>
+
+### POST /auth/change-password — 修改自己的密码
+
+**鉴权：** Bearer；If-Match 为当前用户的 version，不接受指定目标用户。不使用 refresh Cookie，也不要求 CSRF。
+
+| Body 字段 | 类型 | 必填 | 约束 |
+|---|---|---|---|
+| old_password_hash | string | 是 | 原密码的 64 位小写 SHA-256 |
+| new_password_hash | string | 是 | 新密码的 64 位小写 SHA-256；不得与旧摘要相同 |
+
+```http
+POST /api/v1/auth/change-password
+Authorization: Bearer <access-token>
+If-Match: 1
+Content-Type: application/json
+```
+
+```json
+{"old_password_hash":"<旧密码SHA-256>","new_password_hash":"<新密码SHA-256>"}
+```
+
+**成功：** 200，清除 refresh Cookie，要求重新登录。
+
+```json
+{"data":{"version":2,"authz_version":2,"force_password_change":false,"password_change_recommended":false,"reauthentication_required":true},"request_id":"password-change-001"}
+```
+
+错误：`401 / 2200`（会话无效）、`401 / 2203`（旧密码错误）、`409 / 2209`（版本冲突）、`422 / 2206`（请求非法）、`429 / 2211`（限流）、`500 / 2212`（审计失败）。
+
+成功后清除待改密标记及临时有效期，递增 version/authz_version，撤销全部 refresh 会话，旧 access 失效。超管可用刚登录时已消费的临时密码摘要完成首次改密。客户端负责原始密码强度检查，服务端不从摘要推断密码复杂度。
+
+## 5. 用户管理与审计接口
+
+本节全部接口要求 Bearer。所有 `{id}` 均为必填 Path 参数，类型 string(UUID)，传用户 id 而非 uid 或 username；UUID 支持大写十六进制字母。
+
+公共错误包括 `401 / 2200`（会话无效）、`403 / 2204`（角色或目标范围不允许）、`404 / 2205`（用户不存在）、`422 / 2206`（参数非法）、`500 / 2221`（数据库失败）。变更接口另有 `409 / 2209`（版本冲突）、`500 / 2212`（审计失败）。下文列出各接口的额外规则。
+
+<a id="users-list"></a>
+
+### GET /admin/users — 用户列表
+
+**权限：** admin/super_admin。admin 仅能列出 operator/engineer。
+
+| Query 参数 | 类型 | 必填 | 默认／约束 |
+|---|---|---|---|
+| page | integer | 否 | 默认 1；范围 1–4294967295 |
+| page_size | integer | 否 | 默认 20；范围 1–100 |
+| search | string | 否 | 最多 128 个 Unicode 字符，无控制字符；搜索 uid、username、display_name |
+| role | string | 否 | operator / engineer / admin / super_admin |
+| status | string | 否 | active / disabled / locked |
+| sort | string | 否 | 默认 -created_at；白名单见下文 |
+
+sort 仅接受 `-created_at`、`created_at`、`display_name`、`-display_name`、`last_login_at`、`-last_login_at`、`role`、`status`，前缀 - 表示降序。未知 Query 参数返回 `422 / 2206`；admin 显式请求 role=admin/super_admin 返回 `403 / 2204`。
+
+```http
+GET /api/v1/admin/users?page=1&page_size=20&role=operator&sort=-created_at
+Authorization: Bearer <access-token>
+```
+
+**成功：** 200，data 为 `Page<User>`。无匹配结果示例：
+
+```json
+{"data":{"items":[],"total":0,"page":1,"page_size":20},"request_id":"users-list-001"}
+```
+
+<a id="users-create"></a>
+
+### POST /admin/users — 创建用户
+
+**权限：** admin/super_admin；admin 只能创建 operator/engineer。不要求 If-Match。
+
+| Body 字段 | 类型 | 必填 | 约束 |
+|---|---|---|---|
+| uid | string | 与 username 二选一 | 规范化后 1–64 个 Unicode 字符；保留大小写 |
+| username | string | 与 uid 二选一 | 规范化后 1–64 个 Unicode 字符；按小写 canonical 判重 |
+| display_name | string | 是 | 1–128 个 Unicode 字符，无控制字符，不得全为空格 |
+| role | string | 是 | 四种角色之一，且调用者有权创建 |
+
+不接受密码、状态、id 或版本字段。身份字段的 null 视为未提供；UID 和用户名均去首尾空白、执行 Unicode NFC，原始输入最多 512 字节。用户名保留重音差异，UID 区分大小写；创建后身份不可修改。
 
 ```json
 {"uid":"U10086","display_name":"Alice","role":"operator"}
 ```
 
-服务端生成临时凭据并只在创建/重置响应中展示一次，明文不落库；默认 24 小时有效。超管首次登录必须改密，其临时凭据只能成功登录一次；非超管首次登录仅提示，业务端允许跳过，可在原有效期内继续登录。若部署采用外部邀请通道，可用一次性 activation token 替代临时密码。
-
-创建/重置成功响应只在本次返回临时凭据：
+**成功：** 201，data 为 CredentialIssue。
 
 ```json
-{"data":{"user":{...},"temporary_credential":"<show-once>","temporary_credential_expires_at":1789084800000}}
+{
+  "data": {
+    "user": {
+      "id": "10000000-0000-4000-8000-000000000002",
+      "uid": "U10086",
+      "display_name": "Alice",
+      "role": "operator",
+      "status": "active",
+      "force_password_change": false,
+      "password_change_recommended": true,
+      "version": 1,
+      "authz_version": 1,
+      "last_login_at": null,
+      "created_at": 1789636500000,
+      "updated_at": 1789636500000
+    },
+    "temporary_credential": "<本次生成的临时密码>",
+    "temporary_credential_expires_at": 1789722900000
+  },
+  "request_id": "users-create-001"
+}
 ```
 
-客户端不得缓存或再次展示 `temporary_credential`。
+额外错误：`422 / 2207`（uid/username 同时提供或同时缺失）、`409 / 2208`（canonical 身份重复）、`429 / 2211`（凭据签发预算耗尽）。仅一个标识但类型错误返回 `422 / 2206`。临时密码仅本次展示，不应持久缓存。
 
-创建和重置密码先在事务内校验并锁定当前调用者，再生成临时凭据及 Argon2id 哈希。它们与登录、改密共享按实际对端 IP 计数的 `auth.attemptsPerMinute` 预算；超限返回 `429 / RATE_LIMITED`，不写入账号或凭据变更。
+<a id="users-get"></a>
 
-用户对象统一返回 `id、display_name、role、status、force_password_change、password_change_recommended、version、authz_version、last_login_at、created_at、updated_at`，以及实际设置的 `uid` 或 `username`。`id` 是所有用户稳定的 UUID 主键；`uid` 和 `username` 是二选一的登录标识。未设置的身份字段直接省略，例如默认管理员返回 `username: "admin"`，不返回 `uid: null`。该规则适用于登录、刷新和所有用户管理响应；客户端须按可选字段读取，兼容旧版显式 `null`。临时凭据过期时间不返回给普通用户，不返回密码哈希；`last_login_at` 仍可为 `null`。force_password_change 与 password_change_recommended 按角色派生，不直接透传数据库同名字段。
+### GET /admin/users/{id} — 用户详情
 
-同时提供或同时缺失返回 `422 / 2207 / USER_IDENTITY_ONE_OF_REQUIRED`（`null` 视为缺失）；标识类型错误返回 `422 / 2206`。canonical 标识重复返回 `409 / 2208 / USER_IDENTITY_CONFLICT`。用户名按 trim + Unicode NFC + 不依赖 locale 的小写规则判重，保留重音差异；UID 按 trim + Unicode NFC 判重，区分大小写。管理员提交管理员/超管角色返回 `FORBIDDEN`。
-
-用户路径参数 `{id}` 的 UUID 十六进制字母不区分大小写，读取与修改使用相同匹配语义。
-
-`PATCH /admin/users/{id}/status` 请求体为 `{"status":"active|disabled"}`；`PATCH /admin/users/{id}/unlock` 无业务字段，只能将 locked 转为 active；`PUT /admin/users/{id}/role` 请求体为 `{"role":"operator|engineer|admin|super_admin"}`。以上接口均遵循 `If-Match`，服务端不得覆盖并发更新。
-
-## 4. Client 当前用户权限与行为日志
-
-### 4.1 当前用户权限
-
-`GET /client/me/permissions` 返回客户端业务判断所需的固定角色和能力码：
-
-```json
-{"data":{"user_id":"...","role":"engineer","status":"active","force_password_change":false,"authz_version":3,"capabilities":["business.read","business.operate","engineering.configure"]}}
-```
-
-客户端据此控制菜单、按钮和流程分支；实际业务 API 仍必须在服务端按角色校验。
-
-业务服务端自动记录 Client 行为；如需前端埋点，使用非可信采集接口：
+**权限：** admin/super_admin，遵循目标角色范围。必填 Path id，无请求体。
 
 ```http
-POST /client/behavior-events
-Authorization: Bearer <access_token>
-Content-Type: application/json
+GET /api/v1/admin/users/10000000-0000-4000-8000-000000000002
+Authorization: Bearer <access-token>
+```
 
+**成功：** 200，data 为 User，与登录的 data.user 结构相同，不额外套一层 user。错误见本节公共错误表。
+
+<a id="users-update"></a>
+
+### PATCH /admin/users/{id} — 修改展示名
+
+**权限：** admin/super_admin；必填 Path id 和 Header If-Match。
+
+| Body 字段 | 类型 | 必填 | 约束 |
+|---|---|---|---|
+| display_name | string | 是 | 1–128 个 Unicode 字符，无控制字符，不得全为空格 |
+
+```http
+PATCH /api/v1/admin/users/10000000-0000-4000-8000-000000000002
+Authorization: Bearer <access-token>
+If-Match: 1
+Content-Type: application/json
+```
+
+```json
+{"display_name":"Alice Chen"}
+```
+
+**成功：** 200，data 为 User。实际名称变化才递增 version；authz_version 不变。拒绝 uid、username、role、status 等额外字段。错误见本节公共错误表。
+
+<a id="users-status"></a>
+
+### PATCH /admin/users/{id}/status — 启用／禁用
+
+**权限：** admin/super_admin；必填 Path id 和 Header If-Match。
+
+| Body 字段 | 类型 | 必填 | 约束 |
+|---|---|---|---|
+| status | string | 是 | 仅 active / disabled |
+
+```json
+{"status":"disabled"}
+```
+
+**成功：** 200，data 为 User。实际状态变化时递增 version/authz_version，并撤销所有 refresh 会话；提交原状态不递增版本。
+
+locked 不能直接改为 active，否则返回 `422 / 2206`，须调用 unlock。禁用最后一个 active 超管返回 `409 / 2210`；其他错误见本节公共错误表。
+
+<a id="users-unlock"></a>
+
+### PATCH /admin/users/{id}/unlock — 解锁
+
+**权限：** admin/super_admin；必填 Path id 和 Header If-Match。
+
+Body 可省略或为 `{}`，不接受业务字段。
+
+```http
+PATCH /api/v1/admin/users/10000000-0000-4000-8000-000000000002/unlock
+Authorization: Bearer <access-token>
+If-Match: 3
+```
+
+**成功：** 200，data 为 User；locked 变为 active，清零失败计数、清空锁定时间，递增 version/authz_version 并撤销 refresh 会话。
+
+目标不是 locked 时返回 `422 / 2206`，不能用此接口启用 disabled 用户；其他错误见本节公共错误表。
+
+<a id="users-role"></a>
+
+### PUT /admin/users/{id}/role — 修改角色
+
+**权限：** 仅 super_admin；必填 Path id 和 Header If-Match。
+
+| Body 字段 | 类型 | 必填 | 约束 |
+|---|---|---|---|
+| role | string | 是 | operator / engineer / admin / super_admin |
+
+```json
+{"role":"engineer"}
+```
+
+**成功：** 200，data 为 User。实际角色变化时递增 version/authz_version 并撤销 refresh 会话；提交原角色不递增版本。最后一个 active 超管不能降级，否则返回 `409 / 2210`；其他错误见本节公共错误表。
+
+<a id="users-reset-password"></a>
+
+### POST /admin/users/{id}/reset-password — 重置密码
+
+**权限：** admin/super_admin；必填 Path id 和 Header If-Match。
+
+Body 可省略或为 `{}`，不接受指定新密码。
+
+```http
+POST /api/v1/admin/users/10000000-0000-4000-8000-000000000002/reset-password
+Authorization: Bearer <access-token>
+If-Match: 4
+```
+
+**成功：** 200，data 为 CredentialIssue，结构与创建用户的 data 相同。
+
+服务端生成新的临时密码，设置 24 小时有效期和待改密标记，递增 version/authz_version，撤销全部 refresh 会话。是否强制改密由目标角色决定，见 User 模型。超出签发预算返回 `429 / 2211`，不产生部分密码变更；其他错误见本节公共错误表。
+
+<a id="user-logs"></a>
+
+### GET /admin/user-logs — 审计日志列表
+
+**权限：** admin/super_admin。
+
+| Query 参数 | 类型 | 必填 | 默认／约束 |
+|---|---|---|---|
+| page | integer | 否 | 默认 1；范围 1–4294967295 |
+| page_size | integer | 否 | 默认 20；范围 1–100 |
+| from | string | 否 | 起始 UTC ISO 8601 时间，包含下界 |
+| to | string | 否 | 结束 UTC ISO 8601 时间，包含该精确时刻上界 |
+| event_name | string | 否 | 精确匹配；事件名称语法见行为上报，查询允许 auth./user. 前缀 |
+| result | string | 否 | success / failure / denied |
+| actor_user_id | string(UUID) | 否 | 操作者 ID |
+
+按 created_at 降序、id 升序排列；不支持 sort，未知参数返回 `422 / 2206`。to 只有秒精度，不包含该精确时刻之后的微秒记录；其他错误见本节公共错误表。
+
+```http
+GET /api/v1/admin/user-logs?page=1&page_size=20&from=2026-09-17T00%3A00%3A00Z&event_name=report.view
+Authorization: Bearer <access-token>
+```
+
+**成功：** 200，data 为 `Page<AuditLog>`。
+
+```json
+{
+  "data": {
+    "items": [{
+      "id": "20000000-0000-4000-8000-000000000001",
+      "actor_user_id": "10000000-0000-4000-8000-000000000002",
+      "target_user_id": "10000000-0000-4000-8000-000000000002",
+      "event_name": "report.view",
+      "result": "success",
+      "request_id": "report-view-001",
+      "peer_address": "",
+      "details": {"source": "dashboard"},
+      "created_at": 1789636500510
+    }],
+    "total": 1,
+    "page": 1,
+    "page_size": 20
+  },
+  "request_id": "logs-list-001"
+}
+```
+
+历史日志读取时也执行字段脱敏，但不会修改存储中的历史记录。业务 API 不支持修改或删除日志。
+
+## 6. 客户端接口
+
+<a id="client-permissions"></a>
+
+### GET /client/me/permissions — 当前用户权限
+
+**鉴权：** Bearer，任意有效角色。无请求参数和请求体。
+
+| data 字段 | 类型 | 说明 |
+|---|---|---|
+| user_id | string(UUID) | 当前用户 ID |
+| role | string | 当前固定角色 |
+| status | string | 当前有效用户为 active |
+| force_password_change | boolean | 当前超管是否必须改密 |
+| authz_version | integer | 当前授权版本 |
+| capabilities | array<string> | 该角色的能力码 |
+
+**成功：** 200。
+
+```json
+{"data":{"user_id":"10000000-0000-4000-8000-000000000002","role":"engineer","status":"active","force_password_change":false,"authz_version":3,"capabilities":["business.read","business.operate","engineering.configure"]},"request_id":"permissions-001"}
+```
+
+| 角色 | 能力 |
+|---|---|
+| operator | business.read、business.operate |
+| engineer | operator 能力，加 engineering.configure |
+| admin | engineer 能力，加 user.read、user.create、user.update、user.status、user.unlock、user.password.reset、audit.read |
+| super_admin | admin 能力，加 user.role.assign |
+
+错误：`401 / 2200`（会话无效）、`403 / 2204`（Origin 不允许）、`500 / 2221`（数据库失败）。菜单可依据此响应显示，实际业务请求仍须服务端鉴权。密码修改建议读取登录／刷新返回的 User；此接口不返回 password_change_recommended。
+
+<a id="client-behavior"></a>
+
+### POST /client/behavior-events — 上报行为事件
+
+**鉴权：** Bearer，任意有效角色；不要求 If-Match。
+
+| Body 字段 | 类型 | 必填 | 约束 |
+|---|---|---|---|
+| event_name | string | 是 | 1–96 个 ASCII 字符；首字符为小写字母；只允许小写字母、数字、下划线、点；无首尾点或连续点 |
+| result | string | 是 | 仅 success / failure |
+| details | object | 是 | 序列化后最多 4096 字节；可以是空对象 |
+
+```json
 {"event_name":"report.view","result":"success","details":{"source":"dashboard"}}
 ```
 
-返回 `202 Accepted` 和 `event_id`。该接口是非可信 telemetry，不得用于记录登录、角色变更、禁用等安全审计；Admin 查询：`GET /admin/user-logs`，需要 `admin` 或 `super_admin`。
-
-`details` 必须是 JSON 对象，序列化后最多 4096 字节。入库前递归处理对象和数组：字段名转 ASCII 小写并去除分隔符后，删除包含 `password`、`token`、`secret`、`privatekey`、`apikey`、`credential`、`machineid`、`hardwareid`、`fingerprint`、`stack`、`traceback` 或等于 `authorization`、`cookie`、`setcookie` 的字段。深度达到 32 的值替换为 `null`，其余元数据保留。此规则按字段名识别敏感数据，客户端仍不得把凭据写入任意自由文本字段。
-
-采集接口使用独立的每用户固定一分钟计数窗口，默认每分钟 60 次，由 `auth.behaviorEventsPerMinute` 配置（1–1000）。达到上限返回 `429 / 2211 / RATE_LIMITED`，不写入日志；不消耗认证或凭据签发预算。单进程最多保留 4096 个未到期用户计数桶，容量满时拒绝新计数桶，多实例之间不共享计数。
-
-## 5. 错误码
-
-错误响应的 `code` 是 JSON 整数，数值由 `SzxAdmin/Infra/ErrorCode.h` 中的 `ErrorCode` 固定定义。客户端按数值判断错误；`message` 仅用于说明，`request_id` 用于关联请求。例如资源不存在时，HTTP 状态为 404，响应为：
+**成功：** 202 Accepted。
 
 ```json
-{"code":2205,"message":"The requested resource was not found.","details":{},"request_id":"..."}
+{"data":{"event_id":"20000000-0000-4000-8000-000000000001"},"request_id":"report-view-001"}
 ```
 
-本次修正将初版响应中的字符串名称改为整数。调用方须将字符串比较（如 `code === "RESOURCE_NOT_FOUND"`）改为数字比较（`code === 2205`），不得把数字转为字符串传输。下表名称用于文档和诊断，不作为响应 `code` 的值。
+此接口为非可信客户端 telemetry；拒绝 auth.、user. 前缀，不能伪造登录、角色变更等服务端审计。操作者和目标用户均取当前用户，调用方不能指定。
 
-| code | 名称 | 默认 HTTP 状态 |
+错误：`401 / 2200`（会话无效）、`403 / 2204`（Origin 不允许）、`422 / 2206`（字段／名称／details 非法）、`429 / 2211`（独立用户预算耗尽）、`500 / 2212`（审计失败）。
+
+入库前递归处理对象和数组：字段名转 ASCII 小写并去掉非字母数字字符后，删除包含 password、token、secret、privatekey、apikey、credential、machineid、hardwareid、fingerprint、stack、traceback，或等于 authorization、cookie、setcookie 的字段。深度达到 32 的值替换为 null，其余元数据保留。此规则按字段名识别，调用方仍不得把凭据写入任意自由文本值。
+
+## 7. 错误码参考
+
+名称供文档和诊断使用，HTTP 响应中的 code 始终为整数。
+
+| code | 名称 | 默认 HTTP |
 |---|---|---|
 | 2200 | AUTH_REQUIRED | 401 |
 | 2201 | TOKEN_EXPIRED | 401 |
@@ -228,6 +676,59 @@ Content-Type: application/json
 | 2224 | MIGRATION_CONFLICT | 500 |
 | 2299 | INTERNAL_FAILURE | 500 |
 
-登录时 disabled/locked 统一映射为 `2203`（AUTH_INVALID_CREDENTIALS），不单独暴露账户状态。协议解析错误保留网络层 HTTP 状态，例如 400、417、431 对应业务错误码 `2206`，不会统一改成 422。
+包含初始化与基础设施错误，不代表每个接口都会产生全部错误码。底层 HTTP 解析错误保留 400、417、431 等原始 HTTP 状态，可对应业务码 2206，不统一改为 422。错误 details 不包含密码、token、密钥或内部堆栈。
 
-HTTP 映射固定为：401（未认证、过期或 refresh 失败）、403（权限/目标角色限制）、404（资源不存在）、409（版本冲突、最后超管保护或 refresh 重放）、422（参数校验失败）、429（限流）。错误 `details` 不得包含密码、token、密钥或内部堆栈。
+## 8. 接入示例与兼容说明
+
+### 8.1 浏览器登录、刷新与本地时间
+
+```javascript
+// 密码不 trim、不转换大小写、不做 Unicode 规范化。
+const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(password));
+const password_hash = Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, "0")).join("");
+const response = await fetch("/api/v1/auth/login", {
+  method: "POST",
+  credentials: "include",
+  headers: {"Content-Type": "application/json"},
+  body: JSON.stringify({identifier, password_hash})
+});
+const body = await response.json();
+if (!response.ok) throw new Error(`${body.code}: ${body.message}`);
+let {access_token, csrf_token, user} = body.data;
+const identity = user.uid ?? user.username;
+const localLoginTime = user.last_login_at == null
+  ? "未登录"
+  : new Date(user.last_login_at).toLocaleString();
+
+// 实际业务端应合并并发刷新；每次成功后替换两种 token。
+const refreshed = await fetch("/api/v1/auth/refresh", {
+  method: "POST",
+  credentials: "include",
+  headers: {"X-CSRF-Token": csrf_token}
+});
+const refreshBody = await refreshed.json();
+if (!refreshed.ok) throw new Error(`${refreshBody.code}: ${refreshBody.message}`);
+({access_token, csrf_token, user} = refreshBody.data);
+```
+
+### 8.2 响应格式迁移
+
+| 旧用法 | 当前用法 |
+|---|---|
+| 将 expires_at／用户日期当字符串解析 | 读取 UTC 毫秒整数；JavaScript 不要再乘 1000 |
+| 依赖 uid: null 或 username: null 必须存在 | 按可选字段读取；稳定引用使用 id |
+| 对日志 details 再次 JSON.parse | details 已是对象，直接读取 |
+| 使用整数毫秒拼接日志 from/to | 输入仍需 UTC ISO 8601 秒精度字符串 |
+
+### 8.3 部署与凭据说明
+
+启动前配置 auth.privateKeyPath 和 auth.publicKeyPath（PEM/DER，路径相对进程工作目录）；不自动生成临时密钥。当前使用 PS256／RSA-3072，issuer/audience 默认 szx-admin / szx-client。
+
+```sh
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out jwt-private.pem
+openssl pkey -in jwt-private.pem -pubout -out jwt-public.pem
+```
+
+密钥放在静态目录之外；重启加载相同密钥可保留未过期 token 的可验证性。也可用仓库 `szx_license_issuer keygen` 生成专用密钥对，不与许可证签发共用密钥。
+
+服务端将客户端 SHA-256 摘要再经随机盐 Argon2id 哈希后保存，格式为 `sha256-v1:<Argon2id PHC>`。旧原密码 Argon2id 凭据不能直接转换；仅仍使用默认初始凭据且待改密的初始超管可在成功登录时自动升级，其他旧账号需明确重置密码。访问日志不记录 query、Authorization 或请求体，只保留 request ID、方法、路径和状态。
