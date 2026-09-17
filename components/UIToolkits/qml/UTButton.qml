@@ -41,6 +41,7 @@ Button {
     property color textButtonPressedColor: Qt.rgba(root.primaryColor.r, root.primaryColor.g, root.primaryColor.b, 0.18)
     property string tooltipText: ""
     property int tooltipPlacement: UTTooltip.Auto
+    property bool _tooltipFocusDismissed: false
     // Allow compact dialogs to opt out of the default ellipsis behavior.
     property int textElide: Text.ElideRight
 
@@ -66,11 +67,18 @@ Button {
                               ? tooltipHoverHandler.point.position
                               : Qt.point(-1, -1);
         UTTooltip.update(root, root.tooltipText,
-                         root.hovered || root.activeFocus,
+                         root.hovered || (root.visualFocus && !root._tooltipFocusDismissed),
                          undefined, root.tooltipPlacement, pointerPosition);
     }
 
-    onActiveFocusChanged: root.updateTooltip()
+    onVisualFocusChanged: {
+        root._tooltipFocusDismissed = false;
+        root.updateTooltip();
+    }
+    onPressed: {
+        root._tooltipFocusDismissed = true;
+        root.updateTooltip();
+    }
     onHoveredChanged: root.updateTooltip()
     onTooltipPlacementChanged: root.updateTooltip()
     onTooltipTextChanged: root.updateTooltip()
