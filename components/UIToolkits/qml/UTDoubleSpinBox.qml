@@ -16,6 +16,8 @@ FocusScope {
     property alias horizontalAlignment: spinBox.horizontalAlignment
     property alias keyboardTracking: spinBox.keyboardTracking
     property alias wheelEnabled: spinBox.wheelEnabled
+    property alias buttonsVisible: spinBox.buttonsVisible
+    property alias stepModifier: spinBox.stepModifier
     property alias topPadding: spinBox.topPadding
     property alias bottomPadding: spinBox.bottomPadding
     readonly property int scaleFactor: Math.pow(10, Math.max(0, decimals))
@@ -33,6 +35,9 @@ FocusScope {
 
     function syncValue() {
         if (spinBox) spinBox.value = root.toInteger(root.effectiveValue);
+    }
+    function resetInput() {
+        spinBox.resetInput();
     }
     onEffectiveValueChanged: syncValue()
     Component.onCompleted: syncValue()
@@ -58,6 +63,7 @@ FocusScope {
             return (integerValue / root.scaleFactor).toFixed(root.decimals);
         }
         valueFromText: function(text, locale) {
+            if (!spinBox.acceptableInput) return spinBox.value;
             const parsed = Number.fromLocaleString(locale, text);
             if (isNaN(parsed))
                 return spinBox.value;
