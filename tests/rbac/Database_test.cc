@@ -1,9 +1,11 @@
 #include "SzxAdmin/Infra/Database.h"
 #include "SzxAdmin/Infra/ErrorCode.h"
+#include "SzxCrypto/Random.h"
 
 #include <gtest/gtest.h>
 
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -37,37 +39,53 @@ public:
 
     auto recordMigration(const AppliedMigration &migration) -> SZX::COMMON::Result<void> override
     {
+        if (throwOnJournal)
+            throw std::runtime_error("injected journal failure");
         recorded.push_back(migration);
+        applied.push_back(migration);
         return SZX::COMMON::Result<void>::Success();
     }
 
     auto acquireMigrationLock(std::string_view, std::uint32_t) -> SZX::COMMON::Result<bool> override
     {
         ++acquireLockCount;
+        events.emplace_back("lock");
         return SZX::COMMON::Result<bool>::Success(lockAcquired);
     }
 
     auto releaseMigrationLock(std::string_view) -> SZX::COMMON::Result<void> override
     {
         ++releaseLockCount;
+        events.emplace_back("unlock");
         return SZX::COMMON::Result<void>::Success();
     }
 
     auto begin() -> SZX::COMMON::Result<void> override
     {
         ++beginCount;
+        events.emplace_back("begin");
+        savedAdmin  = insertedAdmin;
+        savedDone   = bootstrapDone;
+        savedUserId = bootstrapUserId;
         return SZX::COMMON::Result<void>::Success();
     }
 
     auto commit() -> SZX::COMMON::Result<void> override
     {
         ++commitCount;
+        events.emplace_back("commit");
+        if (failCommit)
+            return SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::DatabaseTransactionFailed), "commit failed");
         return SZX::COMMON::Result<void>::Success();
     }
 
     auto rollback() -> SZX::COMMON::Result<void> override
     {
         ++rollbackCount;
+        events.emplace_back("rollback");
+        insertedAdmin   = savedAdmin;
+        bootstrapDone   = savedDone;
+        bootstrapUserId = savedUserId;
         return SZX::COMMON::Result<void>::Success();
     }
 
@@ -89,6 +107,10 @@ public:
 
     auto recordBootstrapCompletion(std::string_view userId) -> SZX::COMMON::Result<void> override
     {
+        if (throwOnMark)
+            throw std::runtime_error("injected marker failure");
+        if (failMark)
+            return SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::DatabaseQueryFailed), "marker failed");
         bootstrapDone   = true;
         bootstrapUserId = std::string{userId};
         return SZX::COMMON::Result<void>::Success();
@@ -108,6 +130,14 @@ public:
     std::optional<BootstrapAdministrator> existingAdmin;
     std::optional<BootstrapAdministrator> insertedAdmin;
     std::string bootstrapUserId;
+    std::vector<std::string> events;
+    std::optional<BootstrapAdministrator> savedAdmin;
+    bool savedDone{};
+    std::string savedUserId;
+    bool failCommit{};
+    bool failMark{};
+    bool throwOnMark{};
+    bool throwOnJournal{};
 };
 
 } // namespace
@@ -141,6 +171,32 @@ TEST(DatabaseConfigTest, RejectsUnsafeDatabaseIdentifier)
 
     ASSERT_FALSE(result.ok);
     EXPECT_EQ(result.error, static_cast<int>(ErrorCode::InvalidConfiguration));
+}
+
+TEST(DatabaseInitializationTest, PreservesPublishedMigrationChecksumsAndExistingJournal)
+{
+    // Fingerprints from the previously released SQL files: moving SQL must not
+    // change its identity or cause already-initialized databases to be rejected.
+    FakeDatabaseConnection connection;
+    connection.applied    = {{1, "86a4ac820cc8457a2131d0400d4968268576b17113f38fe86b6beceea48c2047"},
+                             {2, "f4223aadebf005f145941d06b89d2d41e964f4c059d2f765a8e1b3678d389d2d"}};
+    const auto migrations = SZX::ADMIN::INFRA::embeddedMigrations();
+    ASSERT_EQ(migrations.size(), connection.applied.size());
+    for (std::size_t index = 0; index < migrations.size(); ++index)
+    {
+        const auto &migration = migrations[index];
+        const auto digest     = SZX::CRYPTO::sha256KeyId(
+            std::span<const std::uint8_t>{reinterpret_cast<const std::uint8_t *>(migration.sql.data()), migration.sql.size()});
+        ASSERT_TRUE(digest.ok);
+        EXPECT_EQ(migration.version, connection.applied[index].version);
+        EXPECT_EQ(digest.value, connection.applied[index].checksum);
+        EXPECT_EQ(migration.checksum, digest.value);
+    }
+    const auto repeated = MigrationRunner{}.run(connection);
+    ASSERT_TRUE(repeated.ok) << repeated.message;
+    EXPECT_EQ(repeated.value.appliedCount, 0U);
+    EXPECT_TRUE(connection.recorded.empty());
+    EXPECT_EQ(connection.statements.size(), 1U); // Only ensures the journal table exists.
 }
 
 TEST(MigrationRunnerTest, AppliesPendingMigrationAndRecordsIt)
@@ -244,4 +300,74 @@ TEST(BootstrapAdminTest, RejectsNonSuperAdminBootstrapUsername)
 
     ASSERT_FALSE(result.ok);
     EXPECT_EQ(result.error, static_cast<int>(ErrorCode::UserIdentityConflict));
+}
+
+TEST(BootstrapAdminTest, CreatesOnceAndCommitsBeforeUnlock)
+{
+    FakeDatabaseConnection connection;
+    const auto created = BootstrapAdminService{}.run(connection);
+    ASSERT_TRUE(created.ok) << created.message;
+    EXPECT_TRUE(created.value);
+    ASSERT_TRUE(connection.insertedAdmin.has_value());
+    const auto administrator = *connection.insertedAdmin;
+    EXPECT_EQ(administrator.username, "admin");
+    EXPECT_EQ(administrator.role, "super_admin");
+    EXPECT_TRUE(administrator.forcePasswordChange);
+    EXPECT_FALSE(administrator.passwordHash.empty());
+    EXPECT_NE(administrator.passwordHash, "superadmin");
+    EXPECT_EQ(connection.bootstrapUserId, administrator.id);
+    EXPECT_EQ(connection.events, (std::vector<std::string>{"lock", "begin", "commit", "unlock"}));
+
+    const auto repeated = BootstrapAdminService{}.run(connection);
+    ASSERT_TRUE(repeated.ok);
+    EXPECT_FALSE(repeated.value);
+    EXPECT_EQ(connection.insertedAdmin->id, administrator.id);
+    EXPECT_EQ(connection.insertedAdmin->passwordHash, administrator.passwordHash);
+}
+
+TEST(BootstrapAdminTest, FailuresRollBackBeforeUnlockAndAllowRetry)
+{
+    for (const auto failure : {"marker", "exception", "commit"})
+    {
+        SCOPED_TRACE(failure);
+        FakeDatabaseConnection connection;
+        connection.failMark    = std::string_view{failure} == "marker";
+        connection.throwOnMark = std::string_view{failure} == "exception";
+        connection.failCommit  = std::string_view{failure} == "commit";
+        const auto failed      = BootstrapAdminService{}.run(connection);
+        EXPECT_FALSE(failed.ok);
+        EXPECT_FALSE(connection.insertedAdmin.has_value());
+        EXPECT_FALSE(connection.bootstrapDone);
+        ASSERT_GE(connection.events.size(), 4U);
+        EXPECT_EQ(connection.events[connection.events.size() - 2], "rollback");
+        EXPECT_EQ(connection.events.back(), "unlock");
+        connection.failMark = connection.throwOnMark = connection.failCommit = false;
+        const auto retried                                                   = BootstrapAdminService{}.run(connection);
+        ASSERT_TRUE(retried.ok) << retried.message;
+        EXPECT_TRUE(retried.value);
+    }
+}
+
+TEST(MigrationRunnerTest, RepeatedRunSkipsAppliedDdl)
+{
+    FakeDatabaseConnection connection;
+    const MigrationDefinition migration{1, "CREATE TABLE IF NOT EXISTS test_table (id INT);", "checksum"};
+    ASSERT_TRUE(MigrationRunner{}.run(connection, std::span{&migration, 1}).ok);
+    connection.statements.clear();
+    const auto repeated = MigrationRunner{}.run(connection, std::span{&migration, 1});
+    ASSERT_TRUE(repeated.ok);
+    EXPECT_EQ(repeated.value.appliedCount, 0U);
+    EXPECT_EQ(connection.statements.size(), 1U); // Only the journal's idempotent CREATE.
+    EXPECT_EQ(connection.recorded.size(), 1U);
+}
+
+TEST(MigrationRunnerTest, JournalExceptionRollsBackBeforeUnlock)
+{
+    FakeDatabaseConnection connection;
+    connection.throwOnJournal = true;
+    const MigrationDefinition migration{1, "CREATE TABLE IF NOT EXISTS test_table (id INT);", "checksum"};
+    const auto result = MigrationRunner{}.run(connection, std::span{&migration, 1});
+    EXPECT_FALSE(result.ok);
+    EXPECT_EQ(result.error, static_cast<int>(ErrorCode::MigrationFailed));
+    EXPECT_EQ(connection.events, (std::vector<std::string>{"lock", "begin", "rollback", "unlock"}));
 }

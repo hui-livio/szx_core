@@ -41,12 +41,12 @@ endif()
 add_library(szx_rbac_infra STATIC
     src/infra/ErrorCode.cc
     src/infra/Database.cc
+    src/infra/DatabaseInitialization.cc
     src/infra/HttpTransport.cc
     src/infra/RequestContext.cc
     src/infra/ServerConfig.cc
 )
 add_library(szx::rbac_infra ALIAS szx_rbac_infra)
-include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/EmbedMigrations.cmake")
 
 target_include_directories(szx_rbac_infra
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include

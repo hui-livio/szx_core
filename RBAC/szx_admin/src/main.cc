@@ -121,13 +121,16 @@ auto loadConfig(int argc, char **argv, ServiceConfig &config) -> int
 
     const auto path         = configArgument.empty() ? defaultConfigPath() : std::filesystem::path{configArgument};
     const auto resolvedPath = path.is_absolute() ? path : std::filesystem::current_path() / path;
-    const auto content      = SZX::COMMON::FileHelper::ReadText(resolvedPath);
+    auto content            = SZX::COMMON::FileHelper::ReadText(resolvedPath);
     if (!content)
     {
         std::cerr << "cannot read configuration file: " << resolvedPath.string() << '\n';
         return 2;
     }
 
+    // Iguana expects LF; preserve configuration edited with Windows CRLF line endings.
+    for (auto position = content->find("\r\n"); position != std::string::npos; position = content->find("\r\n", position))
+        content->erase(position, 1);
     std::error_code parseError;
     SZX::COMMON::Serializer::from_yaml(config, *content, parseError);
     if (parseError)
@@ -177,11 +180,10 @@ int main(int argc, char **argv)
             const auto migration = MigrationRunner{}.run(connection);
             if (!migration.ok)
                 return SZX::COMMON::Result<void>::Failure(migration.error, migration.message);
-            const auto transaction = connection.begin();
-            if (!transaction.ok) return transaction;
             const auto bootstrap = SZX::ADMIN::INFRA::BootstrapAdminService{}.run(connection);
-            if (!bootstrap.ok) { (void)connection.rollback(); return SZX::COMMON::Result<void>::Failure(bootstrap.error, bootstrap.message); }
-            return connection.commit();
+            if (!bootstrap.ok)
+                return SZX::COMMON::Result<void>::Failure(bootstrap.error, bootstrap.message);
+            return SZX::COMMON::Result<void>::Success();
         });
     if (!result.ok)
     {

@@ -50,15 +50,15 @@ struct MigrationDefinition final
 
 [[nodiscard]] auto embeddedMigrations() noexcept -> std::span<const MigrationDefinition>;
 
-/** Repository projection for initialization; defaults are applied only on insertion. */
+/** Repository projection; initialization policy is owned by DatabaseInitialization.cc. */
 struct BootstrapAdministrator final
 {
     std::string id;
-    std::string username{"admin"};
+    std::string username;
     std::string passwordHash;
-    std::string role{"super_admin"};
-    std::string status{"active"};
-    bool forcePasswordChange{true};
+    std::string role;
+    std::string status;
+    bool forcePasswordChange{};
 };
 
 class DatabaseConnection
@@ -79,10 +79,10 @@ public:
     {
         return SZX::COMMON::Result<bool>::Failure(2221, "Bootstrap repository is not implemented.");
     }
-    [[nodiscard]] virtual auto findBootstrapAdministrator()
-        -> SZX::COMMON::Result<std::optional<BootstrapAdministrator>>
+    [[nodiscard]] virtual auto findBootstrapAdministrator() -> SZX::COMMON::Result<std::optional<BootstrapAdministrator>>
     {
-        return SZX::COMMON::Result<std::optional<BootstrapAdministrator>>::Failure(2221, "Bootstrap repository is not implemented.");
+        return SZX::COMMON::Result<std::optional<BootstrapAdministrator>>::Failure(2221,
+                                                                                   "Bootstrap repository is not implemented.");
     }
     [[nodiscard]] virtual auto insertBootstrapAdministrator(const BootstrapAdministrator &administrator)
         -> SZX::COMMON::Result<void>
@@ -127,7 +127,8 @@ public:
 class BootstrapAdminService final
 {
 public:
-    /** Returns true only when a new administrator was created. Never resets an existing account. */
+    /** Owns its transaction; call without an active transaction. Holds the initialization lock
+     * through commit/rollback. Returns true only when created; never resets an existing account. */
     [[nodiscard]] auto run(DatabaseConnection &connection) -> SZX::COMMON::Result<bool>;
 };
 } // namespace SZX::ADMIN::INFRA
