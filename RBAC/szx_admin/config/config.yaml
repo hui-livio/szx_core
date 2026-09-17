@@ -10,7 +10,7 @@ logging:
   console: true
 
 server:
-  host: 127.0.0.1
+  host: 0.0.0.0
   port: 7364
   workerThreads: 0
   maxRequestBodyBytes: 1048576
