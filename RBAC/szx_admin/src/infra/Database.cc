@@ -1,6 +1,7 @@
 #include "SzxAdmin/Infra/Database.h"
 
 #include "DatabaseInitialization.h"
+#include "LoginRepository.h"
 #include "SzxAdmin/Infra/ErrorCode.h"
 
 #include <ormpp/mysql.hpp>
@@ -97,7 +98,8 @@ class MySqlConnection final : public DatabaseConnection
 {
 public:
     explicit MySqlConnection(ormpp::mysql &connection) :
-        connection_(connection)
+        connection_(connection),
+        loginRepository_(connection)
     {
         connection_.set_enable_transaction(false);
     }
@@ -228,8 +230,14 @@ public:
         return SZX::COMMON::Result<void>::Success();
     }
 
+    auto loginRepository() noexcept -> AUTH::LoginRepository * override
+    {
+        return &loginRepository_;
+    }
+
 private:
     ormpp::mysql &connection_;
+    DETAIL::MySqlLoginRepository loginRepository_;
 };
 
 } // namespace

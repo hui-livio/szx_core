@@ -12,8 +12,13 @@ class HttpTransport;
 
 namespace SZX::ADMIN
 {
-/** Register service endpoints before starting transport. Database must outlive transport callbacks. */
-[[nodiscard]] auto registerRoutes(INFRA::HttpTransport &transport, INFRA::DatabasePool &database) -> SZX::COMMON::Result<void>;
+namespace AUTH
+{
+class LoginService;
+}
+/** Register service endpoints before starting transport. Database and optional login service must outlive callbacks. */
+[[nodiscard]] auto registerRoutes(INFRA::HttpTransport &transport, INFRA::DatabasePool &database,
+                                  AUTH::LoginService *login = nullptr) -> SZX::COMMON::Result<void>;
 
 /** Install reserved GET routes through the transport adapter during its initialization. */
 [[nodiscard]] auto

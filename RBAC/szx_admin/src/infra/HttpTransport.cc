@@ -88,6 +88,7 @@ auto convertRequest(const Network::HttpServerRequest &request) -> HttpRequest
     converted.headers[std::string{kRequestIdHeader}] = converted.requestId;
     converted.query                                  = request.query;
     converted.pathParams                             = request.pathParams;
+    converted.peerAddress                            = request.peer.host;
     return converted;
 }
 

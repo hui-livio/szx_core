@@ -7,6 +7,7 @@
 #include "SzxAdmin/Infra/ErrorCode.h"
 #include "SzxAdmin/Infra/HttpTransport.h"
 #include "SzxAdmin/Infra/ServerConfig.h"
+#include "auth/LoginService.h"
 
 #include <atomic>
 #include <chrono>
@@ -51,9 +52,10 @@ struct ServiceConfig final
     } logging;
     ServerConfig server;
     DatabaseConfig database;
+    SZX::ADMIN::AUTH::LoginConfig auth;
 };
 SZX_REFL(ServiceConfig::Logging, level, flushLevel, loggerName, pattern, filePath, maxFileSize, maxFiles, truncate, console);
-SZX_REFL(ServiceConfig, logging, server, database);
+SZX_REFL(ServiceConfig, logging, server, database, auth);
 
 auto logLevel(std::string_view value) -> std::optional<SZX::LOGGER::LogLevel>
 {
@@ -170,6 +172,10 @@ int main(int argc, char **argv)
         return reportFailure("database configuration", databaseValid);
 
     DatabasePool database(options.database);
+    SZX::ADMIN::AUTH::LoginService login(database, options.auth);
+    const auto authReady = login.initialize();
+    if (!authReady.ok)
+        return reportFailure("authentication configuration/key initialization", authReady);
     auto result = database.start();
     if (!result.ok)
         return reportFailure("database startup", result);
@@ -192,7 +198,7 @@ int main(int argc, char **argv)
     }
 
     HttpTransport transport(options.server);
-    const auto routes = SZX::ADMIN::registerRoutes(transport, database);
+    const auto routes = SZX::ADMIN::registerRoutes(transport, database, &login);
     if (!routes.ok)
     {
         (void)database.stop();

@@ -327,6 +327,7 @@ TEST(BootstrapAdminTest, CreatesOnceAndCommitsBeforeUnlock)
     EXPECT_EQ(administrator.role, "super_admin");
     EXPECT_TRUE(administrator.forcePasswordChange);
     EXPECT_FALSE(administrator.passwordHash.empty());
+    EXPECT_TRUE(administrator.passwordHash.starts_with("sha256-v1:$argon2id$"));
     EXPECT_NE(administrator.passwordHash, "superadmin");
     EXPECT_EQ(connection.bootstrapUserId, administrator.id);
     EXPECT_EQ(connection.events, (std::vector<std::string>{"lock", "begin", "commit", "unlock"}));

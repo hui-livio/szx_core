@@ -1,7 +1,7 @@
 """Exercise admin initialization against a disposable, loopback-only MySQL 8 instance.
 
 Usage: python scripts/test_admin_database.py --service build/bin/szx_admin_service.exe
-Requires mysql and mysqld on PATH. Never connects to an existing database server.
+Requires mysql and mysqld on PATH and Python cryptography. Never connects to an existing database server.
 """
 
 import argparse
@@ -17,6 +17,10 @@ import tempfile
 import time
 import urllib.error
 import urllib.request
+
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+from test_admin_login import run_login_checks
 
 
 def free_port():
@@ -67,6 +71,13 @@ def main():
 
     with tempfile.TemporaryDirectory(prefix="szx-admin-db-") as temporary:
         root = Path(temporary)
+        signing_key = rsa.generate_private_key(public_exponent=65537, key_size=3072)
+        private_key = root / "jwt-private.pem"
+        public_key = root / "jwt-public.pem"
+        private_key.write_bytes(signing_key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
+                                                         serialization.NoEncryption()))
+        public_key.write_bytes(signing_key.public_key().public_bytes(serialization.Encoding.PEM,
+                                                                   serialization.PublicFormat.SubjectPublicKeyInfo))
         package = root / "package"
         package.mkdir()
         shutil.copy2(service, package / service.name)
@@ -101,7 +112,8 @@ def main():
         counter = itertools.count(1)
 
         @contextmanager
-        def admin(database, expect_failure=False):
+        def admin(database, expect_failure=False, attempts_per_minute=200, private_key_path=None,
+                  allowed_origin="https://admin.example.test"):
             instance = next(counter)
             http_port = free_port()
             config = root / f"config-{instance}.yaml"
@@ -110,6 +122,9 @@ def main():
                 f"  filePath: {json.dumps((root / f'admin-{instance}.log').as_posix())}\n"
                 f"server:\n  host: 127.0.0.1\n  port: {http_port}\n  workerThreads: 2\n"
                 "  staticRoot: web\n"
+                f"auth:\n  privateKeyPath: {json.dumps((private_key_path or private_key).as_posix())}\n"
+                f"  publicKeyPath: {json.dumps(public_key.as_posix())}\n  allowedOrigin: {json.dumps(allowed_origin)}\n"
+                f"  attemptsPerMinute: {attempts_per_minute}\n"
                 f"database:\n  host: 127.0.0.1\n  port: {port}\n"
                 f"  database: {database}\n  username: admin_test\n  password: disposable-test-password\n  poolSize: 2\n",
                 encoding="utf-8", newline="\r\n" if instance % 2 else "\n",
@@ -243,6 +258,7 @@ def main():
                     assert sql("SELECT role FROM fresh.users;") == "operator"
                     assert sql("SELECT COUNT(*) FROM fresh.admin_bootstrap;") == "0"
                 print("PASS: bootstrap failure rolls back, retry succeeds, username conflict is not promoted", flush=True)
+                run_login_checks(admin, sql, signing_key.public_key(), root)
             except Exception:
                 for log in root.glob("*.log"):
                     print(f"--- {log.name} ---\n{log.read_text(encoding='utf-8', errors='replace')[-6000:]}")

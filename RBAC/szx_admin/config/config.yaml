@@ -21,6 +21,17 @@ server:
   staticHomePage: index.html
   spaFallback: true
 
+auth:
+  issuer: szx-admin
+  audience: szx-client
+  privateKeyPath: config/keys/jwt-private.pem
+  publicKeyPath: config/keys/jwt-public.pem
+  allowedOrigin: "*"
+  refreshLifetimeSeconds: 604800
+  failedLoginLimit: 5
+  lockSeconds: 900
+  attemptsPerMinute: 30
+
 database:
   host: 127.0.0.1
   port: 3306

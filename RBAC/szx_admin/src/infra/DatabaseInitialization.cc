@@ -1,7 +1,9 @@
 #include "DatabaseInitialization.h"
+#include "../auth/PasswordHash.h"
 
 #include "SzxAdmin/Infra/Database.h"
 #include "SzxAdmin/Infra/ErrorCode.h"
+#include "SzxCrypto/Hash.h"
 #include "SzxCrypto/Random.h"
 #include "SzxCryptoService/CryptoService.h"
 #include "UUID.hpp"
@@ -443,8 +445,10 @@ auto BootstrapAdminService::run(DatabaseConnection &connection) -> SZX::COMMON::
         }
         const auto password = kInitialAdministrator.password;
         SZX::CRYPTO_SERVICE::CryptoService cryptoService;
-        const auto hash = cryptoService.hashPassword(
-            std::span<const std::uint8_t>{reinterpret_cast<const std::uint8_t *>(password.data()), password.size()});
+        const auto clientHash = SZX::CRYPTO::digestHex(SZX::CRYPTO::HashAlgorithm::Sha256, password);
+        if (!clientHash.ok)
+            return SZX::COMMON::Result<bool>::Failure(static_cast<int>(ErrorCode::InternalFailure), {});
+        const auto hash = AUTH::storeClientPasswordHash(cryptoService, clientHash.value);
         if (!hash.ok)
             return SZX::COMMON::Result<bool>::Failure(static_cast<int>(ErrorCode::InternalFailure),
                                                       "Bootstrap password hashing failed.");

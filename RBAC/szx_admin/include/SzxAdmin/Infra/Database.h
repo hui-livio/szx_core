@@ -11,6 +11,11 @@
 #include <string_view>
 #include <vector>
 
+namespace SZX::ADMIN::AUTH
+{
+class LoginRepository;
+}
+
 namespace SZX::ADMIN::INFRA
 {
 struct DatabaseConfig final
@@ -65,6 +70,12 @@ class DatabaseConnection
 {
 public:
     virtual ~DatabaseConnection() = default;
+
+    /** Borrow the login repository for this connection's transaction lifetime. */
+    [[nodiscard]] virtual auto loginRepository() noexcept -> AUTH::LoginRepository *
+    {
+        return nullptr;
+    }
 
     [[nodiscard]] virtual auto executeMigrationStatement(std::string_view sql) -> SZX::COMMON::Result<void>    = 0;
     [[nodiscard]] virtual auto loadAppliedMigrations() -> SZX::COMMON::Result<std::vector<AppliedMigration>>   = 0;

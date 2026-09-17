@@ -22,6 +22,7 @@ struct HttpRequest final
     std::map<std::string, std::string> headers;
     std::map<std::string, std::string> query;
     std::map<std::string, std::string> pathParams;
+    std::string peerAddress;
 
     /** Case-insensitive lookup; the returned view is valid while headers remain unchanged. */
     [[nodiscard]] auto header(std::string_view name) const noexcept -> std::optional<std::string_view>;

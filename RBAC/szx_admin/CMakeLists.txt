@@ -40,9 +40,15 @@ endif()
 
 add_library(szx_rbac_infra STATIC
     src/Routes.cc
+    src/auth/ChangePassword.cc
+    src/auth/SessionLifecycle.cc
+    src/auth/Identifier.cc
+    src/auth/LoginService.cc
+    src/auth/PasswordHash.cc
     src/infra/ErrorCode.cc
     src/infra/Database.cc
     src/infra/DatabaseInitialization.cc
+    src/infra/LoginRepository.cc
     src/infra/HttpTransport.cc
     src/infra/RequestContext.cc
     src/infra/RestApi.cc
@@ -56,8 +62,15 @@ target_include_directories(szx_rbac_infra
 
 target_link_libraries(szx_rbac_infra
     PUBLIC szx::common
-    PRIVATE szx::network szx::logger szx_rbac_ormpp szx::crypto szx::crypto_service
+    PRIVATE szx::network szx::logger szx_rbac_ormpp szx::crypto szx::crypto_service szx::rbac_auth
 )
+
+if(WIN32)
+    target_link_libraries(szx_rbac_infra PRIVATE Normaliz)
+else()
+    find_package(ICU REQUIRED COMPONENTS uc)
+    target_link_libraries(szx_rbac_infra PRIVATE ICU::uc)
+endif()
 
 target_compile_features(szx_rbac_infra PUBLIC cxx_std_20)
 szx_apply_default_compile_policy(szx_rbac_infra)
@@ -81,7 +94,7 @@ add_executable(szx_admin_service
 )
 
 target_link_libraries(szx_admin_service
-    PRIVATE szx::rbac_infra szx::common szx::logger
+    PRIVATE szx::rbac_infra szx::rbac_auth szx::common szx::logger
 )
 
 target_compile_features(szx_admin_service PRIVATE cxx_std_20)
