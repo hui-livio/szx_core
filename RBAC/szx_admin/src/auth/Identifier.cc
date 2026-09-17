@@ -31,14 +31,8 @@ auto canonicalIdentifier(std::string_view input, bool username) -> SZX::COMMON::
                 return invalid();
         std::string result;
 #ifdef _WIN32
-        const auto length =
-            MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, trimmed.data(), static_cast<int>(trimmed.size()), nullptr, 0);
-        if (length <= 0)
-            return invalid();
-        std::wstring wide(length, L'\0');
-        if (!MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, trimmed.data(), static_cast<int>(trimmed.size()), wide.data(),
-                                 length))
-            return invalid();
+        auto wide         = SZX::COMMON::StringHelper::fromutf8(trimmed);
+        const auto length = static_cast<int>(wide.size());
         if (username)
         {
             const auto size =
@@ -60,13 +54,7 @@ auto canonicalIdentifier(std::string_view input, bool username) -> SZX::COMMON::
         if (count <= 0)
             return invalid();
         normalized.resize(count);
-        const auto bytes =
-            WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, normalized.data(), count, nullptr, 0, nullptr, nullptr);
-        if (bytes <= 0)
-            return invalid();
-        result.resize(bytes);
-        if (!WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, normalized.data(), count, result.data(), bytes, nullptr, nullptr))
-            return invalid();
+        result = SZX::COMMON::StringHelper::toutf8(normalized);
 #else
         auto wide = icu::UnicodeString::fromUTF8(trimmed);
         std::string roundTrip;
@@ -92,6 +80,9 @@ auto canonicalIdentifier(std::string_view input, bool username) -> SZX::COMMON::
         if (characters == 0 || characters > 64)
             return invalid();
         return Result<std::string>::Success(std::move(result));
+    } catch (const std::invalid_argument &)
+    {
+        return invalid();
     } catch (...)
     {
         return Result<std::string>::Failure(static_cast<int>(INFRA::ErrorCode::InternalFailure), {});
