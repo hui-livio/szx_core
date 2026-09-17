@@ -1,7 +1,10 @@
 #include "LoginRepository.h"
+#include "Logger.h"
 #include "SzxAdmin/Infra/ErrorCode.h"
 
 #include <ormpp/mysql.hpp>
+
+#include <atomic>
 
 namespace SZX::ADMIN::AUTH
 {
@@ -48,6 +51,19 @@ namespace
 auto written(bool success, ErrorCode code = ErrorCode::DatabaseQueryFailed) -> Result<void>
 {
     return success ? Result<void>::Success() : Result<void>::Failure(static_cast<int>(code), {});
+}
+
+void reportAuditState(bool available) noexcept
+{
+    static std::atomic_bool unavailable{};
+    if (unavailable.exchange(!available) == !available)
+        return;
+    try
+    {
+        LOGM_INFO("szx_admin.audit", "event={}", available ? "write_recovered" : "write_failed");
+    } catch (...)
+    {
+    }
 }
 } // namespace
 
@@ -143,9 +159,12 @@ auto MySqlLoginRepository::insertAudit(const AUTH::LoginAudit &event) -> Result<
 {
     try
     {
-        return written(connection_.insert(event) == 1 && !connection_.has_error(), ErrorCode::AuditWriteFailed);
+        const auto inserted = connection_.insert(event) == 1 && !connection_.has_error();
+        reportAuditState(inserted);
+        return written(inserted, ErrorCode::AuditWriteFailed);
     } catch (...)
     {
+        reportAuditState(false);
         return written(false, ErrorCode::AuditWriteFailed);
     }
 }

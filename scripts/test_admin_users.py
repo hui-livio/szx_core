@@ -125,21 +125,38 @@ def run_user_checks(admin, sql):
             expect(call(port, "POST", target_path + "/reset-password", token=invalid, version=1), 401, 2200)
         assert sql("SELECT COUNT(*) FROM user_api.users;") == "5"
 
+        def age_target():
+            sql(f"UPDATE user_api.users SET updated_at='2020-01-01 00:00:00' WHERE id='{target_id}';")
+
+        def assert_current_response(user):
+            stored = expect(call(port, "GET", target_path, token=token), 200)
+            assert user == stored, (user, stored)
+            assert user["updated_at"] > 1577836800000
+
+        age_target()
         edited = expect(call(port, "PATCH", upper_path, {"display_name": "Renamed"}, token, 1), 200)
+        assert_current_response(edited)
         assert edited["version"] == 2 and edited["authz_version"] == 1
         expect(call(port, "PATCH", target_path, {"display_name": "Stale"}, token, 1), 409, 2209)
+        age_target()
         disabled = expect(call(port, "PATCH", upper_path + "/status", {"status": "disabled"}, token, 2), 200)
+        assert_current_response(disabled)
         assert disabled["status"] == "disabled" and disabled["authz_version"] == 2
         expect(call(port, "GET", "/client/me/permissions", token=low_token), 401, 2200)
         assert sql(f"SELECT COUNT(*) FROM user_api.refresh_tokens WHERE user_id='{target_id}' AND revoked_at IS NULL;") == "0"
         active = expect(call(port, "PATCH", target_path + "/status", {"status": "active"}, token, 3), 200)
         assert active["version"] == 4
-        sql(f"UPDATE user_api.users SET status='locked' WHERE id='{target_id}';")
+        sql(f"UPDATE user_api.users SET status='locked',updated_at='2020-01-01 00:00:00' WHERE id='{target_id}';")
         unlocked = expect(call(port, "PATCH", upper_path + "/unlock", token=token, version=4), 200)
+        assert_current_response(unlocked)
         assert unlocked["status"] == "active" and unlocked["version"] == 5
+        age_target()
         assigned = expect(call(port, "PUT", upper_path + "/role", {"role": "engineer"}, token, 5), 200)
+        assert_current_response(assigned)
         assert assigned["role"] == "engineer" and assigned["version"] == 6
+        age_target()
         reset = expect(call(port, "POST", upper_path + "/reset-password", token=token, version=6), 200)
+        assert_current_response(reset["user"])
         profile_flags(reset["user"], "engineer")
         assert type(reset["temporary_credential_expires_at"]) is int
         assert abs(reset["temporary_credential_expires_at"] - (time.time() + 86400) * 1000) < 10000
@@ -255,6 +272,48 @@ def run_user_checks(admin, sql):
             }, token), range(2)))
         assert sorted(response[0] for response in responses) == [201, 409], responses
         print("PASS: binary canonical indexes preserve accents/UID case and return stable duplicate errors", flush=True)
+
+        delegate = expect(call(port, "POST", "/admin/users", {
+            "username": "delegate", "display_name": "Delegate", "role": "admin",
+        }, token), 201)
+        delegate_token = login(port, "delegate", delegate["temporary_credential"])["access_token"]
+        for identity in ({"uid": "admin"}, {"uid": "ADMIN"}, {"uid": "Re\u0301sume\u0301"},
+                         {"username": "u10086"}):
+            expect(call(port, "POST", "/admin/users", {
+                **identity, "display_name": "Cross-field collision", "role": "operator",
+            }, delegate_token), 409, 2208)
+        assert login(port)["user"]["username"] == "admin"
+
+        # Both creation orders must reject Unicode-normalized cross-field aliases.
+        uid_user = expect(call(port, "POST", "/admin/users", {
+            "uid": "CAFÉ", "display_name": "UID first", "role": "operator",
+        }, delegate_token), 201)
+        expect(call(port, "POST", "/admin/users", {
+            "username": "cafe\u0301", "display_name": "Conflicting username", "role": "operator",
+        }, delegate_token), 409, 2208)
+        assert login(port, "CAFÉ", uid_user["temporary_credential"])["user"]["id"] == uid_user["user"]["id"]
+
+        # Separate processes and actors prevent an in-process or actor lock from
+        # accidentally making a broken namespace reservation test pass.
+        with admin("user_identity") as other_port:
+            other_token = login(other_port, "delegate", delegate["temporary_credential"])["access_token"]
+            for index in range(3):
+                identities = ({"uid": f"RaceIdentity{index}"}, {"username": f"raceidentity{index}"})
+                with ThreadPoolExecutor(max_workers=2) as executor:
+                    futures = [executor.submit(call, server, "POST", "/admin/users", {
+                        **identity, "display_name": "Namespace race", "role": "operator",
+                    }, actor) for server, actor, identity in
+                        ((port, token, identities[0]), (other_port, other_token, identities[1]))]
+                    responses = [future.result() for future in futures]
+                assert sorted(response[0] for response in responses) == [201, 409], responses
+                for response, identity in zip(responses, identities):
+                    if response[0] == 201:
+                        issued = response[1]["data"]
+                        actual = login(port, next(iter(identity.values())), issued["temporary_credential"])
+                        assert actual["user"]["id"] == issued["user"]["id"]
+                    else:
+                        expect(response, 409, 2208)
+        print("PASS: cross-field login identities reject collisions, including concurrent creates across services", flush=True)
 
     with admin("behavior_rate", behavior_events_per_minute=2) as port:
         token = login(port)["access_token"]

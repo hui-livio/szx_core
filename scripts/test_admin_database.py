@@ -22,6 +22,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from test_admin_login import run_login_checks
 from test_admin_users import run_user_checks
+from test_admin_recovery import run_recovery_checks
 
 
 def free_port():
@@ -277,6 +278,7 @@ def main():
                 print("PASS: bootstrap failure rolls back, retry succeeds, username conflict is not promoted", flush=True)
                 run_login_checks(admin, sql, signing_key.public_key(), root)
                 run_user_checks(admin, sql)
+                run_recovery_checks(admin, sql, root)
             except Exception:
                 for log in root.glob("*.log"):
                     print(f"--- {log.name} ---\n{log.read_text(encoding='utf-8', errors='replace')[-6000:]}")

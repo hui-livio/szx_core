@@ -141,7 +141,7 @@ public:
         -> SZX::COMMON::Result<MutationLock> = 0;
     /** 创建用户时锁定调用者至事务结束；只读接口保持 lock=false。 */
     virtual auto findById(const std::string &id, bool lock = false) -> SZX::COMMON::Result<std::optional<UserRow>> = 0;
-    /** 规范化 uid/username 命中的任意一行；用于创建前的唯一性校验。 */
+    /** 校验同字段及跨字段登录冲突；调用者须先锁定 bootstrap 单例行直至事务结束。 */
     virtual auto findByCanonical(const std::string &uid, const std::string &username)
         -> SZX::COMMON::Result<std::optional<UserRow>>                           = 0;
     virtual auto list(const UserFilter &filter) -> SZX::COMMON::Result<UserPage> = 0;

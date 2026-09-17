@@ -3,6 +3,7 @@
 #include "../Routes.h"
 
 #include "Defer.hpp"
+#include "JsonHelper.hpp"
 #include "Logger.h"
 #include "Serializer.hpp"
 #include "SzxAdmin/Infra/ErrorCode.h"
@@ -142,7 +143,8 @@ public:
         return path == healthPath();
     }
 
-    void accessLog(const Network::HttpServerRequest &request, const std::string &id, int status) const noexcept
+    void accessLog(const Network::HttpServerRequest &request, const std::string &id,
+                   const Network::HttpServerResponse &response) const noexcept
     {
         if (!config_.accessLog)
             return;
@@ -150,7 +152,18 @@ public:
         {
             const auto path =
                 SZX::COMMON::Json(request.path.substr(0, 512)).dump(-1, ' ', false, SZX::COMMON::Json::error_handler_t::replace);
-            LOGM_INFO("szx_admin.http", "request_id={} method={} path={} status={}", id, request.method, path, status);
+            if (response.statusCode >= 400)
+            {
+                const auto body = SZX::COMMON::JsonHelper::ParseRequiredObject(response.body);
+                if (body && body->contains("code") && body->at("code").is_number_integer())
+                {
+                    LOGM_INFO("szx_admin.http", "request_id={} method={} path={} status={} code={}", id, request.method, path,
+                              response.statusCode, body->at("code").get<int>());
+                    return;
+                }
+            }
+            LOGM_INFO("szx_admin.http", "request_id={} method={} path={} status={}", id, request.method, path,
+                      response.statusCode);
         } catch (...)
         {
         }
@@ -218,7 +231,7 @@ public:
                     response         = std::move(error);
                 }
                 response.headers[std::string{kRequestIdHeader}] = id;
-                accessLog(request, id, response.statusCode);
+                accessLog(request, id, response);
                 return response;
             });
         if (!configured.ok)
@@ -234,7 +247,7 @@ public:
                 };
                 const auto id = requestId(request);
                 auto response = prepareResponse(RestApi::error(responseError(status), id), id);
-                accessLog(request, id, status);
+                accessLog(request, id, response);
                 return response;
             });
         if (!configured.ok)

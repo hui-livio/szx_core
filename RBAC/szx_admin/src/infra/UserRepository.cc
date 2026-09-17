@@ -1,4 +1,5 @@
 #include "UserRepository.h"
+#include "../auth/LoginService.h"
 #include "SzxAdmin/Infra/ErrorCode.h"
 #include "UUID.hpp"
 
@@ -7,6 +8,7 @@
 #include <array>
 #include <climits>
 #include <string>
+#include <tuple>
 #include <utility>
 
 namespace SZX::ADMIN::USER
@@ -184,17 +186,35 @@ auto MySqlUserRepository::findByCanonical(const std::string &uid, const std::str
 {
     try
     {
-        // Binary equality prevents the accent/case-insensitive collation from reporting
-        // a different account as a duplicate of the requested identity.
-        auto rows = connection_.query_s<USER::UserRow>("((uid_canonical = ? AND BINARY uid_canonical = ?) OR "
-                                                       "(username_canonical = ? AND BINARY username_canonical = ?)) "
-                                                       "ORDER BY id LIMIT 1 FOR UPDATE",
-                                                       uid, uid, username, username);
+        const auto loginName = AUTH::canonicalIdentifier(uid.empty() ? username : uid, true);
+        if (!loginName.ok)
+            return Result<std::optional<USER::UserRow>>::Failure(loginName.error, {});
+        // The caller holds the bootstrap singleton row lock until commit. These
+        // READ COMMITTED reads see preceding creates without locking other actors.
+        auto rows = connection_.query_s<USER::UserRow>("(uid_canonical = ? OR username_canonical = ?) ORDER BY id LIMIT 1", uid,
+                                                       loginName.value);
         if (connection_.has_error())
             return queryFailed<std::optional<USER::UserRow>>();
-        if (rows.empty())
-            return Result<std::optional<USER::UserRow>>::Success(std::nullopt);
-        return Result<std::optional<USER::UserRow>>::Success(std::move(rows.front()));
+        if (!rows.empty())
+            return Result<std::optional<USER::UserRow>>::Success(std::move(rows.front()));
+        if (uid.empty())
+        {
+            // A username claims every case variant of a UID. Use the login
+            // normalizer, not MySQL LOWER(), whose Unicode mapping may differ.
+            const auto identities = connection_.query_s<std::tuple<std::string, std::string>>(
+                "SELECT id, uid_canonical FROM users WHERE uid_canonical IS NOT NULL");
+            if (connection_.has_error())
+                return queryFailed<std::optional<USER::UserRow>>();
+            for (const auto &[id, identity] : identities)
+            {
+                const auto normalized = AUTH::canonicalIdentifier(identity, true);
+                if (!normalized.ok)
+                    return queryFailed<std::optional<USER::UserRow>>();
+                if (normalized.value == loginName.value)
+                    return findById(id);
+            }
+        }
+        return Result<std::optional<USER::UserRow>>::Success(std::nullopt);
     } catch (...)
     {
         return queryFailed<std::optional<USER::UserRow>>();

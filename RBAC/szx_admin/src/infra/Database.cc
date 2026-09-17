@@ -1,6 +1,7 @@
 #include "SzxAdmin/Infra/Database.h"
 
 #include "DatabaseInitialization.h"
+#include "Logger.h"
 #include "LoginRepository.h"
 #include "SzxAdmin/Infra/ErrorCode.h"
 #include "UserRepository.h"
@@ -8,6 +9,7 @@
 #include <ormpp/mysql.hpp>
 
 #include <array>
+#include <atomic>
 #include <cctype>
 #include <chrono>
 #include <climits>
@@ -258,8 +260,21 @@ public:
     {
     }
 
+    void reportConnectionState(bool available) noexcept
+    {
+        if (connectionUnavailable.exchange(!available) == !available)
+            return;
+        try
+        {
+            LOGM_INFO("szx_admin.database", "event={}", available ? "connection_recovered" : "connection_unavailable");
+        } catch (...)
+        {
+        }
+    }
+
     DatabaseConfig config;
     bool started{};
+    std::atomic_bool connectionUnavailable{};
     std::mutex mutex;
     std::condition_variable condition;
     std::deque<std::unique_ptr<ormpp::mysql>> connections;
@@ -365,8 +380,14 @@ auto DatabasePool::withConnection(const ConnectionCallback &callback) -> SZX::CO
 
     const auto returnConnection = [this, &connection](bool reusable)
     {
+        // A null slot retains capacity but can never reuse an uncertain transaction.
+        if (!reusable)
+        {
+            impl_->reportConnectionState(false);
+            connection.reset();
+        }
         std::lock_guard lock(impl_->mutex);
-        if (reusable && impl_->started)
+        if (impl_->started)
             impl_->connections.push_back(std::move(connection));
         impl_->condition.notify_one();
     };
@@ -374,18 +395,23 @@ auto DatabasePool::withConnection(const ConnectionCallback &callback) -> SZX::CO
     std::unique_ptr<ormpp::mysql> staleConnection;
     try
     {
-        if (!connection->ping())
+        if (!connection || !connection->ping())
         {
+            // Empty slots already reported their failure when discarded.
+            if (connection)
+                impl_->reportConnectionState(false);
             staleConnection      = std::move(connection);
             auto replacement     = std::make_unique<ormpp::mysql>();
             const auto connected = connectAndConfigure(impl_->config, *replacement);
             if (!connected.ok)
             {
+                impl_->reportConnectionState(false);
                 connection = std::move(staleConnection);
                 returnConnection(true);
                 return connected;
             }
             connection = std::move(replacement);
+            impl_->reportConnectionState(true);
         }
     } catch (const std::exception &error)
     {

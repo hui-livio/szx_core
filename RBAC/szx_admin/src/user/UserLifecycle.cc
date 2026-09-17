@@ -64,6 +64,17 @@ auto writeAudit(AUTH::LoginRepository &sessions, const ActorContext &context, co
                                  .ip             = context.peerAddress,
                                  .details_json   = details.dump()});
 }
+
+auto reloadUser(UserRepository &users, UserRow &target) -> Result<void>
+{
+    const auto stored = users.findById(target.id);
+    if (!stored.ok)
+        return Result<void>::Failure(stored.error, {});
+    if (!stored.value)
+        return failed<void>(ErrorCode::InternalFailure);
+    target = *stored.value;
+    return Result<void>::Success();
+}
 } // namespace
 
 auto UserService::issueTemporaryCredential() -> Result<std::pair<std::string, std::string>>
@@ -138,6 +149,13 @@ auto UserService::create(const ActorContext &context, const CreateUserInput &inp
                         }
                     }
                 };
+                // Serialize identity reservations across service instances before
+                // acquiring any user row locks. UID and username share login input.
+                const auto namespaceLock = connection.bootstrapCompleted();
+                if (!namespaceLock.ok)
+                    return Result<void>::Failure(namespaceLock.error, {});
+                if (!namespaceLock.value)
+                    return failed<void>(ErrorCode::DatabaseQueryFailed);
                 const auto actor = resolve(context, *users, true);
                 if (!actor.ok)
                     return Result<void>::Failure(actor.error, {});
@@ -175,8 +193,7 @@ auto UserService::create(const ActorContext &context, const CreateUserInput &inp
                 };
                 if (const auto inserted = users->insert(row); !inserted.ok)
                 {
-                    // READ COMMITTED does not gap-lock the unique index, so a concurrent create can
-                    // pass the pre-check. Re-read to report the documented conflict instead of a 500.
+                    // Also translate uniqueness failures from writers outside this service.
                     const auto raced = users->findByCanonical(uid, username);
                     if (raced.ok && raced.value)
                         return failed<void>(ErrorCode::UserIdentityConflict);
@@ -257,6 +274,9 @@ auto UserService::updateProfile(const ActorContext &context, const std::string &
                     if (!audited.ok)
                         return audited;
                 }
+                const auto refreshed = reloadUser(*users, target);
+                if (!refreshed.ok)
+                    return refreshed;
                 const auto result = connection.commit();
                 committed         = result.ok;
                 if (committed)
@@ -338,6 +358,9 @@ auto UserService::changeStatus(const ActorContext &context, const std::string &i
                     if (!audited.ok)
                         return audited;
                 }
+                const auto refreshed = reloadUser(*users, target);
+                if (!refreshed.ok)
+                    return refreshed;
                 const auto result = connection.commit();
                 committed         = result.ok;
                 if (committed)
@@ -404,6 +427,9 @@ auto UserService::unlock(const ActorContext &context, const std::string &id, std
                                                 "success", Json::object());
                 if (!audited.ok)
                     return audited;
+                const auto refreshed = reloadUser(*users, target);
+                if (!refreshed.ok)
+                    return refreshed;
                 const auto result = connection.commit();
                 committed         = result.ok;
                 if (committed)
@@ -475,6 +501,9 @@ auto UserService::assignRole(const ActorContext &context, const std::string &id,
                     if (!audited.ok)
                         return audited;
                 }
+                const auto refreshed = reloadUser(*users, target);
+                if (!refreshed.ok)
+                    return refreshed;
                 const auto result = connection.commit();
                 committed         = result.ok;
                 if (committed)
@@ -552,6 +581,9 @@ auto UserService::resetPassword(const ActorContext &context, const std::string &
                                                 "success", Json::object());
                 if (!audited.ok)
                     return audited;
+                const auto refreshed = reloadUser(*users, target);
+                if (!refreshed.ok)
+                    return refreshed;
                 const auto result = connection.commit();
                 committed         = result.ok;
                 if (committed)

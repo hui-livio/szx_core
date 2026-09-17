@@ -176,6 +176,7 @@ int main(int argc, char **argv)
     const auto authReady = login.initialize();
     if (!authReady.ok)
         return reportFailure("authentication configuration/key initialization", authReady);
+    LOGM_INFO("szx_admin", "event=authentication_initialized");
     auto result = database.start();
     if (!result.ok)
         return reportFailure("database startup", result);
@@ -189,6 +190,8 @@ int main(int argc, char **argv)
             const auto bootstrap = SZX::ADMIN::INFRA::BootstrapAdminService{}.run(connection);
             if (!bootstrap.ok)
                 return SZX::COMMON::Result<void>::Failure(bootstrap.error, bootstrap.message);
+            LOGM_INFO("szx_admin", "event=database_initialized schema_version={} migrations_applied={} bootstrap_created={}",
+                      migration.value.currentVersion, migration.value.appliedCount, bootstrap.value);
             return SZX::COMMON::Result<void>::Success();
         });
     if (!result.ok)
@@ -218,6 +221,7 @@ int main(int argc, char **argv)
     while (!g_stopRequested.load(std::memory_order_relaxed))
         std::this_thread::sleep_for(std::chrono::milliseconds{250});
 
+    LOGM_INFO("szx_admin", "event=shutdown_requested");
     const auto stopResult     = transport.stop();
     const auto databaseResult = database.stop();
     if (!stopResult.ok)

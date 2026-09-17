@@ -4,27 +4,29 @@
 
 ## 1. 接口目录
 
+**当前已实现：17 / 17 个接口。** 下表“已实现”表示后端已注册路由并实现处理逻辑，不代表对应前端页面已完成；OPTIONS 预检不单独计数。
+
 默认 Base URL 为 `/api/v1`，以下路径均相对于该前缀。部署修改 `server.apiPrefix` 时，客户端同步替换前缀。
 
-| 分组 | 方法 | 路径 | 功能 | 鉴权 | 成功状态 |
-|---|---|---|---|---|---|
-| 服务 | GET | [/health](#health) | 健康检查 | 无 | 200 |
-| 服务 | GET | [/ready](#ready) | 数据库就绪检查 | 无 | 200 |
-| 认证 | POST | [/auth/login](#auth-login) | 登录 | 登录凭据 | 200 |
-| 认证 | POST | [/auth/refresh](#auth-refresh) | 刷新会话 | Cookie + CSRF | 200 |
-| 认证 | POST | [/auth/logout](#auth-logout) | 退出会话 | 有 Cookie 时校验 CSRF | 204 |
-| 认证 | POST | [/auth/change-password](#auth-change-password) | 修改自己的密码 | Bearer + If-Match | 200 |
-| 用户 | GET | [/admin/users](#users-list) | 用户列表 | Bearer，admin/super_admin | 200 |
-| 用户 | POST | [/admin/users](#users-create) | 创建用户 | Bearer，admin/super_admin | 201 |
-| 用户 | GET | [/admin/users/{id}](#users-get) | 用户详情 | Bearer，admin/super_admin | 200 |
-| 用户 | PATCH | [/admin/users/{id}](#users-update) | 修改展示名 | Bearer + If-Match，admin/super_admin | 200 |
-| 用户 | PATCH | [/admin/users/{id}/status](#users-status) | 启用／禁用 | Bearer + If-Match，admin/super_admin | 200 |
-| 用户 | PATCH | [/admin/users/{id}/unlock](#users-unlock) | 解锁 | Bearer + If-Match，admin/super_admin | 200 |
-| 用户 | PUT | [/admin/users/{id}/role](#users-role) | 修改角色 | Bearer + If-Match，super_admin | 200 |
-| 用户 | POST | [/admin/users/{id}/reset-password](#users-reset-password) | 重置密码 | Bearer + If-Match，admin/super_admin | 200 |
-| 审计 | GET | [/admin/user-logs](#user-logs) | 审计日志列表 | Bearer，admin/super_admin | 200 |
-| 客户端 | GET | [/client/me/permissions](#client-permissions) | 当前用户权限 | Bearer，任意有效角色 | 200 |
-| 客户端 | POST | [/client/behavior-events](#client-behavior) | 上报行为事件 | Bearer，任意有效角色 | 202 |
+| 分组 | 方法 | 路径 | 功能 | 鉴权 | 成功状态 | 实现状态 |
+|---|---|---|---|---|---|---|
+| 服务 | GET | [/health](#health) | 健康检查 | 无 | 200 | 已实现 |
+| 服务 | GET | [/ready](#ready) | 数据库就绪检查 | 无 | 200 | 已实现 |
+| 认证 | POST | [/auth/login](#auth-login) | 登录 | 登录凭据 | 200 | 已实现 |
+| 认证 | POST | [/auth/refresh](#auth-refresh) | 刷新会话 | Cookie + CSRF | 200 | 已实现 |
+| 认证 | POST | [/auth/logout](#auth-logout) | 退出会话 | 有 Cookie 时校验 CSRF | 204 | 已实现 |
+| 认证 | POST | [/auth/change-password](#auth-change-password) | 修改自己的密码 | Bearer + If-Match | 200 | 已实现 |
+| 用户 | GET | [/admin/users](#users-list) | 用户列表 | Bearer，admin/super_admin | 200 | 已实现 |
+| 用户 | POST | [/admin/users](#users-create) | 创建用户 | Bearer，admin/super_admin | 201 | 已实现 |
+| 用户 | GET | [/admin/users/{id}](#users-get) | 用户详情 | Bearer，admin/super_admin | 200 | 已实现 |
+| 用户 | PATCH | [/admin/users/{id}](#users-update) | 修改展示名 | Bearer + If-Match，admin/super_admin | 200 | 已实现 |
+| 用户 | PATCH | [/admin/users/{id}/status](#users-status) | 启用／禁用 | Bearer + If-Match，admin/super_admin | 200 | 已实现 |
+| 用户 | PATCH | [/admin/users/{id}/unlock](#users-unlock) | 解锁 | Bearer + If-Match，admin/super_admin | 200 | 已实现 |
+| 用户 | PUT | [/admin/users/{id}/role](#users-role) | 修改角色 | Bearer + If-Match，super_admin | 200 | 已实现 |
+| 用户 | POST | [/admin/users/{id}/reset-password](#users-reset-password) | 重置密码 | Bearer + If-Match，admin/super_admin | 200 | 已实现 |
+| 审计 | GET | [/admin/user-logs](#user-logs) | 审计日志列表 | Bearer，admin/super_admin | 200 | 已实现 |
+| 客户端 | GET | [/client/me/permissions](#client-permissions) | 当前用户权限 | Bearer，任意有效角色 | 200 | 已实现 |
+| 客户端 | POST | [/client/behavior-events](#client-behavior) | 上报行为事件 | Bearer，任意有效角色 | 202 | 已实现 |
 
 认证、用户管理和客户端接口支持 `OPTIONS` 浏览器预检。当前没有删除用户接口。
 
@@ -74,6 +76,8 @@ If-Match 不接受弱 ETag、通配符或多个版本，也不能用 body 中的
 | 日志查询参数 from、to | string，UTC ISO 8601 | `2026-09-17T09:15:00Z` |
 
 绝对时间响应不再返回日期字符串，数据库微秒小数截断到毫秒。业务端自行转为本地时间，例如 `new Date(timestamp).toLocaleString()`；处理可空时间前先判断 null。
+
+用户编辑、状态变更、解锁、角色分配和重置密码的响应，在事务提交前读取数据库最新用户记录，返回本次写入实际生成的 updated_at。
 
 **查询输入与响应输出的格式不同**：from／to 当前仍要求精确的 `YYYY-MM-DDTHH:mm:ssZ`，不接受毫秒时间戳、小数秒或时区偏移字符串。
 
@@ -186,6 +190,8 @@ refresh token 只通过 Set-Cookie 返回，不在 JSON 中返回。当前算法
 
 ### GET /health — 健康检查
 
+**实现状态：已实现**
+
 无需鉴权，无请求参数和请求体。200 响应：
 
 ```json
@@ -195,6 +201,8 @@ refresh token 只通过 Set-Cookie 返回，不在 JSON 中返回。当前算法
 <a id="ready"></a>
 
 ### GET /ready — 数据库就绪检查
+
+**实现状态：已实现**
 
 无需鉴权，无请求参数和请求体。200 响应：
 
@@ -207,6 +215,8 @@ refresh token 只通过 Set-Cookie 返回，不在 JSON 中返回。当前算法
 <a id="auth-login"></a>
 
 ### POST /auth/login — 登录
+
+**实现状态：已实现**
 
 **鉴权：** 无 Bearer；提交登录凭据。
 
@@ -272,6 +282,8 @@ X-Request-ID: login-001
 
 ### POST /auth/refresh — 刷新会话
 
+**实现状态：已实现**
+
 **鉴权：** 必须携带 szx_refresh Cookie 和当前 X-CSRF-Token；不要求 Bearer 或 If-Match。
 
 Body 可省略，或发送空对象 `{}`，不接受其他字段。refresh token 只能来自 Cookie，不能放入 body、query 或 Authorization。
@@ -299,6 +311,8 @@ X-CSRF-Token: <csrf-token>
 
 ### POST /auth/logout — 退出当前会话
 
+**实现状态：已实现**
+
 **鉴权：** 有 refresh Cookie 时必须携带匹配的 CSRF；无 Cookie 时直接清除浏览器 Cookie。不要求 Bearer 或 If-Match。
 
 Body 可省略或为 `{}`。请求头与刷新接口相同，路径改为 `/auth/logout`。
@@ -318,6 +332,8 @@ Body 可省略或为 `{}`。请求头与刷新接口相同，路径改为 `/auth
 <a id="auth-change-password"></a>
 
 ### POST /auth/change-password — 修改自己的密码
+
+**实现状态：已实现**
 
 **鉴权：** Bearer；If-Match 为当前用户的 version，不接受指定目标用户。不使用 refresh Cookie，也不要求 CSRF。
 
@@ -357,6 +373,8 @@ Content-Type: application/json
 
 ### GET /admin/users — 用户列表
 
+**实现状态：已实现**
+
 **权限：** admin/super_admin。admin 仅能列出 operator/engineer。
 
 | Query 参数 | 类型 | 必填 | 默认／约束 |
@@ -385,6 +403,8 @@ Authorization: Bearer <access-token>
 
 ### POST /admin/users — 创建用户
 
+**实现状态：已实现**
+
 **权限：** admin/super_admin；admin 只能创建 operator/engineer。不要求 If-Match。
 
 | Body 字段 | 类型 | 必填 | 约束 |
@@ -395,6 +415,8 @@ Authorization: Bearer <access-token>
 | role | string | 是 | 四种角色之一，且调用者有权创建 |
 
 不接受密码、状态、id 或版本字段。身份字段的 null 视为未提供；UID 和用户名均去首尾空白、执行 Unicode NFC，原始输入最多 512 字节。用户名保留重音差异，UID 区分大小写；创建后身份不可修改。
+
+UID 与 username 共用登录入口，因此也检查跨字段冲突：已有 username=admin 时，uid=admin 或 uid=ADMIN 均返回 `409 / 2208`；已有 uid=U10086 时，username=u10086 同样冲突。两个 UID 的 U10086 与 u10086 仍可分别存在。并发创建遵循相同规则，冲突请求不会创建用户或签发临时凭据。
 
 ```json
 {"uid":"U10086","display_name":"Alice","role":"operator"}
@@ -432,6 +454,8 @@ Authorization: Bearer <access-token>
 
 ### GET /admin/users/{id} — 用户详情
 
+**实现状态：已实现**
+
 **权限：** admin/super_admin，遵循目标角色范围。必填 Path id，无请求体。
 
 ```http
@@ -444,6 +468,8 @@ Authorization: Bearer <access-token>
 <a id="users-update"></a>
 
 ### PATCH /admin/users/{id} — 修改展示名
+
+**实现状态：已实现**
 
 **权限：** admin/super_admin；必填 Path id 和 Header If-Match。
 
@@ -468,6 +494,8 @@ Content-Type: application/json
 
 ### PATCH /admin/users/{id}/status — 启用／禁用
 
+**实现状态：已实现**
+
 **权限：** admin/super_admin；必填 Path id 和 Header If-Match。
 
 | Body 字段 | 类型 | 必填 | 约束 |
@@ -485,6 +513,8 @@ locked 不能直接改为 active，否则返回 `422 / 2206`，须调用 unlock�
 <a id="users-unlock"></a>
 
 ### PATCH /admin/users/{id}/unlock — 解锁
+
+**实现状态：已实现**
 
 **权限：** admin/super_admin；必填 Path id 和 Header If-Match。
 
@@ -504,6 +534,8 @@ If-Match: 3
 
 ### PUT /admin/users/{id}/role — 修改角色
 
+**实现状态：已实现**
+
 **权限：** 仅 super_admin；必填 Path id 和 Header If-Match。
 
 | Body 字段 | 类型 | 必填 | 约束 |
@@ -519,6 +551,8 @@ If-Match: 3
 <a id="users-reset-password"></a>
 
 ### POST /admin/users/{id}/reset-password — 重置密码
+
+**实现状态：已实现**
 
 **权限：** admin/super_admin；必填 Path id 和 Header If-Match。
 
@@ -537,6 +571,8 @@ If-Match: 4
 <a id="user-logs"></a>
 
 ### GET /admin/user-logs — 审计日志列表
+
+**实现状态：已实现**
 
 **权限：** admin/super_admin。
 
@@ -589,6 +625,8 @@ Authorization: Bearer <access-token>
 
 ### GET /client/me/permissions — 当前用户权限
 
+**实现状态：已实现**
+
 **鉴权：** Bearer，任意有效角色。无请求参数和请求体。
 
 | data 字段 | 类型 | 说明 |
@@ -618,6 +656,8 @@ Authorization: Bearer <access-token>
 <a id="client-behavior"></a>
 
 ### POST /client/behavior-events — 上报行为事件
+
+**实现状态：已实现**
 
 **鉴权：** Bearer，任意有效角色；不要求 If-Match。
 
