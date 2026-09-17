@@ -7,7 +7,9 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
+#include <string_view>
 
 namespace SZX::ADMIN::INFRA
 {
@@ -18,6 +20,11 @@ struct HttpRequest final
     std::string body;
     std::string requestId;
     std::map<std::string, std::string> headers;
+    std::map<std::string, std::string> query;
+    std::map<std::string, std::string> pathParams;
+
+    /** Case-insensitive lookup; the returned view is valid while headers remain unchanged. */
+    [[nodiscard]] auto header(std::string_view name) const noexcept -> std::optional<std::string_view>;
 };
 
 struct HttpResponse final
@@ -41,6 +48,8 @@ public:
     HttpTransport &operator=(HttpTransport &&)      = delete;
 
     [[nodiscard]] auto registerRoute(std::string method, std::string path, HttpHandler handler) -> SZX::COMMON::Result<void>;
+    /** Register an API-relative path (e.g. /admin/users/{id}) below ServerConfig::apiPrefix. */
+    [[nodiscard]] auto registerApiRoute(std::string method, std::string path, HttpHandler handler) -> SZX::COMMON::Result<void>;
     [[nodiscard]] auto start() -> SZX::COMMON::Result<void>;
     [[nodiscard]] auto stop() -> SZX::COMMON::Result<void>;
 

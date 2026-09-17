@@ -39,11 +39,13 @@ if(NOT TARGET szx::network)
 endif()
 
 add_library(szx_rbac_infra STATIC
+    src/Routes.cc
     src/infra/ErrorCode.cc
     src/infra/Database.cc
     src/infra/DatabaseInitialization.cc
     src/infra/HttpTransport.cc
     src/infra/RequestContext.cc
+    src/infra/RestApi.cc
     src/infra/ServerConfig.cc
 )
 add_library(szx::rbac_infra ALIAS szx_rbac_infra)

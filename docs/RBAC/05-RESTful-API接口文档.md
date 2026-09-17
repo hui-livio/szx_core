@@ -8,6 +8,22 @@ Base URL：`/api/v1`。认证头：`Authorization: Bearer <access_token>`。全�
 
 使用 refresh Cookie 的 POST 请求必须同时携带 `X-CSRF-Token`；CSRF token 不等同于 access/refresh token，不能写入日志。
 
+### 当前实现范围
+
+已实现 REST 协议基础层及健康/就绪检查；下文认证、用户管理、权限和日志接口仍为待实现的业务契约。
+
+- 服务路由在 `RBAC/szx_admin/src/Routes.cc` 集中注册；`main.cc` 只调用注册入口。`HttpTransport::registerApiRoute()` 接受以 `/` 开头的相对路径，自动拼接配置中的 `apiPrefix`（默认 `/api/v1`）。支持 GET、HEAD、POST、PUT、PATCH、DELETE、OPTIONS；OPTIONS 的响应由注册的处理器定义，不自动启用 CORS。
+- `HttpRequest` 提供解码后的 `pathParams`、`query`，以及忽略大小写的 `header()` 查询。参数和请求头沿用网络层单值映射语义，不提供重复值列表。
+- 控制器通过 `RestApi::jsonObject()` 要求 `Content-Type: application/json`（允许 UTF-8 charset）和对象类型 JSON；`allowedFields()` 校验字段白名单，必填字段和业务类型由控制器继续校验。校验失败返回 `2206` / HTTP 422。
+- `pagination()` 默认 `page=1`、`page_size=20`，要求正十进制整数；`page` 上限为 4294967295，`page_size` 上限为 100，偏移量使用 64 位整数。
+- `ifMatch()` 接受 `If-Match: 42` 或 `If-Match: "42"`，版本范围 1–2147483647。缺失、弱 ETag、通配符或多个版本均返回 `2206` / HTTP 422；实际版本比较和事务更新由业务层实现。
+- `bearerToken()` 仅提取凭据，限制 Authorization 长度为 8192 字节，缺失或格式错误返回 `2200` / HTTP 401；签名、会话和权限校验尚未接入业务路由。
+- `RestApi` 统一产生成功 `{data,request_id}`、错误 `{code,message,details,request_id}` 和空 204 响应，附带 `X-Request-ID`、`Cache-Control: no-store`。错误使用稳定数字码和安全默认消息，不回传内部诊断。
+
+`GET ${apiPrefix}/health` 返回 `{"data":{"status":"ok"},"request_id":"…"}`。`GET ${apiPrefix}/ready` 检查数据库连接，成功返回 `{"data":{"status":"ready"},"request_id":"…"}`，不可用返回 `2220` / HTTP 503。`/ready` 已从原有响应改为统一 envelope，调用方应读取 `data.status`。
+
+路由访问默认记录 INFO 日志：`request_id=... method=GET path="/api/v1/health" status=200`。`server.accessLog` 默认及随包配置均为 true；包含未命中路由和异常响应。路径截断至 512 字节并转义，不记录 query、Authorization 或请求体。
+
 ## 2. 认证
 
 | 方法 | 路径 | 说明 |

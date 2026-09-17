@@ -16,7 +16,7 @@ server:
   maxRequestBodyBytes: 1048576
   maxConnections: 1024
   apiPrefix: /api/v1
-  accessLog: false
+  accessLog: true
   staticRoot: web
   staticHomePage: index.html
   spaFallback: true

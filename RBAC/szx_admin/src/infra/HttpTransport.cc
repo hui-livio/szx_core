@@ -1,10 +1,13 @@
 #include "SzxAdmin/Infra/HttpTransport.h"
 
+#include "../Routes.h"
+
 #include "Defer.hpp"
 #include "Logger.h"
 #include "Serializer.hpp"
 #include "SzxAdmin/Infra/ErrorCode.h"
 #include "SzxAdmin/Infra/RequestContext.h"
+#include "SzxAdmin/Infra/RestApi.h"
 #include "SzxNetwork/HttpServer.h"
 
 #include <algorithm>
@@ -45,19 +48,6 @@ auto networkResult(const Result<void> &result, ErrorCode invalid = ErrorCode::Va
     }
 }
 
-auto errorResponse(ErrorCode code, std::string_view requestId) -> HttpResponse
-{
-    HttpResponse response{.statusCode = errorCodeHttpStatus(code)};
-    response.headers.emplace("Content-Type", "application/json");
-    response.headers.emplace(std::string{kRequestIdHeader}, std::string{requestId});
-    const SZX::COMMON::Json payload{{"code", static_cast<int>(code)},
-                                    {"message", std::string{defaultErrorMessage(code)}},
-                                    {"details", SZX::COMMON::Json::object()},
-                                    {"request_id", std::string{requestId}}};
-    response.body = payload.dump();
-    return response;
-}
-
 auto responseError(int status) noexcept -> ErrorCode
 {
     switch (status)
@@ -92,14 +82,19 @@ auto convertRequest(const Network::HttpServerRequest &request) -> HttpRequest
 {
     HttpRequest converted{.method = request.method, .path = request.path, .body = request.body, .requestId = requestId(request)};
     converted.headers.insert(request.headers.begin(), request.headers.end());
+    const auto originalId = request.headers.find(kRequestIdHeader);
+    if (originalId != request.headers.end())
+        converted.headers.erase(originalId->first);
     converted.headers[std::string{kRequestIdHeader}] = converted.requestId;
+    converted.query                                  = request.query;
+    converted.pathParams                             = request.pathParams;
     return converted;
 }
 
 auto convertResponse(HttpResponse response, const std::string &id) -> Network::HttpServerResponse
 {
     if (response.statusCode < 200 || response.statusCode > 599)
-        response = errorResponse(ErrorCode::InternalFailure, id);
+        response = RestApi::error(ErrorCode::InternalFailure, id);
     Network::HttpServerResponse converted{.statusCode = response.statusCode, .body = std::move(response.body)};
     converted.headers.insert(response.headers.begin(), response.headers.end());
     converted.headers[std::string{kRequestIdHeader}] = id;
@@ -110,7 +105,8 @@ auto convertResponse(HttpResponse response, const std::string &id) -> Network::H
 
 auto validMethod(std::string_view method) noexcept -> bool
 {
-    return method == "GET" || method == "HEAD" || method == "POST" || method == "PUT" || method == "PATCH" || method == "DELETE";
+    return method == "GET" || method == "HEAD" || method == "POST" || method == "PUT" || method == "PATCH" ||
+        method == "DELETE" || method == "OPTIONS";
 }
 
 void normalizePath(std::string &path)
@@ -153,7 +149,9 @@ public:
             return;
         try
         {
-            LOGM_INFO("szx_admin.http", "request_id={} method={} status={}", id, request.method, status);
+            const auto path =
+                SZX::COMMON::Json(request.path.substr(0, 512)).dump(-1, ' ', false, SZX::COMMON::Json::error_handler_t::replace);
+            LOGM_INFO("szx_admin.http", "request_id={} method={} path={} status={}", id, request.method, path, status);
         } catch (...)
         {
         }
@@ -216,7 +214,7 @@ public:
                 auto response                                       = next(request);
                 if (response.body.empty() && response.statusCode >= 400)
                 {
-                    auto error       = convertResponse(errorResponse(responseError(response.statusCode), id), id);
+                    auto error       = convertResponse(RestApi::error(responseError(response.statusCode), id), id);
                     error.statusCode = response.statusCode;
                     response         = std::move(error);
                 }
@@ -236,7 +234,7 @@ public:
                     inTransportCallback = previous;
                 };
                 const auto id = requestId(request);
-                auto response = convertResponse(errorResponse(responseError(status), id), id);
+                auto response = convertResponse(RestApi::error(responseError(status), id), id);
                 accessLog(request, id, status);
                 return response;
             });
@@ -245,19 +243,20 @@ public:
         configured = server->onNotFound([this](const auto &request) { return notFound(request); });
         if (!configured.ok)
             return networkResult(configured);
-        const auto health = [](const auto &request)
-        {
-            const auto id = requestId(request);
-            return convertResponse(HttpTransport::healthResponse(id), id);
-        };
-        const auto registerHealth = [&](const std::string &path)
-        {
-            auto result = server->get(path, health);
-            return result.ok ? server->get(path + "/", health) : result;
-        };
-        configured = registerHealth(healthPath());
-        if (!configured.ok)
-            return networkResult(configured, ErrorCode::InvalidConfiguration);
+        const auto healthRoutes = registerHealthRoutes(
+            config_.apiPrefix,
+            [&](std::string path, HttpHandler handler)
+            {
+                return networkResult(server->get(std::move(path),
+                                                 [handler = std::move(handler)](const auto &request)
+                                                 {
+                                                     const auto converted = convertRequest(request);
+                                                     return convertResponse(handler(converted), converted.requestId);
+                                                 }),
+                                     ErrorCode::InvalidConfiguration);
+            });
+        if (!healthRoutes.ok)
+            return healthRoutes;
         server_ = std::move(server);
         return Result<void>::Success();
     }
@@ -363,9 +362,38 @@ HttpTransport::HttpTransport(ServerConfig config) :
 }
 HttpTransport::~HttpTransport() = default;
 
+auto HttpRequest::header(std::string_view name) const noexcept -> std::optional<std::string_view>
+{
+    const Network::CaseInsensitiveLess less;
+    std::optional<std::string_view> found;
+    for (const auto &[key, value] : headers)
+    {
+        if (!less(key, name) && !less(name, key))
+        {
+            if (found)
+                return std::nullopt;
+            found = value;
+        }
+    }
+    return found;
+}
+
 auto HttpTransport::registerRoute(std::string method, std::string path, HttpHandler handler) -> Result<void>
 {
     return impl_->registerRoute(std::move(method), std::move(path), std::move(handler));
+}
+auto HttpTransport::registerApiRoute(std::string method, std::string path, HttpHandler handler) -> Result<void>
+{
+    try
+    {
+        if (path.empty() || path.front() != '/' || path.find_first_of("?#") != std::string::npos)
+            return failure(ErrorCode::ValidationError);
+        const auto &prefix = impl_->config_.apiPrefix;
+        return impl_->registerRoute(std::move(method), prefix == "/" ? std::move(path) : prefix + path, std::move(handler));
+    } catch (...)
+    {
+        return failure(ErrorCode::InternalFailure);
+    }
 }
 auto HttpTransport::start() -> Result<void>
 {
@@ -390,11 +418,6 @@ auto HttpTransport::config() const noexcept -> const ServerConfig &
 
 auto HttpTransport::healthResponse(const std::string &requestId) -> HttpResponse
 {
-    HttpResponse response;
-    response.headers.emplace("Content-Type", "application/json");
-    response.headers.emplace(std::string{kRequestIdHeader}, requestId);
-    const SZX::COMMON::Json payload{{"data", SZX::COMMON::Json{{"status", "ok"}}}, {"request_id", requestId}};
-    response.body = payload.dump();
-    return response;
+    return RestApi::success(SZX::COMMON::Json{{"status", "ok"}}, requestId);
 }
 } // namespace SZX::ADMIN::INFRA

@@ -106,7 +106,7 @@ def main():
             http_port = free_port()
             config = root / f"config-{instance}.yaml"
             config.write_text(
-                "logging:\n  console: false\n"
+                "logging:\n  console: false\n  flushLevel: info\n"
                 f"  filePath: {json.dumps((root / f'admin-{instance}.log').as_posix())}\n"
                 f"server:\n  host: 127.0.0.1\n  port: {http_port}\n  workerThreads: 2\n"
                 "  staticRoot: web\n"
@@ -122,6 +122,10 @@ def main():
                     def ready():
                         try:
                             with urllib.request.urlopen(f"http://127.0.0.1:{http_port}/api/v1/ready", timeout=1) as response:
+                                payload = json.load(response)
+                                assert payload["data"] == {"status": "ready"}
+                                assert payload["request_id"] == response.headers["X-Request-ID"]
+                                assert response.headers["Cache-Control"] == "no-store"
                                 return response.status == 200
                         except (urllib.error.URLError, TimeoutError):
                             return False
@@ -153,6 +157,29 @@ def main():
                             assert error.code == 404
                         else:
                             raise AssertionError("SQL is exposed over HTTP")
+                    for path, expected_status, request_id in (
+                        ("/api/v1/health", 200, "access-ok"),
+                        ("/api/v1/missing", 404, "access-missing"),
+                    ):
+                        probe = urllib.request.Request(
+                            f"http://127.0.0.1:{http_port}{path}?password=QUERY_SECRET",
+                            headers={"X-Request-ID": request_id, "Authorization": "Bearer HEADER_SECRET"},
+                        )
+                        try:
+                            with urllib.request.urlopen(probe, timeout=2) as response:
+                                assert response.status == expected_status
+                        except urllib.error.HTTPError as error:
+                            assert error.code == expected_status
+                        line = f'request_id={request_id} method=GET path="{path}" status={expected_status}'
+                        log_path = root / "admin-1.log"
+                        deadline = time.monotonic() + 5
+                        while line not in log_path.read_text(encoding="utf-8"):
+                            if time.monotonic() >= deadline:
+                                raise AssertionError(f"Missing access log: {line}")
+                            time.sleep(0.05)
+                    access_log = log_path.read_text(encoding="utf-8")
+                    assert "QUERY_SECRET" not in access_log and "HEADER_SECRET" not in access_log
+                    print("PASS: route access logs contain path/status/request ID without query or credentials", flush=True)
                 with admin("fresh"):
                     assert sql("SELECT id,password_hash,role,status,force_password_change FROM fresh.users;") == initial
                 print("PASS: SQL-free runtime, HTTP isolation, fresh creation and repeated startup", flush=True)

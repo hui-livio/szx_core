@@ -16,7 +16,7 @@ struct ServerConfig final
     std::uint32_t maxRequestBodyBytes{1024U * 1024U};
     std::uint32_t maxConnections{1024};
     std::string apiPrefix{"/api/v1"};
-    bool accessLog{};
+    bool accessLog{true};
     std::string staticRoot{"web"};
     std::string staticHomePage{"index.html"};
     bool spaFallback{true};

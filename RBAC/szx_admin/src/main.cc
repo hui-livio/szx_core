@@ -1,6 +1,7 @@
 #include "Command.hpp"
 #include "FileHelper.hpp"
 #include "Logger.h"
+#include "Routes.h"
 #include "Serializer.hpp"
 #include "SzxAdmin/Infra/Database.h"
 #include "SzxAdmin/Infra/ErrorCode.h"
@@ -23,7 +24,6 @@ namespace
 using SZX::ADMIN::INFRA::DatabaseConfig;
 using SZX::ADMIN::INFRA::DatabasePool;
 using SZX::ADMIN::INFRA::ErrorCode;
-using SZX::ADMIN::INFRA::HttpResponse;
 using SZX::ADMIN::INFRA::HttpTransport;
 using SZX::ADMIN::INFRA::MigrationRunner;
 using SZX::ADMIN::INFRA::ServerConfig;
@@ -192,22 +192,11 @@ int main(int argc, char **argv)
     }
 
     HttpTransport transport(options.server);
-    const auto readyPath  = options.server.apiPrefix == "/" ? "/ready" : options.server.apiPrefix + "/ready";
-    const auto readyRoute = transport.registerRoute(
-        "GET", readyPath,
-        [&database](const auto &)
-        {
-            const auto ping = database.ping();
-            if (!ping.ok)
-                return HttpResponse{
-                    .statusCode = 503, .body = "{\"status\":\"unavailable\"}", .headers = {{"Content-Type", "application/json"}}};
-            return HttpResponse{
-                .statusCode = 200, .body = "{\"status\":\"ready\"}", .headers = {{"Content-Type", "application/json"}}};
-        });
-    if (!readyRoute.ok)
+    const auto routes = SZX::ADMIN::registerRoutes(transport, database);
+    if (!routes.ok)
     {
         (void)database.stop();
-        return reportFailure("ready route registration", readyRoute);
+        return reportFailure("route registration", routes);
     }
 
     std::signal(SIGINT, requestStop);

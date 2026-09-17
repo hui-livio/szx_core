@@ -5,12 +5,15 @@
 #include <stdexcept>
 #include <string>
 
+#include "../../RBAC/szx_admin/src/Routes.h"
 #include "../support/HttpClient.h"
 #include "FileHelper.hpp"
 #include "Serializer.hpp"
+#include "SzxAdmin/Infra/Database.h"
 #include "SzxAdmin/Infra/ErrorCode.h"
 #include "SzxAdmin/Infra/HttpTransport.h"
 #include "SzxAdmin/Infra/RequestContext.h"
+#include "SzxAdmin/Infra/RestApi.h"
 #include "SzxNetwork/HttpServer.h"
 
 using namespace SZX::ADMIN::INFRA;
@@ -274,6 +277,101 @@ TEST(AdminHttpIntegrationTest, NormalizesAllRoutePathsBeforeMatchingAndBeforeApi
     expectError(request(transport.port(), "GET", "///api//v1///private", {}, idHeader), 404, 2205);
     expectError(request(transport.port(), "POST", "/api%2Fv1/echo", {}, idHeader), 404, 2205);
     expectError(request(transport.port(), "GET", "///%2e%2e//secret", {}, idHeader), 403, 2204);
+    EXPECT_TRUE(transport.stop().ok);
+}
+
+TEST(AdminHttpIntegrationTest, CarriesRestPathQueryAndHeadersThroughApiRoutes)
+{
+    auto config      = testConfig();
+    config.apiPrefix = "/service/v2";
+    HttpTransport transport(config);
+    EXPECT_TRUE(transport
+                    .registerApiRoute("GET", "/admin/users/{id}",
+                                      [](const HttpRequest &input)
+                                      {
+                                          EXPECT_EQ(input.header("x-request-id"), input.requestId);
+                                          const auto token = RestApi::bearerToken(input);
+                                          if (!token.ok)
+                                              return RestApi::error(static_cast<ErrorCode>(token.error), input.requestId);
+                                          return RestApi::success(SZX::COMMON::Json{{"id", input.pathParams.at("id")},
+                                                                                    {"search", input.query.at("search")},
+                                                                                    {"token", token.value}},
+                                                                  input.requestId);
+                                      })
+                    .ok);
+    EXPECT_FALSE(transport.registerApiRoute("GET", "admin/users", [](const auto &) { return HttpResponse{}; }).ok);
+    EXPECT_TRUE(transport.start().ok);
+
+    const auto response = request(transport.port(), "GET", "/service/v2/admin/users/user%2D1?search=Alice%20Smith", {},
+                                  "authorization: Bearer test-token\r\nx-request-id: rest-request\r\n");
+    EXPECT_EQ(status(response), 200);
+    const auto json = SZX::COMMON::Json::parse(body(response));
+    EXPECT_EQ(json.at("data").at("id"), "user-1");
+    EXPECT_EQ(json.at("data").at("search"), "Alice Smith");
+    EXPECT_EQ(json.at("data").at("token"), "test-token");
+    EXPECT_EQ(json.at("request_id"), "rest-request");
+    EXPECT_NE(response.find("Cache-Control: no-store"), response.npos);
+    EXPECT_TRUE(transport.stop().ok);
+}
+
+TEST(AdminHttpIntegrationTest, ValidatesJsonAndVersionAndSupportsOptions)
+{
+    auto config      = testConfig();
+    config.apiPrefix = "/";
+    HttpTransport transport(config);
+    ASSERT_TRUE(transport
+                    .registerApiRoute("PATCH", "/users/{id}",
+                                      [](const HttpRequest &input)
+                                      {
+                                          const auto json = RestApi::jsonObject(input);
+                                          if (!json.ok)
+                                              return RestApi::error(static_cast<ErrorCode>(json.error), input.requestId);
+                                          const auto version = RestApi::ifMatch(input);
+                                          if (!version.ok)
+                                              return RestApi::error(static_cast<ErrorCode>(version.error), input.requestId);
+                                          return RestApi::success(SZX::COMMON::Json{{"version", version.value}}, input.requestId);
+                                      })
+                    .ok);
+    ASSERT_TRUE(transport
+                    .registerApiRoute("OPTIONS", "/users/{id}",
+                                      [](const HttpRequest &input)
+                                      {
+                                          auto response = RestApi::noContent(input.requestId);
+                                          response.headers.emplace("Allow", "PATCH, OPTIONS");
+                                          return response;
+                                      })
+                    .ok);
+    ASSERT_TRUE(transport.start().ok);
+    const auto headers = std::string{idHeader} + "content-type: application/json\r\nif-match: \"42\"\r\n";
+    const auto valid   = request(transport.port(), "PATCH", "/users/u1", "{}", headers);
+    EXPECT_EQ(status(valid), 200);
+    EXPECT_EQ(SZX::COMMON::Json::parse(body(valid)).at("data").at("version"), 42);
+    expectError(request(transport.port(), "PATCH", "/users/u1", "[]", headers), 422, 2206);
+    expectError(
+        request(transport.port(), "PATCH", "/users/u1", "{}", std::string{idHeader} + "Content-Type: application/json\r\n"), 422,
+        2206);
+    Client client(transport.port());
+    client.send(std::string{"OPTIONS /users/u1 HTTP/1.1\r\nHost: localhost\r\n"} + idHeader + "\r\n");
+    const auto options = client.read(true);
+    EXPECT_EQ(status(options), 204);
+    EXPECT_TRUE(body(options).empty());
+    EXPECT_NE(options.find("Allow: PATCH, OPTIONS"), options.npos);
+    EXPECT_NE(options.find("X-Request-ID: test-id"), options.npos);
+    EXPECT_TRUE(transport.stop().ok);
+}
+
+TEST(AdminHttpIntegrationTest, RegistersServiceRoutesAndReportsUnavailableDatabase)
+{
+    auto config      = testConfig();
+    config.apiPrefix = "/service/v2";
+    DatabasePool database(DatabaseConfig{});
+    HttpTransport transport(config);
+    ASSERT_TRUE(SZX::ADMIN::registerRoutes(transport, database).ok);
+    EXPECT_EQ(SZX::ADMIN::registerRoutes(transport, database).error, static_cast<int>(ErrorCode::RouteConflict));
+    ASSERT_TRUE(transport.start().ok);
+    expectError(request(transport.port(), "GET", "/service/v2/ready", {}, idHeader), 503, 2220);
+    EXPECT_EQ(status(request(transport.port(), "GET", "/service/v2/health")), 200);
+    expectError(request(transport.port(), "GET", "/api/v1/ready", {}, idHeader), 404, 2205);
     EXPECT_TRUE(transport.stop().ok);
 }
 
