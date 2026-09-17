@@ -88,7 +88,8 @@ auto MySqlLoginRepository::findById(const std::string &id) -> Result<std::option
     }
 }
 
-auto MySqlLoginRepository::revokeRefresh(const std::string &userId, const std::string &now) -> Result<void>
+auto MySqlLoginRepository::revokeRefresh(const std::string &userId, const std::string &now, const std::string &reason)
+    -> Result<void>
 {
     try
     {
@@ -98,7 +99,7 @@ auto MySqlLoginRepository::revokeRefresh(const std::string &userId, const std::s
         for (auto &row : rows)
         {
             row.revoked_at        = now;
-            row.revocation_reason = "password_changed";
+            row.revocation_reason = reason;
             const auto count = connection_.update<&RefreshRevocation::revoked_at, &RefreshRevocation::revocation_reason>(row);
             if (count != 1 || connection_.has_error())
                 return written(false);

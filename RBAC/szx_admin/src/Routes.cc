@@ -1,6 +1,8 @@
 #include "Routes.h"
+#include "HttpSupport.h"
 #include "TimeHelper.hpp"
 #include "auth/LoginService.h"
+#include "user/UserHandler.h"
 
 #include "SzxAdmin/Infra/Database.h"
 #include "SzxAdmin/Infra/HttpTransport.h"
@@ -14,25 +16,6 @@ namespace SZX::ADMIN
 {
 namespace
 {
-auto originAllowed(const AUTH::LoginConfig &config, const INFRA::HttpRequest &request) -> bool
-{
-    const auto origin = request.header("Origin");
-    return !origin || config.allowedOrigin == "*" || *origin == config.allowedOrigin;
-}
-
-auto withCors(INFRA::HttpResponse response, const INFRA::HttpRequest &request) -> INFRA::HttpResponse
-{
-    response.headers.emplace("Vary", "Origin");
-    if (const auto origin = request.header("Origin"))
-    {
-        // Credentialed CORS requires a concrete Origin even when configuration allows all origins.
-        response.headers.emplace("Access-Control-Allow-Origin", std::string{*origin});
-        response.headers.emplace("Access-Control-Allow-Credentials", "true");
-        response.headers.emplace("Access-Control-Expose-Headers", "X-Request-ID");
-    }
-    return response;
-}
-
 auto refreshCookie(const AUTH::LoginConfig &config, const std::string &path, std::string_view token, std::int64_t maxAge)
     -> std::string
 {
@@ -276,7 +259,7 @@ auto registerRoutes(INFRA::HttpTransport &transport, INFRA::DatabasePool &databa
             transport.registerApiRoute("POST", "/auth/login",
                                        [login, cookiePath](const INFRA::HttpRequest &request)
                                        {
-                                           if (!originAllowed(login->config(), request))
+                                           if (!originAllowed(login->config().allowedOrigin, request))
                                                return INFRA::RestApi::error(INFRA::ErrorCode::Forbidden, request.requestId);
                                            return withCors(loginResponse(*login, request, cookiePath), request);
                                        });
@@ -286,7 +269,7 @@ auto registerRoutes(INFRA::HttpTransport &transport, INFRA::DatabasePool &databa
             transport.registerApiRoute("POST", "/auth/change-password",
                                        [login, cookiePath](const INFRA::HttpRequest &request)
                                        {
-                                           if (!originAllowed(login->config(), request))
+                                           if (!originAllowed(login->config().allowedOrigin, request))
                                                return INFRA::RestApi::error(INFRA::ErrorCode::Forbidden, request.requestId);
                                            return withCors(changePasswordResponse(*login, request, cookiePath), request);
                                        });
@@ -298,32 +281,23 @@ auto registerRoutes(INFRA::HttpTransport &transport, INFRA::DatabasePool &databa
                 "POST", logout ? "/auth/logout" : "/auth/refresh",
                 [login, cookiePath, logout](const INFRA::HttpRequest &request)
                 {
-                    if (!originAllowed(login->config(), request))
+                    if (!originAllowed(login->config().allowedOrigin, request))
                         return INFRA::RestApi::error(INFRA::ErrorCode::Forbidden, request.requestId);
                     return withCors(cookieSessionResponse(*login, request, cookiePath, logout), request);
                 });
             if (!registered.ok)
                 return registered;
         }
-        const auto preflight = [login](const INFRA::HttpRequest &request)
-        {
-            if (!originAllowed(login->config(), request))
-                return INFRA::RestApi::error(INFRA::ErrorCode::Forbidden, request.requestId);
-            if (const auto method = request.header("Access-Control-Request-Method"); method && *method != "POST")
-                return withCors(INFRA::RestApi::error(INFRA::ErrorCode::MethodNotAllowed, request.requestId), request);
-            auto response = INFRA::RestApi::noContent(request.requestId);
-            response.headers.emplace("Allow", "POST, OPTIONS");
-            response.headers.emplace("Access-Control-Allow-Methods", "POST, OPTIONS");
-            response.headers.emplace("Access-Control-Allow-Headers",
-                                     "Content-Type, Authorization, If-Match, X-Request-ID, X-CSRF-Token");
-            return withCors(std::move(response), request);
-        };
+        const auto preflight = preflightHandler(login->config().allowedOrigin, "POST, OPTIONS");
         for (const auto path : {"/auth/login", "/auth/change-password", "/auth/refresh", "/auth/logout"})
         {
             const auto options = transport.registerApiRoute("OPTIONS", path, preflight);
             if (!options.ok)
                 return options;
         }
+        const auto userRoutes = USER::registerUserRoutes(transport, database, *login);
+        if (!userRoutes.ok)
+            return userRoutes;
         return SZX::COMMON::Result<void>::Success();
     } catch (...)
     {

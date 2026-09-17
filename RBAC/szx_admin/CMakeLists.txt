@@ -40,6 +40,7 @@ endif()
 
 add_library(szx_rbac_infra STATIC
     src/Routes.cc
+    src/HttpSupport.cc
     src/auth/ChangePassword.cc
     src/auth/SessionLifecycle.cc
     src/auth/Identifier.cc
@@ -49,10 +50,15 @@ add_library(szx_rbac_infra STATIC
     src/infra/Database.cc
     src/infra/DatabaseInitialization.cc
     src/infra/LoginRepository.cc
+    src/infra/UserRepository.cc
     src/infra/HttpTransport.cc
     src/infra/RequestContext.cc
     src/infra/RestApi.cc
     src/infra/ServerConfig.cc
+    src/policy/Policy.cc
+    src/user/UserHandler.cc
+    src/user/UserService.cc
+    src/user/UserLifecycle.cc
 )
 add_library(szx::rbac_infra ALIAS szx_rbac_infra)
 
@@ -61,8 +67,8 @@ target_include_directories(szx_rbac_infra
 )
 
 target_link_libraries(szx_rbac_infra
-    PUBLIC szx::common
-    PRIVATE szx::network szx::logger szx_rbac_ormpp szx::crypto szx::crypto_service szx::rbac_auth
+    PUBLIC szx::common szx::network
+    PRIVATE szx::logger szx_rbac_ormpp szx::crypto szx::crypto_service szx::rbac_auth
 )
 
 if(WIN32)

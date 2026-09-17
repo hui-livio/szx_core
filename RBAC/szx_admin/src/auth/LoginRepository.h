@@ -63,8 +63,10 @@ public:
     virtual auto find(const std::string &uid, const std::string &username) -> SZX::COMMON::Result<std::optional<LoginUser>> = 0;
     virtual auto findById(const std::string &id) -> SZX::COMMON::Result<std::optional<LoginUser>>                           = 0;
     virtual auto saveState(const LoginUser &user) -> SZX::COMMON::Result<void>                                              = 0;
-    virtual auto revokeRefresh(const std::string &userId, const std::string &now) -> SZX::COMMON::Result<void>              = 0;
-    virtual auto insertRefresh(const LoginRefresh &token) -> SZX::COMMON::Result<void>                                      = 0;
+    /** Revoke every unrevoked session of a user; reason is stored for diagnostics. */
+    virtual auto revokeRefresh(const std::string &userId, const std::string &now, const std::string &reason)
+        -> SZX::COMMON::Result<void>                                                   = 0;
+    virtual auto insertRefresh(const LoginRefresh &token) -> SZX::COMMON::Result<void> = 0;
     // Locate the owner without a lock, then lock the user before locking/re-reading the token.
     virtual auto findRefresh(const std::string &hash, bool lock) -> SZX::COMMON::Result<std::optional<LoginRefresh>> = 0;
     virtual auto saveRefresh(const LoginRefresh &token) -> SZX::COMMON::Result<void>                                 = 0;

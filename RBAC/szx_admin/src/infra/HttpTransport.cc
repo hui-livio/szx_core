@@ -92,16 +92,14 @@ auto convertRequest(const Network::HttpServerRequest &request) -> HttpRequest
     return converted;
 }
 
-auto convertResponse(HttpResponse response, const std::string &id) -> Network::HttpServerResponse
+auto prepareResponse(HttpResponse response, const std::string &id) -> HttpResponse
 {
     if (response.statusCode < 200 || response.statusCode > 599)
         response = RestApi::error(ErrorCode::InternalFailure, id);
-    Network::HttpServerResponse converted{.statusCode = response.statusCode, .body = std::move(response.body)};
-    converted.headers.insert(response.headers.begin(), response.headers.end());
-    converted.headers[std::string{kRequestIdHeader}] = id;
-    if (!converted.headers.contains("Content-Type"))
-        converted.headers.emplace("Content-Type", "application/json");
-    return converted;
+    response.headers[std::string{kRequestIdHeader}] = id;
+    if (!response.headers.contains("Content-Type"))
+        response.headers.emplace("Content-Type", "application/json");
+    return response;
 }
 
 auto validMethod(std::string_view method) noexcept -> bool
@@ -215,7 +213,7 @@ public:
                 auto response                                       = next(request);
                 if (response.body.empty() && response.statusCode >= 400)
                 {
-                    auto error       = convertResponse(RestApi::error(responseError(response.statusCode), id), id);
+                    auto error       = prepareResponse(RestApi::error(responseError(response.statusCode), id), id);
                     error.statusCode = response.statusCode;
                     response         = std::move(error);
                 }
@@ -235,7 +233,7 @@ public:
                     inTransportCallback = previous;
                 };
                 const auto id = requestId(request);
-                auto response = convertResponse(RestApi::error(responseError(status), id), id);
+                auto response = prepareResponse(RestApi::error(responseError(status), id), id);
                 accessLog(request, id, status);
                 return response;
             });
@@ -252,7 +250,7 @@ public:
                                                  [handler = std::move(handler)](const auto &request)
                                                  {
                                                      const auto converted = convertRequest(request);
-                                                     return convertResponse(handler(converted), converted.requestId);
+                                                     return prepareResponse(handler(converted), converted.requestId);
                                                  }),
                                      ErrorCode::InvalidConfiguration);
             });
@@ -283,7 +281,7 @@ public:
                                                 [handler = std::move(handler)](const auto &request)
                                                 {
                                                     const auto converted = convertRequest(request);
-                                                    return convertResponse(handler(converted), converted.requestId);
+                                                    return prepareResponse(handler(converted), converted.requestId);
                                                 }));
         } catch (...)
         {

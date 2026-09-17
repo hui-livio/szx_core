@@ -149,6 +149,8 @@ const response = await fetch("/api/v1/auth/refresh", {
 
 客户端不得缓存或再次展示 `temporary_credential`。
 
+创建和重置密码先在事务内校验并锁定当前调用者，再生成临时凭据及 Argon2id 哈希。它们与登录、改密共享按实际对端 IP 计数的 `auth.attemptsPerMinute` 预算；超限返回 `429 / RATE_LIMITED`，不写入账号或凭据变更。
+
 用户对象统一返回 `id、uid、username、display_name、role、status、force_password_change、password_change_recommended、version、authz_version、last_login_at、created_at、updated_at`；临时凭据过期时间不返回给普通用户；缺失的 uid 或 username 返回 `null`，不返回密码哈希。force_password_change 与 password_change_recommended 按角色派生，不直接透传数据库同名字段。
 
 同时提供或同时缺失返回 `USER_IDENTITY_ONE_OF_REQUIRED`；canonical 标识重复返回 `USER_IDENTITY_CONFLICT`。管理员提交管理员/超管角色返回 `FORBIDDEN`。

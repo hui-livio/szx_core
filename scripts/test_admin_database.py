@@ -21,6 +21,7 @@ import urllib.request
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from test_admin_login import run_login_checks
+from test_admin_users import run_user_checks
 
 
 def free_port():
@@ -259,6 +260,7 @@ def main():
                     assert sql("SELECT COUNT(*) FROM fresh.admin_bootstrap;") == "0"
                 print("PASS: bootstrap failure rolls back, retry succeeds, username conflict is not promoted", flush=True)
                 run_login_checks(admin, sql, signing_key.public_key(), root)
+                run_user_checks(admin, sql)
             except Exception:
                 for log in root.glob("*.log"):
                     print(f"--- {log.name} ---\n{log.read_text(encoding='utf-8', errors='replace')[-6000:]}")

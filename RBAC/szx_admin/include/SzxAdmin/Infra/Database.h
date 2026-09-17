@@ -16,6 +16,11 @@ namespace SZX::ADMIN::AUTH
 class LoginRepository;
 }
 
+namespace SZX::ADMIN::USER
+{
+class UserRepository;
+}
+
 namespace SZX::ADMIN::INFRA
 {
 struct DatabaseConfig final
@@ -73,6 +78,12 @@ public:
 
     /** Borrow the login repository for this connection's transaction lifetime. */
     [[nodiscard]] virtual auto loginRepository() noexcept -> AUTH::LoginRepository *
+    {
+        return nullptr;
+    }
+
+    /** Borrow the user repository for this connection's transaction lifetime. */
+    [[nodiscard]] virtual auto userRepository() noexcept -> USER::UserRepository *
     {
         return nullptr;
     }

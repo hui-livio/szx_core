@@ -129,6 +129,30 @@ TEST(AdminHttpIntegrationTest, PreservesHealthRoutesRequestIdsAndBusinessFailure
     EXPECT_TRUE(transport.stop().ok);
 }
 
+TEST(AdminHttpIntegrationTest, ReusesNetworkResponseHeadersWithoutCaseSensitiveDuplicates)
+{
+    HttpTransport transport(testConfig());
+    ASSERT_TRUE(
+        transport
+            .registerApiRoute("GET", "/response-headers",
+                              [](const auto &)
+                              {
+                                  return SZX::NETWORK::HttpServerResponse{
+                                      .body    = "payload",
+                                      .headers = {{"content-type", "text/plain"}, {"x-request-id", "untrusted-handler-id"}}};
+                              })
+            .ok);
+    ASSERT_TRUE(transport.start().ok);
+    const auto response = request(transport.port(), "GET", "/api/v1/response-headers", {}, idHeader);
+    EXPECT_EQ(status(response), 200);
+    EXPECT_EQ(body(response), "payload");
+    EXPECT_NE(response.find("text/plain"), response.npos);
+    EXPECT_EQ(response.find("application/json"), response.npos);
+    EXPECT_EQ(response.find("untrusted-handler-id"), response.npos);
+    EXPECT_NE(response.find("test-id"), response.npos);
+    EXPECT_TRUE(transport.stop().ok);
+}
+
 TEST(AdminHttpIntegrationTest, FormatsEarlyBodyLimitAndProtocolFailuresThroughInjectedCallback)
 {
     auto config                = testConfig();

@@ -32,7 +32,7 @@ auto positiveInteger(std::string_view text, std::uint32_t maximum) -> std::optio
     return parsed;
 }
 
-auto responseHeaders(std::string_view requestId) -> std::map<std::string, std::string>
+auto responseHeaders(std::string_view requestId) -> SZX::NETWORK::HttpHeaders
 {
     return {{"Content-Type", "application/json"},
             {std::string{kRequestIdHeader}, std::string{requestId}},

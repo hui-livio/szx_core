@@ -92,6 +92,37 @@ auto LoginService::initialize() -> Result<void>
     }
 }
 
+auto LoginService::verifyAccess(std::string_view accessToken) -> Result<AccessClaims>
+{
+    try
+    {
+        if (!initialized_)
+            return failed<AccessClaims>(ErrorCode::ServiceUnavailable);
+        const auto claims = jwt_.verify(accessToken);
+        if (!claims.ok || claims.value.subject.empty())
+            return failed<AccessClaims>(ErrorCode::AuthRequired);
+        return Result<AccessClaims>::Success({.subject = claims.value.subject, .authzVersion = claims.value.authzVersion});
+    } catch (...)
+    {
+        return failed<AccessClaims>(ErrorCode::InternalFailure);
+    }
+}
+
+auto LoginService::admitCredentialIssue(const std::string &peer) -> Result<void>
+{
+    try
+    {
+        if (!initialized_)
+            return failed<void>(ErrorCode::ServiceUnavailable);
+        if (peer.empty() || peer.size() > 45)
+            return failed<void>(ErrorCode::ValidationError);
+        return admit(peer) ? Result<void>::Success() : failed<void>(ErrorCode::RateLimited);
+    } catch (...)
+    {
+        return failed<void>(ErrorCode::InternalFailure);
+    }
+}
+
 auto LoginService::admit(const std::string &peer) -> bool
 {
     std::lock_guard lock(rateMutex_);

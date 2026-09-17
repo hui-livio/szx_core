@@ -32,9 +32,9 @@ auto LoginService::changePassword(const ChangePasswordInput &input) -> Result<Ch
             input.version > static_cast<std::uint32_t>((std::numeric_limits<int>::max)()) || input.peerAddress.empty() ||
             input.peerAddress.size() > 45)
             return failed<ChangePasswordResult>(ErrorCode::ValidationError);
-        const auto claims = jwt_.verify(input.accessToken);
+        const auto claims = verifyAccess(input.accessToken);
         if (!claims.ok)
-            return failed<ChangePasswordResult>(ErrorCode::AuthRequired);
+            return Result<ChangePasswordResult>::Failure(claims.error, {});
         if (!admit(input.peerAddress))
             return failed<ChangePasswordResult>(ErrorCode::RateLimited);
         ChangePasswordResult output;
@@ -107,7 +107,7 @@ auto LoginService::changePassword(const ChangePasswordInput &input) -> Result<Ch
                 const auto saved = repository->saveState(user);
                 if (!saved.ok)
                     return saved;
-                const auto revoked = repository->revokeRefresh(user.id, now);
+                const auto revoked = repository->revokeRefresh(user.id, now, "password_changed");
                 if (!revoked.ok)
                     return revoked;
                 const auto audited = repository->insertAudit(event);

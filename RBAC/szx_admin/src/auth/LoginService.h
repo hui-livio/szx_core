@@ -69,6 +69,13 @@ struct ChangePasswordResult
     int authzVersion{};
 };
 
+/** Access JWT claims needed by protected endpoints. */
+struct AccessClaims
+{
+    std::string subject;
+    std::uint64_t authzVersion{};
+};
+
 /** NFC identifier normalization; usernames additionally use invariant lowercase. */
 [[nodiscard]] auto canonicalIdentifier(std::string_view input, bool username) -> SZX::COMMON::Result<std::string>;
 
@@ -86,6 +93,12 @@ public:
     [[nodiscard]] auto refresh(const CookieSessionInput &input) -> SZX::COMMON::Result<LoginSession>;
     /** Idempotently revoke the cookie's family. Already-issued access JWTs retain their normal lifetime. */
     [[nodiscard]] auto logout(const CookieSessionInput &input) -> SZX::COMMON::Result<void>;
+    /** Verify signature, issuer/audience and validity window only. Callers must still check the
+     * database user status and authz_version, ideally inside their own transaction. */
+    [[nodiscard]] auto verifyAccess(std::string_view accessToken) -> SZX::COMMON::Result<AccessClaims>;
+    /** Apply the shared per-peer authentication budget before issuing a credential.
+     * Call only after checking the actor's current database permissions. */
+    [[nodiscard]] auto admitCredentialIssue(const std::string &peer) -> SZX::COMMON::Result<void>;
     [[nodiscard]] auto config() const noexcept -> const LoginConfig &
     {
         return config_;

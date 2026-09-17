@@ -20,7 +20,8 @@ public:
         -> SZX::COMMON::Result<std::optional<AUTH::LoginUser>> override;
     auto saveState(const AUTH::LoginUser &user) -> SZX::COMMON::Result<void> override;
     auto findById(const std::string &id) -> SZX::COMMON::Result<std::optional<AUTH::LoginUser>> override;
-    auto revokeRefresh(const std::string &userId, const std::string &now) -> SZX::COMMON::Result<void> override;
+    auto revokeRefresh(const std::string &userId, const std::string &now, const std::string &reason)
+        -> SZX::COMMON::Result<void> override;
     auto insertRefresh(const AUTH::LoginRefresh &token) -> SZX::COMMON::Result<void> override;
     auto findRefresh(const std::string &hash, bool lock) -> SZX::COMMON::Result<std::optional<AUTH::LoginRefresh>> override;
     auto saveRefresh(const AUTH::LoginRefresh &token) -> SZX::COMMON::Result<void> override;

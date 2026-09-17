@@ -2,6 +2,7 @@
 
 #include "Result.hpp"
 #include "SzxAdmin/Infra/ServerConfig.h"
+#include "SzxNetwork/HttpServer.h"
 
 #include <cstdint>
 #include <functional>
@@ -28,12 +29,8 @@ struct HttpRequest final
     [[nodiscard]] auto header(std::string_view name) const noexcept -> std::optional<std::string_view>;
 };
 
-struct HttpResponse final
-{
-    int statusCode{200};
-    std::string body;
-    std::map<std::string, std::string> headers;
-};
+// Responses carry no admin-only context; reuse the network contract directly.
+using HttpResponse = SZX::NETWORK::HttpServerResponse;
 
 using HttpHandler = std::function<HttpResponse(const HttpRequest &)>;
 
