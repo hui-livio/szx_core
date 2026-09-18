@@ -1,11 +1,11 @@
 szx_add_libhv()
-add_library(szx_network SHARED src/HttpServer.cc src/HttpClient.cc src/NetworkTypes.cc src/detail/HttpTransport.cc)
+add_library(szx_network SHARED src/HttpServer.cc src/HttpClient.cc src/Tcp.cc src/NetworkTypes.cc src/detail/HttpTransport.cc)
 if(SZX_NETWORK_ENABLE_HTTP_CLIENT)
     target_sources(szx_network PRIVATE src/detail/HttpClientTransport.cc)
 endif()
 add_library(szx::network ALIAS szx_network)
 set_target_properties(szx_network PROPERTIES EXPORT_NAME network
-    VERSION 1.3.0 SOVERSION 1 CXX_VISIBILITY_PRESET hidden VISIBILITY_INLINES_HIDDEN YES)
+    VERSION 1.4.0 SOVERSION 1 CXX_VISIBILITY_PRESET hidden VISIBILITY_INLINES_HIDDEN YES)
 target_include_directories(szx_network PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)

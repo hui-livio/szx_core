@@ -51,7 +51,7 @@ else()
     set(_SZX_COMPONENTS_DEFAULT_COMPRESSION OFF)
 endif()
 
-option(SZX_COMPONENTS_BUILD_NETWORK "Build the HTTP network component" ${SZX_COMPONENTS_STANDALONE_BUILD})
+option(SZX_COMPONENTS_BUILD_NETWORK "Build the HTTP/TCP network component" ${SZX_COMPONENTS_STANDALONE_BUILD})
 option(SZX_COMPONENTS_BUILD_RBAC "Build the RBAC admin backend (requires network)" ${SZX_COMPONENTS_STANDALONE_BUILD})
 option(SZX_COMPONENTS_BUILD_TESTS "Build component smoke tests" ${_SZX_COMPONENTS_DEFAULT_TESTS})
 option(SZX_COMPONENTS_INSTALL "Generate install tree and package config" ${_SZX_COMPONENTS_DEFAULT_INSTALL})

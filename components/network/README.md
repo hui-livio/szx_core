@@ -1,6 +1,6 @@
-# szx::network（HTTP 服务端与客户端）
+# szx::network（HTTP / TCP 服务端与客户端）
 
-发布 HTTP/1.1 服务端 `HttpServer` 与同步/异步客户端 `HttpClient`，不发布 TCP/UDP、WebSocket 或共享 `EventLoopGroup`。公共 API 位于 `SZX::NETWORK::inline v1`；默认写 `SZX::NETWORK::HttpServer`，也可显式写 `SZX::NETWORK::v1::HttpServer`。使用方需要与 DLL 保持相同编译器、STL 和运行时配置。
+发布 HTTP/1.1 服务端 `HttpServer`、同步/异步客户端 `HttpClient`，以及 hv 事件驱动的 TCP 薄封装 `TcpServer` / `TcpClient`。不发布 UDP、WebSocket 或共享 `EventLoopGroup`。公共 API 位于 `SZX::NETWORK::inline v1`；默认写 `SZX::NETWORK::HttpServer`，也可显式写 `SZX::NETWORK::v1::HttpServer`。使用方需要与 DLL 保持相同编译器、STL 和运行时配置。
 
 组件 1.1.0 在 v1 中兼容新增行为注入、连接限制与独立文件 handler 接口，已有公共结构体布局和函数签名保持不变，SOVERSION 仍为 1。
 
@@ -26,6 +26,151 @@ cmake -S . -B build -DSZX_COMPONENTS_BUILD_NETWORK=ON
 cmake --build build --target test_modules_network -j 8
 ctest --test-dir build -C RelWithDebInfo -R '^test_modules_network$' --output-on-failure
 ```
+
+## TCP 服务端与客户端
+
+组件 1.4.0 在 v1 中兼容新增 `TcpServer`、`TcpClient`、`TcpFraming` 和事件回调，SOVERSION 保持 1，现有 HTTP API/布局/错误码不变。TCP 不受 `SZX_NETWORK_ENABLE_HTTP_CLIENT` 开关影响。
+
+这是 hv 的薄封装：每个端点只使用 hv 的一个 IO 线程，不另建线程池、不复制拆包器。`start()` / `stop()` 管理生命周期；TCP 连接和收包由回调驱动，不使用 HTTP 请求式 future。
+
+| 接口 | 行为 |
+| --- | --- |
+| `TcpServer::Create(options, callbacks)` | 创建监听器配置，默认回环地址，端口 0 支持动态分配 |
+| `TcpServer::start/stop/running/port` | 启停、查询状态和实际监听端口；stop 后可重启 |
+| `TcpServer::getChannelById(id)` / `connectionNum()` | 查找连接对象、查询连接数；旧连接 ID 不会用于重启后的新连接 |
+| `TcpServer::broadcast(data)` / `forEach(visitor)` | 向当前连接广播，或遍历连接句柄快照；visitor 可调用 send/disconnect |
+| `TcpHandle::send/write`、`disconnect/close`、`setContext/context` | 单连接发送、关闭、上下文操作，由连接对象负责 |
+| `TcpClient::Create(options, callbacks)` | 指定 remote、连接超时和分帧方式 |
+| `TcpClient::start/stop/connected` | start 发起异步连接；连接成功通过 onConnection 通知 |
+| `TcpClient::send(data)` / `disconnect()` | 向当前连接发送或断开；不自动重连 |
+| `TcpClient::setContext/context` | 为当前连接绑定/读取 `shared_ptr<void>` 上下文 |
+| `TcpServerCallbacks::onConnection(handle)` | 服务端连接建立/断开，通过 handle.isConnected() 区分 |
+| `TcpClientCallbacks::onConnection(connected)` | 客户端连接建立/断开，无连接句柄 |
+| `onMessage(handle, bytes)` / `onMessage(bytes)` | 服务端/客户端收包，Raw 为任意字节块 |
+| `onError(handle, error)` / `onError(error)` | 服务端/客户端错误，使用 NetworkError |
+
+分帧直接映射到 hv 的 `setUnpack`：Raw、定长、1..8 字节分隔符、长度字段。长度字段支持 1..3 字节大/小端整数，帧长度为 `bodyOffset + 字段值`，接收保留帧头/分隔符。当前 hv 的 4 字节/varint 长度计算存在溢出边界，封装不开放这些配置，不修改 hv 源码。发送不自动添加帧头或分隔符。
+
+`maxFrameBytes` 限制接收帧；`maxPendingBytes` 限制每连接尚未写入系统的发送字节，包含排队任务和 hv 写缓冲。超额发送返回 SendQueueFull。send 成功仅表示任务被接收，不保证远端已收到；关闭可能丢弃未发送数据。
+
+回调中的 `string_view` 仅在本次调用期间有效。可以在回调内 send/disconnect，但不可阻塞、start/stop 或析构端点。回调异常会报告 Internal 并关闭连接，onError 的异常被拦截。生命周期操作须串行，send/disconnect 可并发；stop 返回后不会再调用业务回调，主动停止不保证逐连接通知。TCP 当前不提供 TLS、自动重连或半关闭。
+
+TCP 回调全部采用纯虚接口：服务端 `TcpServerCallbacks`、客户端 `TcpClientCallbacks`、连接遍历 `TcpChannelVisitor`。业务必须实现所有事件方法，不关心的事件可显式实现为空。`Create` 接收 `shared_ptr` 并持有回调对象至端点销毁；省略回调表示不接收事件。回调对象不应强引用端点，避免循环所有权。两个端点使用各自独立的回调接口和对象。
+
+服务端连接回调接收 `TcpHandle`；客户端只有一条连接，回调无需句柄：`onConnection(bool)`、`onMessage(string_view)`、`onError(NetworkError)`。发送、断开和上下文操作直接通过 `TcpClient` 完成。
+
+```cpp
+#include <SzxNetwork/TcpServer.h>
+#include <SzxNetwork/TcpClient.h>
+using namespace SZX::NETWORK;
+
+struct Session { std::string name; };
+class EchoEvents final : public TcpServerCallbacks {
+public:
+    void onConnection(const TcpHandle &connection) override {
+        if (connection.isConnected()) {
+            auto result = connection.newContextPtr<Session>(Session{"guest"});
+            if (!result.ok) (void)connection.close();
+        }
+    }
+    void onMessage(const TcpHandle &connection, std::string_view frame) override {
+        auto session = connection.getContextPtr<Session>();
+        if (!session.ok || !session.value) return;
+        auto sent = connection.write(std::string(frame));
+        if (!sent.ok) (void)connection.close();
+    }
+    void onError(const TcpHandle &, NetworkError error) override {
+        // 在业务日志中记录 error。
+    }
+};
+
+// 在应用函数中创建并持有 server：
+auto created = TcpServer::Create(
+    {.listen = {"127.0.0.1", 9000}, .framing = {.mode = TcpFrameMode::Delimiter}},
+    std::make_shared<EchoEvents>());
+if (!created.ok) return;
+auto server = std::move(created.value);
+auto started = server->start();
+if (!started.ok) return;
+// 应用运行期间保留 server；退出时在回调外调用 stop()。
+```
+
+客户端示例：回调对象中的非拥有指针在 `start()` 前赋值，端点析构会先停止并等待回调退出。
+
+```cpp
+class ClientEvents final : public TcpClientCallbacks {
+public:
+    TcpClient *client = nullptr; // 不拥有端点。
+    void onConnection(bool connected) override {
+        if (connected) {
+            auto sent = client->send("hello\n");
+            if (!sent.ok) (void)client->disconnect();
+        }
+    }
+    void onMessage(std::string_view frame) override {
+        // 处理响应；需要保存时复制 frame。
+    }
+    void onError(NetworkError error) override {
+        // 在业务日志中记录 error。
+    }
+};
+auto events = std::make_shared<ClientEvents>();
+auto created = TcpClient::Create(
+    {.remote = {"127.0.0.1", 9000}, .framing = {.mode = TcpFrameMode::Delimiter}}, events);
+if (!created.ok) return;
+auto client = std::move(created.value);
+events->client = client.get();
+auto started = client->start();
+if (!started.ok) return;
+// 应用运行期间保留 client；退出时在回调外调用 stop()。
+```
+
+按 ID 操作连接，先查找再交给连接对象：
+
+```cpp
+auto found = server->getChannelById(id);
+if (!found.ok) return;
+auto &connection = found.value;
+auto sent = connection.write("hello\n");
+if (!sent.ok) (void)connection.close();
+```
+
+遍历与广播：
+
+```cpp
+class PingVisitor final : public TcpChannelVisitor {
+public:
+    void onChannel(const TcpHandle &connection) override {
+        auto sent = connection.write("ping\n");
+        if (!sent.ok) (void)connection.close();
+    }
+};
+PingVisitor visitor;
+auto visited = server->foreachChannel(visitor);
+auto sent = server->broadcast("notice\n");
+// 检查 visited / sent 的 Result。
+```
+
+| libhv 常用接口 | 本封装 |
+| --- | --- |
+| `channel->isConnected()` | `handle.isConnected()`，连接状态快照 |
+| `channel->write(data)` / `close()` | `handle.write(data)` / `close()`，返回 Result；发送为排队，关闭为异步关闭 |
+| `channel->peeraddr()` | `handle.peeraddr()`，返回 `Result<Endpoint>`（host/port 分离） |
+| `newContextPtr<T>()` / `getContextPtr<T>()` | 句柄同名模板，返回 `Result<shared_ptr<T>>`；new 支持构造参数 |
+| `setContextPtr/contextPtr/deleteContextPtr` | 句柄同名共享上下文接口，返回 Result |
+| `server.getChannelById(id)` / `connectionNum()` | 同名接口，返回 Result；连接数排除关闭中的连接，停止时为 0 |
+| `server.foreachChannel(fn)` / `broadcast(data)` | `foreachChannel(TcpChannelVisitor&)` / `broadcast(data)`；遍历回调在锁外执行 |
+| `client.send(data)` / `isConnected()` | 直接操作 `TcpClient`；客户端不公开连接句柄 |
+
+`TcpServer` 管理监听与连接集合，不提供按 ID 发送、关闭或操作上下文的接口。`TcpHandle` 负责单连接操作，保留 `send/disconnect/setContext/context` 及 hv 风格名称。`broadcast` 是连接集合上的批量操作，通过遍历并委托每个 `TcpHandle::send` 完成发送。上下文采用共享所有权，不提供 hv 的裸指针 `newContext/deleteContext`。句柄不延长服务端生命周期，断开通知期间仍可读取上下文，通知结束后或端点停止/销毁后操作返回 Closed。客户端上下文通过 `client.setContext/context` 操作，仅在有当前连接时有效。
+
+`forEach/foreachChannel` 同步在调用线程执行，访问器仅借用至调用返回，遍历时不持有连接表锁，允许 send/disconnect/context 操作；不允许在 visitor 内启停或析构端点。遍历使用快照，新连接不加入本轮，已断开的句柄操作返回 Closed。visitor 异常转换成失败 Result 并停止遍历。`broadcast` 对调用时未关闭的连接取快照，遍历期间连接仍可能断开；首次提交失败即返回错误，先前已接受的发送不回滚；空连接集合返回成功。
+
+关闭请求生效后，尚未开始分发的消息（包括本次读取中的剩余帧）不再进入业务回调；已经执行中的回调不会被中断。异常关闭也遵循此规则。
+
+上下文默认为空，通过 `shared_ptr<void>` 共享所有权；设置空指针清除上下文。断开通知结束后释放连接持有的上下文引用，无需等待客户端 stop；外部仍持有 shared_ptr 时对象继续存活。上下文槽位读写有锁保护，对象内容的并发读写由业务同步，析构器不得抛异常。类型转换需与设置时的类型一致。
+
+创建与配置通过 `Create(options, callbacks)`，分帧由 options 映射到 hv `setUnpack`。不开放运行中直接修改回调、底层 fd/event loop 或 hv 对象。当前未封装自动重连、TLS、写完成回调及多 IO 线程配置。
 
 ## HTTP 客户端
 
