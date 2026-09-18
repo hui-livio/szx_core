@@ -53,7 +53,12 @@ ComboBox {
     property bool filterOnEdit: true
     property bool rememberSearchText: true
     property string searchText: ""
+    property bool acceptFreeText: false
+    signal editCommitted(string text)
     readonly property int filteredCount: filteredModel.count
+    property bool _explicitPopupSelection: false
+    property bool _textEdited: false
+    property string _pendingEditText: ""
 
     activeFocusOnTab: true
 
@@ -123,6 +128,7 @@ ComboBox {
         else
             nextIndex = Math.max(0, Math.min(listView.count - 1, nextIndex + step));
         listView.currentIndex = nextIndex;
+        root._explicitPopupSelection = true;
         listView.positionViewAtIndex(nextIndex, ListView.Contain);
     }
 
@@ -134,11 +140,19 @@ ComboBox {
                             ? filteredModel.get(index).sourceIndex
                             : index;
         root.currentIndex = sourceIndex;
+        root._textEdited = false;
+        if (root.acceptFreeText)
+            root.editCommitted(root.textAt(sourceIndex));
         root.activated(sourceIndex);
         root.popup.close();
     }
 
     function acceptPopupCurrentIndex() {
+        if (root.acceptFreeText && (!root.popup.visible || !root._explicitPopupSelection)) {
+            root.commitEdit();
+            root.popup.close();
+            return;
+        }
         if (!root.popup.visible) {
             root.popup.open();
             return;
@@ -146,6 +160,21 @@ ComboBox {
         if (listView.currentIndex < 0 && listView.count > 0)
             listView.currentIndex = 0;
         root.activatePopupIndex(listView.currentIndex);
+    }
+
+    function commitEdit() {
+        if (!root.acceptFreeText || !root._textEdited)
+            return;
+        root._textEdited = false;
+        root.editCommitted(root._pendingEditText);
+    }
+
+    function resetEditText(text) {
+        root._textEdited = false;
+        root._pendingEditText = "";
+        root._explicitPopupSelection = false;
+        root.searchText = "";
+        root.editText = text;
     }
 
     onEditableChanged: root.rebuildFilter()
@@ -204,9 +233,14 @@ ComboBox {
                 return;
             if (root.rememberSearchText)
                 root.searchText = text;
+            root._textEdited = true;
+            root._pendingEditText = text;
+            root._explicitPopupSelection = false;
             if (!root.popup.visible)
                 root.popup.open();
         }
+
+        onEditingFinished: root.commitEdit()
 
         Keys.onPressed: event => {
             if (!root.editable)
@@ -390,6 +424,7 @@ ComboBox {
         }
 
         onOpened: {
+            root._explicitPopupSelection = false;
             root.restoreSearchText();
             root.rebuildFilter();
             root.resetPopupCurrentIndex();
