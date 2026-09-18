@@ -122,7 +122,10 @@ function(szx_add_test)
         set_tests_properties(${ARG_NAME} PROPERTIES WORKING_DIRECTORY "${_working_directory}" LABELS "${_labels}" ENVIRONMENT "PATH=${_runtime_path_escaped}")
     else()
         include(GoogleTest)
+        # GoogleTest serializes PROPERTIES through another CMake list before
+        # generating set_tests_properties; preserve PATH's literal separators.
+        string(REPLACE ";" "\\\\;" _discovery_runtime_path "${_runtime_path}")
         gtest_discover_tests(${ARG_NAME} DISCOVERY_MODE PRE_TEST WORKING_DIRECTORY "${_working_directory}"
-            PROPERTIES LABELS "${_labels}" ENVIRONMENT "PATH=${_runtime_path_escaped}")
+            PROPERTIES LABELS "${_labels}" ENVIRONMENT "PATH=${_discovery_runtime_path}")
     endif()
 endfunction()
