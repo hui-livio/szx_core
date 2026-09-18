@@ -9,7 +9,7 @@ include_guard(GLOBAL)
 set(SZX_LIBHV_ROOT "${CMAKE_CURRENT_LIST_DIR}/../third_party/libhv" CACHE PATH
     "Bundled libhv source root")
 
-option(SZX_NETWORK_ENABLE_HTTP_CLIENT "Build libhv with HTTP client support" OFF)
+option(SZX_NETWORK_ENABLE_HTTP_CLIENT "Build HTTP client support" ON)
 option(SZX_NETWORK_ENABLE_TLS "Build libhv with OpenSSL TLS support" OFF)
 
 function(szx_add_libhv)
@@ -42,9 +42,9 @@ function(szx_add_libhv)
     set(WITH_PROTOCOL OFF)
     set(WITH_MQTT OFF)
     set(WITH_KCP OFF)
+    set(WITH_CURL OFF) # The adapter relies on libhv's native transport and TLS verification.
 
-    # Off until szx::network actually ships HttpClient, so the admin service
-    # keeps its current footprint.
+    # Applications may explicitly disable the client backend to minimize footprint.
     if(SZX_NETWORK_ENABLE_HTTP_CLIENT)
         set(WITH_HTTP_CLIENT ON)
     else()

@@ -1,7 +1,9 @@
 #include <type_traits>
+#include "SzxNetwork/HttpClient.h"
 #include "SzxNetwork/HttpServer.h"
 
 static_assert(std::is_same_v<SZX::NETWORK::HttpServer, SZX::NETWORK::v1::HttpServer>);
+static_assert(std::is_same_v<SZX::NETWORK::HttpClient, SZX::NETWORK::v1::HttpClient>);
 
 int main()
 {
@@ -30,6 +32,18 @@ int main()
         return started.error;
     if (!server.running() || server.port() == 0)
         return 100;
+    auto client = SZX::NETWORK::HttpClient::Create();
+    if (client.ok)
+    {
+        auto reply = client.value->get("http://127.0.0.1:" + std::to_string(server.port()) + "/hello");
+        if (!reply.ok || reply.value.text() != "hello")
+            return 102;
+        auto pending = client.value->getAsync("http://127.0.0.1:" + std::to_string(server.port()) + "/hello");
+        if (!pending.ok || !pending.value.get().ok)
+            return 103;
+    }
+    else if (client.error != static_cast<int>(SZX::NETWORK::NetworkError::HttpClientUnavailable))
+        return 104;
     auto stopped = server.stop();
     return stopped.ok ? 0 : stopped.error;
 }

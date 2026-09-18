@@ -1,14 +1,16 @@
-# szx::network 初版（HTTP 服务端）
+# szx::network（HTTP 服务端与客户端）
 
-本版仅发布 HTTP/1.1 服务端 `HttpServer`，不发布 HTTP 客户端、TCP/UDP、WebSocket 或共享 `EventLoopGroup`。公共 API 位于 `SZX::NETWORK::inline v1`；默认写 `SZX::NETWORK::HttpServer`，也可显式写 `SZX::NETWORK::v1::HttpServer`。这是新增组件，没有旧版 ABI 需要迁移。使用方需要与 DLL 保持相同编译器、STL 和运行时配置。
+发布 HTTP/1.1 服务端 `HttpServer` 与同步/异步客户端 `HttpClient`，不发布 TCP/UDP、WebSocket 或共享 `EventLoopGroup`。公共 API 位于 `SZX::NETWORK::inline v1`；默认写 `SZX::NETWORK::HttpServer`，也可显式写 `SZX::NETWORK::v1::HttpServer`。使用方需要与 DLL 保持相同编译器、STL 和运行时配置。
 
 组件 1.1.0 在 v1 中兼容新增行为注入、连接限制与独立文件 handler 接口，已有公共结构体布局和函数签名保持不变，SOVERSION 仍为 1。
 
 组件 1.2.0 在 v1 中兼容新增 `useBeforeRouting()`：调用方可注入路由匹配前的请求改写或短路逻辑。已有 `use()` 继续在路由选定之后执行，仍可读取 `pathParams`。网络库默认保留原始路径；是否合并连续斜杠由应用决定。
 
+组件 1.3.0 在 v1 中兼容新增 `HttpClient`、`HttpClientResponse`、请求选项及 `http` 快捷函数；SOVERSION 仍为 1。已有服务端签名和 DTO 布局不变，旧错误码不重编号，追加 ResourceExhausted=19、HttpClientUnavailable=20。
+
 ## 构建与链接
 
-独立构建默认开启；作为子项目默认关闭。使用 `-DSZX_COMPONENTS_BUILD_NETWORK=ON` 启用，链接 `szx::network`。组件是共享库，PUBLIC 依赖只有 `szx::common`，PRIVATE 链接已有 bundled `hv_static`，公共头文件与安装导出不依赖 libhv。`SZX_NETWORK_ENABLE_HTTP_CLIENT` 仍默认为 OFF，该后端选项不代表本版提供 HttpClient 门面。
+独立构建默认开启；作为子项目默认关闭。使用 `-DSZX_COMPONENTS_BUILD_NETWORK=ON` 启用，链接 `szx::network`。组件是共享库，PUBLIC 依赖只有 `szx::common`，PRIVATE 链接已有 bundled `hv_static`，公共头文件与安装导出不依赖 libhv。`SZX_NETWORK_ENABLE_HTTP_CLIENT` 默认 ON；旧构建目录保留缓存值，需要显式开启。关闭时保留客户端导出符号，但调用返回 HttpClientUnavailable。
 
 私有 `HttpTransport` 复用 libhv 的 TCP 服务、事件循环及已有 C HTTP 解析器，直接增量解析请求，并在接收报文体前检查长度。适配逻辑全部位于 `components/network`，不修改或在构建时修补 libhv 源码，也不新增解析器依赖。支持请求分片和 HEAD/GET 流水线，C 解析回调内的 C++ 异常统一拦截。
 
@@ -25,7 +27,61 @@ cmake --build build --target test_modules_network -j 8
 ctest --test-dir build -C RelWithDebInfo -R '^test_modules_network$' --output-on-failure
 ```
 
-## 最小示例
+## HTTP 客户端
+
+接口接近 Python requests：`http::get/post/put/patch/del/head/options` 和 `HttpClient` 对应成员方法。DELETE 使用 C++ 合法名称 `del`。通用入口为 `request(method, url, options)`，方法名使用大写。JSON 类型复用 `SZX::COMMON::Json`。
+
+```cpp
+#include "SzxNetwork/HttpClient.h"
+using namespace SZX::NETWORK;
+
+auto reply = http::get("http://127.0.0.1:8080/users",
+                      {.params = {{"page", "1"}, {"search", "Alice Smith"}}});
+if (!reply.ok) return reply.error;          // DNS、连接、超时等传输失败
+if (!reply.value.ok()) return 1;            // HTTP 4xx/5xx
+auto document = reply.value.json();         // Result<Json>，显式 JSON 解析
+
+auto posted = http::post("http://127.0.0.1:8080/users",
+                        {.json = SZX::COMMON::Json{{"name", "Alice"}}});
+auto form = http::post("http://127.0.0.1:8080/form",
+                      {.form = HttpParameters{{"name", "Alice Smith"}}});
+auto binary = http::put("http://127.0.0.1:8080/file", {.data = std::string{"a\0b", 3}});
+```
+
+异步使用 future，不在 IO 线程回调用户函数，也不使用 `std::async` 的每请求线程。复用 common 线程池，以 workerCount 限制并发，以 maxPendingRequests 限制运行与排队任务总数。外层 Result 报告提交失败，future 内层 Result 报告传输结果，避免队列已满时创建伪任务。
+
+```cpp
+auto created = HttpClient::Create({.workerCount = 4, .maxPendingRequests = 64});
+if (!created.ok) return created.error;
+auto client = std::move(created.value);
+auto submitted = client->getAsync("http://127.0.0.1:8080/users");
+if (!submitted.ok) return submitted.error; // 例如 SendQueueFull
+
+// 此处可执行其他工作；UI 线程不要直接阻塞 get()。
+auto result = submitted.value.get();       // HttpClientResult；请求异常已转换为错误码
+if (!result.ok) return result.error;
+auto status = result.value.statusCode;
+auto text = result.value.text();
+```
+
+- `requestAsync/getAsync/postAsync/putAsync/patchAsync/delAsync/headAsync/optionsAsync` 均返回 `Result<HttpClientFuture>`；不同请求可以并发提交。future 析构不等待，客户端析构等待已接受任务执行完毕；析构不能与提交或同步调用并发。当前不提供取消、完成回调或 coroutine awaiter。
+- URL 必须为绝对 `http://` 或 `https://`，使用 ASCII/百分号编码，不接受 URL 内凭据。params/form 按 UTF-8 字节编码，保留重复键和顺序；params 追加到现有查询串。fragment 不发送。data/json/form 最多指定一个。
+- 响应保留 `statusCode/body/headers/url/setCookies`。HTTP 4xx/5xx 不转换为传输错误；`response.ok()` 为 200..399。`text()` 返回原始字节，不自动转码；`json()` 解析失败返回 ProtocolError。头名大小写不敏感；Set-Cookie 单独保存后端规范化后的多值，不自动管理 Cookie jar。
+- 默认连接期限 5 秒、发送/接收期限 30 秒；均非零。后台排队及系统 DNS 解析不计入这些期限；连接期限受 libhv 上限约束。超时不自动重试。
+- 默认响应体上限 16 MiB，超限返回 MessageTooLarge；以流式回调限制正文累积。libhv 解析器仍可能额外预留最多 16 MiB 接收缓冲。原始正文不自动 gzip/br 解压。
+- 不自动跳转、不自动重试、不复用连接、不读取代理环境变量。3xx 的 Location 由调用方决定如何处理；认证等敏感头不会自动转发至其他地址。Host/Connection/Content-Length/Transfer-Encoding/Expect/Upgrade 由封装管理，禁止注入。
+- `SZX_NETWORK_ENABLE_TLS=ON` 时支持 HTTPS，默认同时验证证书链和目标主机名/IP。可用 caFile 指定 PEM 信任库；否则使用 OpenSSL 默认信任库（不等同于 Windows 证书库）。verifyPeer=false 显式关闭验证。TLS OFF 返回 TlsUnavailable。
+- 传输及解析失败使用固定 NetworkError，诊断字符串为空；不返回第三方异常文本。异步提交资源不足返回 ResourceExhausted，运行与排队总数到达上限返回 SendQueueFull。
+
+TLS 回归通过临时 CA、证书和回环 HTTPS 服务验证，要求 Python cryptography：
+
+```powershell
+cmake -S . -B build -DSZX_NETWORK_ENABLE_HTTP_CLIENT=ON -DSZX_NETWORK_ENABLE_TLS=ON
+cmake --build build --target test_modules_network
+python -B scripts/test_network_tls.py --test build/test/RelWithDebInfo/test_modules_network.exe
+```
+
+## 服务端最小示例
 
 ```cpp
 #include "SzxNetwork/HttpServer.h"
@@ -99,7 +155,9 @@ RBAC admin 使用这些扩展点：`useBeforeRouting()` 注入路径归一化，
 
 在 Windows x64 / MSVC 19.44 / RelWithDebInfo / TLS OFF 下，21 个网络用例全部通过，覆盖真实回环连接、路由参数隔离、二进制 body、中间件顺序和短路、路由前改写、提前 413、超大 chunk 长度与数值溢出拒绝、请求行/头/体分片、大小写混合的 100-continue、HEAD/GET 流水线、报文定界与尾部字段隔离、目标路径解析、异常隔离、错误响应注入、连接上限、重启、端口冲突、并发、停止等待与静态目录约束。已有 `test_rbac_auth`、`test_rbac_infra`、`test_rbac_database` 3 组测试通过，其中 infra 包含 6 个 admin 真实 TCP 集成用例；`szx_admin_service` 构建通过。
 
-安装树独立消费测试位于 `tests/network/package`，验证 `find_package(... COMPONENTS Network)`、默认/显式 v1 类型和启动/停止。导出依赖只有 `szx::common`；安装目录没有 `hv/` 头文件，DLL 不依赖 libhv DLL，导出符号为网络 v1 API。仓库格式化和差异空白检查通过。TLS ON、真实证书握手及非 Windows 平台尚未验证。
+安装树独立消费测试位于 `tests/network/package`，验证 `find_package(... COMPONENTS Network)`、默认/显式 v1 类型、启动/停止以及同步/异步客户端。导出依赖只有 `szx::common`；安装目录没有 `hv/` 头文件，DLL 不依赖 libhv DLL，导出符号为网络 v1 API。非 Windows 平台尚未验证。
+
+1.3.0 新增客户端回环测试覆盖查询参数、JSON/表单/二进制正文、七种方法、HTTP 错误与重定向、非法输入、大小上限、超时、异步并发、队列满和析构等待。`scripts/test_network_http.py` 用独立原始 TCP 服务覆盖 chunked、EOF 定界、截断、非法报文和多个 Cookie；`scripts/test_network_tls.py` 使用临时证书覆盖不可信 CA、主机名/IP 不匹配、可信 CA 和异步 HTTPS。直接运行 CTest 时两个依赖外部 fixture 的用例会跳过，需单独执行上述脚本。
 
 ```powershell
 cmake --install build --config RelWithDebInfo --prefix "$PWD/build/network-install"
