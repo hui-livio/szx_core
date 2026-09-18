@@ -1,4 +1,4 @@
-szx_add_test(NAME test_modules_network SOURCES HttpServer_test.cc HttpClient_test.cc Tcp_test.cc LIBS szx::network LABELS network)
+szx_add_test(NAME test_modules_network SOURCES HttpServer_test.cc HttpClient_test.cc Tcp_test.cc WebSocket_test.cc LIBS szx::network LABELS network)
 if(TARGET test_modules_network)
     if(WIN32)
         target_link_libraries(test_modules_network PRIVATE ws2_32)

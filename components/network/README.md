@@ -1,6 +1,6 @@
-# szx::network（HTTP / TCP 服务端与客户端）
+# szx::network（HTTP / TCP / WebSocket）
 
-发布 HTTP/1.1 服务端 `HttpServer`、同步/异步客户端 `HttpClient`，以及 hv 事件驱动的 TCP 薄封装 `TcpServer` / `TcpClient`。不发布 UDP、WebSocket 或共享 `EventLoopGroup`。公共 API 位于 `SZX::NETWORK::inline v1`；默认写 `SZX::NETWORK::HttpServer`，也可显式写 `SZX::NETWORK::v1::HttpServer`。使用方需要与 DLL 保持相同编译器、STL 和运行时配置。
+发布 HTTP/1.1 服务端 `HttpServer`、同步/异步客户端 `HttpClient`，以及 hv 事件驱动的 TCP 薄封装 `TcpServer` / `TcpClient`。同时提供 `WebSocketServer` / `WebSocketClient`；不发布 UDP 或共享 `EventLoopGroup`。公共 API 位于 `SZX::NETWORK::inline v1`；默认写 `SZX::NETWORK::HttpServer`，也可显式写 `SZX::NETWORK::v1::HttpServer`。使用方需要与 DLL 保持相同编译器、STL 和运行时配置。
 
 组件 1.1.0 在 v1 中兼容新增行为注入、连接限制与独立文件 handler 接口，已有公共结构体布局和函数签名保持不变，SOVERSION 仍为 1。
 
@@ -10,7 +10,7 @@
 
 ## 构建与链接
 
-独立构建默认开启；作为子项目默认关闭。使用 `-DSZX_COMPONENTS_BUILD_NETWORK=ON` 启用，链接 `szx::network`。组件是共享库，PUBLIC 依赖只有 `szx::common`，PRIVATE 链接已有 bundled `hv_static`，公共头文件与安装导出不依赖 libhv。`SZX_NETWORK_ENABLE_HTTP_CLIENT` 默认 ON；旧构建目录保留缓存值，需要显式开启。关闭时保留客户端导出符号，但调用返回 HttpClientUnavailable。
+独立构建默认开启；作为子项目默认关闭。使用 `-DSZX_COMPONENTS_BUILD_NETWORK=ON` 启用，链接 `szx::network`。组件是共享库，PUBLIC 依赖只有 `szx::common`，PRIVATE 链接已有 bundled `hv_static`，公共头文件与安装导出不依赖 libhv。`SZX_NETWORK_ENABLE_HTTP_CLIENT` 默认 ON；旧构建目录保留缓存值，需要显式开启。关闭时 HTTP 客户端调用返回 HttpClientUnavailable；WebSocket 仍可使用。
 
 私有 `HttpTransport` 复用 libhv 的 TCP 服务、事件循环及已有 C HTTP 解析器，直接增量解析请求，并在接收报文体前检查长度。适配逻辑全部位于 `components/network`，不修改或在构建时修补 libhv 源码，也不新增解析器依赖。支持请求分片和 HEAD/GET 流水线，C 解析回调内的 C++ 异常统一拦截。
 
@@ -26,6 +26,83 @@ cmake -S . -B build -DSZX_COMPONENTS_BUILD_NETWORK=ON
 cmake --build build --target test_modules_network -j 8
 ctest --test-dir build -C RelWithDebInfo -R '^test_modules_network$' --output-on-failure
 ```
+
+## WebSocket 服务端与客户端
+
+组件 1.5.0 在 `inline v1` 中新增 WebSocket 接口，SOVERSION 保持 1，不改变已发布的 HTTP/TCP 接口。使用 hv TCP 模板管理连接与事件循环，使用 `WebSocketChannel` 发送分帧。私有 `WebSocketProtocol` 接入 hv 自带的 C HTTP/WebSocket 解析器，在帧头阶段限制消息大小，并分别保存控制帧与数据分片；不修改 hv 源码，不新增解析器依赖或任务线程池。每端点一个 hv IO 线程。
+
+| 类型 | 职责 |
+| --- | --- |
+| `WebSocketServer` | start/stop、port/running、getChannelById、connectionNum、foreachChannel、broadcast |
+| `WebSocketHandle` | id/isConnected、peeraddr/path、send/close、setContext/context/getContextPtr<T> |
+| `WebSocketClient` | start/stop、isConnected、send/close、setContext/context；不暴露连接句柄 |
+| `WebSocketServerCallbacks` | 纯虚 onConnection(handle)、onMessage(handle, bytes, type)、onError(handle, error) |
+| `WebSocketClientCallbacks` | 独立纯虚 onConnection(bool)、onMessage(bytes, type)、onError(error) |
+| `WebSocketChannelVisitor` | 纯虚 onChannel(handle)，同步遍历连接快照 |
+
+最小 echo 示例：
+
+```cpp
+#include <SzxNetwork/WebSocketServer.h>
+using namespace SZX::NETWORK;
+
+class Echo final : public WebSocketServerCallbacks {
+public:
+    void onConnection(const WebSocketHandle &connection) override {
+        // connection.isConnected() 区分升级成功和连接断开。
+    }
+    void onMessage(const WebSocketHandle &connection, std::string_view bytes,
+                   WebSocketMessageType type) override {
+        auto sent = connection.send(std::string(bytes), type);
+        if (!sent.ok) (void)connection.close();
+    }
+    void onError(const WebSocketHandle &, NetworkError error) override {
+        // 在业务日志中记录错误码。
+    }
+};
+auto created = WebSocketServer::Create({.listen={"127.0.0.1",9001}}, std::make_shared<Echo>());
+if (!created.ok) return;
+auto server = std::move(created.value);
+auto started = server->start();
+if (!started.ok) return;
+// 保留 server 至业务结束，在回调外 stop()。
+```
+
+客户端回调直接使用客户端对象：
+
+```cpp
+#include <SzxNetwork/WebSocketClient.h>
+class ClientEvents final : public WebSocketClientCallbacks {
+public:
+    WebSocketClient *client = nullptr;
+    void onConnection(bool ready) override {
+        if (ready) {
+            auto sent = client->send("hello", WebSocketMessageType::Text);
+            if (!sent.ok) (void)client->close();
+        }
+    }
+    void onMessage(std::string_view bytes, WebSocketMessageType type) override {
+        // 消息是完整消息，view 仅在当前回调期间有效。
+    }
+    void onError(NetworkError error) override {}
+};
+auto events = std::make_shared<ClientEvents>();
+auto created = WebSocketClient::Create({.url="ws://127.0.0.1:9001/echo"}, events);
+if (!created.ok) return;
+auto client = std::move(created.value);
+events->client = client.get(); // start 前赋值，非拥有指针。
+auto started = client->start();
+if (!started.ok) return;
+// start 成功仅表示启动连接；onConnection(true) 表示 WebSocket 升级成功。
+```
+
+- `send` 默认为 Text，也可选 Binary，支持空消息和内含 NUL 的二进制。hv 负责大消息发送分片，接收适配器通过 hv C 解析回调组装完整消息；类型由回调单独给出。文本内容应是有效 UTF-8，封装不转码。
+- `maxMessageBytes` 限制完整消息，默认 1 MiB，配置上限 16 MiB。接收时在帧头回调中检查声明长度与此前分片的累计长度，超限立即报告 MessageTooLarge 并断开，无须等待载荷或按声明长度预分配。控制帧另设最多 125 字节缓冲，分片中穿插 ping/pong 不影响消息组装。所有解析回调均拦截 C++ 异常。本封装不宣称完整 RFC 6455 一致性。
+- `maxPendingBytes` 分别限制应用发送任务队列与 hv 写缓冲（默认各 4 MiB，含保守帧头预算）。提交时满返回 SendQueueFull，IO 写缓冲超限经 onError 报告并关闭连接；两阶段总量可能接近两倍配置值。成功表示接受发送，不保证远端已收到。
+- `close` 排队发送正常关闭帧后关闭传输，不等待完整双向关闭握手，不暴露自定义关闭码；停止/异常关闭不保证交付关闭帧。封装自动以相同载荷回复 pong，默认无主动心跳。当前不提供自动重连、压缩、TLS/wss、自定义子协议策略、HTTP 路由或认证。`wss://` 明确返回 TlsUnavailable。普通 HTTP 请求返回 404，不提供静态文件服务。
+- 服务端校验 GET、HTTP/1.1、Host、Upgrade/Connection、版本 13 和解码为 16 字节的密钥，拒绝重复关键字段及非空握手报文体；无效升级返回 400，且不触发连接成功事件。所有路径均可升级，`handle.path()` 返回握手路径。客户端校验 101、Upgrade/Connection 和 Sec-WebSocket-Accept，拒绝未请求的扩展或子协议。客户端可带普通自定义 headers，握手及消息定界字段由库管理，不允许覆盖。客户端不跟随重定向；连接超时只覆盖 TCP 建连，DNS 和 HTTP 升级不包含在内。如需访问控制，应在受控入口部署。
+- 两端持有各自 `shared_ptr` 回调对象至析构。事件在 IO 线程调用，异常转 Internal 并关闭连接，onError 异常被拦截。回调可 send/close/context，不能阻塞、start/stop 或析构端点。生命周期由调用方串行控制；析构不能与公共调用并发。
+- 上下文使用共享所有权，在断开通知后释放连接持有的引用；业务仍持有 shared_ptr 时继续存活。句柄可复制，不延长服务端生命周期；旧句柄不会指向重启后的新连接。`foreachChannel` 在调用线程锁外访问快照，访问器异常返回失败 Result。broadcast 委托各连接发送，首次失败后不再提交，已提交的发送不回滚。
 
 ## TCP 服务端与客户端
 

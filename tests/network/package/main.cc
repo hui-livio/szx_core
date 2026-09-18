@@ -3,6 +3,8 @@
 #include "SzxNetwork/HttpServer.h"
 #include "SzxNetwork/TcpClient.h"
 #include "SzxNetwork/TcpServer.h"
+#include "SzxNetwork/WebSocketClient.h"
+#include "SzxNetwork/WebSocketServer.h"
 
 static_assert(std::is_same_v<SZX::NETWORK::HttpServer, SZX::NETWORK::v1::HttpServer>);
 static_assert(std::is_same_v<SZX::NETWORK::HttpClient, SZX::NETWORK::v1::HttpClient>);
@@ -24,8 +26,37 @@ struct ClientEvents final : SZX::NETWORK::TcpClientCallbacks
     {
     }
 };
+struct WsClientEvents final : SZX::NETWORK::WebSocketClientCallbacks
+{
+    std::promise<void> connected;
+    void onConnection(bool ready) override
+    {
+        if (ready)
+            connected.set_value();
+    }
+    void onMessage(std::string_view, SZX::NETWORK::WebSocketMessageType) override
+    {
+    }
+    void onError(SZX::NETWORK::NetworkError) override
+    {
+    }
+};
+static_assert(std::is_same_v<SZX::NETWORK::WebSocketServer, SZX::NETWORK::v1::WebSocketServer>);
+static_assert(std::is_same_v<SZX::NETWORK::WebSocketClient, SZX::NETWORK::v1::WebSocketClient>);
 int main()
 {
+    auto wsServer = SZX::NETWORK::WebSocketServer::Create();
+    if (!wsServer.ok || !wsServer.value->start().ok)
+        return 108;
+    auto wsEvents = std::make_shared<WsClientEvents>();
+    auto wsReady  = wsEvents->connected.get_future();
+    auto wsClient = SZX::NETWORK::WebSocketClient::Create(
+        {.url = "ws://127.0.0.1:" + std::to_string(wsServer.value->port()) + "/"}, wsEvents);
+    if (!wsClient.ok || !wsClient.value->start().ok || wsReady.wait_for(std::chrono::seconds(3)) != std::future_status::ready)
+        return 109;
+    if (!wsClient.value->stop().ok || !wsServer.value->stop().ok)
+        return 110;
+
     auto tcpServer = SZX::NETWORK::TcpServer::Create();
     if (!tcpServer.ok || !tcpServer.value->start().ok)
         return 105;
