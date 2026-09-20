@@ -176,6 +176,7 @@ refresh token 只通过 Set-Cookie 返回，不在 JSON 中返回。当前算法
 |---|---|---|
 | id | string(UUID) | 日志 ID |
 | actor_user_id | string | 操作者 ID；缺失时为空字符串 |
+| actor_username | string | 操作者当前用户名；UID 账号返回 UID，无法关联操作者时为空字符串 |
 | target_user_id | string | 目标用户 ID；缺失时为空字符串 |
 | event_name | string | 事件名称 |
 | result | string | success / failure / denied |
@@ -414,7 +415,9 @@ Authorization: Bearer <access-token>
 | display_name | string | 是 | 1–128 个 Unicode 字符，无控制字符，不得全为空格 |
 | role | string | 是 | 四种角色之一，且调用者有权创建 |
 
-不接受密码、状态、id 或版本字段。身份字段的 null 视为未提供；UID 和用户名均去首尾空白、执行 Unicode NFC，原始输入最多 512 字节。用户名保留重音差异，UID 区分大小写；创建后身份不可修改。
+可选 Body 字段 `password_hash` 为初始密码 UTF-8 SHA-256 摘要，必须是 64 位小写十六进制字符串；空字符串、null 和其他类型均返回 `422 / 2206`。省略时沿用自动生成临时密码的行为。前端要求指定密码至少 12 个 Unicode 字符且包含字母和数字，并确认两次输入一致；服务端仅收到摘要，校验摘要格式并加盐存储。
+
+不接受明文密码、状态、id 或版本字段。身份字段的 null 视为未提供；UID 和用户名均去首尾空白、执行 Unicode NFC，原始输入最多 512 字节。用户名保留重音差异，UID 区分大小写；创建后身份不可修改。
 
 UID 与 username 共用登录入口，因此也检查跨字段冲突：已有 username=admin 时，uid=admin 或 uid=ADMIN 均返回 `409 / 2208`；已有 uid=U10086 时，username=u10086 同样冲突。两个 UID 的 U10086 与 u10086 仍可分别存在。并发创建遵循相同规则，冲突请求不会创建用户或签发临时凭据。
 
@@ -447,6 +450,8 @@ UID 与 username 共用登录入口，因此也检查跨字段冲突：已有 us
   "request_id": "users-create-001"
 }
 ```
+
+指定 `password_hash` 时，响应中 `temporary_credential` 和 `temporary_credential_expires_at` 均为 null，不回传密码或摘要，也不设置临时密码的 24 小时有效期。首次登录改密策略保持不变：超管强制修改，其他角色建议修改。省略该字段时，响应仍返回一次性的随机临时密码及 24 小时有效期。
 
 额外错误：`422 / 2207`（uid/username 同时提供或同时缺失）、`409 / 2208`（canonical 身份重复）、`429 / 2211`（凭据签发预算耗尽）。仅一个标识但类型错误返回 `422 / 2206`。临时密码仅本次展示，不应持久缓存。
 
@@ -585,8 +590,11 @@ If-Match: 4
 | event_name | string | 否 | 精确匹配；事件名称语法见行为上报，查询允许 auth./user. 前缀 |
 | result | string | 否 | success / failure / denied |
 | actor_user_id | string(UUID) | 否 | 操作者 ID |
+| actor_search | string | 否 | 操作者展示名、用户名或 UID 的字面量子串，最多 128 个 Unicode 字符，无控制字符；与其他筛选条件取交集 |
 
 按 created_at 降序、id 升序排列；不支持 sort，未知参数返回 `422 / 2206`。to 只有秒精度，不包含该精确时刻之后的微秒记录；其他错误见本节公共错误表。
+
+`actor_search` 在服务端关联 users 后，对 display_name、username、uid 三个字段进行匹配，分页与 total 均基于过滤后的日志。`%`、`_`、反斜杠作为普通字符匹配，大小写规则沿用数据库展示列的排序规则。`actor_user_id` 仅为已有 API 客户端保留兼容，管理界面不提供 UUID 搜索；二者同时提供时取交集。返回的用户名是查询时的登录标识，不是历史快照；无关联操作者的日志仍会出现在未按用户筛选的结果中。
 
 ```http
 GET /api/v1/admin/user-logs?page=1&page_size=20&from=2026-09-17T00%3A00%3A00Z&event_name=report.view
@@ -601,6 +609,7 @@ Authorization: Bearer <access-token>
     "items": [{
       "id": "20000000-0000-4000-8000-000000000001",
       "actor_user_id": "10000000-0000-4000-8000-000000000002",
+      "actor_username": "alice",
       "target_user_id": "10000000-0000-4000-8000-000000000002",
       "event_name": "report.view",
       "result": "success",

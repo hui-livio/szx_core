@@ -44,6 +44,7 @@ struct CreateUserInput final
     std::optional<std::string> username;
     std::string displayName;
     std::string role;
+    std::optional<std::string> passwordHash; ///< 可选的客户端 SHA-256 摘要；省略时生成临时密码。
 };
 
 /** 创建和重置密码的结果；临时凭据明文只在本次响应中出现，不落库。 */
@@ -63,6 +64,7 @@ struct LogQuery final
     std::string actorUserId; ///< UUID。
     std::uint32_t page{1};
     std::uint32_t pageSize{20};
+    std::string actorSearch; ///< 展示名、用户名或 UID 子串，最多 128 个字符。
 };
 
 struct Permissions final

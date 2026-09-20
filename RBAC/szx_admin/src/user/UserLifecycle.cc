@@ -118,6 +118,8 @@ auto UserService::create(const ActorContext &context, const CreateUserInput &inp
             return failed<CredentialIssue>(ErrorCode::UserIdentityOneOfRequired);
         if (!validDisplayName(input.displayName) || !POLICY::validRole(input.role))
             return failed<CredentialIssue>(ErrorCode::ValidationError);
+        if (input.passwordHash && !AUTH::validClientPasswordHash(*input.passwordHash))
+            return failed<CredentialIssue>(ErrorCode::ValidationError);
         // uid keeps its case; usernames additionally use invariant lowercase for the canonical column.
         const auto display = AUTH::canonicalIdentifier(input.uid ? *input.uid : *input.username, false);
         if (!display.ok)
@@ -173,10 +175,19 @@ auto UserService::create(const ActorContext &context, const CreateUserInput &inp
                 const auto admitted = auth_.admitCredentialIssue(context.peerAddress);
                 if (!admitted.ok)
                     return admitted;
-                const auto credential = issueTemporaryCredential();
+                const auto credential = [&]() -> Result<std::pair<std::string, std::string>>
+                {
+                    if (!input.passwordHash)
+                        return issueTemporaryCredential();
+                    const auto stored = AUTH::storeClientPasswordHash(crypto_, *input.passwordHash);
+                    if (!stored.ok)
+                        return Result<std::pair<std::string, std::string>>::Failure(stored.error, {});
+                    return Result<std::pair<std::string, std::string>>::Success({{}, stored.value});
+                }();
                 if (!credential.ok)
                     return Result<void>::Failure(credential.error, {});
-                const auto expiresAt = expiry(kTemporaryCredentialSeconds);
+                const auto expiresAt =
+                    input.passwordHash ? std::optional<std::string>{} : std::optional{expiry(kTemporaryCredentialSeconds)};
                 const NewUser row{
                     .id                              = SZX::COMMON::Uuid::v4().toString(),
                     .uid                             = input.uid ? std::optional{display.value} : std::nullopt,
@@ -211,10 +222,11 @@ auto UserService::create(const ActorContext &context, const CreateUserInput &inp
                 const auto result = connection.commit();
                 committed         = result.ok;
                 if (committed)
-                    output = {.user                = *stored.value,
-                              .temporaryCredential = credential.value.first,
-                              .temporaryCredentialExpiresAt =
-                                  TimeHelper::TimestampToIso8601(TimeHelper::StringToTimestamp(expiresAt).value_or(0))};
+                    output = {.user                         = *stored.value,
+                              .temporaryCredential          = credential.value.first,
+                              .temporaryCredentialExpiresAt = expiresAt ?
+                                  TimeHelper::TimestampToIso8601(TimeHelper::StringToTimestamp(*expiresAt).value_or(0)) :
+                                  std::string{}};
                 return result;
             });
         return operation.ok ? Result<CredentialIssue>::Success(std::move(output)) :

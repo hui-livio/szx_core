@@ -125,7 +125,7 @@ auto createResponse(UserService &service, const INFRA::HttpRequest &request) -> 
         const auto body = RestApi::jsonObject(request);
         if (!body.ok)
             return RestApi::error(static_cast<ErrorCode>(body.error), request.requestId);
-        constexpr std::array<std::string_view, 4> fields{"uid", "username", "display_name", "role"};
+        constexpr std::array<std::string_view, 5> fields{"uid", "username", "display_name", "role", "password_hash"};
         if (!RestApi::allowedFields(body.value, fields).ok || !body.value.contains("display_name") ||
             !body.value.at("display_name").is_string() || !body.value.contains("role") || !body.value.at("role").is_string())
             return RestApi::error(ErrorCode::ValidationError, request.requestId);
@@ -141,13 +141,20 @@ auto createResponse(UserService &service, const INFRA::HttpRequest &request) -> 
             input.uid = body.value.at("uid").get<std::string>();
         else
             input.username = body.value.at("username").get<std::string>();
+        if (body.value.contains("password_hash"))
+        {
+            if (!body.value.at("password_hash").is_string())
+                return RestApi::error(ErrorCode::ValidationError, request.requestId);
+            input.passwordHash = body.value.at("password_hash").get<std::string>();
+        }
         const auto result = service.create(actorContext(request), input);
         if (!result.ok)
             return RestApi::error(static_cast<ErrorCode>(result.error), request.requestId);
         return RestApi::success(
             Json{{"user", userRowJson(result.value.user)},
-                 {"temporary_credential", result.value.temporaryCredential},
-                 {"temporary_credential_expires_at", utcTimestampJson(result.value.temporaryCredentialExpiresAt)}},
+                 {"temporary_credential", input.passwordHash ? Json(nullptr) : Json(result.value.temporaryCredential)},
+                 {"temporary_credential_expires_at",
+                  input.passwordHash ? Json(nullptr) : utcTimestampJson(result.value.temporaryCredentialExpiresAt)}},
             request.requestId, 201);
     } catch (...)
     {
@@ -293,8 +300,8 @@ auto logsResponse(UserService &service, const INFRA::HttpRequest &request) -> IN
 {
     try
     {
-        constexpr std::array<std::string_view, 7> allowed{"page",       "page_size", "from",         "to",
-                                                          "event_name", "result",    "actor_user_id"};
+        constexpr std::array<std::string_view, 8> allowed{"page",       "page_size", "from",          "to",
+                                                          "event_name", "result",    "actor_user_id", "actor_search"};
         if (!allowedQuery(request, allowed))
             return RestApi::error(ErrorCode::ValidationError, request.requestId);
         const auto pagination = RestApi::pagination(request);
@@ -306,7 +313,8 @@ auto logsResponse(UserService &service, const INFRA::HttpRequest &request) -> IN
                              .result      = queryValue(request, "result"),
                              .actorUserId = queryValue(request, "actor_user_id"),
                              .page        = pagination.value.page,
-                             .pageSize    = pagination.value.pageSize};
+                             .pageSize    = pagination.value.pageSize,
+                             .actorSearch = queryValue(request, "actor_search")};
         const auto result = service.logs(actorContext(request), query);
         if (!result.ok)
             return RestApi::error(static_cast<ErrorCode>(result.error), request.requestId);
@@ -321,6 +329,7 @@ auto logsResponse(UserService &service, const INFRA::HttpRequest &request) -> IN
                                  {"event_name", entry.event_name},
                                  {"result", entry.result},
                                  {"actor_user_id", entry.actor_user_id.value_or("")},
+                                 {"actor_username", entry.actor_username},
                                  {"target_user_id", entry.target_user_id.value_or("")},
                                  {"request_id", entry.request_id},
                                  {"peer_address", ""},

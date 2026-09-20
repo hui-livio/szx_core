@@ -6,6 +6,7 @@ import json
 import time
 import urllib.error
 import urllib.request
+from urllib.parse import urlencode
 import uuid
 
 
@@ -212,6 +213,50 @@ def run_user_checks(admin, sql):
         assert len(page["items"]) == 3
         assert all(row["details"] == {"padding": "x" * legacy_sizes[int(row["request_id"].split("-")[1])]}
                    for row in page["items"])
+        assert all(row["actor_username"] == "" for row in page["items"])
+
+        # Search all three user-facing identity fields before pagination, including
+        # literal LIKE metacharacters and user-facing identities instead of internal UUIDs.
+        fixtures = [
+            ("audit_alpha", None, "审计_%\\甲", 2),
+            ("audit_beta", None, "审计乙", 1),
+            (None, "U_AUDIT_009", "独立用户", 1),
+        ]
+        fixture_ids = []
+        def sql_text(value):
+            return "NULL" if value is None else "CONVERT(0x" + value.encode("utf-8").hex() + " USING utf8mb4)"
+        for username, uid, display_name, count in fixtures:
+            fixture_id = str(uuid.uuid4())
+            fixture_ids.append(fixture_id)
+            sql("INSERT INTO user_api.users(id,username,username_canonical,uid,uid_canonical,display_name,password_hash,role) "
+                f"SELECT '{fixture_id}',{sql_text(username)},{sql_text(username)},{sql_text(uid)},{sql_text(uid)},"
+                f"{sql_text(display_name)},password_hash,'operator' FROM user_api.users WHERE id='{actor_id}';")
+            for index in range(count):
+                sql("INSERT INTO user_api.user_logs(id,actor_user_id,event_name,result,request_id,details_json) VALUES "
+                    f"(UUID(),'{fixture_id}','report.actor_search','success','actor-search-{index}',JSON_OBJECT());")
+
+        def search_logs(term, **extra):
+            return expect(call(port, "GET", "/admin/user-logs?" + urlencode({
+                "actor_search": term, "event_name": "report.actor_search", **extra,
+            }), token=token), 200)
+
+        for term, expected_name, expected_count in (("alpha", "audit_alpha", 2), ("_%\\", "audit_alpha", 2),
+                                                    ("%", "audit_alpha", 2), ("009", "U_AUDIT_009", 1),
+                                                    ("独立", "U_AUDIT_009", 1)):
+            result = search_logs(term)
+            assert result["total"] == expected_count, (term, result)
+            assert all(row["actor_username"] == expected_name for row in result["items"]), result
+        first = search_logs("审计", page_size=1)
+        second = search_logs("审计", page_size=1, page=2)
+        assert first["total"] == second["total"] == 3
+        assert len(first["items"]) == len(second["items"]) == 1
+        assert first["items"][0]["id"] != second["items"][0]["id"]
+        for term in ("not-present", "' OR 1=1 --", fixture_ids[0]):
+            assert search_logs(term)["total"] == 0
+        assert search_logs("alpha", actor_user_id=fixture_ids[1])["total"] == 0
+        for invalid in ("x" * 129, "bad\nname"):
+            expect(call(port, "GET", "/admin/user-logs?" + urlencode({"actor_search": invalid}), token=token), 422, 2206)
+        print("PASS: audit actor names, display-name/username/UID search, literal patterns, pagination and unknown actors", flush=True)
         expect(call(port, "POST", "/client/behavior-events", {
             "event_name": "auth.login.success", "result": "success", "details": {},
         }, renewed["access_token"]), 422, 2206)
@@ -236,6 +281,48 @@ def run_user_checks(admin, sql):
         assert sql("SELECT COUNT(*) FROM user_api.users WHERE username='revoked_creation';") == "0"
         print("PASS: concurrent actor revocation prevents creation with stale authorization", flush=True)
 
+    with admin("user_chosen_password") as port:
+        token = login(port)["access_token"]
+        secret = "  自定义Password123  "
+        digest = hashlib.sha256(secret.encode()).hexdigest()
+        for invalid in (None, "", "a" * 63, "a" * 65, "A" * 64, "g" * 64, 123, [], {}):
+            expect(call(port, "POST", "/admin/users", {
+                "username": "invalid", "display_name": "Invalid", "role": "operator", "password_hash": invalid,
+            }, token), 422, 2206)
+        expect(call(port, "POST", "/admin/users", {
+            "username": "plaintext", "display_name": "Invalid", "role": "operator", "password": secret,
+        }, token), 422, 2206)
+        assert sql("SELECT COUNT(*) FROM user_chosen_password.users;") == "1"
+        for role in ("operator", "engineer", "admin", "super_admin"):
+            identity = {"uid": "chosen_uid"} if role == "engineer" else {"username": "chosen_" + role}
+            data = expect(call(port, "POST", "/admin/users", {
+                **identity, "display_name": role, "role": role, "password_hash": digest,
+            }, token), 201)
+            assert data["temporary_credential"] is None and data["temporary_credential_expires_at"] is None
+            assert secret not in json.dumps(data, ensure_ascii=False) and digest not in json.dumps(data)
+            user_id = data["user"]["id"]
+            stored = sql(f"SELECT password_hash FROM user_chosen_password.users WHERE id='{user_id}';")
+            assert stored.startswith("sha256-v1:$argon2id$") and digest not in stored and secret not in stored
+            assert sql(f"SELECT temporary_credential_expires_at IS NULL FROM user_chosen_password.users WHERE id='{user_id}';") == "1"
+            logged = login(port, next(iter(identity.values())), secret)
+            assert logged["user"]["id"] == user_id
+            assert logged["user"]["force_password_change"] is (role == "super_admin")
+            assert logged["user"]["password_change_recommended"] is (role != "super_admin")
+            if role in ("operator", "admin"):
+                expect(call(port, "POST", "/admin/users", {
+                    "username": "denied", "display_name": "Denied", "role": "super_admin", "password_hash": digest,
+                }, logged["access_token"]), 403, 2204)
+        logs = sql("SELECT details_json FROM user_chosen_password.user_logs;")
+        assert digest not in logs and secret not in logs
+        sql("CREATE TRIGGER user_chosen_password.fail_create_audit BEFORE INSERT ON user_chosen_password.user_logs "
+            "FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='CREATE_AUDIT_FAILURE';")
+        expect(call(port, "POST", "/admin/users", {
+            "username": "rollback", "display_name": "Rollback", "role": "operator", "password_hash": digest,
+        }, token), 500, 2212)
+        assert sql("SELECT COUNT(*) FROM user_chosen_password.users WHERE username='rollback';") == "0"
+        sql("DROP TRIGGER user_chosen_password.fail_create_audit;")
+        print("PASS: chosen initial passwords, login, hash validation, authorization, audit privacy and rollback", flush=True)
+
     with admin("user_rate", attempts_per_minute=2) as port:
         session = login(port)  # Shares the per-peer credential budget with creation/reset.
         token = session["access_token"]
@@ -245,6 +332,10 @@ def run_user_checks(admin, sql):
         before = sql(f"SELECT password_hash,version FROM user_rate.users WHERE id='{target['id']}';")
         expect(call(port, "POST", "/admin/users", {
             "username": "over_budget", "display_name": "Denied", "role": "operator",
+        }, token), 429, 2211)
+        expect(call(port, "POST", "/admin/users", {
+            "username": "chosen_over_budget", "display_name": "Denied", "role": "operator",
+            "password_hash": hashlib.sha256(b"ChosenPassword123").hexdigest(),
         }, token), 429, 2211)
         expect(call(port, "POST", "/admin/users/" + target["id"] + "/reset-password", token=token, version=1), 429, 2211)
         assert sql(f"SELECT password_hash,version FROM user_rate.users WHERE id='{target['id']}';") == before

@@ -49,7 +49,7 @@ struct NewUser final
     std::string role;
     std::string status;
     bool force_password_change{};
-    std::string temporary_credential_expires_at;
+    std::optional<std::string> temporary_credential_expires_at;
     std::string created_by;
 };
 
@@ -92,6 +92,7 @@ struct LogFilter final
     std::string actorUserId; ///< 空表示不过滤。
     std::uint32_t limit{20};
     std::uint64_t offset{};
+    std::string actorSearch; ///< 展示名、用户名或 UID 的字面量子串；空表示不过滤。
 };
 
 struct LogRow final
@@ -104,6 +105,7 @@ struct LogRow final
     std::string request_id;
     std::string details_json;
     std::string created_at;
+    std::string actor_username; ///< 当前登录标识：优先 username，其次 uid；未知操作者为空。
 };
 
 struct LogPage final

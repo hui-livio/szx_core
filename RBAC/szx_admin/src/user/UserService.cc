@@ -181,7 +181,7 @@ auto UserService::logs(const ActorContext &context, const LogQuery &query) -> Re
         const auto to   = query.to.empty() ? std::optional<std::string>{std::string{}} : databaseTimestamp(query.to);
         if (!from || !to || query.pageSize == 0 || (!query.eventName.empty() && !validEventName(query.eventName)) ||
             (!query.result.empty() && !validAuditResult(query.result)) ||
-            (!query.actorUserId.empty() && !validUuid(query.actorUserId)))
+            (!query.actorUserId.empty() && !validUuid(query.actorUserId)) || !validSearch(query.actorSearch))
             return failed<LogPage>(ErrorCode::ValidationError);
         LogPage output;
         const auto operation = database_.withConnection(
@@ -201,7 +201,8 @@ auto UserService::logs(const ActorContext &context, const LogQuery &query) -> Re
                                        .result      = query.result,
                                        .actorUserId = query.actorUserId,
                                        .limit       = query.pageSize,
-                                       .offset      = static_cast<std::uint64_t>(query.page - 1) * query.pageSize};
+                                       .offset      = static_cast<std::uint64_t>(query.page - 1) * query.pageSize,
+                                       .actorSearch = query.actorSearch};
                 const auto queried = repository->queryLogs(filter);
                 if (!queried.ok)
                     return Result<void>::Failure(queried.error, {});
