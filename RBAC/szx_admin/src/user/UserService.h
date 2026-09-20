@@ -113,7 +113,8 @@ public:
         -> SZX::COMMON::Result<UserRow>;
     [[nodiscard]] auto assignRole(const ActorContext &actor, const std::string &id, const std::string &role,
                                   std::uint32_t version) -> SZX::COMMON::Result<UserRow>;
-    [[nodiscard]] auto resetPassword(const ActorContext &actor, const std::string &id, std::uint32_t version)
+    [[nodiscard]] auto resetPassword(const ActorContext &actor, const std::string &id, std::uint32_t version,
+                                     const std::optional<std::string> &passwordHash = std::nullopt)
         -> SZX::COMMON::Result<CredentialIssue>;
     [[nodiscard]] auto logs(const ActorContext &actor, const LogQuery &query) -> SZX::COMMON::Result<LogPage>;
     [[nodiscard]] auto recordBehavior(const ActorContext &actor, const BehaviorEvent &event) -> SZX::COMMON::Result<std::string>;
@@ -133,7 +134,8 @@ private:
     auto authorize(const ActorContext &context, UserRepository &repository, const std::string &targetId,
                    POLICY::Capability required, std::uint32_t version) -> SZX::COMMON::Result<Mutation>;
     /** 生成一次性临时凭据，返回 {明文, 可存储的 Argon2id 记录}。 */
-    auto issueTemporaryCredential() -> SZX::COMMON::Result<std::pair<std::string, std::string>>;
+    auto issueCredential(const std::optional<std::string> &passwordHash)
+        -> SZX::COMMON::Result<std::pair<std::string, std::string>>;
 
     INFRA::DatabasePool &database_;
     AUTH::LoginService &auth_;

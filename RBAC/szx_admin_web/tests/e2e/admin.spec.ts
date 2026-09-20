@@ -77,8 +77,8 @@ async function mockApi(
     if (path.endsWith('/reset-password'))
       return reply({
         user: { ...listedUser, authz_version: 2, version: 4 },
-        temporary_credential: 'SelfResetCredential123',
-        temporary_credential_expires_at: Date.now() + 86400000,
+        temporary_credential: body?.password_hash ? null : 'SelfResetCredential123',
+        temporary_credential_expires_at: body?.password_hash ? null : Date.now() + 86400000,
       })
     if (path.startsWith('/admin/users/')) return reply({ ...baseUser, ...body, version: 4 })
     if (path === '/admin/user-logs')
@@ -152,10 +152,10 @@ test('creation validates a chosen password, submits only its digest and clears i
   await page.getByLabel('展示名', { exact: true }).fill('指定密码')
   const password = page.getByLabel('初始密码', { exact: true })
   const confirmation = page.getByLabel('确认初始密码', { exact: true })
-  await password.fill('short1')
-  await confirmation.fill('short1')
+  await password.fill('12345')
+  await confirmation.fill('12345')
   await page.getByRole('button', { name: '确认', exact: true }).click()
-  await expect(page.getByRole('alert')).toContainText('至少 12 个字符')
+  await expect(page.getByRole('alert')).toContainText('至少 6 个字符')
   const secret = '  自定义Password123  '
   await password.fill(secret)
   await confirmation.fill('different')
@@ -184,14 +184,54 @@ test('creation validates a chosen password, submits only its digest and clears i
   expect(await page.evaluate(() => [localStorage.length, sessionStorage.length])).toEqual([0, 0])
 })
 
+for (const role of ['operator', 'engineer'] as const) {
+  test(`${role} accepts a simple initial password after switching from admin`, async ({ page }) => {
+    const writes = await mockApi(page)
+    await login(page)
+    await page.getByRole('button', { name: '创建用户' }).click()
+    await page.getByLabel('用户名', { exact: true }).fill('simple')
+    await page.getByLabel('展示名', { exact: true }).fill('Simple')
+    const select = page.getByRole('dialog').getByLabel('角色', { exact: true })
+    await select.selectOption('admin')
+    await expect(page.locator('#initial-password-rule')).toContainText('至少 8 个字符')
+    await page.getByLabel('初始密码', { exact: true }).fill('123456')
+    await page.getByLabel('确认初始密码', { exact: true }).fill('123456')
+    await page.getByRole('button', { name: '确认', exact: true }).click()
+    await expect(page.getByRole('alert')).toContainText('至少 8 个字符')
+    expect(writes.filter((write) => write.path === '/admin/users')).toHaveLength(0)
+    await select.selectOption(role)
+    await expect(page.locator('#initial-password-rule')).toContainText('至少 6 个字符')
+    await page.getByRole('button', { name: '确认', exact: true }).click()
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+    expect(writes.find((write) => write.path === '/admin/users')?.body).toMatchObject({
+      role,
+      password_hash: createHash('sha256').update('123456').digest('hex'),
+    })
+  })
+  test(`${role} can change to a six-digit password`, async ({ page }) => {
+    const writes = await mockApi(page, role, false, true)
+    await login(page)
+    await expect(page).toHaveURL('/change-password')
+    await expect(page.locator('#password-rule')).toContainText('至少 6 个字符')
+    await page.getByLabel('当前密码', { exact: true }).fill('TestPassword123')
+    await page.getByLabel('新密码', { exact: true }).fill('123456')
+    await page.getByLabel('确认新密码', { exact: true }).fill('123456')
+    await page.getByRole('button', { name: '修改密码', exact: true }).click()
+    await expect(page).toHaveURL('/login')
+    expect(writes.find((write) => write.path === '/auth/change-password')?.body).toMatchObject({
+      new_password_hash: createHash('sha256').update('123456').digest('hex'),
+    })
+  })
+}
+
 test('forced password flow cannot be skipped and hashes both passwords', async ({ page }) => {
   const writes = await mockApi(page, 'super_admin', true)
   await login(page)
   await expect(page).toHaveURL('/change-password')
   await expect(page.getByRole('button', { name: /跳过/ })).toHaveCount(0)
   await page.getByLabel('当前密码', { exact: true }).fill('TestPassword123')
-  await page.getByLabel('新密码', { exact: true }).fill('ChangedPassword456')
-  await page.getByLabel('确认新密码', { exact: true }).fill('ChangedPassword456')
+  await page.getByLabel('新密码', { exact: true }).fill('Abcd1234')
+  await page.getByLabel('确认新密码', { exact: true }).fill('Abcd1234')
   await page.getByRole('button', { name: '修改密码', exact: true }).click()
   await expect(page).toHaveURL('/login')
   expect(writes.find((write) => write.path === '/auth/change-password')).toMatchObject({
@@ -249,6 +289,42 @@ test('login remains usable at mobile width', async ({ page }) => {
   await expect(page.getByRole('button', { name: '登录控制台' })).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   await page.screenshot({ path: 'test-results/login-mobile.png', fullPage: true })
+})
+
+test('reset supports a simple chosen password and clears the draft', async ({ page }) => {
+  const writes = await mockApi(page)
+  await login(page)
+  await page.getByRole('button', { name: '重置密码', exact: true }).click()
+  const confirm = page.getByRole('button', { name: '确认', exact: true })
+  await expect(confirm).toBeEnabled()
+  await expect(page.locator('#initial-password-rule')).toContainText('至少 6 个字符')
+  await page.getByLabel('新密码', { exact: true }).fill('12345')
+  await page.getByLabel('确认新密码', { exact: true }).fill('12345')
+  await confirm.click()
+  await expect(page.getByRole('alert').filter({ hasText: '至少 6 个字符' })).toBeVisible()
+  await page.getByLabel('新密码', { exact: true }).fill('123456')
+  await page.getByLabel('确认新密码', { exact: true }).fill('123456')
+  await confirm.click()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  expect(writes.find((write) => write.path.endsWith('/reset-password'))).toMatchObject({
+    version: '3',
+    body: { password_hash: createHash('sha256').update('123456').digest('hex') },
+  })
+  await page.getByRole('button', { name: '重置密码', exact: true }).click()
+  await expect(page.getByLabel('新密码', { exact: true })).toHaveValue('')
+  await expect(page.getByLabel('确认新密码', { exact: true })).toHaveValue('')
+})
+
+test('chosen self-reset returns to login without a temporary credential', async ({ page }) => {
+  await mockApi(page, 'super_admin', false, false, true)
+  await login(page)
+  await page.getByRole('button', { name: '重置密码', exact: true }).click()
+  await expect(page.getByRole('button', { name: '确认', exact: true })).toBeEnabled()
+  await page.getByLabel('新密码', { exact: true }).fill('Abcd1234')
+  await page.getByLabel('确认新密码', { exact: true }).fill('Abcd1234')
+  await page.getByRole('button', { name: '确认', exact: true }).click()
+  await expect(page).toHaveURL('/login')
+  await expect(page.getByTestId('temporary-credential')).toHaveCount(0)
 })
 
 test('self-reset keeps the one-time password visible until acknowledged', async ({ page }) => {

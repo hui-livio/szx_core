@@ -1,7 +1,7 @@
 import { computed, onMounted, onUnmounted, reactive, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
-import { isAdmin, passwordProblem, roleLabels } from '../domain'
+import { isAdmin, passwordPolicy, passwordProblem, roleLabels } from '../domain'
 import { useTask } from './useTask'
 
 export function useLoginViewModel() {
@@ -31,6 +31,7 @@ export function usePasswordViewModel() {
   const task = useTask()
   const forced = computed(() => Boolean(auth.user?.force_password_change))
   const recommended = computed(() => Boolean(auth.user?.password_change_recommended))
+  const policy = computed(() => passwordPolicy(auth.user?.role))
   function clear() {
     form.oldPassword = ''
     form.password = ''
@@ -38,7 +39,12 @@ export function usePasswordViewModel() {
   }
   const submit = () =>
     task.run(async () => {
-      const problem = passwordProblem(form.password, form.oldPassword, form.confirmation)
+      const problem = passwordProblem(
+        form.password,
+        form.oldPassword,
+        form.confirmation,
+        auth.user?.role,
+      )
       if (problem) throw new Error(problem)
       try {
         await auth.changePassword(form.oldPassword, form.password)
@@ -53,7 +59,7 @@ export function usePasswordViewModel() {
     await router.replace(auth.home)
   }
   onUnmounted(clear)
-  return { form, forced, recommended, ...task, submit, skip }
+  return { form, forced, recommended, policy, ...task, submit, skip }
 }
 
 export function useShellViewModel() {

@@ -276,19 +276,28 @@ auto resetPasswordResponse(UserService &service, const INFRA::HttpRequest &reque
         const auto version = RestApi::ifMatch(request);
         if (!version.ok)
             return RestApi::error(static_cast<ErrorCode>(version.error), request.requestId);
+        std::optional<std::string> passwordHash;
         if (!request.body.empty())
         {
             const auto body = RestApi::jsonObject(request);
-            if (!body.ok || !body.value.empty())
+            constexpr std::array<std::string_view, 1> fields{"password_hash"};
+            if (!body.ok || !RestApi::allowedFields(body.value, fields).ok)
                 return RestApi::error(ErrorCode::ValidationError, request.requestId);
+            if (body.value.contains("password_hash"))
+            {
+                if (!body.value.at("password_hash").is_string())
+                    return RestApi::error(ErrorCode::ValidationError, request.requestId);
+                passwordHash = body.value.at("password_hash").get<std::string>();
+            }
         }
-        const auto result = service.resetPassword(actorContext(request), id, version.value);
+        const auto result = service.resetPassword(actorContext(request), id, version.value, passwordHash);
         if (!result.ok)
             return RestApi::error(static_cast<ErrorCode>(result.error), request.requestId);
         return RestApi::success(
             Json{{"user", userRowJson(result.value.user)},
-                 {"temporary_credential", result.value.temporaryCredential},
-                 {"temporary_credential_expires_at", utcTimestampJson(result.value.temporaryCredentialExpiresAt)}},
+                 {"temporary_credential", passwordHash ? Json(nullptr) : Json(result.value.temporaryCredential)},
+                 {"temporary_credential_expires_at",
+                  passwordHash ? Json(nullptr) : utcTimestampJson(result.value.temporaryCredentialExpiresAt)}},
             request.requestId);
     } catch (...)
     {

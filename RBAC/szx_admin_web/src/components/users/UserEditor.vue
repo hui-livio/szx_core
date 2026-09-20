@@ -7,6 +7,7 @@ defineProps<{
   action: UserAction
   user: User | null
   roles: Role[]
+  passwordHint: string
   busy: boolean
   error: string
   conflict: boolean
@@ -46,13 +47,14 @@ const emit = defineEmits<{ submit: []; close: []; reload: [] }>()
       >展示名<input v-model="draft.displayName" required maxlength="128" :disabled="busy"
     /></label>
     <label v-if="action === 'create' || action === 'role'"
-      >角色<select v-model="draft.role" :disabled="busy">
+      >角色<select v-model="draft.role" aria-label="角色" :disabled="busy">
         <option v-for="role in roles" :key="role" :value="role">{{ roleLabels[role] }}</option>
       </select></label
     >
-    <template v-if="action === 'create'">
+    <template v-if="action === 'create' || action === 'reset'">
       <label
-        >初始密码<input
+        >{{ action === 'create' ? '初始密码' : '新密码'
+        }}<input
           v-model="draft.password"
           name="initial-password"
           type="password"
@@ -61,10 +63,11 @@ const emit = defineEmits<{ submit: []; close: []; reload: [] }>()
           :disabled="busy"
       /></label>
       <p id="initial-password-rule" class="hint">
-        选填，至少 12 个字符且包含字母和数字；留空则自动生成有效期为 24 小时的临时密码。
+        选填，{{ passwordHint }}；留空则自动生成有效期为 24 小时的临时密码。
       </p>
       <label
-        >确认初始密码<input
+        >{{ action === 'create' ? '确认初始密码' : '确认新密码'
+        }}<input
           v-model="draft.confirmation"
           name="confirm-initial-password"
           type="password"
@@ -121,7 +124,7 @@ const emit = defineEmits<{ submit: []; close: []; reload: [] }>()
     <p v-if="action === 'unlock'" class="alert info">解锁后清除失败登录计数，用户可以重新登录。</p>
     <p v-if="action === 'role'" class="alert warning">角色变更会使该用户的现有会话失效。</p>
     <p v-if="action === 'reset'" class="alert warning">
-      重置后将生成新的临时密码，旧密码和现有会话失效。新密码仅在下一步展示一次。
+      重置后旧密码和现有会话失效。填写新密码则使用指定密码；留空则随机生成临时密码，并在下一步展示一次。
     </p>
     <div class="modal-actions">
       <button type="button" :disabled="busy" @click="emit('close')">
@@ -129,7 +132,7 @@ const emit = defineEmits<{ submit: []; close: []; reload: [] }>()
       ><button
         v-if="action !== 'details'"
         class="primary"
-        :disabled="busy || conflict || (!!error && !!user)"
+        :disabled="busy || conflict || (!!error && !!user && action !== 'reset')"
       >
         {{ busy ? '处理中…' : '确认' }}
       </button>

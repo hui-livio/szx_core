@@ -77,9 +77,16 @@ auto reloadUser(UserRepository &users, UserRow &target) -> Result<void>
 }
 } // namespace
 
-auto UserService::issueTemporaryCredential() -> Result<std::pair<std::string, std::string>>
+auto UserService::issueCredential(const std::optional<std::string> &passwordHash) -> Result<std::pair<std::string, std::string>>
 {
     using Pair = std::pair<std::string, std::string>;
+    if (passwordHash)
+    {
+        const auto stored = AUTH::storeClientPasswordHash(crypto_, *passwordHash);
+        if (!stored.ok)
+            return Result<Pair>::Failure(stored.error, {});
+        return Result<Pair>::Success({{}, stored.value});
+    }
     std::string credential;
     credential.reserve(kCredentialLength);
     // Rejection sampling keeps the alphabet uniform instead of biasing low indices.
@@ -175,15 +182,7 @@ auto UserService::create(const ActorContext &context, const CreateUserInput &inp
                 const auto admitted = auth_.admitCredentialIssue(context.peerAddress);
                 if (!admitted.ok)
                     return admitted;
-                const auto credential = [&]() -> Result<std::pair<std::string, std::string>>
-                {
-                    if (!input.passwordHash)
-                        return issueTemporaryCredential();
-                    const auto stored = AUTH::storeClientPasswordHash(crypto_, *input.passwordHash);
-                    if (!stored.ok)
-                        return Result<std::pair<std::string, std::string>>::Failure(stored.error, {});
-                    return Result<std::pair<std::string, std::string>>::Success({{}, stored.value});
-                }();
+                const auto credential = issueCredential(input.passwordHash);
                 if (!credential.ok)
                     return Result<void>::Failure(credential.error, {});
                 const auto expiresAt =
@@ -529,12 +528,14 @@ auto UserService::assignRole(const ActorContext &context, const std::string &id,
     }
 }
 
-auto UserService::resetPassword(const ActorContext &context, const std::string &id, std::uint32_t version)
-    -> Result<CredentialIssue>
+auto UserService::resetPassword(const ActorContext &context, const std::string &id, std::uint32_t version,
+                                const std::optional<std::string> &passwordHash) -> Result<CredentialIssue>
 {
     try
     {
         if (!validContext(context.requestId, context.peerAddress) || !validUuid(id))
+            return failed<CredentialIssue>(ErrorCode::ValidationError);
+        if (passwordHash && !AUTH::validClientPasswordHash(*passwordHash))
             return failed<CredentialIssue>(ErrorCode::ValidationError);
         CredentialIssue output;
         const auto operation = database_.withConnection(
@@ -566,12 +567,13 @@ auto UserService::resetPassword(const ActorContext &context, const std::string &
                 const auto admitted = auth_.admitCredentialIssue(context.peerAddress);
                 if (!admitted.ok)
                     return admitted;
-                const auto credential = issueTemporaryCredential();
+                const auto credential = issueCredential(passwordHash);
                 if (!credential.ok)
                     return Result<void>::Failure(credential.error, {});
-                auto target          = authorized.value.target;
-                const auto stamp     = now();
-                const auto expiresAt = expiry(kTemporaryCredentialSeconds);
+                auto target      = authorized.value.target;
+                const auto stamp = now();
+                const auto expiresAt =
+                    passwordHash ? std::optional<std::string>{} : std::optional{expiry(kTemporaryCredentialSeconds)};
                 // A fresh credential deserves a fresh failure counter; the lock state itself
                 // stays untouched so unlocking remains an explicit, audited decision.
                 target.force_password_change           = true;
@@ -599,10 +601,11 @@ auto UserService::resetPassword(const ActorContext &context, const std::string &
                 const auto result = connection.commit();
                 committed         = result.ok;
                 if (committed)
-                    output = {.user                = target,
-                              .temporaryCredential = credential.value.first,
-                              .temporaryCredentialExpiresAt =
-                                  TimeHelper::TimestampToIso8601(TimeHelper::StringToTimestamp(expiresAt).value_or(0))};
+                    output = {.user                         = target,
+                              .temporaryCredential          = credential.value.first,
+                              .temporaryCredentialExpiresAt = expiresAt ?
+                                  TimeHelper::TimestampToIso8601(TimeHelper::StringToTimestamp(*expiresAt).value_or(0)) :
+                                  std::string{}};
                 return result;
             });
         return operation.ok ? Result<CredentialIssue>::Success(std::move(output)) :

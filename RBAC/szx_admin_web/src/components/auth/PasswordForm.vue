@@ -2,7 +2,14 @@
 const form = defineModel<{ oldPassword: string; password: string; confirmation: string }>({
   required: true,
 })
-defineProps<{ busy: boolean; error: string; forced: boolean; recommended: boolean }>()
+defineProps<{
+  busy: boolean
+  error: string
+  forced: boolean
+  recommended: boolean
+  minLength: number
+  passwordHint: string
+}>()
 const emit = defineEmits<{ submit: []; skip: [] }>()
 </script>
 <template>
@@ -30,18 +37,18 @@ const emit = defineEmits<{ submit: []; skip: [] }>()
         v-model="form.password"
         type="password"
         autocomplete="new-password"
-        minlength="12"
+        :minlength="minLength"
         required
         aria-describedby="password-rule"
         :disabled="busy"
     /></label>
-    <p id="password-rule" class="hint">至少 12 个字符，包含字母和数字，且与当前密码不同。</p>
+    <p id="password-rule" class="hint">{{ passwordHint }}，且与当前密码不同。</p>
     <label
       >确认新密码<input
         v-model="form.confirmation"
         type="password"
         autocomplete="new-password"
-        minlength="12"
+        :minlength="minLength"
         required
         :disabled="busy"
     /></label>

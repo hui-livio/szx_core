@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import PasswordForm from '../components/auth/PasswordForm.vue'
 import { usePasswordViewModel } from '../composables/useAuthViewModel'
-const { form, busy, error, forced, recommended, submit, skip } = usePasswordViewModel()
+const { form, busy, error, forced, recommended, policy, submit, skip } = usePasswordViewModel()
 </script>
 <template>
   <header class="page-heading">
@@ -18,6 +18,8 @@ const { form, busy, error, forced, recommended, submit, skip } = usePasswordView
       :error="error"
       :forced="forced"
       :recommended="recommended"
+      :min-length="policy.minLength"
+      :password-hint="policy.hint"
       @submit="submit"
       @skip="skip"
     />

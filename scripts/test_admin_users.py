@@ -312,16 +312,45 @@ def run_user_checks(admin, sql):
                 expect(call(port, "POST", "/admin/users", {
                     "username": "denied", "display_name": "Denied", "role": "super_admin", "password_hash": digest,
                 }, logged["access_token"]), 403, 2204)
+            reset_path = "/admin/users/" + user_id + "/reset-password"
+            new_secret = "123456" if role in ("operator", "engineer") else "ResetPassword123"
+            new_digest = hashlib.sha256(new_secret.encode()).hexdigest()
+            for invalid in (None, "", "a" * 63, "A" * 64, 123, {}):
+                expect(call(port, "POST", reset_path, {"password_hash": invalid}, token, 1), 422, 2206)
+            expect(call(port, "POST", reset_path, {"password": new_secret}, token, 1), 422, 2206)
+            expect(call(port, "POST", reset_path, {"password_hash": new_digest}, token, 99), 409, 2209)
+            if role == "operator":
+                expect(call(port, "POST", reset_path, {"password_hash": new_digest}, logged["access_token"], 1), 403, 2204)
+            reset = expect(call(port, "POST", reset_path, {"password_hash": new_digest}, token, 1), 200)
+            assert reset["temporary_credential"] is None and reset["temporary_credential_expires_at"] is None
+            assert reset["user"]["version"] == 2 and reset["user"]["authz_version"] == 2
+            assert new_digest not in json.dumps(reset)
+            expect(call(port, "GET", "/client/me/permissions", token=logged["access_token"]), 401, 2200)
+            assert sql(f"SELECT COUNT(*) FROM user_chosen_password.refresh_tokens WHERE user_id='{user_id}' AND revoked_at IS NULL;") == "0"
+            assert login(port, next(iter(identity.values())), new_secret)["user"]["id"] == user_id
+            expect(call(port, "POST", "/auth/login", {
+                "identifier": next(iter(identity.values())), "password_hash": digest,
+            }), 401, 2203)
+            logs = sql("SELECT details_json FROM user_chosen_password.user_logs;")
+            assert new_digest not in logs and new_secret not in logs
+            random_reset = expect(call(port, "POST", reset_path, {}, token, 2), 200)
+            assert random_reset["temporary_credential"] and type(random_reset["temporary_credential_expires_at"]) is int
+            assert login(port, next(iter(identity.values())), random_reset["temporary_credential"])["user"]["id"] == user_id
         logs = sql("SELECT details_json FROM user_chosen_password.user_logs;")
         assert digest not in logs and secret not in logs
         sql("CREATE TRIGGER user_chosen_password.fail_create_audit BEFORE INSERT ON user_chosen_password.user_logs "
             "FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='CREATE_AUDIT_FAILURE';")
+        before = sql(f"SELECT password_hash,version,authz_version FROM user_chosen_password.users WHERE id='{user_id}';")
+        refresh_before = sql(f"SELECT COUNT(*) FROM user_chosen_password.refresh_tokens WHERE user_id='{user_id}' AND revoked_at IS NULL;")
+        expect(call(port, "POST", reset_path, {"password_hash": digest}, token, 3), 500, 2212)
+        assert sql(f"SELECT password_hash,version,authz_version FROM user_chosen_password.users WHERE id='{user_id}';") == before
+        assert sql(f"SELECT COUNT(*) FROM user_chosen_password.refresh_tokens WHERE user_id='{user_id}' AND revoked_at IS NULL;") == refresh_before
         expect(call(port, "POST", "/admin/users", {
             "username": "rollback", "display_name": "Rollback", "role": "operator", "password_hash": digest,
         }, token), 500, 2212)
         assert sql("SELECT COUNT(*) FROM user_chosen_password.users WHERE username='rollback';") == "0"
         sql("DROP TRIGGER user_chosen_password.fail_create_audit;")
-        print("PASS: chosen initial passwords, login, hash validation, authorization, audit privacy and rollback", flush=True)
+        print("PASS: chosen initial/reset passwords, simple passwords, random fallback, session revocation, validation and rollback", flush=True)
 
     with admin("user_rate", attempts_per_minute=2) as port:
         session = login(port)  # Shares the per-peer credential budget with creation/reset.

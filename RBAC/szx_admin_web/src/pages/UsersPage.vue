@@ -18,6 +18,7 @@ const {
   conflict,
   draft,
   roles,
+  passwordHint,
   canAssignRole,
   dialogTitle,
   targetStatus,
@@ -72,6 +73,7 @@ const { busy: saving, error: saveError } = mutation
       :action="action"
       :user="selected"
       :roles="roles"
+      :password-hint="passwordHint"
       :busy="saving"
       :error="saveError"
       :conflict="conflict"

@@ -2,7 +2,7 @@ import { computed, onMounted, onUnmounted, reactive, shallowRef } from 'vue'
 import { adminApi } from '../api/admin'
 import { ApiError } from '../api/client'
 import type { CredentialIssue, Role, User, UserStatus } from '../api/types'
-import { hashPassword, manageableRoles, passwordProblem } from '../domain'
+import { hashPassword, manageableRoles, passwordPolicy, passwordProblem } from '../domain'
 import { useAuthStore } from '../stores/auth'
 import { usePagedQuery } from './usePagedQuery'
 import { useTask } from './useTask'
@@ -58,6 +58,9 @@ export function useUsersViewModel() {
     confirmation: '',
   })
   const roles = computed(() => manageableRoles(auth.user?.role))
+  const passwordHint = computed(
+    () => passwordPolicy(action.value === 'reset' ? selected.value?.role : draft.role).hint,
+  )
   const canAssignRole = computed(() => auth.user?.role === 'super_admin')
   const dialogTitle = computed(() => (action.value ? actionLabels[action.value] : ''))
   const targetStatus = computed(() =>
@@ -109,6 +112,13 @@ export function useUsersViewModel() {
     draft.password = ''
     draft.confirmation = ''
   }
+  async function draftPasswordHash(role: Role) {
+    if (draft.password || draft.confirmation) {
+      const problem = passwordProblem(draft.password, '', draft.confirmation, role)
+      if (problem) throw new Error(problem)
+    }
+    return draft.password ? hashPassword(draft.password) : undefined
+  }
   const submit = () =>
     mutation.run(async () => {
       if (conflict.value) throw new Error('请先重新加载用户，再确认操作。')
@@ -123,11 +133,7 @@ export function useUsersViewModel() {
           if (!draft.displayName.trim() || [...draft.displayName].length > 128)
             throw new Error('展示名须为 1–128 个字符。')
           if (!roles.value.includes(draft.role)) throw new Error('不能创建此角色的用户。')
-          if (draft.password || draft.confirmation) {
-            const problem = passwordProblem(draft.password, '', draft.confirmation)
-            if (problem) throw new Error(problem)
-          }
-          const passwordHash = draft.password ? await hashPassword(draft.password) : undefined
+          const passwordHash = await draftPasswordHash(draft.role)
           const response = await adminApi.create({
             ...(draft.identityType === 'uid' ? { uid: identity } : { username: identity }),
             display_name: draft.displayName,
@@ -142,8 +148,9 @@ export function useUsersViewModel() {
           const user = selected.value
           if (!user) return
           if (operation === 'reset') {
-            const response = await adminApi.resetPassword(user)
-            credential.value = response.data
+            const response = await adminApi.resetPassword(user, await draftPasswordHash(user.role))
+            clearPassword()
+            credential.value = response.data.temporary_credential ? response.data : null
             changed = response.data.user
             requestId = response.request_id
           } else {
@@ -190,6 +197,7 @@ export function useUsersViewModel() {
     conflict,
     draft,
     roles,
+    passwordHint,
     canAssignRole,
     dialogTitle,
     targetStatus,

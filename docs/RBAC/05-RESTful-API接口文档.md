@@ -415,7 +415,7 @@ Authorization: Bearer <access-token>
 | display_name | string | 是 | 1–128 个 Unicode 字符，无控制字符，不得全为空格 |
 | role | string | 是 | 四种角色之一，且调用者有权创建 |
 
-可选 Body 字段 `password_hash` 为初始密码 UTF-8 SHA-256 摘要，必须是 64 位小写十六进制字符串；空字符串、null 和其他类型均返回 `422 / 2206`。省略时沿用自动生成临时密码的行为。前端要求指定密码至少 12 个 Unicode 字符且包含字母和数字，并确认两次输入一致；服务端仅收到摘要，校验摘要格式并加盐存储。
+可选 Body 字段 `password_hash` 为初始密码 UTF-8 SHA-256 摘要，必须是 64 位小写十六进制字符串；空字符串、null 和其他类型均返回 `422 / 2206`。省略时沿用自动生成临时密码的行为。前端按目标角色校验指定密码：操作员/技术员（engineer）至少 6 个 Unicode 字符，允许纯数字或纯字母；管理员/超级管理员至少 8 个 Unicode 字符且包含字母和数字。两次输入须一致；服务端仅收到摘要，校验摘要格式并加盐存储。
 
 不接受明文密码、状态、id 或版本字段。身份字段的 null 视为未提供；UID 和用户名均去首尾空白、执行 Unicode NFC，原始输入最多 512 字节。用户名保留重音差异，UID 区分大小写；创建后身份不可修改。
 
@@ -561,7 +561,7 @@ If-Match: 3
 
 **权限：** admin/super_admin；必填 Path id 和 Header If-Match。
 
-Body 可省略或为 `{}`，不接受指定新密码。
+Body 可省略或为 `{}`，此时随机生成临时密码。也可提供 `password_hash` 指定新密码，格式与创建用户一致：64 位小写十六进制 SHA-256 摘要，不接受明文密码、null 或空摘要；非法值返回 `422 / 2206`。前端按目标用户角色使用与创建用户相同的密码规则。
 
 ```http
 POST /api/v1/admin/users/10000000-0000-4000-8000-000000000002/reset-password
@@ -571,7 +571,7 @@ If-Match: 4
 
 **成功：** 200，data 为 CredentialIssue，结构与创建用户的 data 相同。
 
-服务端生成新的临时密码，设置 24 小时有效期和待改密标记，递增 version/authz_version，撤销全部 refresh 会话。是否强制改密由目标角色决定，见 User 模型。超出签发预算返回 `429 / 2211`，不产生部分密码变更；其他错误见本节公共错误表。
+未指定密码时，服务端生成新的临时密码并设置 24 小时有效期；指定密码时不设置临时有效期，响应 `temporary_credential` 和 `temporary_credential_expires_at` 均为 null，不回传密码或摘要。两种方式均设置待改密标记，递增 version/authz_version，撤销全部 refresh 会话，旧密码失效。是否强制改密由目标角色决定，见 User 模型。超出签发预算返回 `429 / 2211`，不产生部分密码变更；其他错误见本节公共错误表。
 
 <a id="user-logs"></a>
 

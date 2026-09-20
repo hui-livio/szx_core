@@ -56,15 +56,31 @@ export async function hashPassword(password: string): Promise<string> {
   return Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
+export function passwordPolicy(role?: Role) {
+  const simple = role === 'operator' || role === 'engineer'
+  return {
+    minLength: simple ? 6 : 8,
+    requireLettersAndNumbers: !simple,
+    hint: simple
+      ? '至少 6 个字符，可使用纯数字或纯字母'
+      : '至少 8 个字符，包含字母和数字，不强制特殊字符',
+  }
+}
+
 export function passwordProblem(
   password: string,
   oldPassword: string,
   confirmation: string,
+  role?: Role,
 ): string {
   if (password !== confirmation) return '两次输入的新密码不一致。'
   if (password === oldPassword) return '新密码不能与当前密码相同。'
-  if ([...password].length < 12 || !/\p{L}/u.test(password) || !/\p{N}/u.test(password))
-    return '新密码至少 12 个字符，且包含字母和数字。'
+  const policy = passwordPolicy(role)
+  if (
+    [...password].length < policy.minLength ||
+    (policy.requireLettersAndNumbers && (!/\p{L}/u.test(password) || !/\p{N}/u.test(password)))
+  )
+    return `新密码${policy.hint}。`
   return ''
 }
 

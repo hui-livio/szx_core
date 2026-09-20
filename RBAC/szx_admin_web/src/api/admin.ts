@@ -18,11 +18,12 @@ export const adminApi = {
       data,
     })
   },
-  resetPassword: (user: User) =>
+  resetPassword: (user: User, passwordHash?: string) =>
     api.request<CredentialIssue>({
       url: `/admin/users/${encodeURIComponent(user.id)}/reset-password`,
       method: 'POST',
       headers: { 'If-Match': String(user.version) },
+      data: passwordHash ? { password_hash: passwordHash } : undefined,
     }),
   logs: (params: Record<string, string | number>) =>
     api.request<Page<AuditLog>>({ url: '/admin/user-logs', params }),

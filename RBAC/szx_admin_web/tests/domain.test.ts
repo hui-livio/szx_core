@@ -23,6 +23,22 @@ it('checks password strength, confirmation and reuse', () => {
   expect(passwordProblem('NewPassword123', 'NewPassword123', 'NewPassword123')).not.toBe('')
   expect(passwordProblem('NewPassword123', 'old', 'different')).not.toBe('')
 })
+it.each(['operator', 'engineer'] as const)('allows six simple characters for %s', (role) => {
+  for (const password of ['123456', 'abcdef', '中文密码六个']) {
+    expect(passwordProblem(password, 'old', password, role)).toBe('')
+  }
+  expect(passwordProblem('12345', 'old', '12345', role)).not.toBe('')
+  expect(passwordProblem('123456', '123456', '123456', role)).not.toBe('')
+  expect(passwordProblem('123456', 'old', '654321', role)).not.toBe('')
+})
+it.each(['admin', 'super_admin'] as const)('retains strong passwords for %s', (role) => {
+  for (const password of ['123456', 'abcdef', 'Abc1234', '12345678', 'abcdefgh']) {
+    expect(passwordProblem(password, 'old', password, role)).not.toBe('')
+  }
+  expect(passwordProblem('Password1234', 'old', 'Password1234', role)).toBe('')
+  expect(passwordProblem('Abcd1234', 'old', 'Abcd1234', role)).toBe('')
+  expect(passwordProblem('Abc1234!', 'old', 'Abc1234!', role)).toBe('')
+})
 it('removes secrets recursively from historical audit records', () => {
   expect(
     redactDetails({
