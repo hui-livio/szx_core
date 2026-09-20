@@ -233,6 +233,20 @@ def run_user_checks(admin, sql):
         sql("CREATE TRIGGER user_api.fail_user_audit BEFORE INSERT ON user_api.user_logs FOR EACH ROW "
             "SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='USER_AUDIT_SECRET';")
         expect(call(port, "POST", target_path + "/reset-password", token=token, version=7), 500, 2212)
+        # A failing connection must not taint successful reads on another pool
+        # connection. Every failed write retains the owning module's audit code.
+        def concurrent_database_check(index):
+            if index % 2:
+                expect(call(port, "GET", "/admin/users", token=token), 200)
+            else:
+                response = call(port, "POST", "/client/behavior-events", {
+                    "event_name": "report.injected", "result": "success", "details": {},
+                }, token)
+                expect(response, 500, 2212)
+                assert "USER_AUDIT_SECRET" not in json.dumps(response[1])
+
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            list(executor.map(concurrent_database_check, range(16)))
         assert sql(f"SELECT password_hash,version,authz_version FROM user_api.users WHERE id='{target_id}';") == before
         assert sql(f"SELECT COUNT(*) FROM user_api.refresh_tokens WHERE user_id='{target_id}' AND revoked_at IS NULL;") == refresh_before
         sql("DROP TRIGGER user_api.fail_user_audit;")
@@ -265,15 +279,18 @@ def run_user_checks(admin, sql):
         }, renewed["access_token"]), 202)
         stored = sql("SELECT details_json FROM user_api.user_logs WHERE event_name='report.redaction';")
         assert json.loads(stored) == expected and "SYNTHETIC_SECRET" not in stored
-        # Older rows must be redacted on read too; exercise multiple rows in one blob query.
-        legacy_sizes = [2000, 70000, 150000]
+        # Exercise chunk boundaries, multi-byte UTF-8 and the former >64 KiB
+        # multi-row BLOB use-after-free path without changing the driver.
+        legacy_sizes = [2000, 16384, 65536, 70000, 150000]
         for index, size in enumerate(legacy_sizes):
             sql("INSERT INTO user_api.user_logs(id,event_name,result,request_id,details_json) VALUES "
                 f"(UUID(),'report.legacy','success','legacy-{index}',"
-                f"JSON_OBJECT('password','SYNTHETIC_SECRET','padding',REPEAT('x',{size})));")
+                f"JSON_OBJECT('password','SYNTHETIC_SECRET','padding',REPEAT('x',{size}),"
+                "'unicode',REPEAT(CONVERT(0xE4B8ADF09F9880 USING utf8mb4),3000)));")
         page = expect(call(port, "GET", "/admin/user-logs?event_name=report.legacy", token=token), 200)
-        assert len(page["items"]) == 3
-        assert all(row["details"] == {"padding": "x" * legacy_sizes[int(row["request_id"].split("-")[1])]}
+        assert len(page["items"]) == len(legacy_sizes)
+        assert all(row["details"] == {"padding": "x" * legacy_sizes[int(row["request_id"].split("-")[1])],
+                                     "unicode": "中😀" * 3000}
                    for row in page["items"])
         assert all(row["actor_username"] == "" for row in page["items"])
 

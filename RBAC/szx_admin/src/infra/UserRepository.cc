@@ -1,11 +1,11 @@
 #include "UserRepository.h"
 #include "../auth/LoginService.h"
 #include "JsonHelper.hpp"
+#include "OrmConnection.h"
 #include "SzxAdmin/Infra/ErrorCode.h"
 #include "UUID.hpp"
 
-#include <ormpp/mysql.hpp>
-
+#include <algorithm>
 #include <array>
 #include <climits>
 #include <string>
@@ -37,8 +37,8 @@ YLT_REFL(LogRow, id, actor_user_id, target_user_id, event_name, result, request_
 
 namespace SZX::ADMIN::INFRA::DETAIL
 {
-// JSON metadata reports an unbounded width. The ormpp string binding can overflow
-// that width on Windows; its blob binding retrieves the actual byte length instead.
+// Read only the size in the page query. JSON has unbounded string metadata and
+// ormpp's multi-row blob binding can invalidate its own buffer above 64 KiB.
 struct LogRecord
 {
     std::string id;
@@ -47,11 +47,11 @@ struct LogRecord
     std::string event_name;
     std::string result;
     std::string request_id;
-    ormpp::blob details_json;
+    std::uint64_t details_size{};
     std::string created_at;
     std::string actor_username;
 };
-YLT_REFL(LogRecord, id, actor_user_id, target_user_id, event_name, result, request_id, details_json, created_at, actor_username);
+YLT_REFL(LogRecord, id, actor_user_id, target_user_id, event_name, result, request_id, details_size, created_at, actor_username);
 
 struct UserCredential
 {
@@ -337,7 +337,7 @@ auto MySqlUserRepository::queryLogs(const USER::LogFilter &filter) -> Result<USE
         {
             auto rows = connection_.query_s<LogRecord>(
                 "SELECT l.id, l.actor_user_id, l.target_user_id, l.event_name, l.result, l.request_id, "
-                "CAST(l.details_json AS BINARY), l.created_at, COALESCE(u.username, u.uid, '')" +
+                "OCTET_LENGTH(l.details_json), l.created_at, COALESCE(u.username, u.uid, '')" +
                     source + predicate + " ORDER BY l.created_at DESC, l.id ASC LIMIT ? OFFSET ?",
                 from, from, to, to, event, event, result, result, actor, actor, username, pattern, pattern, pattern, eventSearch,
                 eventPattern, eventNames, limit, offset);
@@ -345,15 +345,33 @@ auto MySqlUserRepository::queryLogs(const USER::LogFilter &filter) -> Result<USE
                 return queryFailed<USER::LogPage>();
             page.items.reserve(rows.size());
             for (auto &row : rows)
+            {
+                // Binary chunks preserve UTF-8 even when a character spans chunks.
+                // Serialized JSON cannot contain a literal NUL. The explicit CAST
+                // bounds metadata as well as data, so string binding stays safe.
+                constexpr std::uint64_t chunkBytes = 16384;
+                std::string details;
+                for (std::uint64_t byteOffset = 0; byteOffset < row.details_size; byteOffset += chunkBytes)
+                {
+                    const auto chunks = connection_.query_s<std::tuple<std::string>>(
+                        "SELECT CAST(SUBSTRING(CAST(details_json AS BINARY), ?, 16384) "
+                        "AS CHAR(16384) CHARACTER SET binary) FROM user_logs WHERE id = ?",
+                        byteOffset + 1, row.id);
+                    if (connection_.has_error() || chunks.size() != 1 ||
+                        std::get<0>(chunks.front()).size() != (std::min)(chunkBytes, row.details_size - byteOffset))
+                        return queryFailed<USER::LogPage>();
+                    details += std::get<0>(chunks.front());
+                }
                 page.items.push_back({.id             = std::move(row.id),
                                       .actor_user_id  = std::move(row.actor_user_id),
                                       .target_user_id = std::move(row.target_user_id),
                                       .event_name     = std::move(row.event_name),
                                       .result         = std::move(row.result),
                                       .request_id     = std::move(row.request_id),
-                                      .details_json   = std::string(row.details_json.begin(), row.details_json.end()),
+                                      .details_json   = std::move(details),
                                       .created_at     = std::move(row.created_at),
                                       .actor_username = std::move(row.actor_username)});
+            }
         }
         return Result<USER::LogPage>::Success(std::move(page));
     } catch (...)

@@ -1,8 +1,7 @@
 #include "LoginRepository.h"
 #include "Logger.h"
+#include "OrmConnection.h"
 #include "SzxAdmin/Infra/ErrorCode.h"
-
-#include <ormpp/mysql.hpp>
 
 #include <atomic>
 

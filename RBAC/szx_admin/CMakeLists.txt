@@ -48,6 +48,7 @@ add_library(szx_rbac_infra STATIC
     src/auth/PasswordHash.cc
     src/infra/ErrorCode.cc
     src/infra/Database.cc
+    src/infra/OrmRuntime.cc
     src/infra/DatabaseInitialization.cc
     src/infra/LoginRepository.cc
     src/infra/UserRepository.cc

@@ -2,17 +2,13 @@
 
 #include "../user/UserRepository.h"
 
-namespace ormpp
-{
-class mysql;
-}
-
 namespace SZX::ADMIN::INFRA::DETAIL
 {
+class OrmConnection;
 class MySqlUserRepository final : public USER::UserRepository
 {
 public:
-    explicit MySqlUserRepository(ormpp::mysql &connection) :
+    explicit MySqlUserRepository(OrmConnection &connection) :
         connection_(connection)
     {
     }
@@ -28,6 +24,6 @@ public:
     auto queryLogs(const USER::LogFilter &filter) -> SZX::COMMON::Result<USER::LogPage> override;
 
 private:
-    ormpp::mysql &connection_;
+    OrmConnection &connection_;
 };
 } // namespace SZX::ADMIN::INFRA::DETAIL

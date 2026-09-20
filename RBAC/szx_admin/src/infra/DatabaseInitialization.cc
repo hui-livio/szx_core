@@ -1,5 +1,6 @@
 #include "DatabaseInitialization.h"
 #include "../auth/PasswordHash.h"
+#include "OrmConnection.h"
 
 #include "SzxAdmin/Infra/Database.h"
 #include "SzxAdmin/Infra/ErrorCode.h"
@@ -7,8 +8,6 @@
 #include "SzxCrypto/Random.h"
 #include "SzxCryptoService/CryptoService.h"
 #include "UUID.hpp"
-
-#include <ormpp/mysql.hpp>
 
 #include <span>
 #include <string>
@@ -295,7 +294,7 @@ auto DETAIL::ensureDatabase(const DatabaseConfig &config) -> SZX::COMMON::Result
         const auto valid = config.validate();
         if (!valid.ok)
             return valid;
-        ormpp::mysql connection;
+        DETAIL::OrmConnection connection;
         if (!connection.connect(config.host, config.username, config.password, "", static_cast<int>(config.connectTimeoutSeconds),
                                 static_cast<int>(config.port)))
             return SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::DatabaseUnavailable),

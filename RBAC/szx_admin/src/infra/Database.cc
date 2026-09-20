@@ -1,12 +1,11 @@
 #include "SzxAdmin/Infra/Database.h"
+#include "OrmConnection.h"
 
 #include "DatabaseInitialization.h"
 #include "Logger.h"
 #include "LoginRepository.h"
 #include "SzxAdmin/Infra/ErrorCode.h"
 #include "UserRepository.h"
-
-#include <ormpp/mysql.hpp>
 
 #include <array>
 #include <atomic>
@@ -63,11 +62,11 @@ auto databaseFailure(ErrorCode code, std::string_view operation, std::string_vie
     return failure(code, std::string{operation} + "。");
 }
 
-auto connectAndConfigure(const DatabaseConfig &config, ormpp::mysql &connection) -> SZX::COMMON::Result<void>
+auto connectAndConfigure(const DatabaseConfig &config, DETAIL::OrmConnection &connection) -> SZX::COMMON::Result<void>
 {
     if (!connection.connect(config.host, config.username, config.password, config.database,
                             static_cast<int>(config.connectTimeoutSeconds), static_cast<int>(config.port)))
-        return databaseFailure(ErrorCode::DatabaseUnavailable, "Database connection failed", connection.get_last_error());
+        return databaseFailure(ErrorCode::DatabaseUnavailable, "Database connection failed", {});
 
     constexpr std::array<std::string_view, 2> sessionStatements{
         "SET SESSION time_zone = '+00:00'",
@@ -76,12 +75,10 @@ auto connectAndConfigure(const DatabaseConfig &config, ormpp::mysql &connection)
     for (const auto statement : sessionStatements)
     {
         if (!connection.execute(std::string{statement}))
-            return databaseFailure(ErrorCode::DatabaseUnavailable, "Database session initialization failed",
-                                   connection.get_last_error());
+            return databaseFailure(ErrorCode::DatabaseUnavailable, "Database session initialization failed", {});
     }
     if (!connection.execute("SET SESSION innodb_lock_wait_timeout = " + std::to_string(config.lockWaitTimeoutSeconds)))
-        return databaseFailure(ErrorCode::DatabaseUnavailable, "Database session initialization failed",
-                               connection.get_last_error());
+        return databaseFailure(ErrorCode::DatabaseUnavailable, "Database session initialization failed", {});
     return SZX::COMMON::Result<void>::Success();
 }
 
@@ -100,20 +97,18 @@ auto validDatabaseIdentifier(std::string_view value) noexcept -> bool
 class MySqlConnection final : public DatabaseConnection
 {
 public:
-    explicit MySqlConnection(ormpp::mysql &connection) :
+    explicit MySqlConnection(DETAIL::OrmConnection &connection) :
         connection_(connection),
         loginRepository_(connection),
         userRepository_(connection)
     {
-        connection_.set_enable_transaction(false);
     }
 
     auto executeMigrationStatement(std::string_view sql) -> SZX::COMMON::Result<void> override
     {
         if (sql.empty() || connection_.execute(std::string{sql}))
             return SZX::COMMON::Result<void>::Success();
-        return databaseFailure(ErrorCode::DatabaseQueryFailed, "Database statement execution failed",
-                               connection_.get_last_error());
+        return databaseFailure(ErrorCode::DatabaseQueryFailed, "Database statement execution failed", {});
     }
 
     auto loadAppliedMigrations() -> SZX::COMMON::Result<std::vector<AppliedMigration>> override
@@ -136,7 +131,7 @@ public:
     {
         const auto affected = connection_.insert(schema_migrations{migration.version, migration.checksum});
         if (affected == INT_MIN || connection_.has_error())
-            return databaseFailure(ErrorCode::DatabaseQueryFailed, "Failed to record migration", connection_.get_last_error());
+            return databaseFailure(ErrorCode::DatabaseQueryFailed, "Failed to record migration", {});
         return SZX::COMMON::Result<void>::Success();
     }
 
@@ -164,23 +159,23 @@ public:
 
     auto begin() -> SZX::COMMON::Result<void> override
     {
-        return connection_.begin() ? SZX::COMMON::Result<void>::Success() :
-                                     databaseFailure(ErrorCode::DatabaseTransactionFailed, "Failed to begin database transaction",
-                                                     connection_.get_last_error());
+        return connection_.begin() ?
+            SZX::COMMON::Result<void>::Success() :
+            databaseFailure(ErrorCode::DatabaseTransactionFailed, "Failed to begin database transaction", {});
     }
 
     auto commit() -> SZX::COMMON::Result<void> override
     {
-        return connection_.commit() ? SZX::COMMON::Result<void>::Success() :
-                                      databaseFailure(ErrorCode::DatabaseTransactionFailed,
-                                                      "Failed to commit database transaction", connection_.get_last_error());
+        return connection_.commit() ?
+            SZX::COMMON::Result<void>::Success() :
+            databaseFailure(ErrorCode::DatabaseTransactionFailed, "Failed to commit database transaction", {});
     }
 
     auto rollback() -> SZX::COMMON::Result<void> override
     {
-        return connection_.rollback() ? SZX::COMMON::Result<void>::Success() :
-                                        databaseFailure(ErrorCode::DatabaseTransactionFailed,
-                                                        "Failed to roll back database transaction", connection_.get_last_error());
+        return connection_.rollback() ?
+            SZX::COMMON::Result<void>::Success() :
+            databaseFailure(ErrorCode::DatabaseTransactionFailed, "Failed to roll back database transaction", {});
     }
 
     auto bootstrapCompleted() -> SZX::COMMON::Result<bool> override
@@ -220,8 +215,7 @@ public:
             administrator.passwordHash, administrator.role,     administrator.status,   administrator.forcePasswordChange};
         const auto affected = connection_.insert(row);
         if (affected != 1 || connection_.has_error())
-            return databaseFailure(ErrorCode::DatabaseQueryFailed, "Failed to create bootstrap administrator",
-                                   connection_.get_last_error());
+            return databaseFailure(ErrorCode::DatabaseQueryFailed, "Failed to create bootstrap administrator", {});
         return SZX::COMMON::Result<void>::Success();
     }
 
@@ -229,8 +223,7 @@ public:
     {
         const auto affected = connection_.insert(admin_bootstrap{1, std::string{userId}});
         if (affected != 1 || connection_.has_error())
-            return databaseFailure(ErrorCode::DatabaseQueryFailed, "Failed to record bootstrap state",
-                                   connection_.get_last_error());
+            return databaseFailure(ErrorCode::DatabaseQueryFailed, "Failed to record bootstrap state", {});
         return SZX::COMMON::Result<void>::Success();
     }
 
@@ -245,7 +238,7 @@ public:
     }
 
 private:
-    ormpp::mysql &connection_;
+    DETAIL::OrmConnection &connection_;
     DETAIL::MySqlLoginRepository loginRepository_;
     DETAIL::MySqlUserRepository userRepository_;
 };
@@ -277,7 +270,7 @@ public:
     std::atomic_bool connectionUnavailable{};
     std::mutex mutex;
     std::condition_variable condition;
-    std::deque<std::unique_ptr<ormpp::mysql>> connections;
+    std::deque<std::unique_ptr<DETAIL::OrmConnection>> connections;
 };
 
 auto DatabaseConfig::validate() const -> SZX::COMMON::Result<void>
@@ -312,16 +305,17 @@ auto DatabasePool::start() -> SZX::COMMON::Result<void>
         return valid;
     try
     {
+        std::lock_guard ormLock(DETAIL::ormMutex());
         std::unique_lock lock(impl_->mutex);
         if (impl_->started)
             return SZX::COMMON::Result<void>::Success();
         const auto database = DETAIL::ensureDatabase(impl_->config);
         if (!database.ok)
             return database;
-        std::deque<std::unique_ptr<ormpp::mysql>> connections;
+        std::deque<std::unique_ptr<DETAIL::OrmConnection>> connections;
         for (std::uint16_t index = 0; index < impl_->config.poolSize; ++index)
         {
-            auto connection      = std::make_unique<ormpp::mysql>();
+            auto connection      = std::make_unique<DETAIL::OrmConnection>();
             const auto connected = connectAndConfigure(impl_->config, *connection);
             if (!connected.ok)
                 return connected;
@@ -364,7 +358,18 @@ auto DatabasePool::withConnection(const ConnectionCallback &callback) -> SZX::CO
     if (!callback)
         return failure(ErrorCode::InvalidConfiguration, "Database connection callback is empty.");
 
-    std::unique_ptr<ormpp::mysql> connection;
+    std::unique_lock<std::recursive_timed_mutex> ormLock;
+    try
+    {
+        ormLock = std::unique_lock<std::recursive_timed_mutex>(DETAIL::ormMutex(), std::defer_lock);
+        if (!ormLock.try_lock_for(std::chrono::seconds(3)))
+            return failure(ErrorCode::DatabaseUnavailable, "Unable to acquire database execution slot.");
+    } catch (...)
+    {
+        return failure(ErrorCode::DatabaseUnavailable, "Unable to acquire database execution slot.");
+    }
+
+    std::unique_ptr<DETAIL::OrmConnection> connection;
     {
         std::unique_lock lock(impl_->mutex);
         if (!impl_->started)
@@ -392,7 +397,7 @@ auto DatabasePool::withConnection(const ConnectionCallback &callback) -> SZX::CO
         impl_->condition.notify_one();
     };
 
-    std::unique_ptr<ormpp::mysql> staleConnection;
+    std::unique_ptr<DETAIL::OrmConnection> staleConnection;
     try
     {
         if (!connection || !connection->ping())
@@ -401,7 +406,7 @@ auto DatabasePool::withConnection(const ConnectionCallback &callback) -> SZX::CO
             if (connection)
                 impl_->reportConnectionState(false);
             staleConnection      = std::move(connection);
-            auto replacement     = std::make_unique<ormpp::mysql>();
+            auto replacement     = std::make_unique<DETAIL::OrmConnection>();
             const auto connected = connectAndConfigure(impl_->config, *replacement);
             if (!connected.ok)
             {

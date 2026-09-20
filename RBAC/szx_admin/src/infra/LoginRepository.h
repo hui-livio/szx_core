@@ -2,17 +2,13 @@
 
 #include "../auth/LoginRepository.h"
 
-namespace ormpp
-{
-class mysql;
-}
-
 namespace SZX::ADMIN::INFRA::DETAIL
 {
+class OrmConnection;
 class MySqlLoginRepository final : public AUTH::LoginRepository
 {
 public:
-    explicit MySqlLoginRepository(ormpp::mysql &connection) :
+    explicit MySqlLoginRepository(OrmConnection &connection) :
         connection_(connection)
     {
     }
@@ -30,6 +26,6 @@ public:
     auto insertAudit(const AUTH::LoginAudit &event) -> SZX::COMMON::Result<void> override;
 
 private:
-    ormpp::mysql &connection_;
+    OrmConnection &connection_;
 };
 } // namespace SZX::ADMIN::INFRA::DETAIL

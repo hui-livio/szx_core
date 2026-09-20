@@ -279,6 +279,9 @@ def main():
                 run_login_checks(admin, sql, signing_key.public_key(), root)
                 run_user_checks(admin, sql)
                 run_recovery_checks(admin, sql, root)
+                for log in list(root.glob("service-*.log")) + list(root.glob("admin-*.log")):
+                    assert "USER_AUDIT_SECRET" not in log.read_text(encoding="utf-8", errors="replace"), log
+                print("PASS: injected ORM diagnostics stay out of stdout and application logs", flush=True)
             except Exception:
                 for log in root.glob("*.log"):
                     print(f"--- {log.name} ---\n{log.read_text(encoding='utf-8', errors='replace')[-6000:]}")
