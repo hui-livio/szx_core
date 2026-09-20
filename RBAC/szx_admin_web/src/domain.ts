@@ -34,6 +34,11 @@ const auditEventLabels: Readonly<Record<string, string>> = {
 export const auditEventLabel = (eventName: string): string =>
   Object.hasOwn(auditEventLabels, eventName) ? auditEventLabels[eventName]! : '未配置中文名称的事件'
 
+export const auditEventOptions = Object.entries(auditEventLabels).map(([code, label]) => ({
+  code,
+  label,
+}))
+
 export const isAdmin = (role?: Role) => role === 'admin' || role === 'super_admin'
 
 export const manageableRoles = (role?: Role): Role[] =>

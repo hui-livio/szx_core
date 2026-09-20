@@ -1,5 +1,6 @@
 #include "UserService.h"
 #include "../auth/LoginService.h"
+#include "AuditEventLabels.h"
 #include "UserValidation.h"
 
 #include "SzxAdmin/Infra/ErrorCode.h"
@@ -181,7 +182,8 @@ auto UserService::logs(const ActorContext &context, const LogQuery &query) -> Re
         const auto to   = query.to.empty() ? std::optional<std::string>{std::string{}} : databaseTimestamp(query.to);
         if (!from || !to || query.pageSize == 0 || (!query.eventName.empty() && !validEventName(query.eventName)) ||
             (!query.result.empty() && !validAuditResult(query.result)) ||
-            (!query.actorUserId.empty() && !validUuid(query.actorUserId)) || !validSearch(query.actorSearch))
+            (!query.actorUserId.empty() && !validUuid(query.actorUserId)) || !validSearch(query.actorSearch) ||
+            !validSearch(query.eventSearch))
             return failed<LogPage>(ErrorCode::ValidationError);
         LogPage output;
         const auto operation = database_.withConnection(
@@ -195,14 +197,19 @@ auto UserService::logs(const ActorContext &context, const LogQuery &query) -> Re
                     return Result<void>::Failure(actor.error, {});
                 if (!POLICY::allows(actor.value.role, POLICY::Capability::AuditRead))
                     return failed<void>(ErrorCode::Forbidden);
-                const LogFilter filter{.from        = *from,
-                                       .to          = *to,
-                                       .eventName   = query.eventName,
-                                       .result      = query.result,
-                                       .actorUserId = query.actorUserId,
-                                       .limit       = query.pageSize,
-                                       .offset      = static_cast<std::uint64_t>(query.page - 1) * query.pageSize,
-                                       .actorSearch = query.actorSearch};
+                LogFilter filter{.from        = *from,
+                                 .to          = *to,
+                                 .eventName   = query.eventName,
+                                 .result      = query.result,
+                                 .actorUserId = query.actorUserId,
+                                 .limit       = query.pageSize,
+                                 .offset      = static_cast<std::uint64_t>(query.page - 1) * query.pageSize,
+                                 .actorSearch = query.actorSearch,
+                                 .eventSearch = query.eventSearch};
+                if (!query.eventSearch.empty())
+                    for (const auto &[code, label] : kAuditEventLabels)
+                        if (label.find(query.eventSearch) != std::string_view::npos)
+                            filter.eventNames.emplace_back(code);
                 const auto queried = repository->queryLogs(filter);
                 if (!queried.ok)
                     return Result<void>::Failure(queried.error, {});

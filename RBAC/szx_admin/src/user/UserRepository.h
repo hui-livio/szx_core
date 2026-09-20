@@ -92,7 +92,9 @@ struct LogFilter final
     std::string actorUserId; ///< 空表示不过滤。
     std::uint32_t limit{20};
     std::uint64_t offset{};
-    std::string actorSearch; ///< 展示名、用户名或 UID 的字面量子串；空表示不过滤。
+    std::string actorSearch;             ///< 展示名、用户名或 UID 的字面量子串；空表示不过滤。
+    std::string eventSearch;             ///< 事件代码的字面量子串；空表示不过滤。
+    std::vector<std::string> eventNames; ///< 中文名称命中的事件代码，与 eventSearch 取并集。
 };
 
 struct LogRow final

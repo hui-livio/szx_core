@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import type { User } from '../../api/types'
-import type { UserAction } from '../../composables/useUsersViewModel'
+import type { UserAction, UserRowView } from '../../composables/useUsersViewModel'
 import { roleLabels, statusLabels, formatTime } from '../../domain'
-defineProps<{ users: User[]; busy: boolean; failed: boolean; canAssignRole: boolean }>()
+defineProps<{ users: UserRowView[]; busy: boolean; failed: boolean; canAssignRole: boolean }>()
 const emit = defineEmits<{ action: [action: UserAction, user: User] }>()
 </script>
 <template>
@@ -33,16 +33,28 @@ const emit = defineEmits<{ action: [action: UserAction, user: User] }>()
           <td class="time-cell">{{ formatTime(user.last_login_at) }}</td>
           <td>
             <div class="table-actions">
-              <button @click="emit('action', 'name', user)">编辑</button
-              ><button v-if="canAssignRole" @click="emit('action', 'role', user)">分配角色</button
-              ><button v-if="user.status === 'locked'" @click="emit('action', 'unlock', user)">
+              <button :disabled="!user.canManage" @click="emit('action', 'name', user)">编辑</button
+              ><button
+                v-if="canAssignRole"
+                :disabled="!user.canAssignRole"
+                @click="emit('action', 'role', user)"
+              >
+                分配角色</button
+              ><button
+                v-if="user.status === 'locked'"
+                :disabled="!user.canManage"
+                @click="emit('action', 'unlock', user)"
+              >
                 解锁</button
               ><button
                 :class="user.status === 'disabled' ? '' : 'danger-text'"
+                :disabled="!user.canChangeStatus"
                 @click="emit('action', 'status', user)"
               >
                 {{ user.status === 'disabled' ? '启用' : '禁用' }}</button
-              ><button @click="emit('action', 'reset', user)">重置密码</button>
+              ><button :disabled="!user.canManage" @click="emit('action', 'reset', user)">
+                重置密码
+              </button>
             </div>
           </td>
         </tr>

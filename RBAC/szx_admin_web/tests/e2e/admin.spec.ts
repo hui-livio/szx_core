@@ -283,6 +283,42 @@ test('admin role options are restricted and audit details are redacted', async (
   await expect(page.getByRole('dialog')).toContainText('web')
   await expect(page.getByRole('dialog')).not.toContainText('should-not-appear')
 })
+test('audit event search sends trimmed keywords and clears the filter', async ({ page }) => {
+  await mockApi(page)
+  await login(page)
+  await page.getByRole('link', { name: '审计日志' }).click()
+  const input = page.getByRole('combobox', { name: '事件名称', exact: true })
+  await expect(input).toHaveAttribute('list', 'audit-event-options')
+  await expect(page.locator('#audit-event-options option[value="登录成功"]')).toHaveAttribute(
+    'label',
+    'auth.login.success',
+  )
+  for (const term of ['login', 'auth.login', '登录', '']) {
+    await input.fill(` ${term} `)
+    const request = page.waitForRequest((request) =>
+      new URL(request.url()).pathname.endsWith('/admin/user-logs'),
+    )
+    await page.getByRole('button', { name: '查询日志' }).click()
+    const params = new URL((await request).url()).searchParams
+    expect(params.get('event_search')).toBe(term || null)
+    expect(params.has('event_name')).toBe(false)
+    expect(params.get('page')).toBe('1')
+    await expect(page.getByRole('button', { name: '查询日志' })).toBeEnabled()
+  }
+  await input.fill('登录成功')
+  await page.getByRole('searchbox', { name: '搜索用户', exact: true }).fill('admin')
+  await page.getByLabel('开始时间（本地）').fill('2026-09-01T00:00')
+  const resetRequest = page.waitForRequest((request) =>
+    new URL(request.url()).pathname.endsWith('/admin/user-logs'),
+  )
+  await page.getByRole('button', { name: '重置筛选' }).click()
+  const resetParams = new URL((await resetRequest).url()).searchParams
+  expect([...resetParams.keys()].sort()).toEqual(['page', 'page_size'])
+  await expect(input).toHaveValue('')
+  await expect(page.getByRole('searchbox', { name: '搜索用户', exact: true })).toHaveValue('')
+  await expect(page.getByLabel('开始时间（本地）')).toHaveValue('')
+})
+
 test('login remains usable at mobile width', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/login')
@@ -313,6 +349,38 @@ test('reset supports a simple chosen password and clears the draft', async ({ pa
   await page.getByRole('button', { name: '重置密码', exact: true }).click()
   await expect(page.getByLabel('新密码', { exact: true })).toHaveValue('')
   await expect(page.getByLabel('确认新密码', { exact: true })).toHaveValue('')
+})
+
+test('self role and disable actions are unavailable while password reset remains allowed', async ({
+  page,
+}) => {
+  const writes = await mockApi(page, 'super_admin', false, false, true)
+  await login(page)
+  await expect(page.getByRole('button', { name: '分配角色', exact: true })).toBeDisabled()
+  await expect(page.getByRole('button', { name: '禁用', exact: true })).toBeDisabled()
+  await expect(page.getByRole('button', { name: '编辑', exact: true })).toBeEnabled()
+  await expect(page.getByRole('button', { name: '重置密码', exact: true })).toBeEnabled()
+  expect(writes.some((write) => /\/(role|status)$/.test(write.path))).toBe(false)
+})
+
+test('admin cannot operate on a higher-role row even if it appears in a stale list', async ({
+  page,
+}) => {
+  await mockApi(page, 'admin')
+  await page.route('**/api/v1/admin/users?*', (route) =>
+    route.fulfill({
+      json: {
+        data: { items: [{ ...baseUser, role: 'super_admin' }], total: 1, page: 1, page_size: 20 },
+        request_id: 'scope-test',
+      },
+    }),
+  )
+  await login(page)
+  await expect(page.getByRole('cell', { name: '超级管理员', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '分配角色', exact: true })).toHaveCount(0)
+  for (const name of ['禁用', '编辑', '重置密码']) {
+    await expect(page.getByRole('button', { name, exact: true })).toBeDisabled()
+  }
 })
 
 test('chosen self-reset returns to login without a temporary credential', async ({ page }) => {

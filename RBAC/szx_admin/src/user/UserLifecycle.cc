@@ -336,6 +336,8 @@ auto UserService::changeStatus(const ActorContext &context, const std::string &i
                 const auto authorized = authorize(context, *users, id, POLICY::Capability::UserStatus, version);
                 if (!authorized.ok)
                     return Result<void>::Failure(authorized.error, {});
+                if (status == "disabled" && authorized.value.actor.id == authorized.value.target.id)
+                    return failed<void>(ErrorCode::Forbidden);
                 auto target = authorized.value.target;
                 if (target.status != status)
                 {
@@ -488,6 +490,8 @@ auto UserService::assignRole(const ActorContext &context, const std::string &id,
                 const auto authorized = authorize(context, *users, id, POLICY::Capability::UserRoleAssign, version);
                 if (!authorized.ok)
                     return Result<void>::Failure(authorized.error, {});
+                if (authorized.value.actor.id == authorized.value.target.id)
+                    return failed<void>(ErrorCode::Forbidden);
                 auto target = authorized.value.target;
                 // The new role must also be inside the actor's manageable set.
                 if (!POLICY::mayTarget(authorized.value.actor.role, role))

@@ -28,6 +28,34 @@ function setup(handler: (config: AxiosRequestConfig) => Promise<AxiosResponse>) 
   return { client, request, changed }
 }
 describe('session protocol', () => {
+  it.each([-60_000, 3_000])(
+    'refreshes before requests when access expires in %s ms',
+    async (remaining) => {
+      const seen: AxiosRequestConfig[] = []
+      const { client, request } = setup(async (config) => {
+        seen.push(config)
+        if (config.url === '/auth/refresh') {
+          await new Promise((resolve) => setTimeout(resolve, 10))
+          expect(config.headers?.['X-CSRF-Token']).toBe('old-csrf')
+          return success({
+            ...session,
+            access_token: 'renewed',
+            csrf_token: 'renewed-csrf',
+            expires_at: Date.now() + 90_000,
+          })
+        }
+        expect(config.headers?.Authorization).toBe('Bearer renewed')
+        return success({ ok: true })
+      })
+      client.setSession({ ...session, expires_at: Date.now() + remaining })
+      await Promise.all([client.request({ url: '/a' }), client.request({ url: '/b' })])
+      expect(seen[0]?.url).toBe('/auth/refresh')
+      expect(request.mock.calls.filter(([config]) => config.url === '/auth/refresh')).toHaveLength(
+        1,
+      )
+      expect(seen).toHaveLength(3)
+    },
+  )
   it('coalesces simultaneous 401s and rotates both credentials before replay', async () => {
     const seen: AxiosRequestConfig[] = []
     const { client, request } = setup(async (config) => {

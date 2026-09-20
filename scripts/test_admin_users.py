@@ -281,6 +281,76 @@ def run_user_checks(admin, sql):
         assert sql("SELECT COUNT(*) FROM user_api.users WHERE username='revoked_creation';") == "0"
         print("PASS: concurrent actor revocation prevents creation with stale authorization", flush=True)
 
+    with admin("user_scope") as port:
+        actor = login(port)
+        token = actor["access_token"]
+        actor_id = actor["user"]["id"]
+        actor_path = "/admin/users/" + actor_id
+        expect(call(port, "PATCH", actor_path + "/status", {"status": "disabled"}, token, 1), 403, 2204)
+        created = {}
+        for role in ("operator", "engineer", "admin", "super_admin"):
+            issued = expect(call(port, "POST", "/admin/users", {
+                "username": "scope_" + role, "display_name": role, "role": role,
+            }, token), 201)
+            created[role] = login(port, "scope_" + role, issued["temporary_credential"])
+        before = sql(f"SELECT role,status,version,authz_version FROM user_scope.users WHERE id='{actor_id}';")
+        sessions_before = sql(f"SELECT COUNT(*) FROM user_scope.refresh_tokens WHERE user_id='{actor_id}' AND revoked_at IS NULL;")
+        for role in ("operator", "engineer", "admin", "super_admin"):
+            expect(call(port, "PUT", actor_path + "/role", {"role": role}, token, 1), 403, 2204)
+        expect(call(port, "PATCH", actor_path.upper().replace('/ADMIN/USERS/', '/admin/users/') + "/status",
+                    {"status": "disabled"}, token, 1), 403, 2204)
+        assert sql(f"SELECT role,status,version,authz_version FROM user_scope.users WHERE id='{actor_id}';") == before
+        assert sql(f"SELECT COUNT(*) FROM user_scope.refresh_tokens WHERE user_id='{actor_id}' AND revoked_at IS NULL;") == sessions_before
+        assert sql("SELECT COUNT(*) FROM user_scope.user_logs WHERE event_name IN ('user.role.changed','user.status.changed');") == "0"
+        expect(call(port, "GET", "/client/me/permissions", token=token), 200)
+        for role, session in created.items():
+            own_path = "/admin/users/" + session["user"]["id"]
+            expect(call(port, "PUT", own_path + "/role", {"role": role}, session["access_token"], 1), 403, 2204)
+            expect(call(port, "PATCH", own_path + "/status", {"status": "disabled"}, session["access_token"], 1), 403, 2204)
+            if role != "super_admin":
+                expect(call(port, "PUT", actor_path + "/role", {"role": "operator"}, session["access_token"], 1), 403, 2204)
+                expect(call(port, "PATCH", actor_path + "/status", {"status": "disabled"}, session["access_token"], 1), 403, 2204)
+                expect(call(port, "POST", actor_path + "/reset-password", token=session["access_token"], version=1), 403, 2204)
+        # Another super-admin can manage this account; denial is specific to self/role scope.
+        other_token = created["super_admin"]["access_token"]
+        expect(call(port, "PATCH", actor_path + "/status", {"status": "disabled"}, other_token, 1), 200)
+        expect(call(port, "GET", "/client/me/permissions", token=token), 401, 2200)
+        expect(call(port, "PATCH", actor_path + "/status", {"status": "active"}, other_token, 2), 200)
+        print("PASS: self role/status mutations and higher-role management denied without state/session changes", flush=True)
+
+    with admin("event_search") as port:
+        actor = login(port)
+        token = actor["access_token"]
+        events = {
+            "auth.login.success": "登录成功", "auth.login.failure": "登录失败",
+            "auth.logout": "退出登录", "auth.refresh.success": "会话刷新成功",
+            "user.password.reset": "重置用户密码", "report.custom_key": "", "report.customxkey": "",
+        }
+        for index, event in enumerate(events):
+            sql("INSERT INTO event_search.user_logs(id,actor_user_id,event_name,result,request_id,details_json) VALUES "
+                f"(UUID(),'{actor['user']['id']}','{event}','denied','event-{index}',JSON_OBJECT());")
+        def search_events(term, **params):
+            return expect(call(port, "GET", "/admin/user-logs?" + urlencode({
+                "event_search": term, "result": "denied", "page_size": 100, **params,
+            }), token=token), 200)
+        for term in ("login", "auth.login", "登录", "成功", "重置", "密码", "custom", "_key", "missing", "%", "\\", "' OR 1=1 --", ""):
+            expected = {event for event, label in events.items() if term in event or term in label}
+            page = search_events(term)
+            assert page["total"] == len(expected), (term, page)
+            assert {row["event_name"] for row in page["items"]} == expected, (term, page)
+        first = search_events("登录", page_size=1)
+        second = search_events("登录", page_size=1, page=2)
+        assert first["total"] == second["total"] == 3
+        assert first["items"][0]["id"] != second["items"][0]["id"]
+        assert search_events("登录", page_size=1, page=4)["items"] == []
+        assert search_events("登录", actor_search="admin")["total"] == 3
+        assert search_events("登录", actor_search="missing")["total"] == 0
+        assert search_events("login", event_name="auth.login.success")["total"] == 1
+        assert search_events("", event_name="auth.login")["total"] == 0
+        for invalid in ("x" * 129, "bad\nname"):
+            expect(call(port, "GET", "/admin/user-logs?" + urlencode({"event_search": invalid}), token=token), 422, 2206)
+        print("PASS: audit event keywords, Chinese labels, literal wildcards, pagination, combined and exact filters", flush=True)
+
     with admin("user_chosen_password") as port:
         token = login(port)["access_token"]
         secret = "  自定义Password123  "

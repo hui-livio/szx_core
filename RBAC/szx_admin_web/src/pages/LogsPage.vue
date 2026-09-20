@@ -5,7 +5,18 @@ import LogFilters from '../components/logs/LogFilters.vue'
 import LogTable from '../components/logs/LogTable.vue'
 import PaginationBar from '../components/PaginationBar.vue'
 import ModalDialog from '../components/ModalDialog.vue'
-const { filters, query, logs, validationError, selected, search, show, close } = useLogsViewModel()
+const {
+  filters,
+  query,
+  logs,
+  eventOptions,
+  validationError,
+  selected,
+  search,
+  reset,
+  show,
+  close,
+} = useLogsViewModel()
 const { page, pageCount, total, busy, error, requestId, load } = query
 </script>
 <template>
@@ -18,7 +29,13 @@ const { page, pageCount, total, busy, error, requestId, load } = query
     <span class="role-badge">只读记录</span>
   </header>
   <section class="panel table-panel">
-    <LogFilters v-model="filters" :busy="busy" @search="search" />
+    <LogFilters
+      v-model="filters"
+      :busy="busy"
+      :event-options="eventOptions"
+      @search="search"
+      @reset="reset"
+    />
     <p v-if="validationError" class="alert error" role="alert">{{ validationError }}</p>
     <div class="section-heading table-heading">
       <h2>

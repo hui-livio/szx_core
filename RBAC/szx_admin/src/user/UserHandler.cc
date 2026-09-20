@@ -309,8 +309,8 @@ auto logsResponse(UserService &service, const INFRA::HttpRequest &request) -> IN
 {
     try
     {
-        constexpr std::array<std::string_view, 8> allowed{"page",       "page_size", "from",          "to",
-                                                          "event_name", "result",    "actor_user_id", "actor_search"};
+        constexpr std::array<std::string_view, 9> allowed{"page",   "page_size",     "from",         "to",          "event_name",
+                                                          "result", "actor_user_id", "actor_search", "event_search"};
         if (!allowedQuery(request, allowed))
             return RestApi::error(ErrorCode::ValidationError, request.requestId);
         const auto pagination = RestApi::pagination(request);
@@ -323,7 +323,8 @@ auto logsResponse(UserService &service, const INFRA::HttpRequest &request) -> IN
                              .actorUserId = queryValue(request, "actor_user_id"),
                              .page        = pagination.value.page,
                              .pageSize    = pagination.value.pageSize,
-                             .actorSearch = queryValue(request, "actor_search")};
+                             .actorSearch = queryValue(request, "actor_search"),
+                             .eventSearch = queryValue(request, "event_search")};
         const auto result = service.logs(actorContext(request), query);
         if (!result.ok)
             return RestApi::error(static_cast<ErrorCode>(result.error), request.requestId);

@@ -65,6 +65,7 @@ struct LogQuery final
     std::uint32_t page{1};
     std::uint32_t pageSize{20};
     std::string actorSearch; ///< 展示名、用户名或 UID 子串，最多 128 个字符。
+    std::string eventSearch; ///< 事件代码或中文名称子串，最多 128 个字符。
 };
 
 struct Permissions final

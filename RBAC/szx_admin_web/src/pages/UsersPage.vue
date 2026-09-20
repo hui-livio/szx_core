@@ -8,6 +8,7 @@ import ModalDialog from '../components/ModalDialog.vue'
 import PaginationBar from '../components/PaginationBar.vue'
 const {
   filters,
+  users,
   query,
   mutation,
   action,
@@ -29,7 +30,7 @@ const {
   closeCredential,
   submit,
 } = useUsersViewModel()
-const { items, page, pageCount, total, busy, error, requestId, load } = query
+const { page, pageCount, total, busy, error, requestId, load } = query
 const { busy: saving, error: saveError } = mutation
 </script>
 <template>
@@ -52,7 +53,7 @@ const { busy: saving, error: saveError } = mutation
     </div>
     <p v-if="error" class="alert error" role="alert">{{ error }}</p>
     <UserTable
-      :users="items"
+      :users="users"
       :busy="busy"
       :failed="!!error"
       :can-assign-role="canAssignRole"

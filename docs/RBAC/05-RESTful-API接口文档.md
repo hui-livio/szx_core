@@ -515,6 +515,8 @@ Content-Type: application/json
 
 locked 不能直接改为 active，否则返回 `422 / 2206`，须调用 unlock。禁用最后一个 active 超管返回 `409 / 2210`；其他错误见本节公共错误表。
 
+禁止禁用自己，返回 `403 / 2204`，不会修改状态、版本或会话；不能管理高于自身或超出既有管理范围的角色。自我禁用限制优先于最后一个超管保护。
+
 <a id="users-unlock"></a>
 
 ### PATCH /admin/users/{id}/unlock — 解锁
@@ -553,6 +555,8 @@ If-Match: 3
 
 **成功：** 200，data 为 User。实际角色变化时递增 version/authz_version 并撤销 refresh 会话；提交原角色不递增版本。最后一个 active 超管不能降级，否则返回 `409 / 2210`；其他错误见本节公共错误表。
 
+禁止给自己分配角色，即使提交原角色也返回 `403 / 2204`；该限制优先于最后一个超管保护。目标和新角色必须在调用者允许管理的范围内。
+
 <a id="users-reset-password"></a>
 
 ### POST /admin/users/{id}/reset-password — 重置密码
@@ -588,11 +592,14 @@ If-Match: 4
 | from | string | 否 | 起始 UTC ISO 8601 时间，包含下界 |
 | to | string | 否 | 结束 UTC ISO 8601 时间，包含该精确时刻上界 |
 | event_name | string | 否 | 精确匹配；事件名称语法见行为上报，查询允许 auth./user. 前缀 |
+| event_search | string | 否 | 事件代码或已配置中文名称的字面量子串，最多 128 个 Unicode 字符，无控制字符；空表示不过滤 |
 | result | string | 否 | success / failure / denied |
 | actor_user_id | string(UUID) | 否 | 操作者 ID |
 | actor_search | string | 否 | 操作者展示名、用户名或 UID 的字面量子串，最多 128 个 Unicode 字符，无控制字符；与其他筛选条件取交集 |
 
 按 created_at 降序、id 升序排列；不支持 sort，未知参数返回 `422 / 2206`。to 只有秒精度，不包含该精确时刻之后的微秒记录；其他错误见本节公共错误表。
+
+管理界面使用 `event_search`，提交前去除首尾空白。例如 `login` 或 `auth.login` 可匹配 `auth.login.success` / `auth.login.failure`，`登录` 还匹配中文名为“退出登录”的 `auth.logout`。未知事件可按原始代码查询。`%`、`_`、反斜杠作为普通字符。匹配在服务端分页前完成，total 使用相同条件；与其他筛选条件取交集。保留 `event_name` 原有精确语义。
 
 `actor_search` 在服务端关联 users 后，对 display_name、username、uid 三个字段进行匹配，分页与 total 均基于过滤后的日志。`%`、`_`、反斜杠作为普通字符匹配，大小写规则沿用数据库展示列的排序规则。`actor_user_id` 仅为已有 API 客户端保留兼容，管理界面不提供 UUID 搜索；二者同时提供时取交集。返回的用户名是查询时的登录标识，不是历史快照；无关联操作者的日志仍会出现在未按用户筛选的结果中。
 

@@ -1,5 +1,6 @@
 #include "UserRepository.h"
 #include "../auth/LoginService.h"
+#include "JsonHelper.hpp"
 #include "SzxAdmin/Infra/ErrorCode.h"
 #include "UUID.hpp"
 
@@ -306,24 +307,28 @@ auto MySqlUserRepository::queryLogs(const USER::LogFilter &filter) -> Result<USE
     {
         if (filter.limit == 0)
             return Result<USER::LogPage>::Failure(static_cast<int>(ErrorCode::InternalFailure), {});
-        const auto from     = filter.from;
-        const auto to       = filter.to;
-        const auto event    = filter.eventName;
-        const auto result   = filter.result;
-        const auto actor    = filter.actorUserId;
-        const auto username = filter.actorSearch;
-        const auto pattern  = "%" + escapeLike(username) + "%";
-        const auto limit    = static_cast<std::uint64_t>(filter.limit);
-        const auto offset   = filter.offset;
+        const auto from         = filter.from;
+        const auto to           = filter.to;
+        const auto event        = filter.eventName;
+        const auto result       = filter.result;
+        const auto actor        = filter.actorUserId;
+        const auto username     = filter.actorSearch;
+        const auto pattern      = "%" + escapeLike(username) + "%";
+        const auto eventSearch  = filter.eventSearch;
+        const auto eventPattern = "%" + escapeLike(eventSearch) + "%";
+        const auto eventNames   = SZX::COMMON::Json(filter.eventNames).dump();
+        const auto limit        = static_cast<std::uint64_t>(filter.limit);
+        const auto offset       = filter.offset;
         const std::string source{" FROM user_logs l LEFT JOIN users u ON u.id = l.actor_user_id WHERE "};
         const std::string predicate{"(? = '' OR l.created_at >= ?) AND (? = '' OR l.created_at <= ?) AND "
                                     "(? = '' OR l.event_name = ?) AND (? = '' OR l.result = ?) AND "
                                     "(? = '' OR l.actor_user_id = ?) AND "
-                                    "(? = '' OR u.display_name LIKE ? OR u.username LIKE ? OR u.uid LIKE ?)"};
+                                    "(? = '' OR u.display_name LIKE ? OR u.username LIKE ? OR u.uid LIKE ?) AND "
+                                    "(? = '' OR l.event_name LIKE ? OR JSON_CONTAINS(?, JSON_QUOTE(l.event_name)))"};
 
-        const auto totals = connection_.query_s<std::tuple<std::uint64_t>>("SELECT COUNT(*)" + source + predicate, from, from, to,
-                                                                           to, event, event, result, result, actor, actor,
-                                                                           username, pattern, pattern, pattern);
+        const auto totals = connection_.query_s<std::tuple<std::uint64_t>>(
+            "SELECT COUNT(*)" + source + predicate, from, from, to, to, event, event, result, result, actor, actor, username,
+            pattern, pattern, pattern, eventSearch, eventPattern, eventNames);
         if (connection_.has_error() || totals.size() != 1)
             return queryFailed<USER::LogPage>();
 
@@ -334,8 +339,8 @@ auto MySqlUserRepository::queryLogs(const USER::LogFilter &filter) -> Result<USE
                 "SELECT l.id, l.actor_user_id, l.target_user_id, l.event_name, l.result, l.request_id, "
                 "CAST(l.details_json AS BINARY), l.created_at, COALESCE(u.username, u.uid, '')" +
                     source + predicate + " ORDER BY l.created_at DESC, l.id ASC LIMIT ? OFFSET ?",
-                from, from, to, to, event, event, result, result, actor, actor, username, pattern, pattern, pattern, limit,
-                offset);
+                from, from, to, to, event, event, result, result, actor, actor, username, pattern, pattern, pattern, eventSearch,
+                eventPattern, eventNames, limit, offset);
             if (connection_.has_error())
                 return queryFailed<USER::LogPage>();
             page.items.reserve(rows.size());

@@ -1,13 +1,13 @@
 import { computed, onMounted, reactive, shallowRef } from 'vue'
 import { adminApi } from '../api/admin'
 import type { AuditLog } from '../api/types'
-import { auditEventLabel, redactDetails, toUtcSeconds } from '../domain'
+import { auditEventLabel, auditEventOptions, redactDetails, toUtcSeconds } from '../domain'
 import { usePagedQuery } from './usePagedQuery'
 
 export type AuditLogView = AuditLog & { eventLabel: string; actorUsername: string }
 
 export function useLogsViewModel() {
-  const filters = reactive({ event_name: '', result: '', actor_search: '', from: '', to: '' })
+  const filters = reactive({ event_search: '', result: '', actor_search: '', from: '', to: '' })
   let applied = { ...filters }
   const validationError = shallowRef('')
   const selected = shallowRef<AuditLogView | null>(null)
@@ -37,7 +37,11 @@ export function useLogsViewModel() {
       validationError.value = '开始时间不能晚于结束时间。'
       return
     }
-    applied = { ...filters, actor_search: filters.actor_search.trim() }
+    applied = {
+      ...filters,
+      event_search: filters.event_search.trim(),
+      actor_search: filters.actor_search.trim(),
+    }
     void query.load(1)
   }
   function show(log: AuditLog) {
@@ -51,6 +55,21 @@ export function useLogsViewModel() {
   function close() {
     selected.value = null
   }
+  function reset() {
+    Object.assign(filters, { event_search: '', result: '', actor_search: '', from: '', to: '' })
+    search()
+  }
   onMounted(() => query.load())
-  return { filters, query, logs, validationError, selected, search, show, close }
+  return {
+    filters,
+    query,
+    logs,
+    eventOptions: auditEventOptions,
+    validationError,
+    selected,
+    search,
+    reset,
+    show,
+    close,
+  }
 }

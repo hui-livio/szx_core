@@ -8,6 +8,11 @@ import { usePagedQuery } from './usePagedQuery'
 import { useTask } from './useTask'
 
 export type UserAction = 'create' | 'details' | 'name' | 'role' | 'status' | 'unlock' | 'reset'
+export type UserRowView = User & {
+  canManage: boolean
+  canAssignRole: boolean
+  canChangeStatus: boolean
+}
 export interface UserDraft {
   identityType: 'username' | 'uid'
   identity: string
@@ -62,6 +67,18 @@ export function useUsersViewModel() {
     () => passwordPolicy(action.value === 'reset' ? selected.value?.role : draft.role).hint,
   )
   const canAssignRole = computed(() => auth.user?.role === 'super_admin')
+  const users = computed<UserRowView[]>(() =>
+    query.items.value.map((user) => {
+      const canManage = roles.value.includes(user.role)
+      const isSelf = user.id === auth.user?.id
+      return {
+        ...user,
+        canManage,
+        canAssignRole: canManage && canAssignRole.value && !isSelf,
+        canChangeStatus: canManage && !isSelf,
+      }
+    }),
+  )
   const dialogTitle = computed(() => (action.value ? actionLabels[action.value] : ''))
   const targetStatus = computed(() =>
     selected.value?.status === 'disabled' ? 'active' : 'disabled',
@@ -147,6 +164,11 @@ export function useUsersViewModel() {
         } else {
           const user = selected.value
           if (!user) return
+          if (!roles.value.includes(user.role)) throw new Error('无权管理此用户。')
+          if (user.id === auth.user?.id && (operation === 'role' || operation === 'status'))
+            throw new Error(operation === 'role' ? '不能给自己分配角色。' : '不能禁用自己。')
+          if (operation === 'role' && (!canAssignRole.value || !roles.value.includes(draft.role)))
+            throw new Error('无权分配此角色。')
           if (operation === 'reset') {
             const response = await adminApi.resetPassword(user, await draftPasswordHash(user.role))
             clearPassword()
@@ -187,6 +209,7 @@ export function useUsersViewModel() {
   })
   return {
     filters,
+    users,
     query,
     mutation,
     action,
