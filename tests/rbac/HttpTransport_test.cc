@@ -275,6 +275,55 @@ TEST(AdminHttpIntegrationTest, MountsAdminBundleWithConfinedSpaFallback)
     }
 }
 
+TEST(AdminHttpIntegrationTest, ServesApiDocsAtConfiguredPrefixWithoutMaskingApiRoutes)
+{
+    WebRoot files;
+    const auto root = files.directory / "public";
+    ASSERT_TRUE(SZX::COMMON::FileHelper::WriteText(root / "api-docs" / "index.html", "SWAGGER UI"));
+    ASSERT_TRUE(SZX::COMMON::FileHelper::WriteText(root / "api-docs" / "openapi.json", R"({"openapi":"3.0.3"})"));
+    ASSERT_TRUE(SZX::COMMON::FileHelper::WriteText(root / "api-docs" / "app.js", "documentation javascript"));
+    ASSERT_TRUE(SZX::COMMON::FileHelper::WriteText(root / "index.html", "ROOT SPA"));
+    ASSERT_TRUE(SZX::COMMON::FileHelper::WriteText(root / "secret.txt", "OUTSIDE DOCS"));
+    for (const auto prefix : {"/api/v1", "/service/v2", "/"})
+    {
+        SCOPED_TRACE(prefix);
+        auto config        = testConfig();
+        config.staticRoot  = root.string();
+        config.apiPrefix   = prefix;
+        config.spaFallback = true;
+        const auto base    = config.apiPrefix == "/" ? std::string{} : config.apiPrefix;
+        HttpTransport transport(config);
+        ASSERT_TRUE(transport
+                        .registerApiRoute("GET", "/protected", [](const auto &input)
+                                          { return RestApi::error(ErrorCode::AuthRequired, input.requestId); })
+                        .ok);
+        ASSERT_TRUE(transport.start().ok);
+        if (!base.empty())
+        {
+            const auto redirect = request(transport.port(), "GET", base, {}, idHeader);
+            EXPECT_EQ(status(redirect), 308);
+            EXPECT_NE(redirect.find("Location: " + base + "/"), redirect.npos);
+        }
+        const auto page = request(transport.port(), "GET", base + "/", {}, idHeader);
+        EXPECT_EQ(status(page), 200);
+        EXPECT_EQ(body(page), "SWAGGER UI");
+        EXPECT_NE(page.find("text/html"), page.npos);
+        EXPECT_EQ(body(request(transport.port(), "GET", base + "/openapi.json")), R"({"openapi":"3.0.3"})");
+        EXPECT_EQ(body(request(transport.port(), "GET", base + "/docs/app.js")), "documentation javascript");
+        const auto head = request(transport.port(), "HEAD", base + "/docs/app.js");
+        EXPECT_EQ(status(head), 200);
+        EXPECT_TRUE(body(head).empty());
+        EXPECT_EQ(status(request(transport.port(), "GET", base + "/health")), 200);
+        expectError(request(transport.port(), "GET", base + "/protected", {}, idHeader), 401, 2200);
+        for (const auto path : {"/missing", "/admin/users", "/docs/missing.js", "/docs/missing"})
+            expectError(request(transport.port(), "GET", base + path, {}, idHeader), 404, 2205);
+        expectError(request(transport.port(), "POST", base + "/", {}, idHeader), 404, 2205);
+        for (const auto path : {"/docs/%2e%2e/secret.txt", "/docs/%00"})
+            expectError(request(transport.port(), "GET", base + path, {}, idHeader), 403, 2204);
+        ASSERT_TRUE(transport.stop().ok);
+    }
+}
+
 TEST(AdminHttpIntegrationTest, ConfiguredHealthPathSupportsExtraSlashesWithoutAddingRootAlias)
 {
     WebRoot files;

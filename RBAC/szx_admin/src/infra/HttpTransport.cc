@@ -171,8 +171,24 @@ public:
 
     auto notFound(const Network::HttpServerRequest &request) const -> Network::HttpServerResponse
     {
-        if (!staticHandler_ || isApiPath(request.path, config_.apiPrefix) ||
-            (request.method != "GET" && request.method != "HEAD"))
+        if (request.method != "GET" && request.method != "HEAD")
+            return {.statusCode = 404};
+        if (isApiPath(request.path, config_.apiPrefix))
+        {
+            if (!apiDocsHandler_)
+                return {.statusCode = 404};
+            if (request.path == config_.apiPrefix && config_.apiPrefix != "/")
+                return {.statusCode = 308, .headers = {{"Location", config_.apiPrefix + "/"}}};
+            auto mounted = request;
+            mounted.path = config_.apiPrefix == "/" ? request.path : request.path.substr(config_.apiPrefix.size());
+            // Only documentation paths are static. Unknown API routes never receive SPA HTML.
+            if (mounted.path != "/" && mounted.path != "/openapi.json" && !mounted.path.starts_with("/docs/"))
+                return {.statusCode = 404};
+            if (mounted.path.starts_with("/docs/"))
+                mounted.path.erase(0, 5);
+            return apiDocsHandler_(mounted);
+        }
+        if (!staticHandler_)
             return {.statusCode = 404};
         if (isApiPath(request.path, "/admin"))
         {
@@ -332,6 +348,7 @@ public:
                 return ready;
             staticHandler_      = {};
             adminStaticHandler_ = {};
+            apiDocsHandler_     = {};
             if (!config_.staticRoot.empty())
             {
                 std::error_code error;
@@ -343,7 +360,18 @@ public:
                     auto files = Network::HttpServer::CreateStaticHandler(config_.staticRoot, config_.staticHomePage);
                     if (!files.ok)
                         return networkResult(Result<void>::Failure(files.error, {}), ErrorCode::InvalidConfiguration);
-                    staticHandler_         = std::move(files.value);
+                    staticHandler_       = std::move(files.value);
+                    const auto docsRoot  = std::filesystem::path{config_.staticRoot} / "api-docs";
+                    const bool docsExist = std::filesystem::exists(docsRoot, error);
+                    if (error)
+                        return failure(ErrorCode::InvalidConfiguration);
+                    if (docsExist)
+                    {
+                        auto docs = Network::HttpServer::CreateStaticHandler(docsRoot.string(), "index.html");
+                        if (!docs.ok)
+                            return networkResult(Result<void>::Failure(docs.error, {}), ErrorCode::InvalidConfiguration);
+                        apiDocsHandler_ = std::move(docs.value);
+                    }
                     const auto adminRoot   = std::filesystem::path{config_.staticRoot} / "admin";
                     const bool adminExists = std::filesystem::exists(adminRoot, error);
                     if (error)
@@ -394,6 +422,7 @@ public:
     std::atomic_bool started_{};
     Network::HttpRouteHandler staticHandler_;
     Network::HttpRouteHandler adminStaticHandler_;
+    Network::HttpRouteHandler apiDocsHandler_;
     std::unique_ptr<Network::HttpServer> server_; // Join before releasing captured configuration and file handler.
 };
 

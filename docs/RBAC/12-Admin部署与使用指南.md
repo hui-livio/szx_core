@@ -7,6 +7,8 @@
 | 用途 | 默认地址或目录 |
 |---|---|
 | Admin 页面入口 | `http://localhost:7364/admin`，跳转到 `/admin/` |
+| Swagger UI | `http://localhost:7364/api/v1`，跳转到 `/api/v1/` |
+| OpenAPI 文件 | `http://localhost:7364/api/v1/openapi.json` |
 | REST API | `http://localhost:7364/api/v1` |
 | 健康检查 | `GET /api/v1/health` |
 | 前端开发服务 | `http://localhost:5173`，代理 API 到 `127.0.0.1:7364` |
@@ -77,6 +79,12 @@ Set-Location build/bin
 打开 `http://localhost:7364/admin`。其他机器使用服务所在机器的主机名或 IP；`0.0.0.0` 是监听地址。首次创建静态目录后需要重启服务，已有目录内替换构建文件无需为静态文件单独重启；升级后端 exe 仍需重启。
 
 初始超管用户名为 `admin`，初始密码为 `superadmin`，首次登录必须修改为至少 8 个字符且含字母、数字的新密码。初始化密码是 bootstrap 特例。重复启动不会恢复默认密码，也不会覆盖现有密码。
+
+### 在线接口文档
+
+构建服务会自动复制 `RBAC/szx_admin/web/api-docs` 到 `build/bin/web/api-docs`，不依赖 Vue 构建或外网 CDN。自定义 staticRoot 时复制到 `<staticRoot>/api-docs`；首次创建目录后重启服务。
+
+访问 `/api/v1`，展开接口查看参数、示例与响应，点击 Try it out → Execute 发起真实请求。登录提交 SHA-256 摘要，随后将 access_token 填入 Authorize 的 bearerAuth（不用添加 Bearer 前缀）；刷新/登出所需 Cookie 由浏览器自动携带，手动填写最新 X-CSRF-Token。授权信息仅保留在当前页面，不会自动刷新。可下载 OpenAPI 文件导入接口工具。
 
 ## 4. 日常操作
 
