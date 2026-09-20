@@ -39,6 +39,9 @@ auto UserService::resolve(const ActorContext &context, UserRepository &repositor
     if (!found.value || found.value->status != "active" || found.value->authz_version <= 0 ||
         static_cast<std::uint64_t>(found.value->authz_version) != claims.value.authzVersion)
         return failed<UserRow>(ErrorCode::AuthRequired);
+    // A frontend redirect is not authorization: pending super admins may only use auth endpoints.
+    if (found.value->role == "super_admin" && found.value->force_password_change)
+        return failed<UserRow>(ErrorCode::Forbidden);
     return Result<UserRow>::Success(*found.value);
 }
 
@@ -57,6 +60,8 @@ auto UserService::authorize(const ActorContext &context, UserRepository &reposit
     if (!actor || actor->status != "active" || actor->authz_version <= 0 ||
         static_cast<std::uint64_t>(actor->authz_version) != claims.value.authzVersion)
         return failed<Mutation>(ErrorCode::AuthRequired);
+    if (actor->role == "super_admin" && actor->force_password_change)
+        return failed<Mutation>(ErrorCode::Forbidden);
     if (!POLICY::allows(actor->role, required))
         return failed<Mutation>(ErrorCode::Forbidden);
     if (!locked.value.target)

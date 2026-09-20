@@ -37,7 +37,12 @@ def run_user_checks(admin, sql):
             assert response[1]["code"] == code, response[:2]
         return response[1]["data"] if status in (200, 201, 202) else None
 
+    fixture_database = ""
+
     def login(port, name="admin", password="superadmin"):
+        if name == "admin":
+            # Management fixtures model completed onboarding; forced_password below tests the real HTTP change flow.
+            sql(f"UPDATE {fixture_database}.users SET force_password_change=0 WHERE username='admin';")
         return expect(call(port, "POST", "/auth/login", {
             "identifier": name, "password_hash": hashlib.sha256(password.encode()).hexdigest(),
         }), 200)
@@ -50,7 +55,56 @@ def run_user_checks(admin, sql):
         assert all(type(user[field]) is int for field in ("created_at", "updated_at"))
         assert user["last_login_at"] is None or type(user["last_login_at"]) is int
 
+    with admin("forced_password", allowed_origin="*") as port:
+        def raw_login(password):
+            return expect(call(port, "POST", "/auth/login", {
+                "identifier": "admin", "password_hash": hashlib.sha256(password.encode()).hexdigest(),
+            }), 200)
+
+        pending = raw_login("superadmin")
+        token = pending["access_token"]
+        own_path = "/admin/users/" + pending["user"]["id"]
+        before = sql("SELECT display_name,role,status,version,authz_version,password_hash FROM forced_password.users;")
+        for method, path, payload in (
+            ("GET", "/admin/users", None), ("GET", own_path, None),
+            ("GET", "/admin/user-logs", None), ("GET", "/client/me/permissions", None),
+            ("POST", "/admin/users", {"username": "blocked", "display_name": "Blocked", "role": "operator"}),
+            ("PATCH", own_path, {"display_name": "Blocked"}),
+            ("PATCH", own_path + "/status", {"status": "disabled"}),
+            ("PATCH", own_path + "/unlock", None),
+            ("PUT", own_path + "/role", {"role": "operator"}),
+            ("POST", own_path + "/reset-password", None),
+            ("POST", "/client/behavior-events", {"event_name": "report.view", "result": "success", "details": {}}),
+        ):
+            expect(call(port, method, path, payload, token, pending["user"]["version"]), 403, 2204)
+        assert sql("SELECT display_name,role,status,version,authz_version,password_hash FROM forced_password.users;") == before
+        assert sql("SELECT COUNT(*) FROM forced_password.users;") == "1"
+        expect(call(port, "POST", "/auth/change-password", {
+            "old_password_hash": hashlib.sha256(b"superadmin").hexdigest(),
+            "new_password_hash": hashlib.sha256(b"ChangedPassword2026").hexdigest(),
+        }, token, pending["user"]["version"]), 200)
+        expect(call(port, "GET", "/admin/users", token=token), 401, 2200)
+        active = raw_login("ChangedPassword2026")
+        cross_origin = {"Origin": "https://separate-admin.example.test"}
+        for path in ("/admin/users", "/admin/user-logs", "/client/me/permissions"):
+            response = call(port, "GET", path, token=active["access_token"], headers=cross_origin)
+            expect(response, 200)
+            assert response[2]["Access-Control-Allow-Origin"] == cross_origin["Origin"]
+            assert response[2]["Access-Control-Allow-Credentials"] == "true"
+        preflight = call(port, "OPTIONS", "/admin/users", headers={
+            **cross_origin, "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "authorization,content-type,if-match",
+        })
+        expect(preflight, 204)
+        assert preflight[2]["Access-Control-Allow-Origin"] == cross_origin["Origin"]
+        assert "Authorization" in preflight[2]["Access-Control-Allow-Headers"]
+        expect(call(port, "POST", "/admin/users", {
+            "username": "unblocked", "display_name": "Unblocked", "role": "operator",
+        }, active["access_token"], headers=cross_origin), 201)
+        print("PASS: forced password change blocks direct API reads and mutations until completed", flush=True)
+
     with admin("user_api") as port:
+        fixture_database = "user_api"
         session = login(port)
         token = session["access_token"]
         actor_id = session["user"]["id"]
@@ -101,6 +155,14 @@ def run_user_checks(admin, sql):
             if sort == "display_name":
                 names = [item["display_name"] for item in page["items"]]
                 assert names == sorted(names, key=str.casefold)
+        for attack in ("' OR 1=1 --", "' UNION SELECT NULL --", "'; DROP TABLE users; --",
+                       "' OR SLEEP(1) --", "<img src=x onerror=alert(1)>"):
+            for endpoint, field in (("/admin/users", "search"), ("/admin/user-logs", "actor_search"),
+                                    ("/admin/user-logs", "event_search")):
+                result = expect(call(port, "GET", endpoint + "?" + urlencode({field: attack}), token=token), 200)
+                assert result["total"] == 0 and result["items"] == [], (endpoint, attack, result)
+            expect(call(port, "GET", "/admin/users?" + urlencode({"sort": attack}), token=token), 422, 2206)
+        assert sql("SELECT COUNT(*) FROM user_api.users;") == "5"
         expect(call(port, "GET", "/admin/users?sort=invalid", token=token), 422, 2206)
         expect(call(port, "GET", "/admin/users?sortt=role", token=token), 422, 2206)
         logs = expect(call(port, "GET", "/admin/user-logs?actor_user_id=" + actor_id, token=token), 200)
@@ -282,6 +344,7 @@ def run_user_checks(admin, sql):
         print("PASS: concurrent actor revocation prevents creation with stale authorization", flush=True)
 
     with admin("user_scope") as port:
+        fixture_database = "user_scope"
         actor = login(port)
         token = actor["access_token"]
         actor_id = actor["user"]["id"]
@@ -312,6 +375,7 @@ def run_user_checks(admin, sql):
                 expect(call(port, "PATCH", actor_path + "/status", {"status": "disabled"}, session["access_token"], 1), 403, 2204)
                 expect(call(port, "POST", actor_path + "/reset-password", token=session["access_token"], version=1), 403, 2204)
         # Another super-admin can manage this account; denial is specific to self/role scope.
+        sql("UPDATE user_scope.users SET force_password_change=0 WHERE username='scope_super_admin';")
         other_token = created["super_admin"]["access_token"]
         expect(call(port, "PATCH", actor_path + "/status", {"status": "disabled"}, other_token, 1), 200)
         expect(call(port, "GET", "/client/me/permissions", token=token), 401, 2200)
@@ -319,6 +383,7 @@ def run_user_checks(admin, sql):
         print("PASS: self role/status mutations and higher-role management denied without state/session changes", flush=True)
 
     with admin("event_search") as port:
+        fixture_database = "event_search"
         actor = login(port)
         token = actor["access_token"]
         events = {
@@ -352,6 +417,7 @@ def run_user_checks(admin, sql):
         print("PASS: audit event keywords, Chinese labels, literal wildcards, pagination, combined and exact filters", flush=True)
 
     with admin("user_chosen_password") as port:
+        fixture_database = "user_chosen_password"
         token = login(port)["access_token"]
         secret = "  自定义Password123  "
         digest = hashlib.sha256(secret.encode()).hexdigest()
@@ -423,6 +489,7 @@ def run_user_checks(admin, sql):
         print("PASS: chosen initial/reset passwords, simple passwords, random fallback, session revocation, validation and rollback", flush=True)
 
     with admin("user_rate", attempts_per_minute=2) as port:
+        fixture_database = "user_rate"
         session = login(port)  # Shares the per-peer credential budget with creation/reset.
         token = session["access_token"]
         target = expect(call(port, "POST", "/admin/users", {
@@ -442,6 +509,7 @@ def run_user_checks(admin, sql):
         print("PASS: credential issuance is rate-limited without partial writes", flush=True)
 
     with admin("user_identity") as port:
+        fixture_database = "user_identity"
         token = login(port)["access_token"]
         for identity in ({"username": "resume"}, {"username": "résumé"}, {"uid": "U10086"}, {"uid": "u10086"}):
             issued = expect(call(port, "POST", "/admin/users", {
@@ -506,6 +574,7 @@ def run_user_checks(admin, sql):
         print("PASS: cross-field login identities reject collisions, including concurrent creates across services", flush=True)
 
     with admin("behavior_rate", behavior_events_per_minute=2) as port:
+        fixture_database = "behavior_rate"
         token = login(port)["access_token"]
         payload = {"event_name": "report.view", "result": "success", "details": {}}
         for _ in range(2):

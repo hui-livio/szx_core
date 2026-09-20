@@ -176,7 +176,7 @@ def run_session_checks(admin, sql, root, login, post, verify_token):
         rotated = session(call(port, current, headers={"Origin": "https://admin.example.test"}))
         response = call(port, rotated, "logout", {"Origin": "https://admin.example.test"})
         assert response[0] == 204
-        assert SimpleCookie(response[2]["Set-Cookie"])["szx_refresh"]["samesite"] == "Strict"
+        assert SimpleCookie(response[2]["Set-Cookie"])["szx_refresh"]["samesite"] == "None"
 
     with admin("session_rate", allowed_origin="*", attempts_per_minute=2) as port:
         current = session(login(port))

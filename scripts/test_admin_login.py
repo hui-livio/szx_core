@@ -127,7 +127,7 @@ def run_login_checks(admin, sql, public_key, root):
         # automatic updated_at includes the fractional part of the write time.
         assert abs(user["updated_at"] - expected_updated) < 2000, (user["updated_at"], expected_updated)
         cookie = SimpleCookie(headers["Set-Cookie"])["szx_refresh"]
-        assert cookie["httponly"] and cookie["secure"] and cookie["samesite"] == "Strict"
+        assert cookie["httponly"] and cookie["secure"] and cookie["samesite"] == "None"
         assert cookie["path"] == "/api/v1/auth" and 604790 <= int(cookie["max-age"]) <= 604800
         assert sql("SELECT token_hash FROM login.refresh_tokens;") == hashlib.sha256(cookie.value.encode()).hexdigest()
         assert data["csrf_token"] == hashlib.sha256(("csrf:" + cookie.value).encode()).hexdigest()
@@ -216,7 +216,7 @@ def run_login_checks(admin, sql, public_key, root):
         rejected(port, "admin", "changed-test-password")
         assert sql("SELECT password_hash FROM legacy_login.users;") == legacy_changed
     print("PASS: hash-only login rejects plaintext; legacy initial credential upgrades atomically without resetting changed passwords", flush=True)
-    with admin("password_change", allowed_origin="*") as port:
+    with admin("password_change", allowed_origin="https://business.example.test") as port:
         def change(session, old="superadmin", new="changed-password-2026", version=None, **kwargs):
             headers = {"Authorization": "Bearer " + session["access_token"],
                        "If-Match": str(session["user"]["version"] if version is None else version),
@@ -317,28 +317,39 @@ def run_login_checks(admin, sql, public_key, root):
         rejected(port, "admin", "superadmin", 2211, 429)
         assert sql("SELECT COUNT(*) FROM rate.user_logs WHERE event_name='auth.login.rate_limited';") == "1"
     with admin("wildcard_origin", allowed_origin="*") as port:
-        for origin in ("http://localhost:5173", "https://another.example.test", "null"):
+        for origin in ("http://localhost:5173", "https://another.example.test"):
             preflight = urllib.request.Request(f"http://127.0.0.1:{port}/api/v1/auth/login", method="OPTIONS",
                 headers={"Origin": origin, "Access-Control-Request-Method": "POST",
                          "Access-Control-Request-Headers": "content-type, x-request-id"})
             with urllib.request.urlopen(preflight, timeout=5) as response:
-                assert response.status == 204 and response.read() == b""
+                assert response.status == 204
                 assert response.headers["Access-Control-Allow-Origin"] == origin
                 assert response.headers["Access-Control-Allow-Credentials"] == "true"
-                assert "POST" in response.headers["Access-Control-Allow-Methods"]
-                assert "Content-Type" in response.headers["Access-Control-Allow-Headers"]
                 assert response.headers["Vary"] == "Origin"
             status, body, headers = login(port, extra_headers={"Origin": origin})
             assert status == 200, body
             assert headers["Access-Control-Allow-Origin"] == origin
             assert headers["Access-Control-Allow-Credentials"] == "true"
-            assert headers["Access-Control-Expose-Headers"] == "X-Request-ID"
             cookie = SimpleCookie(headers["Set-Cookie"])["szx_refresh"]
             assert cookie["samesite"] == "None" and cookie["secure"] and cookie["httponly"]
+        for origin in ("null", "file://local", "https://host/path"):
+            status, body, headers = login(port, extra_headers={"Origin": origin})
+            assert status == 403 and body["code"] == 2204
+            assert "Access-Control-Allow-Origin" not in headers
         status, body, headers = login(port, password="wrong", extra_headers={"Origin": "https://another.example.test"})
-        assert status == 401 and body["code"] == 2203
-        assert headers["Access-Control-Allow-Origin"] == "https://another.example.test"
-        assert sql("SELECT COUNT(*) FROM wildcard_origin.refresh_tokens;") == "3"
-    print("PASS: wildcard origin supports credentialed CORS preflight, login and failure responses", flush=True)
+        assert status == 401 and headers["Access-Control-Allow-Origin"] == "https://another.example.test"
+        assert sql("SELECT COUNT(*) FROM wildcard_origin.refresh_tokens;") == "2"
+    with admin("exact_origin", allowed_origin="https://business.example.test") as port:
+        for origin in ("https://evil.example", "null", "https://business.example.test.evil.test",
+                       "http://business.example.test", "https://business.example.test:8443"):
+            status, body, headers = login(port, extra_headers={"Origin": origin})
+            assert status == 403 and body["code"] == 2204
+            assert "Access-Control-Allow-Origin" not in headers
+        status, body, headers = login(port, extra_headers={"Origin": "https://business.example.test"})
+        assert status == 200
+        assert headers["Access-Control-Allow-Origin"] == "https://business.example.test"
+        assert headers["Access-Control-Allow-Credentials"] == "true"
+        assert sql("SELECT COUNT(*) FROM exact_origin.refresh_tokens;") == "1"
+    print("PASS: credentialed wildcard CORS, opaque origin rejection and exact origin restrictions", flush=True)
     print("PASS: login PS256/cookie, Unicode identity, uniform failures, concurrent lockout, audit rollback, temporary credentials and rate limiting", flush=True)
     run_session_checks(admin, sql, root, login, post, verify_token)

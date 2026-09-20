@@ -69,6 +69,13 @@ TEST(AdminLoginTest, RejectsInvalidLimitsAndMissingKeysBeforeServingLogin)
     config.refreshLifetimeSeconds = 604800;
     config.allowedOrigin          = "null";
     EXPECT_FALSE(config.validate().ok);
+    for (const auto origin :
+         {"", "https://", "https://example.test/", "https://example.test/path", "https://user@example.test",
+          "https://*.example.test", "https://example.test\r\nInjected: 1", "https://example.test https://evil.test"})
+    {
+        config.allowedOrigin = origin;
+        EXPECT_FALSE(config.validate().ok) << origin;
+    }
     config.allowedOrigin  = "https://admin.example.test";
     config.privateKeyPath = "missing-login-test-private-key.pem";
     config.publicKeyPath  = "missing-login-test-public-key.pem";

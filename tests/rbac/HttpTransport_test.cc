@@ -38,6 +38,9 @@ auto testConfig() -> ServerConfig
 
 void expectError(const std::string &response, int expectedStatus, int code, std::string_view id = "test-id")
 {
+    EXPECT_NE(response.find("X-Content-Type-Options: nosniff"), response.npos);
+    EXPECT_NE(response.find("X-Frame-Options: DENY"), response.npos);
+    EXPECT_NE(response.find("frame-ancestors 'none'"), response.npos);
     EXPECT_EQ(status(response), expectedStatus);
     const auto json = SZX::COMMON::Json::parse(body(response));
     EXPECT_TRUE(json.at("code").is_number_integer());
@@ -62,6 +65,33 @@ struct WebRoot
 };
 constexpr auto idHeader = "x-request-id: test-id\r\n";
 } // namespace
+
+TEST(AdminHttpIntegrationTest, SecurityHeadersCoverApiStaticDocsRedirectsAndErrors)
+{
+    WebRoot files;
+    const auto root = files.directory / "public";
+    ASSERT_TRUE(SZX::COMMON::FileHelper::WriteText(root / "admin" / "index.html", "<html>admin</html>"));
+    ASSERT_TRUE(SZX::COMMON::FileHelper::WriteText(root / "api-docs" / "index.html", "<html>docs</html>"));
+    auto config       = testConfig();
+    config.staticRoot = root.string();
+    HttpTransport transport(config);
+    ASSERT_TRUE(transport.start().ok);
+    for (const auto &[path, expected] :
+         {std::pair{"/admin/", 200}, {"/api/v1/", 200}, {"/api/v1/health", 200}, {"/admin", 308}, {"/api/v1/missing", 404}})
+    {
+        SCOPED_TRACE(path);
+        const auto response = request(transport.port(), "GET", path);
+        EXPECT_EQ(status(response), expected);
+        EXPECT_NE(response.find("Content-Security-Policy: default-src 'self'; script-src 'self';"), response.npos);
+        EXPECT_NE(response.find("object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"), response.npos);
+        EXPECT_NE(response.find("X-Content-Type-Options: nosniff"), response.npos);
+        EXPECT_NE(response.find("X-Frame-Options: DENY"), response.npos);
+        EXPECT_NE(response.find("Referrer-Policy: no-referrer"), response.npos);
+        EXPECT_NE(response.find("Permissions-Policy: camera=(), microphone=(), geolocation=()"), response.npos);
+        EXPECT_EQ(response.find("unsafe-eval"), response.npos);
+    }
+    EXPECT_TRUE(transport.stop().ok);
+}
 
 TEST(AdminHttpIntegrationTest, PreservesHealthRoutesRequestIdsAndBusinessFailures)
 {

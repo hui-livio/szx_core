@@ -93,6 +93,19 @@ auto convertRequest(const Network::HttpServerRequest &request) -> HttpRequest
     return converted;
 }
 
+void secureResponse(HttpResponse &response)
+{
+    // Apply at the transport boundary, including static pages and protocol errors.
+    response.headers["Content-Security-Policy"] =
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; font-src 'self' data:; connect-src 'self'; "
+        "object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
+    response.headers["X-Content-Type-Options"] = "nosniff";
+    response.headers["X-Frame-Options"]        = "DENY";
+    response.headers["Referrer-Policy"]        = "no-referrer";
+    response.headers["Permissions-Policy"]     = "camera=(), microphone=(), geolocation=()";
+}
+
 auto prepareResponse(HttpResponse response, const std::string &id) -> HttpResponse
 {
     if (response.statusCode < 200 || response.statusCode > 599)
@@ -100,6 +113,7 @@ auto prepareResponse(HttpResponse response, const std::string &id) -> HttpRespon
     response.headers[std::string{kRequestIdHeader}] = id;
     if (!response.headers.contains("Content-Type"))
         response.headers.emplace("Content-Type", "application/json");
+    secureResponse(response);
     return response;
 }
 
@@ -263,6 +277,7 @@ public:
                     response         = std::move(error);
                 }
                 response.headers[std::string{kRequestIdHeader}] = id;
+                secureResponse(response);
                 accessLog(request, id, response);
                 return response;
             });

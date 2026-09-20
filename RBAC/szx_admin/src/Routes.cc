@@ -16,15 +16,14 @@ namespace SZX::ADMIN
 {
 namespace
 {
-auto refreshCookie(const AUTH::LoginConfig &config, const std::string &path, std::string_view token, std::int64_t maxAge)
-    -> std::string
+auto refreshCookie(const std::string &path, std::string_view token, std::int64_t maxAge) -> std::string
 {
     return "szx_refresh=" + std::string{token} + "; Path=" + path + "; Max-Age=" + std::to_string(maxAge) +
-        "; HttpOnly; Secure; SameSite=" + (config.allowedOrigin == "*" ? "None" : "Strict");
+        "; HttpOnly; Secure; SameSite=None";
 }
 
-auto sessionResponse(AUTH::LoginService &service, const AUTH::LoginSession &session, const INFRA::HttpRequest &request,
-                     const std::string &cookiePath) -> INFRA::HttpResponse
+auto sessionResponse(const AUTH::LoginSession &session, const INFRA::HttpRequest &request, const std::string &cookiePath)
+    -> INFRA::HttpResponse
 {
     using INFRA::ErrorCode;
     using INFRA::RestApi;
@@ -59,7 +58,7 @@ auto sessionResponse(AUTH::LoginService &service, const AUTH::LoginSession &sess
             response.headers.emplace(
                 "Set-Cookie",
                 refreshCookie(
-                    service.config(), cookiePath, session.refreshToken,
+                    cookiePath, session.refreshToken,
                     (std::max)(std::int64_t{0}, session.refreshExpiresAt - SZX::COMMON::TimeHelper::NowTimestamp() / 1000)));
         return response;
     } catch (...)
@@ -88,7 +87,7 @@ auto loginResponse(AUTH::LoginService &service, const INFRA::HttpRequest &reques
                                             .passwordHash = body.value.at("password_hash").get<std::string>(),
                                             .requestId    = request.requestId,
                                             .peerAddress  = request.peerAddress});
-        return session.ok ? sessionResponse(service, session.value, request, cookiePath) :
+        return session.ok ? sessionResponse(session.value, request, cookiePath) :
                             RestApi::error(static_cast<ErrorCode>(session.error), request.requestId);
     } catch (...)
     {
@@ -154,7 +153,7 @@ auto cookieSessionResponse(AUTH::LoginService &service, const INFRA::HttpRequest
             if (!logout)
             {
                 const auto session = service.refresh(input);
-                return session.ok ? sessionResponse(service, session.value, request, cookiePath) :
+                return session.ok ? sessionResponse(session.value, request, cookiePath) :
                                     RestApi::error(static_cast<ErrorCode>(session.error), request.requestId);
             }
             const auto result = service.logout(input);
@@ -162,7 +161,7 @@ auto cookieSessionResponse(AUTH::LoginService &service, const INFRA::HttpRequest
                 return RestApi::error(static_cast<ErrorCode>(result.error), request.requestId);
         }
         auto response = RestApi::noContent(request.requestId);
-        response.headers.emplace("Set-Cookie", refreshCookie(service.config(), cookiePath, {}, 0));
+        response.headers.emplace("Set-Cookie", refreshCookie(cookiePath, {}, 0));
         return response;
     } catch (...)
     {
@@ -207,7 +206,7 @@ auto changePasswordResponse(AUTH::LoginService &service, const INFRA::HttpReques
                                                            {"reauthentication_required", true}},
                                          request.requestId);
         if (response.statusCode == 200)
-            response.headers.emplace("Set-Cookie", refreshCookie(service.config(), cookiePath, {}, 0));
+            response.headers.emplace("Set-Cookie", refreshCookie(cookiePath, {}, 0));
         return response;
     } catch (...)
     {

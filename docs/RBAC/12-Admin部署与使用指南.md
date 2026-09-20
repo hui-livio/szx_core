@@ -69,6 +69,10 @@ server:
 
 这是配置片段，保留完整配置中的 logging、auth、database 等部分。`staticHomePage` 用于根静态站点，`/admin/` 挂载固定读取 admin 子目录的 `index.html`。
 
+`auth.allowedOrigin` 默认是 `"*"`，允许 HTTP/HTTPS 来源跨域调用；服务回显具体 Origin 并返回 `Access-Control-Allow-Credentials: true`，支持 OPTIONS 预检。也可配置单一来源，例如 `https://admin.example.com`，此时精确匹配协议、主机、端口，不含路径或末尾 `/`。拒绝 `Origin: null` 和非法来源。refresh Cookie 为 `HttpOnly; Secure; SameSite=None`，跨站调用必须使用 HTTPS，并在前端设置 `credentials: 'include'`（Axios 为 `withCredentials: true`）；refresh/logout 同时携带最新 `X-CSRF-Token`。浏览器的第三方 Cookie 限制仍可能影响跨站刷新。
+
+服务已统一提供 CSP、禁止 iframe 嵌入和 MIME 嗅探等安全头，无需 CDN。反向代理需保留这些响应头；CSP 仅允许页面连接同源 API。详细保护范围与尚需处理的凭据风险见 [安全与运维基线](07-安全与运维基线.md#6-web-攻击防护与当前边界2026-09-20)。
+
 从仓库根目录启动：
 
 ```powershell
@@ -76,9 +80,24 @@ Set-Location build/bin
 ./szx_admin_service.exe --config config/config.yaml
 ```
 
-打开 `http://localhost:7364/admin`。其他机器使用服务所在机器的主机名或 IP；`0.0.0.0` 是监听地址。首次创建静态目录后需要重启服务，已有目录内替换构建文件无需为静态文件单独重启；升级后端 exe 仍需重启。
+打开 `http://localhost:7364/admin`。`7364` 当前是明文 HTTP 端口，不能直接使用 `https://主机:7364/admin`；`0.0.0.0` 是监听地址。远端完整使用登录和刷新需部署下述 HTTPS 入口。首次创建静态目录后需要重启服务，已有目录内替换构建文件无需为静态文件单独重启；升级后端 exe 仍需重启。
 
 初始超管用户名为 `admin`，初始密码为 `superadmin`，首次登录必须修改为至少 8 个字符且含字母、数字的新密码。初始化密码是 bootstrap 特例。重复启动不会恢复默认密码，也不会覆盖现有密码。
+
+### 远端 HTTPS 入口
+
+当前 admin 没有接入底层网络库的 TLS 选项，因此更改 URL 为 `https://`、开放端口或允许 CORS 都不会开启 HTTPS。Firefox 的“SSL 接收到一个超出最大准许长度的记录”（`SSL_ERROR_RX_RECORD_TOO_LONG`）以及 curl 的 TLS 握手错误，常见原因是把 HTTPS 请求发到了 HTTP 端口。
+
+连接方式：浏览器 `https://admin.example.com/admin/` → Nginx 的 `443` TLS 端口 → `http://127.0.0.1:7364`。页面、静态资源、Swagger 和 API 都通过同一个 HTTPS 入口。
+
+1. 使用与访问域名匹配且客户端信任的证书；直接通过 IP 访问时，证书 SAN 需包含该 IP。内网 CA 的根证书需安装到访问端的信任库。
+2. 使用 [Nginx 配置示例](deployment/nginx-admin.conf.example)，替换域名和证书路径，将其包含在 Nginx 的 `http {}` 配置中。示例假设代理和 admin 同机；上游保持 `http://`，不要改成 `https://127.0.0.1:7364`。
+3. 运行 `nginx -t` 检查配置，再启动 Nginx 或对已有实例运行 `nginx -s reload`。放通代理的 `443` 端口。同机代理部署时，admin 可监听 `127.0.0.1:7364`。
+4. 访问 `https://实际域名/admin/`。保留 `allowedOrigin: "*"` 可跨域访问；如配置单一 Origin，应使用浏览器访问的 HTTPS 来源。
+
+可用 `curl.exe -I http://127.0.0.1:7364/admin/` 验证上游，再用 `curl.exe -I https://实际域名/admin/` 验证证书和代理。普通远端 HTTP 可以用于确认端口连通，但其 Web Crypto 与 Secure Cookie 限制使它不能替代完整 HTTPS 部署。浏览器强制 HTTPS 模式也可能把手工输入的 HTTP 地址升级成 HTTPS。
+
+Nginx 示例不修改 CORS、CSP 或 Cookie 响应头。当前 admin 使用连接对端地址进行 IP 限流，不信任 `X-Forwarded-For`；代理后的客户端会共享代理 IP 的限流预算，应按部署规模配置 `auth.attemptsPerMinute`。
 
 ### 在线接口文档
 
@@ -122,6 +141,7 @@ curl.exe http://localhost:7364/api/v1/health
 |---|---|
 | CMake 提示不存在 szx_admin_service 目标 | 使用已修正的 CMakeLists：add_dependencies 必须位于 add_executable 之后；重新构建触发配置 |
 | HTTP startup failed (2217)，伴随 bind 错误 | 先检查端口占用、监听地址；该提示本身不能确定是文件缺失 |
+| SSL 接收到超出最大准许长度的记录 | 检查是否对明文 7364 端口使用了 HTTPS；HTTPS 应访问有证书的代理端口，代理上游使用 HTTP |
 | `/admin` 返回 404 | 确认运行新版后端，实际 staticRoot/admin 下存在 index.html，首次部署后已重启 |
 | 页面空白或 JS/CSS 404 | 检查 index.html 引用 `/admin/assets/`；重新 build、deploy，确认代理保留前缀 |
 | `/admin/users` 刷新 404 | 确认 spaFallback 为 true，并使用支持 admin 挂载的新版后端 |

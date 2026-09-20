@@ -1,4 +1,5 @@
 #include "LoginService.h"
+#include "../HttpSupport.h"
 #include "../infra/DatabaseInitialization.h"
 #include "PasswordHash.h"
 
@@ -35,9 +36,8 @@ auto LoginConfig::validate() const -> Result<void>
     if (issuer.empty() || issuer.size() > 256 || audience.empty() || audience.size() > 256 || privateKeyPath.empty() ||
         publicKeyPath.empty() || refreshLifetimeSeconds < 900 || refreshLifetimeSeconds > 2592000 || failedLoginLimit < 1 ||
         failedLoginLimit > 100 || lockSeconds < 1 || lockSeconds > 86400 || attemptsPerMinute < 1 || attemptsPerMinute > 1000 ||
-        behaviorEventsPerMinute < 1 || behaviorEventsPerMinute > 1000 || allowedOrigin.empty() ||
-        (allowedOrigin != "*" && !allowedOrigin.starts_with("https://") && !allowedOrigin.starts_with("http://")) ||
-        allowedOrigin.find_first_of("\r\n") != std::string::npos)
+        behaviorEventsPerMinute < 1 || behaviorEventsPerMinute > 1000 ||
+        (allowedOrigin != "*" && !validHttpOrigin(allowedOrigin)))
         return failed<void>(ErrorCode::InvalidConfiguration);
     return Result<void>::Success();
 }

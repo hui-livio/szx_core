@@ -11,7 +11,10 @@
 /** 浏览器可见路由共享的 CORS 和查询参数校验。策略由 admin 层注入，网络库不内置。 */
 namespace SZX::ADMIN
 {
-/** Origin 白名单；"*" 接受任意来源，无 Origin 的原生客户端始终允许。 */
+/** Origin 必须是合法的 HTTP/HTTPS 来源；无 Origin 的原生客户端仍需正常鉴权。 */
+[[nodiscard]] auto validHttpOrigin(std::string_view origin) noexcept -> bool;
+
+/** 精确 Origin 白名单或 "*" 通配来源；不接受不透明来源。 */
 [[nodiscard]] auto originAllowed(std::string_view allowedOrigin, const INFRA::HttpRequest &request) -> bool;
 
 /** 回传具体 Origin；携带凭据的请求不返回通配符响应头。 */

@@ -9,6 +9,45 @@
 #include "../../RBAC/szx_admin/src/RateLimiter.h"
 #include "../../RBAC/szx_admin/src/user/AuditDetails.h"
 
+TEST(AdminOriginTest, ExactOriginRestrictsSourcesAndWildcardAcceptsHttpOrigins)
+{
+    using namespace SZX::ADMIN;
+    INFRA::HttpRequest request;
+    constexpr auto allowed = "https://admin.example.test";
+    EXPECT_TRUE(originAllowed(allowed, request)); // Native clients still require Bearer/CSRF credentials.
+    for (const auto origin : {"null", "*", "https://evil.test", "https://admin.example.test.evil.test",
+                              "http://admin.example.test", "https://admin.example.test:8443", ""})
+    {
+        request.headers["Origin"] = origin;
+        EXPECT_FALSE(originAllowed(allowed, request)) << origin;
+        const auto response = preflightHandler(allowed, "POST, OPTIONS")(request);
+        EXPECT_EQ(response.statusCode, 403);
+        EXPECT_FALSE(response.headers.contains("Access-Control-Allow-Origin"));
+    }
+    request.headers["Origin"] = allowed;
+    EXPECT_TRUE(originAllowed(allowed, request));
+    EXPECT_TRUE(originAllowed("*", request));
+    const auto accepted = preflightHandler(allowed, "POST, OPTIONS")(request);
+    EXPECT_EQ(accepted.statusCode, 204);
+    EXPECT_EQ(accepted.headers.at("Access-Control-Allow-Origin"), allowed);
+    for (const auto origin : {"http://localhost:5173", "https://other.example.test"})
+    {
+        request.headers["Origin"] = origin;
+        const auto response       = preflightHandler("*", "POST, OPTIONS")(request);
+        EXPECT_EQ(response.statusCode, 204);
+        EXPECT_EQ(response.headers.at("Access-Control-Allow-Origin"), origin);
+        EXPECT_EQ(response.headers.at("Access-Control-Allow-Credentials"), "true");
+        EXPECT_EQ(response.headers.at("Vary"), "Origin");
+    }
+    for (const auto origin : {"null", "", "*", "file://local", "https://", "https://user@host", "https://host/path"})
+    {
+        request.headers["Origin"] = origin;
+        const auto response       = preflightHandler("*", "POST, OPTIONS")(request);
+        EXPECT_EQ(response.statusCode, 403);
+        EXPECT_FALSE(response.headers.contains("Access-Control-Allow-Origin"));
+    }
+}
+
 TEST(AdminResponseTimeTest, ConvertsUtcSecondsAndMicrosecondsToIntegerMilliseconds)
 {
     using SZX::ADMIN::utcTimestampJson;

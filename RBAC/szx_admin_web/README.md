@@ -18,6 +18,8 @@ npm run dev
 
 后端 `auth.allowedOrigin` 应允许前端实际来源。后端 refresh Cookie 带 `Secure`，开发使用 `localhost`；生产必须使用 HTTPS。不要通过普通 HTTP 的局域网 IP 访问：Cookie 和 Web Crypto 可能不可用。
 
+后端默认 `allowedOrigin: "*"` 支持 HTTP/HTTPS 来源跨域携带凭据，也可配置单一 Origin 限制来源。refresh Cookie 使用 `SameSite=None; Secure; HttpOnly`；跨站接入需 HTTPS、`withCredentials: true` 和刷新/登出的 `X-CSRF-Token`。当前前端使用相对 API 地址，同源部署或 Vite 代理无需修改。
+
 ## MVVM 分层
 
 | 层          | 目录                               | 职责                                                 |

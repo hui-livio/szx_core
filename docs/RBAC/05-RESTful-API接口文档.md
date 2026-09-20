@@ -102,7 +102,9 @@ version 用于并发更新，冲突后应重新获取用户并使用新版本提
 
 ### 2.5 浏览器、Cookie 与限流
 
-生产接入使用 HTTPS。szx_refresh 为 `HttpOnly; Secure`，默认有效期 7 天；Path 为 `${apiPrefix}/auth`（前缀为 `/` 时为 `/auth`）。`allowedOrigin="*"` 时使用 `SameSite=None`，配置单一 Origin 时使用 `SameSite=Strict`。刷新轮换 token，不延长当前会话族原到期时间。
+生产接入使用 HTTPS。szx_refresh 为 `HttpOnly; Secure; SameSite=None`，默认有效期 7 天；Path 为 `${apiPrefix}/auth`（前缀为 `/` 时为 `/auth`）。`auth.allowedOrigin` 默认 `"*"`，允许 HTTP/HTTPS 来源跨域携带凭据，响应回显具体 Origin 并设置 `Vary: Origin`。也可配置单一 Origin 精确限制来源。非法配置阻止启动；不允许的来源或 `Origin: null` 返回 `403 / 2204`。跨站前端需启用 credentials/withCredentials，刷新和登出仍须提供 CSRF token；浏览器第三方 Cookie 策略可能限制刷新。刷新轮换 token，不延长当前会话族原到期时间。
+
+超管 `force_password_change=true` 时，后端拒绝用户管理、审计查询、权限查询和行为上报（`403 / 2204`）；仍允许登录、刷新、登出和修改自己的密码。成功改密并重新登录后才恢复业务访问。该规则由后端检查，直接调用 API 也无法绕过；其他角色的建议改密行为不变。
 
 浏览器登录、刷新、登出使用 `credentials: "include"`。允许的来源会收到具体 Access-Control-Allow-Origin、Access-Control-Allow-Credentials: true 和 Vary: Origin；来源不匹配返回 `403 / 2204`。无 Origin 的原生客户端可访问。用户和客户端接口沿用同一 Origin 策略。
 

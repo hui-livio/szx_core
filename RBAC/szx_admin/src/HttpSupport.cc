@@ -9,14 +9,21 @@
 
 namespace SZX::ADMIN
 {
+auto validHttpOrigin(std::string_view origin) noexcept -> bool
+{
+    if (!origin.starts_with("https://") && !origin.starts_with("http://"))
+        return false;
+    const auto authority = origin.substr(origin.find("://") + 3);
+    return !authority.empty() && authority.find_first_of("/\\?#@*,") == std::string_view::npos &&
+        std::none_of(authority.begin(), authority.end(), [](unsigned char c) { return c <= 0x20 || c >= 0x7f; });
+}
+
 auto originAllowed(std::string_view allowedOrigin, const INFRA::HttpRequest &request) -> bool
 {
-    if (allowedOrigin == "*")
-        return true;
     const auto supplied = request.header("Origin");
     if (!supplied)
         return true;
-    return *supplied == allowedOrigin;
+    return validHttpOrigin(*supplied) && (allowedOrigin == "*" || *supplied == allowedOrigin);
 }
 
 auto withCors(INFRA::HttpResponse response, const INFRA::HttpRequest &request) -> INFRA::HttpResponse
