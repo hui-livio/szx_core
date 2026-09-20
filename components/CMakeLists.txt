@@ -1,5 +1,8 @@
 add_subdirectory(common)
 add_subdirectory(logger)
+if(SZX_COMPONENTS_BUILD_NETWORK)
+    add_subdirectory(network)
+endif()
 add_subdirectory(crypto)
 add_subdirectory(crypto_service)
 add_subdirectory(license)

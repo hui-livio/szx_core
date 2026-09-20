@@ -29,6 +29,51 @@ TEST(common_StringHelperTest, ConvertsAsciiCase)
     EXPECT_EQ(StringHelper::ToUpper("AbC-123"), "ABC-123");
 }
 
+TEST(common_StringHelperTest, ConvertsUtf8AndWideTextWithoutLocale)
+{
+    const std::string utf8  = "A\xE4\xB8\xAD\xF0\x9F\x98\x80";
+    const std::wstring wide = L"A\u4e2d\U0001f600";
+    EXPECT_EQ(StringHelper::fromutf8(utf8), wide);
+    EXPECT_EQ(StringHelper::toutf8(wide), utf8);
+    EXPECT_TRUE(StringHelper::fromutf8(std::string_view{}).empty());
+    EXPECT_TRUE(StringHelper::toutf8(std::wstring_view{}).empty());
+}
+
+TEST(common_StringHelperTest, PreservesNullBomAndUnicodeEncodingBoundaries)
+{
+    const std::string utf8  = "\x7f\xc2\x80\xdf\xbf\xe0\xa0\x80\xed\x9f\xbf\xee\x80\x80"
+                              "\xef\xbf\xbf\xf0\x90\x80\x80\xf4\x8f\xbf\xbf";
+    const std::wstring wide = L"\x7f\u0080\u07ff\u0800\ud7ff\ue000\uffff\U00010000\U0010ffff";
+    EXPECT_EQ(StringHelper::fromutf8(utf8), wide);
+    EXPECT_EQ(StringHelper::toutf8(wide), utf8);
+    const std::string embedded{"A\0\xef\xbb\xbfZ", 6};
+    const std::wstring expected{L"A\0\ufeffZ", 4};
+    EXPECT_EQ(StringHelper::fromutf8(embedded), expected);
+    EXPECT_EQ(StringHelper::toutf8(expected), embedded);
+}
+
+TEST(common_StringHelperTest, RejectsInvalidUtf8AndWideSurrogates)
+{
+    for (const auto &invalid :
+         {std::string{"\x80"}, std::string{"\xC0\x80"}, std::string{"\xE0\x80\x80"}, std::string{"\xF4\x90\x80\x80"},
+          std::string{"\xF0\x9F\x98"}, std::string{"\xc2"}, std::string{"\xe0\xa0"}, std::string{"\xed\xa0\x80"},
+          std::string{"\xed\xbf\xbf"}, std::string{"\xf0\x80\x80\x80"}, std::string{"\xff"}, std::string{"\xc2Z"},
+          std::string{"\xe1\x80Z"}})
+        EXPECT_THROW(StringHelper::fromutf8(invalid), std::invalid_argument);
+    EXPECT_THROW(StringHelper::toutf8(std::wstring(1, static_cast<wchar_t>(0xd800))), std::invalid_argument);
+    EXPECT_THROW(StringHelper::toutf8(std::wstring(1, static_cast<wchar_t>(0xdc00))), std::invalid_argument);
+    if constexpr (sizeof(wchar_t) == 2)
+    {
+        const std::wstring invalidPair{static_cast<wchar_t>(0xd800), L'A'};
+        EXPECT_THROW(StringHelper::toutf8(invalidPair), std::invalid_argument);
+    }
+    else
+    {
+        EXPECT_THROW(StringHelper::toutf8(std::wstring(1, static_cast<wchar_t>(0x110000))), std::invalid_argument);
+        EXPECT_THROW(StringHelper::toutf8(std::wstring(1, static_cast<wchar_t>(-1))), std::invalid_argument);
+    }
+}
+
 TEST(common_StringHelperTest, StrictlyParsesIntegers)
 {
     EXPECT_EQ(StringHelper::ParseInteger<int>("42"), 42);

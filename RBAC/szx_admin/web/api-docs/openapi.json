@@ -1,0 +1,1914 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "SZX Admin API",
+    "version": "1.0.0",
+    "description": "单项目 RBAC · 17 个接口 · 四个固定角色。\n\n展开接口查看参数、示例和错误码，点击 **Try it out → Execute** 调用当前服务。\n\n**鉴权流程**：登录请求中的 password_hash 必须是原始密码 UTF-8 的 SHA-256 小写摘要。登录后复制 access_token 到 **Authorize / bearerAuth**（不用加 Bearer 前缀）。refresh Cookie 由浏览器管理；刷新/登出手动填写最新 csrf_token。Swagger 不自动登录或刷新，会话凭据不持久保存。\n\n修改用户需填写 **If-Match**；管理员仅管理操作员/工程师，不能给自己分配角色或禁用自己。操作员/工程师新密码至少6位；管理员/超管至少8位并含字母和数字。\n\n响应时间为 UTC 毫秒；日志查询 from/to 为 UTC 秒精度字符串。生产使用 HTTPS；Cookie/Origin 规则与管理后台相同。\n\nauth.allowedOrigin 默认 * 允许 HTTP/HTTPS 来源跨域携带凭据，也可配置单一来源限制；拒绝 Origin: null。refresh Cookie 使用 HttpOnly、Secure、SameSite=None。跨站调用使用 HTTPS 并启用 credentials，刷新/登出仍校验 X-CSRF-Token。所有响应设置 CSP、禁止 iframe 嵌入和 MIME 嗅探等安全头。"
+  },
+  "servers": [
+    {
+      "url": ".",
+      "description": "相对于此OpenAPI文件的当前服务前缀"
+    }
+  ],
+  "tags": [
+    {
+      "name": "服务",
+      "description": "健康与数据库就绪检查"
+    },
+    {
+      "name": "认证",
+      "description": "登录、令牌轮换、登出与改密"
+    },
+    {
+      "name": "用户管理",
+      "description": "用户生命周期和角色管理"
+    },
+    {
+      "name": "审计日志",
+      "description": "事件名称与操作者关键词查询"
+    },
+    {
+      "name": "客户端",
+      "description": "当前权限与业务行为上报"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": ["服务"],
+        "operationId": "health",
+        "summary": "健康检查",
+        "description": "无需鉴权，无请求参数和请求体。200 响应：\n\n```json\n{\"data\":{\"status\":\"ok\"},\"request_id\":\"health-001\"}\n```",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": []
+      }
+    },
+    "/ready": {
+      "get": {
+        "tags": ["服务"],
+        "operationId": "ready",
+        "summary": "数据库就绪检查",
+        "description": "无需鉴权，无请求参数和请求体。200 响应：\n\n```json\n{\"data\":{\"status\":\"ready\"},\"request_id\":\"ready-001\"}\n```\n\n数据库不可用时返回 `503 / 2220`。",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadyResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          }
+        },
+        "security": []
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "tags": ["认证"],
+        "operationId": "login",
+        "summary": "登录并签发会话",
+        "description": "**鉴权：** 无 Bearer；提交登录凭据。\n\n| Body 字段 | 类型 | 必填 | 约束 |\n|---|---|---|---|\n| identifier | string | 是 | UID 或用户名；原始 UTF-8 最多 512 字节；规范化后 1–64 个 Unicode 字符 |\n| password_hash | string | 是 | 原始密码 UTF-8 字节的 SHA-256，64 位小写十六进制 |\n\nidentifier 去首尾空白并执行 Unicode NFC，UID 保留大小写，用户名另按不依赖 locale 的规则小写匹配。若 UID 和用户名匹配到不同账号，统一拒绝登录。\n\n请求示例（尖括号内容为占位值）：\n\n```http\nPOST /api/v1/auth/login\nContent-Type: application/json\nX-Request-ID: login-001\n```\n\n```json\n{\"identifier\":\"admin\",\"password_hash\":\"<64位小写SHA-256摘要>\"}\n```\n\n**成功：** 200，data 为 Session，同时设置 refresh Cookie。\n\n```json\n{\n  \"data\": {\n    \"access_token\": \"<access-token>\",\n    \"token_type\": \"Bearer\",\n    \"expires_in\": 900,\n    \"expires_at\": 1789637400000,\n    \"authz_version\": 1,\n    \"csrf_token\": \"<csrf-token>\",\n    \"user\": {\n      \"id\": \"10000000-0000-4000-8000-000000000001\",\n      \"username\": \"admin\",\n      \"display_name\": \"System Administrator\",\n      \"role\": \"super_admin\",\n      \"status\": \"active\",\n      \"force_password_change\": true,\n      \"password_change_recommended\": false,\n      \"version\": 1,\n      \"authz_version\": 1,\n      \"last_login_at\": 1789636500000,\n      \"created_at\": 1789550100510,\n      \"updated_at\": 1789636500000\n    }\n  },\n  \"request_id\": \"login-001\"\n}\n```\n\n| HTTP / code | 条件 |\n|---|---|\n| 401 / 2203 | 用户不存在、密码错误、disabled/locked、临时密码已过期或已消费 |\n| 422 / 2206 | 字段、摘要格式或身份标识非法；不接受明文 password 字段 |\n| 429 / 2211 | 认证预算耗尽 |\n| 500 / 2212 | 安全审计写入失败，登录事务回滚 |\n\n默认连续 5 次错误密码将 active 账号置为 locked。locked_until 默认记录 900 秒后，但到期不会自动解锁，必须调用解锁接口。成功登录清零失败计数。未知用户、禁用、锁定不对外区分原因。",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "413": {
+            "$ref": "#/components/responses/413"
+          },
+          "422": {
+            "$ref": "#/components/responses/422"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
+          },
+          "500": {
+            "$ref": "#/components/responses/500"
+          }
+        },
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/refresh": {
+      "post": {
+        "tags": ["认证"],
+        "operationId": "refresh",
+        "summary": "刷新会话并轮换令牌",
+        "description": "**鉴权：** 必须携带 szx_refresh Cookie 和当前 X-CSRF-Token；不要求 Bearer 或 If-Match。\n\nBody 可省略，或发送空对象 `{}`，不接受其他字段。refresh token 只能来自 Cookie，不能放入 body、query 或 Authorization。\n\n```http\nPOST /api/v1/auth/refresh\nCookie: szx_refresh=<refresh-token>\nX-CSRF-Token: <csrf-token>\n```\n\n**成功：** 200，data 为 Session，与登录相同；Set-Cookie 替换 refresh token。客户端须替换 access token 和 CSRF token。\n\n| HTTP / code | 条件 |\n|---|---|\n| 401 / 2200 | 缺失、非法、未知或普通已撤销 Cookie；账号不可用 |\n| 401 / 2201 | refresh token 过期 |\n| 403 / 2204 | CSRF 缺失、不匹配，或 Origin 不允许 |\n| 409 / 2202 | 使用已轮换的旧 token，整个会话族被撤销 |\n| 422 / 2206 | 重复同名 Cookie、非法请求体 |\n| 429 / 2211 | 认证预算耗尽 |\n\n客户端必须合并并发刷新：同一 token 并发刷新只有一次成功，另一请求会按重放处理，撤销同一会话族。其他登录会话族不受影响。写入或审计失败时事务回滚，不发送新的 Cookie。",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/Csrf"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "409": {
+            "$ref": "#/components/responses/409"
+          },
+          "413": {
+            "$ref": "#/components/responses/413"
+          },
+          "422": {
+            "$ref": "#/components/responses/422"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
+          },
+          "500": {
+            "$ref": "#/components/responses/500"
+          }
+        },
+        "security": [
+          {
+            "refreshCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmptyRequest"
+              },
+              "example": {}
+            }
+          }
+        }
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "tags": ["认证"],
+        "operationId": "logout",
+        "summary": "退出当前会话",
+        "description": "**鉴权：** 有 refresh Cookie 时必须携带匹配的 CSRF；无 Cookie 时直接清除浏览器 Cookie。不要求 Bearer 或 If-Match。\n\nBody 可省略或为 `{}`。请求头与刷新接口相同，路径改为 `/auth/logout`。\n\n**成功：** 204 No Content，清除 refresh Cookie，没有 JSON 响应体。重复退出、格式正确但未知的 token 均可返回 204。\n\n| HTTP / code | 条件 |\n|---|---|\n| 401 / 2200 | refresh Cookie 编码非法 |\n| 403 / 2204 | 携带 Cookie 但 CSRF 缺失／错误，或 Origin 不允许 |\n| 422 / 2206 | 重复同名 Cookie、非法请求体 |\n| 429 / 2211 | 认证预算耗尽；无 Cookie 的退出不计数 |\n| 500 / 2212 | 审计失败，撤销操作回滚 |\n\n退出只撤销当前 refresh 会话族，不即时吊销 access JWT；客户端应清除本地 access/CSRF，旧 access 最迟按 15 分钟有效期失效。过期、锁定或禁用不阻止合法会话退出。失败响应不能视为已退出成功。",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/LogoutCsrf"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "退出成功，无响应体"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "413": {
+            "$ref": "#/components/responses/413"
+          },
+          "422": {
+            "$ref": "#/components/responses/422"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
+          },
+          "500": {
+            "$ref": "#/components/responses/500"
+          }
+        },
+        "security": [
+          {},
+          {
+            "refreshCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmptyRequest"
+              },
+              "example": {}
+            }
+          }
+        }
+      }
+    },
+    "/auth/change-password": {
+      "post": {
+        "tags": ["认证"],
+        "operationId": "changePassword",
+        "summary": "修改自己的密码",
+        "description": "**鉴权：** Bearer；If-Match 为当前用户的 version，不接受指定目标用户。不使用 refresh Cookie，也不要求 CSRF。\n\n| Body 字段 | 类型 | 必填 | 约束 |\n|---|---|---|---|\n| old_password_hash | string | 是 | 原密码的 64 位小写 SHA-256 |\n| new_password_hash | string | 是 | 新密码的 64 位小写 SHA-256；不得与旧摘要相同 |\n\n```http\nPOST /api/v1/auth/change-password\nAuthorization: Bearer <access-token>\nIf-Match: 1\nContent-Type: application/json\n```\n\n```json\n{\"old_password_hash\":\"<旧密码SHA-256>\",\"new_password_hash\":\"<新密码SHA-256>\"}\n```\n\n**成功：** 200，清除 refresh Cookie，要求重新登录。\n\n```json\n{\"data\":{\"version\":2,\"authz_version\":2,\"force_password_change\":false,\"password_change_recommended\":false,\"reauthentication_required\":true},\"request_id\":\"password-change-001\"}\n```\n\n错误：`401 / 2200`（会话无效）、`401 / 2203`（旧密码错误）、`409 / 2209`（版本冲突）、`422 / 2206`（请求非法）、`429 / 2211`（限流）、`500 / 2212`（审计失败）。\n\n成功后清除待改密标记及临时有效期，递增 version/authz_version，撤销全部 refresh 会话，旧 access 失效。超管可用刚登录时已消费的临时密码摘要完成首次改密。客户端负责原始密码强度检查，服务端不从摘要推断密码复杂度。",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatch"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasswordChangeResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "409": {
+            "$ref": "#/components/responses/409"
+          },
+          "413": {
+            "$ref": "#/components/responses/413"
+          },
+          "422": {
+            "$ref": "#/components/responses/422"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
+          },
+          "500": {
+            "$ref": "#/components/responses/500"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangePasswordRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/users": {
+      "get": {
+        "tags": ["用户管理"],
+        "operationId": "listUsers",
+        "summary": "查询用户列表",
+        "description": "**权限：** admin/super_admin。admin 仅能列出 operator/engineer。\n\n| Query 参数 | 类型 | 必填 | 默认／约束 |\n|---|---|---|---|\n| page | integer | 否 | 默认 1；范围 1–4294967295 |\n| page_size | integer | 否 | 默认 20；范围 1–100 |\n| search | string | 否 | 最多 128 个 Unicode 字符，无控制字符；搜索 uid、username、display_name |\n| role | string | 否 | operator / engineer / admin / super_admin |\n| status | string | 否 | active / disabled / locked |\n| sort | string | 否 | 默认 -created_at；白名单见下文 |\n\nsort 仅接受 `-created_at`、`created_at`、`display_name`、`-display_name`、`last_login_at`、`-last_login_at`、`role`、`status`，前缀 - 表示降序。未知 Query 参数返回 `422 / 2206`；admin 显式请求 role=admin/super_admin 返回 `403 / 2204`。\n\n```http\nGET /api/v1/admin/users?page=1&page_size=20&role=operator&sort=-created_at\nAuthorization: Bearer <access-token>\n```\n\n**成功：** 200，data 为 `Page<User>`。无匹配结果示例：\n\n```json\n{\"data\":{\"items\":[],\"total\":0,\"page\":1,\"page_size\":20},\"request_id\":\"users-list-001\"}\n```\n\n安全约束：待强制改密的超管（force_password_change=true）禁止调用此接口，返回 403 / 2204。须先修改密码并重新登录。其他角色的建议改密不受此限制。",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/Page"
+          },
+          {
+            "$ref": "#/components/parameters/PageSize"
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "description": "匹配UID、用户名和展示名",
+            "schema": {
+              "type": "string",
+              "maxLength": 128
+            }
+          },
+          {
+            "name": "role",
+            "in": "query",
+            "required": false,
+            "description": "",
+            "schema": {
+              "type": "string",
+              "enum": ["operator", "engineer", "admin", "super_admin"]
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "description": "",
+            "schema": {
+              "type": "string",
+              "enum": ["active", "disabled", "locked"]
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "description": "",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "-created_at",
+                "created_at",
+                "display_name",
+                "-display_name",
+                "last_login_at",
+                "-last_login_at",
+                "role",
+                "status"
+              ],
+              "default": "-created_at"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserPageResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "422": {
+            "$ref": "#/components/responses/422"
+          },
+          "500": {
+            "$ref": "#/components/responses/500"
+          }
+        }
+      },
+      "post": {
+        "tags": ["用户管理"],
+        "operationId": "createUser",
+        "summary": "创建用户，可指定初始密码",
+        "description": "**权限：** admin/super_admin；admin 只能创建 operator/engineer。不要求 If-Match。\n\n| Body 字段 | 类型 | 必填 | 约束 |\n|---|---|---|---|\n| uid | string | 与 username 二选一 | 规范化后 1–64 个 Unicode 字符；保留大小写 |\n| username | string | 与 uid 二选一 | 规范化后 1–64 个 Unicode 字符；按小写 canonical 判重 |\n| display_name | string | 是 | 1–128 个 Unicode 字符，无控制字符，不得全为空格 |\n| role | string | 是 | 四种角色之一，且调用者有权创建 |\n\n可选 Body 字段 `password_hash` 为初始密码 UTF-8 SHA-256 摘要，必须是 64 位小写十六进制字符串；空字符串、null 和其他类型均返回 `422 / 2206`。省略时沿用自动生成临时密码的行为。前端按目标角色校验指定密码：操作员/技术员（engineer）至少 6 个 Unicode 字符，允许纯数字或纯字母；管理员/超级管理员至少 8 个 Unicode 字符且包含字母和数字。两次输入须一致；服务端仅收到摘要，校验摘要格式并加盐存储。\n\n不接受明文密码、状态、id 或版本字段。身份字段的 null 视为未提供；UID 和用户名均去首尾空白、执行 Unicode NFC，原始输入最多 512 字节。用户名保留重音差异，UID 区分大小写；创建后身份不可修改。\n\nUID 与 username 共用登录入口，因此也检查跨字段冲突：已有 username=admin 时，uid=admin 或 uid=ADMIN 均返回 `409 / 2208`；已有 uid=U10086 时，username=u10086 同样冲突。两个 UID 的 U10086 与 u10086 仍可分别存在。并发创建遵循相同规则，冲突请求不会创建用户或签发临时凭据。\n\n```json\n{\"uid\":\"U10086\",\"display_name\":\"Alice\",\"role\":\"operator\"}\n```\n\n**成功：** 201，data 为 CredentialIssue。\n\n```json\n{\n  \"data\": {\n    \"user\": {\n      \"id\": \"10000000-0000-4000-8000-000000000002\",\n      \"uid\": \"U10086\",\n      \"display_name\": \"Alice\",\n      \"role\": \"operator\",\n      \"status\": \"active\",\n      \"force_password_change\": false,\n      \"password_change_recommended\": true,\n      \"version\": 1,\n      \"authz_version\": 1,\n      \"last_login_at\": null,\n      \"created_at\": 1789636500000,\n      \"updated_at\": 1789636500000\n    },\n    \"temporary_credential\": \"<本次生成的临时密码>\",\n    \"temporary_credential_expires_at\": 1789722900000\n  },\n  \"request_id\": \"users-create-001\"\n}\n```\n\n指定 `password_hash` 时，响应中 `temporary_credential` 和 `temporary_credential_expires_at` 均为 null，不回传密码或摘要，也不设置临时密码的 24 小时有效期。首次登录改密策略保持不变：超管强制修改，其他角色建议修改。省略该字段时，响应仍返回一次性的随机临时密码及 24 小时有效期。\n\n额外错误：`422 / 2207`（uid/username 同时提供或同时缺失）、`409 / 2208`（canonical 身份重复）、`429 / 2211`（凭据签发预算耗尽）。仅一个标识但类型错误返回 `422 / 2206`。临时密码仅本次展示，不应持久缓存。\n\n安全约束：待强制改密的超管（force_password_change=true）禁止调用此接口，返回 403 / 2204。须先修改密码并重新登录。其他角色的建议改密不受此限制。",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialIssueResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          },
+          "409": {
+            "$ref": "#/components/responses/409"
+          },
+          "413": {
+            "$ref": "#/components/responses/413"
+          },
+          "422": {
+            "$ref": "#/components/responses/422"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
+          },
+          "500": {
+            "$ref": "#/components/responses/500"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateUserRequest"
+              },
+              "example": {
+                "username": "new_operator",
+                "display_name": "新操作员",
+                "role": "operator"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/users/{id}": {
+      "get": {
+        "tags": ["用户管理"],
+        "operationId": "getUser",
+        "summary": "查询用户详情",
+        "description": "**权限：** admin/super_admin，遵循目标角色范围。必填 Path id，无请求体。\n\n```http\nGET /api/v1/admin/users/10000000-0000-4000-8000-000000000002\nAuthorization: Bearer <access-token>\n```\n\n**成功：** 200，data 为 User，与登录的 data.user 结构相同，不额外套一层 user。错误见本节公共错误表。\n\n安全约束：待强制改密的超管（force_password_change=true）禁止调用此接口，返回 403 / 2204。须先修改密码并重新登录。其他角色的建议改密不受此限制。",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/UserId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          },
+          "422": {
+            "$ref": "#/components/responses/422"
+          },
+          "500": {
+            "$ref": "#/components/responses/500"
+          }
+        }
+      },
+      "patch": {
+        "tags": ["用户管理"],
+        "operationId": "updateUser",
+        "summary": "修改展示名",
+        "description": "**权限：** admin/super_admin；必填 Path id 和 Header If-Match。\n\n| Body 字段 | 类型 | 必填 | 约束 |\n|---|---|---|---|\n| display_name | string | 是 | 1–128 个 Unicode 字符，无控制字符，不得全为空格 |\n\n```http\nPATCH /api/v1/admin/users/10000000-0000-4000-8000-000000000002\nAuthorization: Bearer <access-token>\nIf-Match: 1\nContent-Type: application/json\n```\n\n```json\n{\"display_name\":\"Alice Chen\"}\n```\n\n**成功：** 200，data 为 User。实际名称变化才递增 version；authz_version 不变。拒绝 uid、username、role、status 等额外字段。错误见本节公共错误表。\n\n安全约束：待强制改密的超管（force_password_change=true）禁止调用此接口，返回 403 / 2204。须先修改密码并重新登录。其他角色的建议改密不受此限制。",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/UserId"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatch"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          },
+          "409": {
+            "$ref": "#/components/responses/409"
+          },
+          "413": {
+            "$ref": "#/components/responses/413"
+          },
+          "422": {
+            "$ref": "#/components/responses/422"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
+          },
+          "500": {
+            "$ref": "#/components/responses/500"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateUserRequest"
+              },
+              "example": {
+                "display_name": "新的展示名"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/users/{id}/status": {
+      "patch": {
+        "tags": ["用户管理"],
+        "operationId": "setUserStatus",
+        "summary": "启用或禁用用户",
+        "description": "**权限：** admin/super_admin；必填 Path id 和 Header If-Match。\n\n| Body 字段 | 类型 | 必填 | 约束 |\n|---|---|---|---|\n| status | string | 是 | 仅 active / disabled |\n\n```json\n{\"status\":\"disabled\"}\n```\n\n**成功：** 200，data 为 User。实际状态变化时递增 version/authz_version，并撤销所有 refresh 会话；提交原状态不递增版本。\n\nlocked 不能直接改为 active，否则返回 `422 / 2206`，须调用 unlock。禁用最后一个 active 超管返回 `409 / 2210`；其他错误见本节公共错误表。\n\n禁止禁用自己，返回 `403 / 2204`，不会修改状态、版本或会话；不能管理高于自身或超出既有管理范围的角色。自我禁用限制优先于最后一个超管保护。\n\n安全约束：待强制改密的超管（force_password_change=true）禁止调用此接口，返回 403 / 2204。须先修改密码并重新登录。其他角色的建议改密不受此限制。",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/UserId"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatch"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          },
+          "409": {
+            "$ref": "#/components/responses/409"
+          },
+          "413": {
+            "$ref": "#/components/responses/413"
+          },
+          "422": {
+            "$ref": "#/components/responses/422"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
+          },
+          "500": {
+            "$ref": "#/components/responses/500"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StatusRequest"
+              },
+              "example": {
+                "status": "disabled"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/users/{id}/unlock": {
+      "patch": {
+        "tags": ["用户管理"],
+        "operationId": "unlockUser",
+        "summary": "解锁用户",
+        "description": "**权限：** admin/super_admin；必填 Path id 和 Header If-Match。\n\nBody 可省略或为 `{}`，不接受业务字段。\n\n```http\nPATCH /api/v1/admin/users/10000000-0000-4000-8000-000000000002/unlock\nAuthorization: Bearer <access-token>\nIf-Match: 3\n```\n\n**成功：** 200，data 为 User；locked 变为 active，清零失败计数、清空锁定时间，递增 version/authz_version 并撤销 refresh 会话。\n\n目标不是 locked 时返回 `422 / 2206`，不能用此接口启用 disabled 用户；其他错误见本节公共错误表。\n\n安全约束：待强制改密的超管（force_password_change=true）禁止调用此接口，返回 403 / 2204。须先修改密码并重新登录。其他角色的建议改密不受此限制。",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/UserId"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatch"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          },
+          "409": {
+            "$ref": "#/components/responses/409"
+          },
+          "413": {
+            "$ref": "#/components/responses/413"
+          },
+          "422": {
+            "$ref": "#/components/responses/422"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
+          },
+          "500": {
+            "$ref": "#/components/responses/500"
+          }
+        }
+      }
+    },
+    "/admin/users/{id}/role": {
+      "put": {
+        "tags": ["用户管理"],
+        "operationId": "assignRole",
+        "summary": "分配角色（仅超级管理员）",
+        "description": "**权限：** 仅 super_admin；必填 Path id 和 Header If-Match。\n\n| Body 字段 | 类型 | 必填 | 约束 |\n|---|---|---|---|\n| role | string | 是 | operator / engineer / admin / super_admin |\n\n```json\n{\"role\":\"engineer\"}\n```\n\n**成功：** 200，data 为 User。实际角色变化时递增 version/authz_version 并撤销 refresh 会话；提交原角色不递增版本。最后一个 active 超管不能降级，否则返回 `409 / 2210`；其他错误见本节公共错误表。\n\n禁止给自己分配角色，即使提交原角色也返回 `403 / 2204`；该限制优先于最后一个超管保护。目标和新角色必须在调用者允许管理的范围内。\n\n安全约束：待强制改密的超管（force_password_change=true）禁止调用此接口，返回 403 / 2204。须先修改密码并重新登录。其他角色的建议改密不受此限制。",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/UserId"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatch"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          },
+          "409": {
+            "$ref": "#/components/responses/409"
+          },
+          "413": {
+            "$ref": "#/components/responses/413"
+          },
+          "422": {
+            "$ref": "#/components/responses/422"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
+          },
+          "500": {
+            "$ref": "#/components/responses/500"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoleRequest"
+              },
+              "example": {
+                "role": "engineer"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/users/{id}/reset-password": {
+      "post": {
+        "tags": ["用户管理"],
+        "operationId": "resetPassword",
+        "summary": "重置密码，可指定或随机生成",
+        "description": "**权限：** admin/super_admin；必填 Path id 和 Header If-Match。\n\nBody 可省略或为 `{}`，此时随机生成临时密码。也可提供 `password_hash` 指定新密码，格式与创建用户一致：64 位小写十六进制 SHA-256 摘要，不接受明文密码、null 或空摘要；非法值返回 `422 / 2206`。前端按目标用户角色使用与创建用户相同的密码规则。\n\n```http\nPOST /api/v1/admin/users/10000000-0000-4000-8000-000000000002/reset-password\nAuthorization: Bearer <access-token>\nIf-Match: 4\n```\n\n**成功：** 200，data 为 CredentialIssue，结构与创建用户的 data 相同。\n\n未指定密码时，服务端生成新的临时密码并设置 24 小时有效期；指定密码时不设置临时有效期，响应 `temporary_credential` 和 `temporary_credential_expires_at` 均为 null，不回传密码或摘要。两种方式均设置待改密标记，递增 version/authz_version，撤销全部 refresh 会话，旧密码失效。是否强制改密由目标角色决定，见 User 模型。超出签发预算返回 `429 / 2211`，不产生部分密码变更；其他错误见本节公共错误表。\n\n安全约束：待强制改密的超管（force_password_change=true）禁止调用此接口，返回 403 / 2204。须先修改密码并重新登录。其他角色的建议改密不受此限制。",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/UserId"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatch"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialIssueResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          },
+          "409": {
+            "$ref": "#/components/responses/409"
+          },
+          "413": {
+            "$ref": "#/components/responses/413"
+          },
+          "422": {
+            "$ref": "#/components/responses/422"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
+          },
+          "500": {
+            "$ref": "#/components/responses/500"
+          }
+        },
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResetPasswordRequest"
+              },
+              "example": {}
+            }
+          }
+        }
+      }
+    },
+    "/admin/user-logs": {
+      "get": {
+        "tags": ["审计日志"],
+        "operationId": "listAuditLogs",
+        "summary": "查询审计日志",
+        "description": "**权限：** admin/super_admin。\n\n| Query 参数 | 类型 | 必填 | 默认／约束 |\n|---|---|---|---|\n| page | integer | 否 | 默认 1；范围 1–4294967295 |\n| page_size | integer | 否 | 默认 20；范围 1–100 |\n| from | string | 否 | 起始 UTC ISO 8601 时间，包含下界 |\n| to | string | 否 | 结束 UTC ISO 8601 时间，包含该精确时刻上界 |\n| event_name | string | 否 | 精确匹配；事件名称语法见行为上报，查询允许 auth./user. 前缀 |\n| event_search | string | 否 | 事件代码或已配置中文名称的字面量子串，最多 128 个 Unicode 字符，无控制字符；空表示不过滤 |\n| result | string | 否 | success / failure / denied |\n| actor_user_id | string(UUID) | 否 | 操作者 ID |\n| actor_search | string | 否 | 操作者展示名、用户名或 UID 的字面量子串，最多 128 个 Unicode 字符，无控制字符；与其他筛选条件取交集 |\n\n按 created_at 降序、id 升序排列；不支持 sort，未知参数返回 `422 / 2206`。to 只有秒精度，不包含该精确时刻之后的微秒记录；其他错误见本节公共错误表。\n\n管理界面使用 `event_search`，提交前去除首尾空白。例如 `login` 或 `auth.login` 可匹配 `auth.login.success` / `auth.login.failure`，`登录` 还匹配中文名为“退出登录”的 `auth.logout`。未知事件可按原始代码查询。`%`、`_`、反斜杠作为普通字符。匹配在服务端分页前完成，total 使用相同条件；与其他筛选条件取交集。保留 `event_name` 原有精确语义。\n\n`actor_search` 在服务端关联 users 后，对 display_name、username、uid 三个字段进行匹配，分页与 total 均基于过滤后的日志。`%`、`_`、反斜杠作为普通字符匹配，大小写规则沿用数据库展示列的排序规则。`actor_user_id` 仅为已有 API 客户端保留兼容，管理界面不提供 UUID 搜索；二者同时提供时取交集。返回的用户名是查询时的登录标识，不是历史快照；无关联操作者的日志仍会出现在未按用户筛选的结果中。\n\n```http\nGET /api/v1/admin/user-logs?page=1&page_size=20&from=2026-09-17T00%3A00%3A00Z&event_name=report.view\nAuthorization: Bearer <access-token>\n```\n\n**成功：** 200，data 为 `Page<AuditLog>`。\n\n```json\n{\n  \"data\": {\n    \"items\": [{\n      \"id\": \"20000000-0000-4000-8000-000000000001\",\n      \"actor_user_id\": \"10000000-0000-4000-8000-000000000002\",\n      \"actor_username\": \"alice\",\n      \"target_user_id\": \"10000000-0000-4000-8000-000000000002\",\n      \"event_name\": \"report.view\",\n      \"result\": \"success\",\n      \"request_id\": \"report-view-001\",\n      \"peer_address\": \"\",\n      \"details\": {\"source\": \"dashboard\"},\n      \"created_at\": 1789636500510\n    }],\n    \"total\": 1,\n    \"page\": 1,\n    \"page_size\": 20\n  },\n  \"request_id\": \"logs-list-001\"\n}\n```\n\n历史日志读取时也执行字段脱敏，但不会修改存储中的历史记录。业务 API 不支持修改或删除日志。\n\n安全约束：待强制改密的超管（force_password_change=true）禁止调用此接口，返回 403 / 2204。须先修改密码并重新登录。其他角色的建议改密不受此限制。",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/Page"
+          },
+          {
+            "$ref": "#/components/parameters/PageSize"
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "description": "UTC秒精度，包含下界",
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$",
+              "example": "2026-09-20T00:00:00Z"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "description": "UTC秒精度，包含精确时刻上界",
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$",
+              "example": "2026-09-20T00:00:00Z"
+            }
+          },
+          {
+            "name": "event_name",
+            "in": "query",
+            "required": false,
+            "description": "事件代码精确匹配",
+            "schema": {
+              "type": "string",
+              "maxLength": 96
+            }
+          },
+          {
+            "name": "event_search",
+            "in": "query",
+            "required": false,
+            "description": "中文名称或事件代码的字面量子串，例如 登录、login",
+            "schema": {
+              "type": "string",
+              "maxLength": 128
+            }
+          },
+          {
+            "name": "result",
+            "in": "query",
+            "required": false,
+            "description": "",
+            "schema": {
+              "type": "string",
+              "enum": ["success", "failure", "denied"]
+            }
+          },
+          {
+            "name": "actor_search",
+            "in": "query",
+            "required": false,
+            "description": "匹配操作者展示名、用户名或UID",
+            "schema": {
+              "type": "string",
+              "maxLength": 128
+            }
+          },
+          {
+            "name": "actor_user_id",
+            "in": "query",
+            "required": false,
+            "description": "旧客户端兼容字段；推荐actor_search",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "10000000-0000-4000-8000-000000000002"
+            },
+            "deprecated": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditLogPageResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "422": {
+            "$ref": "#/components/responses/422"
+          },
+          "500": {
+            "$ref": "#/components/responses/500"
+          }
+        }
+      }
+    },
+    "/client/me/permissions": {
+      "get": {
+        "tags": ["客户端"],
+        "operationId": "getPermissions",
+        "summary": "查询当前用户权限",
+        "description": "**鉴权：** Bearer，任意有效角色。无请求参数和请求体。\n\n| data 字段 | 类型 | 说明 |\n|---|---|---|\n| user_id | string(UUID) | 当前用户 ID |\n| role | string | 当前固定角色 |\n| status | string | 当前有效用户为 active |\n| force_password_change | boolean | 当前超管是否必须改密 |\n| authz_version | integer | 当前授权版本 |\n| capabilities | array<string> | 该角色的能力码 |\n\n**成功：** 200。\n\n```json\n{\"data\":{\"user_id\":\"10000000-0000-4000-8000-000000000002\",\"role\":\"engineer\",\"status\":\"active\",\"force_password_change\":false,\"authz_version\":3,\"capabilities\":[\"business.read\",\"business.operate\",\"engineering.configure\"]},\"request_id\":\"permissions-001\"}\n```\n\n| 角色 | 能力 |\n|---|---|\n| operator | business.read、business.operate |\n| engineer | operator 能力，加 engineering.configure |\n| admin | engineer 能力，加 user.read、user.create、user.update、user.status、user.unlock、user.password.reset、audit.read |\n| super_admin | admin 能力，加 user.role.assign |\n\n错误：`401 / 2200`（会话无效）、`403 / 2204`（Origin 不允许）、`500 / 2221`（数据库失败）。菜单可依据此响应显示，实际业务请求仍须服务端鉴权。密码修改建议读取登录／刷新返回的 User；此接口不返回 password_change_recommended。\n\n安全约束：待强制改密的超管（force_password_change=true）禁止调用此接口，返回 403 / 2204。须先修改密码并重新登录。其他角色的建议改密不受此限制。",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PermissionsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "422": {
+            "$ref": "#/components/responses/422"
+          },
+          "500": {
+            "$ref": "#/components/responses/500"
+          }
+        }
+      }
+    },
+    "/client/behavior-events": {
+      "post": {
+        "tags": ["客户端"],
+        "operationId": "reportBehavior",
+        "summary": "上报非可信业务行为事件",
+        "description": "**鉴权：** Bearer，任意有效角色；不要求 If-Match。\n\n| Body 字段 | 类型 | 必填 | 约束 |\n|---|---|---|---|\n| event_name | string | 是 | 1–96 个 ASCII 字符；首字符为小写字母；只允许小写字母、数字、下划线、点；无首尾点或连续点 |\n| result | string | 是 | 仅 success / failure |\n| details | object | 是 | 序列化后最多 4096 字节；可以是空对象 |\n\n```json\n{\"event_name\":\"report.view\",\"result\":\"success\",\"details\":{\"source\":\"dashboard\"}}\n```\n\n**成功：** 202 Accepted。\n\n```json\n{\"data\":{\"event_id\":\"20000000-0000-4000-8000-000000000001\"},\"request_id\":\"report-view-001\"}\n```\n\n此接口为非可信客户端 telemetry；拒绝 auth.、user. 前缀，不能伪造登录、角色变更等服务端审计。操作者和目标用户均取当前用户，调用方不能指定。\n\n错误：`401 / 2200`（会话无效）、`403 / 2204`（Origin 不允许）、`422 / 2206`（字段／名称／details 非法）、`429 / 2211`（独立用户预算耗尽）、`500 / 2212`（审计失败）。\n\n入库前递归处理对象和数组：字段名转 ASCII 小写并去掉非字母数字字符后，删除包含 password、token、secret、privatekey、apikey、credential、machineid、hardwareid、fingerprint、stack、traceback，或等于 authorization、cookie、setcookie 的字段。深度达到 32 的值替换为 null，其余元数据保留。此规则按字段名识别，调用方仍不得把凭据写入任意自由文本值。\n\n安全约束：待强制改密的超管（force_password_change=true）禁止调用此接口，返回 403 / 2204。须先修改密码并重新登录。其他角色的建议改密不受此限制。",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BehaviorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "413": {
+            "$ref": "#/components/responses/413"
+          },
+          "422": {
+            "$ref": "#/components/responses/422"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
+          },
+          "500": {
+            "$ref": "#/components/responses/500"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BehaviorRequest"
+              },
+              "example": {
+                "event_name": "report.view",
+                "result": "success",
+                "details": {
+                  "source": "dashboard"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "example": 2206
+          },
+          "message": {
+            "type": "string",
+            "example": "Request validation failed."
+          },
+          "details": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": ["code", "message", "details", "request_id"]
+      },
+      "User": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "example": "10000000-0000-4000-8000-000000000002"
+          },
+          "uid": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "description": "展示名，无控制字符，不得全为空格"
+          },
+          "role": {
+            "type": "string",
+            "enum": ["operator", "engineer", "admin", "super_admin"]
+          },
+          "status": {
+            "type": "string",
+            "enum": ["active", "disabled", "locked"]
+          },
+          "force_password_change": {
+            "type": "boolean"
+          },
+          "password_change_recommended": {
+            "type": "boolean"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "authz_version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "last_login_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "UTC Unix 毫秒",
+            "example": 1789636500000,
+            "nullable": true
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "UTC Unix 毫秒",
+            "example": 1789636500000
+          },
+          "updated_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "UTC Unix 毫秒",
+            "example": 1789636500000
+          }
+        },
+        "required": [
+          "id",
+          "display_name",
+          "role",
+          "status",
+          "force_password_change",
+          "password_change_recommended",
+          "version",
+          "authz_version",
+          "last_login_at",
+          "created_at",
+          "updated_at"
+        ]
+      },
+      "Session": {
+        "type": "object",
+        "properties": {
+          "user": {
+            "$ref": "#/components/schemas/User"
+          },
+          "access_token": {
+            "type": "string",
+            "description": "PS256 JWT，有效期15分钟"
+          },
+          "token_type": {
+            "type": "string",
+            "enum": ["Bearer"]
+          },
+          "expires_in": {
+            "type": "integer",
+            "enum": [900]
+          },
+          "expires_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "UTC Unix 毫秒",
+            "example": 1789636500000
+          },
+          "authz_version": {
+            "type": "integer"
+          },
+          "csrf_token": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "刷新/登出时提交至 X-CSRF-Token"
+          }
+        },
+        "required": [
+          "user",
+          "access_token",
+          "token_type",
+          "expires_in",
+          "expires_at",
+          "authz_version",
+          "csrf_token"
+        ]
+      },
+      "CredentialIssue": {
+        "type": "object",
+        "properties": {
+          "user": {
+            "$ref": "#/components/schemas/User"
+          },
+          "temporary_credential": {
+            "type": "string",
+            "nullable": true,
+            "description": "随机密码仅本次响应可见；指定密码时为 null"
+          },
+          "temporary_credential_expires_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "随机密码默认24小时有效；指定密码时为 null",
+            "example": 1789636500000,
+            "nullable": true
+          }
+        },
+        "required": ["user", "temporary_credential", "temporary_credential_expires_at"]
+      },
+      "AuditLog": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "example": "10000000-0000-4000-8000-000000000002"
+          },
+          "actor_user_id": {
+            "type": "string"
+          },
+          "actor_username": {
+            "type": "string",
+            "description": "当前用户名，UID账号返回UID，无法关联时为空"
+          },
+          "target_user_id": {
+            "type": "string"
+          },
+          "event_name": {
+            "type": "string"
+          },
+          "result": {
+            "type": "string",
+            "enum": ["success", "failure", "denied"]
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "peer_address": {
+            "type": "string",
+            "enum": [""]
+          },
+          "details": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "脱敏后的对象"
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "UTC Unix 毫秒",
+            "example": 1789636500000
+          }
+        },
+        "required": [
+          "id",
+          "actor_user_id",
+          "actor_username",
+          "target_user_id",
+          "event_name",
+          "result",
+          "request_id",
+          "peer_address",
+          "details",
+          "created_at"
+        ]
+      },
+      "Permissions": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "format": "uuid",
+            "example": "10000000-0000-4000-8000-000000000002"
+          },
+          "role": {
+            "type": "string",
+            "enum": ["operator", "engineer", "admin", "super_admin"]
+          },
+          "status": {
+            "type": "string",
+            "enum": ["active", "disabled", "locked"]
+          },
+          "force_password_change": {
+            "type": "boolean"
+          },
+          "authz_version": {
+            "type": "integer"
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "user_id",
+          "role",
+          "status",
+          "force_password_change",
+          "authz_version",
+          "capabilities"
+        ]
+      },
+      "PasswordChange": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "integer"
+          },
+          "authz_version": {
+            "type": "integer"
+          },
+          "force_password_change": {
+            "type": "boolean"
+          },
+          "password_change_recommended": {
+            "type": "boolean"
+          },
+          "reauthentication_required": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "version",
+          "authz_version",
+          "force_password_change",
+          "password_change_recommended",
+          "reauthentication_required"
+        ]
+      },
+      "LoginRequest": {
+        "type": "object",
+        "properties": {
+          "identifier": {
+            "type": "string",
+            "description": "UID或用户名，原始UTF-8最多512字节；规范化后1–64个字符",
+            "example": "admin"
+          },
+          "password_hash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "minLength": 64,
+            "maxLength": 64,
+            "description": "原始密码 UTF-8 字节的 SHA-256 小写十六进制摘要，不是明文密码。",
+            "example": "0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        },
+        "required": ["identifier", "password_hash"],
+        "additionalProperties": false
+      },
+      "ChangePasswordRequest": {
+        "type": "object",
+        "properties": {
+          "old_password_hash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "minLength": 64,
+            "maxLength": 64,
+            "description": "原始密码 UTF-8 字节的 SHA-256 小写十六进制摘要，不是明文密码。",
+            "example": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "new_password_hash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "minLength": 64,
+            "maxLength": 64,
+            "description": "原始密码 UTF-8 字节的 SHA-256 小写十六进制摘要，不是明文密码。",
+            "example": "0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        },
+        "required": ["old_password_hash", "new_password_hash"],
+        "additionalProperties": false
+      },
+      "CreateUserRequest": {
+        "type": "object",
+        "properties": {
+          "uid": {
+            "type": "string",
+            "nullable": true,
+            "description": "与username必须且只能提供一个非null字段，原始UTF-8最多512字节，规范化后1–64个字符"
+          },
+          "username": {
+            "type": "string",
+            "nullable": true,
+            "description": "与uid二选一，创建后不可修改"
+          },
+          "display_name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "description": "展示名，无控制字符，不得全为空格"
+          },
+          "role": {
+            "type": "string",
+            "enum": ["operator", "engineer", "admin", "super_admin"]
+          },
+          "password_hash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "minLength": 64,
+            "maxLength": 64,
+            "description": "原始密码 UTF-8 字节的 SHA-256 小写十六进制摘要，不是明文密码。",
+            "example": "0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        },
+        "required": ["display_name", "role"],
+        "additionalProperties": false,
+        "description": "uid/username 二选一。省略password_hash随机生成临时密码；不能传空字符串或null。",
+        "oneOf": [
+          {
+            "required": ["uid"],
+            "properties": {
+              "uid": {
+                "type": "string",
+                "nullable": false
+              },
+              "username": {
+                "nullable": true,
+                "enum": [null]
+              }
+            }
+          },
+          {
+            "required": ["username"],
+            "properties": {
+              "username": {
+                "type": "string",
+                "nullable": false
+              },
+              "uid": {
+                "nullable": true,
+                "enum": [null]
+              }
+            }
+          }
+        ]
+      },
+      "UpdateUserRequest": {
+        "type": "object",
+        "properties": {
+          "display_name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "description": "展示名，无控制字符，不得全为空格"
+          }
+        },
+        "required": ["display_name"],
+        "additionalProperties": false
+      },
+      "StatusRequest": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": ["active", "disabled"]
+          }
+        },
+        "required": ["status"],
+        "additionalProperties": false
+      },
+      "RoleRequest": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": ["operator", "engineer", "admin", "super_admin"]
+          }
+        },
+        "required": ["role"],
+        "additionalProperties": false
+      },
+      "ResetPasswordRequest": {
+        "type": "object",
+        "properties": {
+          "password_hash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "minLength": 64,
+            "maxLength": 64,
+            "description": "原始密码 UTF-8 字节的 SHA-256 小写十六进制摘要，不是明文密码。",
+            "example": "0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        },
+        "additionalProperties": false
+      },
+      "EmptyRequest": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "BehaviorRequest": {
+        "type": "object",
+        "properties": {
+          "event_name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 96,
+            "pattern": "^[a-z](?:[a-z0-9_]|\\.(?=[a-z0-9_]))*$",
+            "description": "不允许auth.或user.前缀",
+            "example": "report.view"
+          },
+          "result": {
+            "type": "string",
+            "enum": ["success", "failure"]
+          },
+          "details": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "序列化后最多4096字节，递归脱敏，不能包含凭据"
+          }
+        },
+        "required": ["event_name", "result", "details"],
+        "additionalProperties": false
+      },
+      "UserPage": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/User"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": ["items", "total", "page", "page_size"]
+      },
+      "AuditLogPage": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AuditLog"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": ["items", "total", "page", "page_size"]
+      },
+      "UserResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/User"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": ["data", "request_id"]
+      },
+      "SessionResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/Session"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": ["data", "request_id"]
+      },
+      "CredentialIssueResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/CredentialIssue"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": ["data", "request_id"]
+      },
+      "UserPageResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/UserPage"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": ["data", "request_id"]
+      },
+      "AuditLogPageResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/AuditLogPage"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": ["data", "request_id"]
+      },
+      "PermissionsResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/Permissions"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": ["data", "request_id"]
+      },
+      "PasswordChangeResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/PasswordChange"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": ["data", "request_id"]
+      },
+      "HealthResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": ["ok"]
+              }
+            },
+            "required": ["status"]
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": ["data", "request_id"]
+      },
+      "ReadyResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": ["ready"]
+              }
+            },
+            "required": ["status"]
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": ["data", "request_id"]
+      },
+      "BehaviorResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "event_id": {
+                "type": "string",
+                "format": "uuid",
+                "example": "10000000-0000-4000-8000-000000000002"
+              }
+            },
+            "required": ["event_id"]
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": ["data", "request_id"]
+      }
+    },
+    "parameters": {
+      "UserId": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "description": "目标用户 UUID",
+        "schema": {
+          "type": "string",
+          "format": "uuid",
+          "example": "10000000-0000-4000-8000-000000000002"
+        }
+      },
+      "IfMatch": {
+        "name": "If-Match",
+        "in": "header",
+        "required": true,
+        "description": "目标用户当前 version，1–2147483647；冲突后重新查询",
+        "schema": {
+          "type": "string",
+          "pattern": "^(?:[1-9][0-9]*|\"[1-9][0-9]*\")$",
+          "example": "1"
+        }
+      },
+      "RequestId": {
+        "name": "X-Request-ID",
+        "in": "header",
+        "required": false,
+        "description": "可选关联请求ID；未提供或非法时由服务生成",
+        "schema": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]{1,128}$"
+        }
+      },
+      "Csrf": {
+        "name": "X-CSRF-Token",
+        "in": "header",
+        "required": true,
+        "description": "最近一次登录/刷新返回的 csrf_token",
+        "schema": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "LogoutCsrf": {
+        "name": "X-CSRF-Token",
+        "in": "header",
+        "required": false,
+        "description": "浏览器携带 szx_refresh Cookie 时必填",
+        "schema": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "Page": {
+        "name": "page",
+        "in": "query",
+        "required": false,
+        "description": "",
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295,
+          "default": 1
+        }
+      },
+      "PageSize": {
+        "name": "page_size",
+        "in": "query",
+        "required": false,
+        "description": "",
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 20
+        }
+      }
+    },
+    "responses": {
+      "401": {
+        "description": "会话无效/过期或登录凭据错误（2200/2201/2203）",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "403": {
+        "description": "无权限、CSRF错误或Origin不允许（2204）",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "404": {
+        "description": "资源不存在（2205）",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "409": {
+        "description": "版本冲突、身份重复、最后超管保护或刷新重放（2209/2208/2210/2202）",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "413": {
+        "description": "请求体过大（2215）",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "422": {
+        "description": "参数不合法或身份未二选一（2206/2207）",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "429": {
+        "description": "请求预算耗尽（2211）",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "500": {
+        "description": "审计、数据库或内部失败（2212/2221/2222/2299）",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "503": {
+        "description": "服务或数据库不可用（2216/2220）",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "填写登录/刷新返回的 access_token，不加 Bearer 前缀。仅当前页面内存保存。"
+      },
+      "refreshCookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "szx_refresh",
+        "description": "HttpOnly Cookie，由浏览器登录响应自动设置，无法通过此输入框手动设置。请先调用登录，再填写最新X-CSRF-Token。"
+      }
+    }
+  }
+}

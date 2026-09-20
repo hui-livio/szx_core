@@ -94,6 +94,27 @@ Also reject DTO fields such as `failureMessage`, `reason`, or `metrics["error"]`
 
 Never infer mapping from diagnostic text. Use the typed source condition at the point where it is still known.
 
+## Composed-module error codes
+
+When one business module depends on several child modules, keep child meanings local and qualify them only at the business aggregation boundary:
+
+```text
+published_code = child_module_offset + child_local_code
+```
+
+Example registry:
+
+| Child module | Offset | Local `1801` | Local `1802` |
+|---|---:|---:|---:|
+| A | 20000 | 21801 | 21802 |
+| B | 30000 | 31801 | 31802 |
+| C | 40000 | 41801 | 41802 |
+| D | 50000 | 51801 | 51802 |
+
+The business aggregation layer owns this registry and is the only layer allowed to assign or change offsets. Child modules define only their local codes and must not contain, choose, or infer the business offset. Reserve non-overlapping ranges, validate that the local code belongs to the child range, and reject overflow or unknown codes. The same qualified value must not be offset again by an adapter, worker, callback, future, or nested aggregator. Use a typed qualified-code representation or explicit metadata so double qualification is detectable without parsing numbers or text.
+
+The child module maps exceptions and private/SDK failures to its own stable local code first. The aggregator catches any boundary exception that remains, maps it to its own stable fallback, and qualifies only child failures whose ownership is known. No exception, diagnostic string, or `what()` crosses the module boundary.
+
 ## Required test slice
 
 For each new or changed code, cover:
@@ -106,3 +127,4 @@ For each new or changed code, cover:
 6. Unknown exceptions and `std::bad_alloc` map to stable fallback codes without exposing `what()`.
 7. Cancellation, capacity, permission, not-found, and execution failures remain distinguishable.
 8. Fakes, capability tests, and ABI/compile-contract tests use the new signature.
+9. Offset registry tests prove non-overlapping ranges, expected A/B/C/D examples, one-time qualification, reverse mapping, overflow rejection, and unknown-code fallback.

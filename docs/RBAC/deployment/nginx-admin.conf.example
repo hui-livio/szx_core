@@ -1,0 +1,26 @@
+# Include this file inside nginx's http {} block.
+# Replace the hostname and certificate paths before running nginx -t.
+# This example assumes nginx and szx_admin_service run on the same machine.
+server {
+    listen 443 ssl;
+    server_name admin.example.com;
+
+    ssl_certificate     C:/services/szx_admin/tls/fullchain.pem;
+    ssl_certificate_key C:/services/szx_admin/tls/private-key.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    client_max_body_size 1m;
+
+    location / {
+        # Keep /admin/ and /api/v1/ unchanged. The upstream speaks HTTP.
+        proxy_pass http://127.0.0.1:7364;
+        proxy_http_version 1.1;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header Connection "";
+
+        # Forward the service's CORS/CSP/Set-Cookie headers without duplicates.
+        proxy_cache off;
+    }
+}

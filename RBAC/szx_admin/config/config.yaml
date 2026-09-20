@@ -1,0 +1,44 @@
+logging:
+  level: debug
+  flushLevel: warn
+  loggerName: szx_admin
+  pattern: "[%Y-%m-%d %H:%M:%S.%e] [%5t|%5P] [%^%-4l%$] [%n] %v"
+  filePath: "logs/szx_admin.log"
+  maxFileSize: 10485760
+  maxFiles: 10
+  truncate: false
+  console: true
+
+server:
+  host: 0.0.0.0
+  port: 7364
+  workerThreads: 0
+  maxRequestBodyBytes: 1048576
+  maxConnections: 1024
+  apiPrefix: /api/v1
+  accessLog: true
+  staticRoot: web
+  staticHomePage: index.html
+  spaFallback: true
+
+auth:
+  issuer: szx-admin
+  audience: szx-client
+  privateKeyPath: config/keys/jwt-private.pem
+  publicKeyPath: config/keys/jwt-public.pem
+  allowedOrigin: "*"
+  refreshLifetimeSeconds: 604800
+  failedLoginLimit: 5
+  lockSeconds: 900
+  attemptsPerMinute: 30
+  behaviorEventsPerMinute: 60
+
+database:
+  host: 127.0.0.1
+  port: 3306
+  database: szx_admin
+  username: root
+  password: "P@ssword1234"
+  poolSize: 8
+  connectTimeoutSeconds: 5
+  lockWaitTimeoutSeconds: 5

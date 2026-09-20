@@ -10,6 +10,7 @@
 | `szx::crypto` | Base64、Hash/HMAC、Fernet、AES-GCM、RSA、PBKDF2 |
 | `szx::crypto_service` | 面向业务的统一加密服务门面 |
 | `szx::logger` | spdlog 日志封装 |
+| `szx::network` | HTTP/1.1 服务端：路由、中间件、请求体限制和静态目录；libhv 为私有实现，见 [接入说明](components/network/README.md) |
 | `szx::camera` | 相机生命周期、采集管道和可选 OpenCV/IKap 适配 |
 | `szx::plc` | 可选 libmodbus PLC 控制 |
 | `szx::feature_manager` | Feature 配置读取、持久化、组合 Provider 与订阅 |
@@ -27,6 +28,12 @@ cmake --build build/msvc --config Release
 ctest --test-dir build/msvc -C Release --output-on-failure
 cmake --install build/msvc --config Release
 ```
+
+RBAC admin 后端通过 `szx::network` 提供 HTTP 服务。独立构建默认启用
+`SZX_COMPONENTS_BUILD_RBAC` 和 `SZX_COMPONENTS_BUILD_NETWORK`；作为子项目时两者默认关闭，
+需要 admin 时同时设为 ON。仅消费基础库时可保持 RBAC 关闭，从而不引入服务和 MySQL 依赖。
+admin 的 request ID、JSON 错误与 SPA 策略通过网络库回调注入，见
+[RBAC 基础能力计划](docs/RBAC/11-基础能力开发计划.md)。
 
 许可证请求、签发和验证的端到端测试（同时覆盖错误产品、篡改文件、损坏请求和非法参数）：
 

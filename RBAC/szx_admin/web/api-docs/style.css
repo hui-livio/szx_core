@@ -1,0 +1,73 @@
+:root {
+  color-scheme: light;
+  font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+  color: #233247;
+  background: #f5f7fa;
+}
+body {
+  margin: 0;
+}
+.docs-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 22px max(24px, calc((100% - 1420px) / 2));
+  background: #20364c;
+  border-bottom: 4px solid #33b5a6;
+}
+.docs-header a {
+  color: #fff;
+  text-decoration: none;
+}
+.brand {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 2px;
+}
+.brand span {
+  font-size: 12px;
+  font-weight: 400;
+  margin-left: 14px;
+}
+nav {
+  display: flex;
+  gap: 24px;
+  font-size: 14px;
+}
+a:hover {
+  text-decoration: underline;
+}
+a:focus-visible {
+  outline: 3px solid #33b5a6;
+  outline-offset: 5px;
+}
+main {
+  max-width: 1460px;
+  margin: auto;
+  padding: 10px 8px 48px;
+}
+#load-status {
+  padding: 24px;
+}
+.swagger-ui .info .title {
+  color: #20364c;
+}
+.swagger-ui .opblock-tag {
+  font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+}
+@media (max-width: 640px) {
+  .docs-header {
+    align-items: flex-start;
+    flex-direction: column;
+    padding: 18px;
+  }
+  nav {
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+  .swagger-ui .opblock .opblock-summary-path {
+    font-size: 12px;
+    overflow-wrap: anywhere;
+  }
+}

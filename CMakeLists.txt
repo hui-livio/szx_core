@@ -17,6 +17,7 @@ include(comm_compile)
 include(comm_output)
 include(comm_util)
 include(core_deps)
+include(core_network)
 include(core_summary)
 include(comm_testing)
 
@@ -50,6 +51,8 @@ else()
     set(_SZX_COMPONENTS_DEFAULT_COMPRESSION OFF)
 endif()
 
+option(SZX_COMPONENTS_BUILD_NETWORK "Build the HTTP/TCP/WebSocket network component" ${SZX_COMPONENTS_STANDALONE_BUILD})
+option(SZX_COMPONENTS_BUILD_RBAC "Build the RBAC admin backend (requires network)" ${SZX_COMPONENTS_STANDALONE_BUILD})
 option(SZX_COMPONENTS_BUILD_TESTS "Build component smoke tests" ${_SZX_COMPONENTS_DEFAULT_TESTS})
 option(SZX_COMPONENTS_INSTALL "Generate install tree and package config" ${_SZX_COMPONENTS_DEFAULT_INSTALL})
 option(SZX_COMPONENTS_BUILD_CAMERA "Build camera component" ${_SZX_COMPONENTS_DEFAULT_CAMERA})
@@ -145,7 +148,7 @@ function(_szx_add_compression)
 endfunction()
 
 if(SZX_COMPONENTS_BUILD_COMPRESSION AND SZX_COMPRESSION_BACKEND STREQUAL "minizip-ng"
-   AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/zstd/build/cmake/CMakeLists.txt")
+    AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/zstd/build/cmake/CMakeLists.txt")
     _szx_add_compression()
 elseif(SZX_COMPONENTS_BUILD_COMPRESSION AND SZX_COMPRESSION_BACKEND STREQUAL "minizip-ng")
     message(FATAL_ERROR
@@ -159,6 +162,9 @@ elseif(SZX_COMPONENTS_BUILD_COMPRESSION AND NOT SZX_COMPRESSION_BACKEND STREQUAL
 endif()
 
 add_subdirectory(components)
+if(SZX_COMPONENTS_BUILD_RBAC)
+    add_subdirectory(RBAC)
+endif()
 add_subdirectory(tools)
 
 szx_install_components_package()

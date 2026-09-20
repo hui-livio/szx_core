@@ -1,4 +1,4 @@
 interface:
   display_name: "AOI 模块错误码契约"
   short_description: "规范跨模块错误码传递、诊断隔离与 UI 多语言映射"
-  default_prompt: "Use $aoi-module-error-contract to implement or review typed error propagation across AOI module boundaries."
+  default_prompt: "Use $aoi-module-error-contract to implement or review typed error propagation, module-local error codes, one-time aggregation offsets, and exception containment across AOI module boundaries."
