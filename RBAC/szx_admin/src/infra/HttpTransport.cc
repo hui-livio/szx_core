@@ -174,6 +174,22 @@ public:
         if (!staticHandler_ || isApiPath(request.path, config_.apiPrefix) ||
             (request.method != "GET" && request.method != "HEAD"))
             return {.statusCode = 404};
+        if (isApiPath(request.path, "/admin"))
+        {
+            if (!adminStaticHandler_)
+                return {.statusCode = 404};
+            if (request.path == "/admin")
+                return {.statusCode = 308, .headers = {{"Location", "/admin/"}}};
+            auto mounted  = request;
+            mounted.path  = request.path.substr(6);
+            auto response = adminStaticHandler_(mounted);
+            if (response.statusCode == 404 && config_.spaFallback && !std::filesystem::path{mounted.path}.has_extension())
+            {
+                mounted.path = "/";
+                response     = adminStaticHandler_(mounted);
+            }
+            return response;
+        }
         auto response = staticHandler_(request);
         // Failed confinement never reaches the SPA fallback. Missing assets retain their 404.
         if (response.statusCode == 404 && config_.spaFallback && !std::filesystem::path{request.path}.has_extension())
@@ -314,7 +330,8 @@ public:
             const auto ready = ensureServer();
             if (!ready.ok)
                 return ready;
-            staticHandler_ = {};
+            staticHandler_      = {};
+            adminStaticHandler_ = {};
             if (!config_.staticRoot.empty())
             {
                 std::error_code error;
@@ -326,7 +343,18 @@ public:
                     auto files = Network::HttpServer::CreateStaticHandler(config_.staticRoot, config_.staticHomePage);
                     if (!files.ok)
                         return networkResult(Result<void>::Failure(files.error, {}), ErrorCode::InvalidConfiguration);
-                    staticHandler_ = std::move(files.value);
+                    staticHandler_         = std::move(files.value);
+                    const auto adminRoot   = std::filesystem::path{config_.staticRoot} / "admin";
+                    const bool adminExists = std::filesystem::exists(adminRoot, error);
+                    if (error)
+                        return failure(ErrorCode::InvalidConfiguration);
+                    if (adminExists)
+                    {
+                        auto adminFiles = Network::HttpServer::CreateStaticHandler(adminRoot.string(), "index.html");
+                        if (!adminFiles.ok)
+                            return networkResult(Result<void>::Failure(adminFiles.error, {}), ErrorCode::InvalidConfiguration);
+                        adminStaticHandler_ = std::move(adminFiles.value);
+                    }
                 }
             }
             const auto result = server_->start();
@@ -365,6 +393,7 @@ public:
     std::mutex mutex_;
     std::atomic_bool started_{};
     Network::HttpRouteHandler staticHandler_;
+    Network::HttpRouteHandler adminStaticHandler_;
     std::unique_ptr<Network::HttpServer> server_; // Join before releasing captured configuration and file handler.
 };
 

@@ -237,6 +237,44 @@ TEST(AdminHttpIntegrationTest, KeepsStaticAndSpaPolicyOutsideNetworkAndExcludesA
     }
 }
 
+TEST(AdminHttpIntegrationTest, MountsAdminBundleWithConfinedSpaFallback)
+{
+    WebRoot files;
+    const auto root = files.directory / "public";
+    EXPECT_TRUE(SZX::COMMON::FileHelper::WriteText(root / "admin" / "index.html", "ADMIN SPA"));
+    EXPECT_TRUE(SZX::COMMON::FileHelper::WriteText(root / "admin" / "assets" / "app.js", "admin javascript"));
+    EXPECT_TRUE(SZX::COMMON::FileHelper::WriteText(root / "secret.txt", "OUTSIDE ADMIN"));
+    for (const bool fallback : {false, true})
+    {
+        auto config        = testConfig();
+        config.staticRoot  = root.string();
+        config.spaFallback = fallback;
+        HttpTransport transport(config);
+        ASSERT_TRUE(transport.start().ok);
+        const auto redirect = request(transport.port(), "GET", "/admin");
+        EXPECT_EQ(status(redirect), 308);
+        EXPECT_NE(redirect.find("Location: /admin/"), redirect.npos);
+        EXPECT_EQ(body(request(transport.port(), "GET", "/admin/")), "ADMIN SPA");
+        EXPECT_EQ(body(request(transport.port(), "GET", "/admin/assets/app.js")), "admin javascript");
+        const auto head = request(transport.port(), "HEAD", "/admin/assets/app.js");
+        EXPECT_EQ(status(head), 200);
+        EXPECT_TRUE(body(head).empty());
+        for (const auto path : {"/admin/login", "/admin/users", "/admin/logs"})
+        {
+            const auto response = request(transport.port(), "GET", path);
+            EXPECT_EQ(status(response), fallback ? 200 : 404);
+            if (fallback)
+                EXPECT_EQ(body(response), "ADMIN SPA");
+        }
+        for (const auto path : {"/admin/assets/missing.js", "/api/v1/admin/missing", "/administrator"})
+            expectError(request(transport.port(), "GET", path, {}, idHeader), 404, 2205);
+        expectError(request(transport.port(), "POST", "/admin/users", {}, idHeader), 404, 2205);
+        for (const auto path : {"/admin/%2e%2e/secret.txt", "/admin/%2e%2e/secret", "/admin/%00"})
+            expectError(request(transport.port(), "GET", path, {}, idHeader), 403, 2204);
+        EXPECT_TRUE(transport.stop().ok);
+    }
+}
+
 TEST(AdminHttpIntegrationTest, ConfiguredHealthPathSupportsExtraSlashesWithoutAddingRootAlias)
 {
     WebRoot files;

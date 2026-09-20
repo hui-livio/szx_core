@@ -1,8 +1,9 @@
 import { defineConfig, loadEnv } from 'vite'
 import vue from '@vitejs/plugin-vue'
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ mode, command }) => {
   const env = loadEnv(mode, process.cwd(), '')
   return {
+    base: command === 'build' ? '/admin/' : '/',
     plugins: [vue()],
     server: {
       host: 'localhost',
