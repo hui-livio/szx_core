@@ -1,0 +1,7 @@
+本地数据库测试账号，和生产无关
+超管账号: 
+    admin  ---- 7iCrnh3!Ry73V!:
+其他账号:
+    huihui ---- Zbe9dbcULvRPn97wxJgP
+    hui1   ---- KxgJaRAneCSGt2Pn9qEd
+    huihui1234 ---- 123456
