@@ -1,4 +1,5 @@
 #include "LoginService.h"
+#include "../audit/AuditRepository.h"
 #include "PasswordHash.h"
 
 #include "Defer.hpp"
@@ -112,7 +113,8 @@ auto LoginService::cookieSession(const CookieSessionInput &input, bool logout) -
             [&](INFRA::DatabaseConnection &connection) -> Result<void>
             {
                 auto *repository = connection.loginRepository();
-                if (!repository)
+                auto *audit      = connection.auditRepository();
+                if (!repository || !audit)
                     return failed<void>(ErrorCode::DatabaseQueryFailed);
                 const auto begun = connection.begin();
                 if (!begun.ok)
@@ -198,13 +200,13 @@ auto LoginService::cookieSession(const CookieSessionInput &input, bool logout) -
                 if (denied && eventName == "auth.refresh.success")
                     eventName = "auth.refresh.failure";
                 const auto audited =
-                    repository->insertAudit({.id             = SZX::COMMON::Uuid::v4().toString(),
-                                             .actor_user_id  = user ? std::optional<std::string>{user->id} : std::nullopt,
-                                             .target_user_id = user ? std::optional<std::string>{user->id} : std::nullopt,
-                                             .event_name     = eventName,
-                                             .result         = denied ? "denied" : "success",
-                                             .request_id     = input.requestId,
-                                             .ip             = input.peerAddress});
+                    audit->append({.id             = SZX::COMMON::Uuid::v4().toString(),
+                                   .actor_user_id  = user ? std::optional<std::string>{user->id} : std::nullopt,
+                                   .target_user_id = user ? std::optional<std::string>{user->id} : std::nullopt,
+                                   .event_name     = eventName,
+                                   .result         = denied ? "denied" : "success",
+                                   .request_id     = input.requestId,
+                                   .ip             = input.peerAddress});
                 if (!audited.ok)
                     return audited;
                 const auto result = connection.commit();

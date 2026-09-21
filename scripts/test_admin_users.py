@@ -233,8 +233,8 @@ def run_user_checks(admin, sql):
         sql("CREATE TRIGGER user_api.fail_user_audit BEFORE INSERT ON user_api.user_logs FOR EACH ROW "
             "SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='USER_AUDIT_SECRET';")
         expect(call(port, "POST", target_path + "/reset-password", token=token, version=7), 500, 2212)
-        # A failing connection must not taint successful reads on another pool
-        # connection. Every failed write retains the owning module's audit code.
+        # A failing legacy dual-write target must not taint successful reads.
+        # Telemetry has already returned after admission, so the worker retries in the background.
         def concurrent_database_check(index):
             if index % 2:
                 expect(call(port, "GET", "/admin/users", token=token), 200)
@@ -242,7 +242,7 @@ def run_user_checks(admin, sql):
                 response = call(port, "POST", "/client/behavior-events", {
                     "event_name": "report.injected", "result": "success", "details": {},
                 }, token)
-                expect(response, 500, 2212)
+                expect(response, 202)
                 assert "USER_AUDIT_SECRET" not in json.dumps(response[1])
 
         with ThreadPoolExecutor(max_workers=4) as executor:
@@ -250,12 +250,26 @@ def run_user_checks(admin, sql):
         assert sql(f"SELECT password_hash,version,authz_version FROM user_api.users WHERE id='{target_id}';") == before
         assert sql(f"SELECT COUNT(*) FROM user_api.refresh_tokens WHERE user_id='{target_id}' AND revoked_at IS NULL;") == refresh_before
         sql("DROP TRIGGER user_api.fail_user_audit;")
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            primary = sql("SELECT COUNT(*) FROM user_api.client_behavior_events WHERE event_name='report.injected';")
+            legacy = sql("SELECT COUNT(*) FROM user_api.user_logs WHERE event_name='report.injected';")
+            if primary == legacy == "8":
+                break
+            time.sleep(0.05)
+        assert primary == legacy == "8", (primary, legacy)
 
         event = expect(call(port, "POST", "/client/behavior-events", {
             "event_name": "report.view", "result": "success", "details": {"source": "dashboard"},
         }, renewed["access_token"]), 202)
         assert event["event_id"]
-        page = expect(call(port, "GET", "/admin/user-logs?event_name=report.view", token=token), 200)
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            page = expect(call(port, "GET", "/admin/user-logs?event_name=report.view", token=token), 200)
+            if page["items"]:
+                break
+            time.sleep(0.05)
+        assert page["items"]
         assert page["items"][0]["details"] == {"source": "dashboard"}
         assert type(page["items"][0]["created_at"]) is int
         event_time = sql("SET time_zone='+00:00'; SELECT CAST(FLOOR(UNIX_TIMESTAMP(created_at)*1000) AS SIGNED) "
@@ -264,20 +278,33 @@ def run_user_checks(admin, sql):
         for index, details in enumerate(({}, {"source": "dashboard", "padding": "x" * 2000},
                                          {"unicode": "中文😀", "items": [{"count": 3}]})):
             event_name = f"report.roundtrip{index}"
-            expect(call(port, "POST", "/client/behavior-events", {
+            accepted = expect(call(port, "POST", "/client/behavior-events", {
                 "event_name": event_name, "result": "success", "details": details,
             }, renewed["access_token"]), 202)
-            page = expect(call(port, "GET", "/admin/user-logs?event_name=" + event_name, token=token), 200)
-            assert page["items"][0]["details"] == details, page
+            deadline = time.monotonic() + 10
+            while time.monotonic() < deadline:
+                page = expect(call(port, "GET", "/admin/user-logs?event_name=" + event_name, token=token), 200)
+                matched = [item for item in page["items"] if item["id"] == accepted["event_id"]]
+                if matched:
+                    break
+                time.sleep(0.05)
+            assert matched and matched[0]["details"] == details, page
 
         sensitive = {"source": "dashboard", "Password": "SYNTHETIC_SECRET", "private-key": "SYNTHETIC_SECRET",
                      "items": [{"access_token": "SYNTHETIC_SECRET", "count": 2}],
                      "context": {"machine_id": "SYNTHETIC_SECRET", "stack_trace": "SYNTHETIC_SECRET", "count": 1}}
         expected = {"source": "dashboard", "items": [{"count": 2}], "context": {"count": 1}}
-        expect(call(port, "POST", "/client/behavior-events", {
+        accepted = expect(call(port, "POST", "/client/behavior-events", {
             "event_name": "report.redaction", "result": "success", "details": sensitive,
         }, renewed["access_token"]), 202)
-        stored = sql("SELECT details_json FROM user_api.user_logs WHERE event_name='report.redaction';")
+        deadline = time.monotonic() + 10
+        stored = ""
+        while time.monotonic() < deadline:
+            stored = sql("SELECT details_json FROM user_api.user_logs "
+                         f"WHERE id='{accepted['event_id']}' AND event_name='report.redaction';")
+            if stored:
+                break
+            time.sleep(0.05)
         assert json.loads(stored) == expected and "SYNTHETIC_SECRET" not in stored
         # Exercise chunk boundaries, multi-byte UTF-8 and the former >64 KiB
         # multi-row BLOB use-after-free path without changing the driver.
@@ -590,19 +617,19 @@ def run_user_checks(admin, sql):
                         expect(response, 409, 2208)
         print("PASS: cross-field login identities reject collisions, including concurrent creates across services", flush=True)
 
-    with admin("behavior_rate", behavior_events_per_minute=2) as port:
-        fixture_database = "behavior_rate"
+    with admin("behavior_burst") as port:
+        fixture_database = "behavior_burst"
         token = login(port)["access_token"]
         payload = {"event_name": "report.view", "result": "success", "details": {}}
-        for _ in range(2):
+        for _ in range(75):
             expect(call(port, "POST", "/client/behavior-events", payload, token), 202)
-        expect(call(port, "POST", "/client/behavior-events", payload, token), 429, 2211)
-        assert sql("SELECT COUNT(*) FROM behavior_rate.user_logs WHERE event_name='report.view';") == "2"
-        # Exhausting telemetry cannot lock the caller out of authentication or credential management.
-        login(port)
-        issued = expect(call(port, "POST", "/admin/users", {
-            "username": "independent", "display_name": "Independent", "role": "operator",
-        }, token), 201)
-        other = login(port, "independent", issued["temporary_credential"])["access_token"]
-        expect(call(port, "POST", "/client/behavior-events", payload, other), 202)
-        print("PASS: telemetry limits are per-user and independent of authentication", flush=True)
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            primary = sql("SELECT COUNT(*) FROM behavior_burst.client_behavior_events "
+                          "WHERE event_name='report.view';")
+            legacy = sql("SELECT COUNT(*) FROM behavior_burst.user_logs WHERE event_name='report.view';")
+            if primary == legacy == "75":
+                break
+            time.sleep(0.05)
+        assert primary == legacy == "75", (primary, legacy)
+        print("PASS: telemetry accepts more than 60 events per minute and persists them in delayed batches", flush=True)

@@ -1,5 +1,6 @@
 #include "LoginService.h"
 #include "PasswordHash.h"
+#include "../audit/AuditRepository.h"
 
 #include "Defer.hpp"
 #include "SzxAdmin/Infra/ErrorCode.h"
@@ -42,7 +43,8 @@ auto LoginService::changePassword(const ChangePasswordInput &input) -> Result<Ch
             [&](INFRA::DatabaseConnection &connection) -> Result<void>
             {
                 auto *repository = connection.loginRepository();
-                if (!repository)
+                auto *audit      = connection.auditRepository();
+                if (!repository || !audit)
                     return failed<void>(ErrorCode::DatabaseQueryFailed);
                 const auto begun = connection.begin();
                 if (!begun.ok)
@@ -74,16 +76,16 @@ auto LoginService::changePassword(const ChangePasswordInput &input) -> Result<Ch
                 const auto checked = verifyClientPasswordHash(crypto_, input.oldPasswordHash, user.password_hash);
                 if (!checked.ok)
                     return failed<void>(ErrorCode::InternalFailure);
-                LoginAudit event{.id             = SZX::COMMON::Uuid::v4().toString(),
-                                 .actor_user_id  = user.id,
-                                 .target_user_id = user.id,
-                                 .event_name     = checked.value ? "auth.password.changed" : "auth.password.change_failed",
-                                 .result         = checked.value ? "success" : "failure",
-                                 .request_id     = input.requestId,
-                                 .ip             = input.peerAddress};
+                AUDIT::AuditRecord event{.id             = SZX::COMMON::Uuid::v4().toString(),
+                                         .actor_user_id  = user.id,
+                                         .target_user_id = user.id,
+                                         .event_name     = checked.value ? "auth.password.changed" : "auth.password.change_failed",
+                                         .result         = checked.value ? "success" : "failure",
+                                         .request_id     = input.requestId,
+                                         .ip             = input.peerAddress};
                 if (!checked.value)
                 {
-                    const auto audited = repository->insertAudit(event);
+                    const auto audited = audit->append(event);
                     if (!audited.ok)
                         return audited;
                     const auto result = connection.commit();
@@ -110,7 +112,7 @@ auto LoginService::changePassword(const ChangePasswordInput &input) -> Result<Ch
                 const auto revoked = repository->revokeRefresh(user.id, now, "password_changed");
                 if (!revoked.ok)
                     return revoked;
-                const auto audited = repository->insertAudit(event);
+                const auto audited = audit->append(event);
                 if (!audited.ok)
                     return audited;
                 const auto result = connection.commit();

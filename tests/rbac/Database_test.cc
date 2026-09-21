@@ -1,13 +1,22 @@
 #include "SzxAdmin/Infra/Database.h"
+#include "../../RBAC/szx_admin/src/maintenance/LogMaintenanceService.h"
+#include "../../RBAC/szx_admin/src/telemetry/BehaviorEventWriter.h"
 #include "SzxAdmin/Infra/ErrorCode.h"
 #include "SzxCrypto/Random.h"
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
+#include <deque>
+#include <mutex>
 #include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <vector>
 
 using SZX::ADMIN::INFRA::AppliedMigration;
@@ -21,6 +30,16 @@ using SZX::ADMIN::INFRA::MigrationRunner;
 
 namespace
 {
+using SZX::ADMIN::MAINTENANCE::LogBackfillBatch;
+using SZX::ADMIN::MAINTENANCE::LogMaintenanceRepository;
+using SZX::ADMIN::MAINTENANCE::LogMigrationStatus;
+using SZX::ADMIN::MAINTENANCE::LogPurgeBatch;
+using SZX::ADMIN::TELEMETRY::BatchWriteOutcome;
+using SZX::ADMIN::TELEMETRY::BehaviorEventFilter;
+using SZX::ADMIN::TELEMETRY::BehaviorEventPage;
+using SZX::ADMIN::TELEMETRY::BehaviorEventRecord;
+using SZX::ADMIN::TELEMETRY::BehaviorEventRepository;
+
 auto migrationChecksum(std::string_view sql) -> std::string
 {
     const auto digest =
@@ -30,9 +49,142 @@ auto migrationChecksum(std::string_view sql) -> std::string
     return digest.value;
 }
 
+class FakeBehaviorEventRepository final : public BehaviorEventRepository
+{
+public:
+    auto appendBatch(std::span<const BehaviorEventRecord> records) -> SZX::COMMON::Result<BatchWriteOutcome> override
+    {
+        std::lock_guard lock(mutex);
+        batches.emplace_back(records.begin(), records.end());
+        const auto outcome = outcomes.empty() ? fallback : outcomes.front();
+        if (!outcomes.empty())
+            outcomes.pop_front();
+        changed.notify_all();
+        return SZX::COMMON::Result<BatchWriteOutcome>::Success(outcome);
+    }
+
+    auto probe() -> SZX::COMMON::Result<void> override
+    {
+        ++probeCount;
+        return failProbe.load() ? SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::DatabaseQueryFailed), {}) :
+                                  SZX::COMMON::Result<void>::Success();
+    }
+
+    auto query(const BehaviorEventFilter &) -> SZX::COMMON::Result<BehaviorEventPage> override
+    {
+        return SZX::COMMON::Result<BehaviorEventPage>::Success({});
+    }
+
+    auto waitForBatches(std::size_t count, std::chrono::milliseconds timeout) -> bool
+    {
+        std::unique_lock lock(mutex);
+        return changed.wait_for(lock, timeout, [&] { return batches.size() >= count; });
+    }
+
+    std::mutex mutex;
+    std::condition_variable changed;
+    std::deque<BatchWriteOutcome> outcomes;
+    std::vector<std::vector<BehaviorEventRecord>> batches;
+    BatchWriteOutcome fallback{BatchWriteOutcome::ReadyToCommit};
+    std::atomic_bool failProbe{};
+    std::atomic_int probeCount{};
+};
+
+class FakeLogMaintenanceRepository final : public LogMaintenanceRepository
+{
+public:
+    auto inspect() -> SZX::COMMON::Result<LogMigrationStatus> override
+    {
+        if (statuses.empty())
+            return SZX::COMMON::Result<LogMigrationStatus>::Success({});
+        const auto status = statuses.front();
+        statuses.pop_front();
+        return SZX::COMMON::Result<LogMigrationStatus>::Success(status);
+    }
+
+    auto backfillBatch(std::uint32_t batchSize) -> SZX::COMMON::Result<LogBackfillBatch> override
+    {
+        requestedBatchSizes.push_back(batchSize);
+        if (failBackfill)
+            return SZX::COMMON::Result<LogBackfillBatch>::Failure(static_cast<int>(ErrorCode::DatabaseQueryFailed), {});
+        const auto batch = backfillBatches.empty() ? LogBackfillBatch{} : backfillBatches.front();
+        if (!backfillBatches.empty())
+            backfillBatches.pop_front();
+        return SZX::COMMON::Result<LogBackfillBatch>::Success(batch);
+    }
+
+    auto purgeAuditBatch(std::string cutoff, std::uint32_t batchSize) -> SZX::COMMON::Result<LogPurgeBatch> override
+    {
+        auditCutoffs.push_back(std::move(cutoff));
+        requestedBatchSizes.push_back(batchSize);
+        const auto batch = auditPurgeBatches.empty() ? LogPurgeBatch{} : auditPurgeBatches.front();
+        if (!auditPurgeBatches.empty())
+            auditPurgeBatches.pop_front();
+        return SZX::COMMON::Result<LogPurgeBatch>::Success(batch);
+    }
+
+    auto purgeBehaviorBatch(std::string cutoff, std::uint32_t batchSize) -> SZX::COMMON::Result<LogPurgeBatch> override
+    {
+        behaviorCutoffs.push_back(std::move(cutoff));
+        requestedBatchSizes.push_back(batchSize);
+        const auto batch = behaviorPurgeBatches.empty() ? LogPurgeBatch{} : behaviorPurgeBatches.front();
+        if (!behaviorPurgeBatches.empty())
+            behaviorPurgeBatches.pop_front();
+        return SZX::COMMON::Result<LogPurgeBatch>::Success(batch);
+    }
+
+    std::deque<LogMigrationStatus> statuses;
+    std::deque<LogBackfillBatch> backfillBatches;
+    std::deque<LogPurgeBatch> auditPurgeBatches;
+    std::deque<LogPurgeBatch> behaviorPurgeBatches;
+    std::vector<std::uint32_t> requestedBatchSizes;
+    std::vector<std::string> auditCutoffs;
+    std::vector<std::string> behaviorCutoffs;
+    bool failBackfill{};
+};
+
+class FakeAuditRepository final : public SZX::ADMIN::AUDIT::AuditRepository
+{
+public:
+    auto append(const SZX::ADMIN::AUDIT::AuditRecord &record) -> SZX::COMMON::Result<void> override
+    {
+        records.push_back(record);
+        return failAppend ? SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::AuditWriteFailed), {}) :
+                            SZX::COMMON::Result<void>::Success();
+    }
+
+    auto query(const SZX::ADMIN::AUDIT::AuditFilter &) -> SZX::COMMON::Result<SZX::ADMIN::AUDIT::AuditPage> override
+    {
+        return SZX::COMMON::Result<SZX::ADMIN::AUDIT::AuditPage>::Success({});
+    }
+
+    auto queryLegacy(const SZX::ADMIN::AUDIT::AuditFilter &) -> SZX::COMMON::Result<SZX::ADMIN::AUDIT::AuditPage> override
+    {
+        return SZX::COMMON::Result<SZX::ADMIN::AUDIT::AuditPage>::Success({});
+    }
+
+    std::vector<SZX::ADMIN::AUDIT::AuditRecord> records;
+    bool failAppend{};
+};
+
 class FakeDatabaseConnection final : public DatabaseConnection
 {
 public:
+    auto behaviorEventRepository() noexcept -> BehaviorEventRepository * override
+    {
+        return behaviorRepository;
+    }
+
+    auto logMaintenanceRepository() noexcept -> LogMaintenanceRepository * override
+    {
+        return maintenanceRepository;
+    }
+
+    auto auditRepository() noexcept -> SZX::ADMIN::AUDIT::AuditRepository * override
+    {
+        return auditRepositoryValue;
+    }
+
     auto executeMigrationStatement(std::string_view sql) -> SZX::COMMON::Result<void> override
     {
         statements.emplace_back(sql);
@@ -88,6 +240,17 @@ public:
         return SZX::COMMON::Result<void>::Success();
     }
 
+    auto commitWithOutcome() -> SZX::COMMON::Result<SZX::ADMIN::INFRA::CommitOutcome> override
+    {
+        if (commitOutcomes.empty())
+            return DatabaseConnection::commitWithOutcome();
+        ++commitCount;
+        events.emplace_back("commit");
+        const auto outcome = commitOutcomes.front();
+        commitOutcomes.pop_front();
+        return SZX::COMMON::Result<SZX::ADMIN::INFRA::CommitOutcome>::Success(outcome);
+    }
+
     auto rollback() -> SZX::COMMON::Result<void> override
     {
         ++rollbackCount;
@@ -96,6 +259,17 @@ public:
         bootstrapDone   = savedDone;
         bootstrapUserId = savedUserId;
         return SZX::COMMON::Result<void>::Success();
+    }
+
+    void invalidate() noexcept override
+    {
+        ++invalidateCount;
+        reusableState = false;
+    }
+
+    auto reusable() const noexcept -> bool override
+    {
+        return reusableState;
     }
 
     auto bootstrapCompleted() -> SZX::COMMON::Result<bool> override
@@ -147,7 +321,39 @@ public:
     bool failMark{};
     bool throwOnMark{};
     bool throwOnJournal{};
+    BehaviorEventRepository *behaviorRepository{};
+    LogMaintenanceRepository *maintenanceRepository{};
+    SZX::ADMIN::AUDIT::AuditRepository *auditRepositoryValue{};
+    std::deque<SZX::ADMIN::INFRA::CommitOutcome> commitOutcomes;
+    int invalidateCount{};
+    bool reusableState{true};
 };
+
+auto event(std::string id) -> BehaviorEventRecord
+{
+    return {.id           = std::move(id),
+            .user_id      = "10000000-0000-4000-8000-000000000001",
+            .event_name   = "report.view",
+            .result       = "success",
+            .request_id   = "request-1",
+            .ip           = "127.0.0.1",
+            .user_agent   = "test",
+            .details_json = "{}",
+            .created_at   = "2026-09-21 00:00:00.000000"};
+}
+
+auto writerConfig() -> SZX::ADMIN::TELEMETRY::TelemetryConfig
+{
+    return {.queueCapacity              = 8,
+            .batchSize                  = 2,
+            .flushIntervalMs            = 10,
+            .minCommitIntervalMs        = 1,
+            .retryInitialMs             = 1,
+            .retryMaxMs                 = 4,
+            .databaseOperationTimeoutMs = 50,
+            .shutdownFlushTimeoutMs     = 250,
+            .retryAfterSeconds          = 1};
+}
 
 } // namespace
 
@@ -182,6 +388,222 @@ TEST(DatabaseConfigTest, RejectsUnsafeDatabaseIdentifier)
     EXPECT_EQ(result.error, static_cast<int>(ErrorCode::InvalidConfiguration));
 }
 
+TEST(TelemetryConfigTest, AcceptsBurstQueueWithoutMinuteRateLimit)
+{
+    SZX::ADMIN::TELEMETRY::TelemetryConfig config;
+    config.queueCapacity       = 10000;
+    config.batchSize           = 200;
+    config.flushIntervalMs     = 200;
+    config.minCommitIntervalMs = 200;
+
+    const auto result = config.validate();
+
+    ASSERT_TRUE(result.ok) << result.message;
+}
+
+TEST(TelemetryConfigTest, RejectsInvalidBatchAndRetryBounds)
+{
+    SZX::ADMIN::TELEMETRY::TelemetryConfig config;
+    config.queueCapacity  = 10;
+    config.batchSize      = 11;
+    config.retryInitialMs = 1000;
+    config.retryMaxMs     = 500;
+
+    const auto result = config.validate();
+
+    ASSERT_FALSE(result.ok);
+    EXPECT_EQ(result.error, static_cast<int>(ErrorCode::InvalidConfiguration));
+}
+
+TEST(BehaviorEventWriterTest, DrainsBurstInConfiguredBatches)
+{
+    FakeBehaviorEventRepository repository;
+    FakeDatabaseConnection connection;
+    connection.behaviorRepository = &repository;
+    SZX::ADMIN::TELEMETRY::BehaviorEventWriter writer([&](const auto &callback, auto) { return callback(connection); },
+                                                      writerConfig());
+
+    ASSERT_TRUE(writer.start().ok);
+    ASSERT_TRUE(writer.enqueue(event("event-1")).ok);
+    ASSERT_TRUE(writer.enqueue(event("event-2")).ok);
+    ASSERT_TRUE(writer.enqueue(event("event-3")).ok);
+    const auto drained = writer.stop();
+
+    EXPECT_TRUE(drained.clean);
+    std::lock_guard lock(repository.mutex);
+    ASSERT_EQ(repository.batches.size(), 2U);
+    EXPECT_EQ(repository.batches[0].size(), 2U);
+    EXPECT_EQ(repository.batches[1].size(), 1U);
+    EXPECT_EQ(connection.commitCount, 2);
+}
+
+TEST(BehaviorEventWriterTest, ResolvesUnknownCommitWithSameEventId)
+{
+    FakeBehaviorEventRepository repository;
+    repository.outcomes = {BatchWriteOutcome::ReadyToCommit, BatchWriteOutcome::AlreadyCommitted};
+    FakeDatabaseConnection connection;
+    connection.behaviorRepository = &repository;
+    connection.commitOutcomes.push_back(SZX::ADMIN::INFRA::CommitOutcome::Unknown);
+    SZX::ADMIN::TELEMETRY::BehaviorEventWriter writer([&](const auto &callback, auto) { return callback(connection); },
+                                                      writerConfig());
+
+    ASSERT_TRUE(writer.start().ok);
+    ASSERT_TRUE(writer.enqueue(event("stable-event-id")).ok);
+    ASSERT_TRUE(repository.waitForBatches(2, std::chrono::seconds{1}));
+    const auto drained = writer.stop();
+
+    EXPECT_TRUE(drained.clean);
+    EXPECT_EQ(drained.pendingCommitUnknown, 0U);
+    EXPECT_EQ(connection.invalidateCount, 1);
+    std::lock_guard lock(repository.mutex);
+    ASSERT_EQ(repository.batches.size(), 2U);
+    EXPECT_EQ(repository.batches[0][0].id, repository.batches[1][0].id);
+}
+
+TEST(BehaviorEventWriterTest, RequiresSuccessfulProbeBeforeResumingFaultedWriter)
+{
+    FakeBehaviorEventRepository repository;
+    repository.outcomes = {BatchWriteOutcome::SystemicPermanentFailure, BatchWriteOutcome::ReadyToCommit};
+    FakeDatabaseConnection connection;
+    connection.behaviorRepository = &repository;
+    SZX::ADMIN::TELEMETRY::BehaviorEventWriter writer([&](const auto &callback, auto) { return callback(connection); },
+                                                      writerConfig());
+
+    ASSERT_TRUE(writer.start().ok);
+    ASSERT_TRUE(writer.enqueue(event("faulted-event")).ok);
+    ASSERT_TRUE(repository.waitForBatches(1, std::chrono::seconds{1}));
+    for (int attempt = 0; attempt < 100 && writer.state() != SZX::ADMIN::TELEMETRY::AdmissionState::Faulted; ++attempt)
+        std::this_thread::sleep_for(std::chrono::milliseconds{1});
+    ASSERT_EQ(writer.state(), SZX::ADMIN::TELEMETRY::AdmissionState::Faulted);
+
+    repository.failProbe.store(true);
+    EXPECT_FALSE(writer.resumeAfterFault().ok);
+    EXPECT_EQ(writer.state(), SZX::ADMIN::TELEMETRY::AdmissionState::Faulted);
+    repository.failProbe.store(false);
+    EXPECT_TRUE(writer.resumeAfterFault().ok);
+    ASSERT_TRUE(repository.waitForBatches(2, std::chrono::seconds{1}));
+    EXPECT_TRUE(writer.stop().clean);
+    EXPECT_EQ(repository.probeCount.load(), 2);
+}
+
+TEST(BehaviorEventWriterTest, ShutdownDeadlineReportsDiscardedRetryingBatch)
+{
+    FakeBehaviorEventRepository repository;
+    repository.fallback = BatchWriteOutcome::RetryableFailure;
+    FakeDatabaseConnection connection;
+    connection.behaviorRepository     = &repository;
+    auto config                       = writerConfig();
+    config.databaseOperationTimeoutMs = 10;
+    config.shutdownFlushTimeoutMs     = 20;
+    SZX::ADMIN::TELEMETRY::BehaviorEventWriter writer([&](const auto &callback, auto) { return callback(connection); }, config);
+
+    ASSERT_TRUE(writer.start().ok);
+    ASSERT_TRUE(writer.enqueue(event("retrying-event")).ok);
+    ASSERT_TRUE(repository.waitForBatches(1, std::chrono::seconds{1}));
+    const auto drained = writer.stop();
+
+    EXPECT_FALSE(drained.clean);
+    EXPECT_EQ(drained.discarded, 1U);
+}
+
+TEST(LogMaintenanceServiceTest, BackfillUsesLockBatchesTransactionsAndIsIdempotent)
+{
+    FakeLogMaintenanceRepository repository;
+    repository.statuses        = {{.missingAuditRows = 2, .missingBehaviorRows = 1}, {}};
+    repository.backfillBatches = {{.auditInserted = 2, .behaviorInserted = 1}, {}};
+    FakeDatabaseConnection connection;
+    connection.maintenanceRepository = &repository;
+    SZX::ADMIN::INFRA::LogStorageConfig config;
+    config.cleanupBatchSize = 17;
+    SZX::ADMIN::MAINTENANCE::LogMaintenanceService service([&](const auto &callback) { return callback(connection); }, config);
+
+    const auto result = service.backfill();
+
+    ASSERT_TRUE(result.ok);
+    EXPECT_EQ(result.value.auditInserted, 2U);
+    EXPECT_EQ(result.value.behaviorInserted, 1U);
+    EXPECT_EQ(repository.requestedBatchSizes, (std::vector<std::uint32_t>{17, 17}));
+    EXPECT_EQ(connection.events, (std::vector<std::string>{"lock", "begin", "commit", "begin", "rollback", "unlock"}));
+
+    repository.statuses = {{}, {}};
+    connection.events.clear();
+    const auto repeated = service.backfill();
+    ASSERT_TRUE(repeated.ok);
+    EXPECT_EQ(repeated.value.auditInserted, 0U);
+    EXPECT_EQ(repeated.value.behaviorInserted, 0U);
+    EXPECT_EQ(connection.events, (std::vector<std::string>{"lock", "begin", "rollback", "unlock"}));
+}
+
+TEST(LogMaintenanceServiceTest, ConflictAndAdvisoryLockStopBeforeTransaction)
+{
+    for (const auto lockAvailable : {true, false})
+    {
+        SCOPED_TRACE(lockAvailable);
+        FakeLogMaintenanceRepository repository;
+        repository.statuses = {{.conflictingAuditRows = 1}};
+        FakeDatabaseConnection connection;
+        connection.maintenanceRepository = &repository;
+        connection.lockAcquired          = lockAvailable;
+        SZX::ADMIN::MAINTENANCE::LogMaintenanceService service([&](const auto &callback) { return callback(connection); }, {});
+
+        const auto result = service.backfill();
+
+        ASSERT_FALSE(result.ok);
+        EXPECT_EQ(result.error, static_cast<int>(lockAvailable ? ErrorCode::MigrationConflict : ErrorCode::ServiceUnavailable));
+        EXPECT_EQ(connection.beginCount, 0);
+        EXPECT_EQ(connection.releaseLockCount, lockAvailable ? 1 : 0);
+    }
+}
+
+TEST(LogMaintenanceServiceTest, PurgeDeletesPrimaryAndLegacyCopiesWithAuditInEachTransaction)
+{
+    FakeLogMaintenanceRepository repository;
+    repository.behaviorPurgeBatches = {{.primaryDeleted = 2, .legacyDeleted = 2}, {}};
+    repository.auditPurgeBatches    = {{.primaryDeleted = 3, .legacyDeleted = 1}, {}};
+    FakeAuditRepository audit;
+    FakeDatabaseConnection connection;
+    connection.maintenanceRepository = &repository;
+    connection.auditRepositoryValue  = &audit;
+    SZX::ADMIN::INFRA::LogStorageConfig config;
+    config.cleanupBatchSize = 23;
+    SZX::ADMIN::MAINTENANCE::LogMaintenanceService service([&](const auto &callback) { return callback(connection); }, config);
+
+    const auto result = service.purge();
+
+    ASSERT_TRUE(result.ok);
+    EXPECT_EQ(result.value.behaviorDeleted, 2U);
+    EXPECT_EQ(result.value.behaviorLegacyDeleted, 2U);
+    EXPECT_EQ(result.value.auditDeleted, 3U);
+    EXPECT_EQ(result.value.auditLegacyDeleted, 1U);
+    ASSERT_EQ(audit.records.size(), 2U);
+    EXPECT_EQ(audit.records[0].event_name, "user.behavior_events.purged");
+    EXPECT_EQ(audit.records[1].event_name, "user.audit_logs.purged");
+    EXPECT_EQ(connection.commitCount, 2);
+    EXPECT_EQ(connection.rollbackCount, 2);
+    EXPECT_EQ(connection.releaseLockCount, 1);
+    EXPECT_EQ(repository.requestedBatchSizes, (std::vector<std::uint32_t>{23, 23, 23, 23}));
+}
+
+TEST(LogMaintenanceServiceTest, PurgeRollsBackDeletionWhenAuditWriteFails)
+{
+    FakeLogMaintenanceRepository repository;
+    repository.behaviorPurgeBatches = {{.primaryDeleted = 1, .legacyDeleted = 1}};
+    FakeAuditRepository audit;
+    audit.failAppend = true;
+    FakeDatabaseConnection connection;
+    connection.maintenanceRepository = &repository;
+    connection.auditRepositoryValue  = &audit;
+    SZX::ADMIN::MAINTENANCE::LogMaintenanceService service([&](const auto &callback) { return callback(connection); }, {});
+
+    const auto result = service.purge();
+
+    ASSERT_FALSE(result.ok);
+    EXPECT_EQ(result.error, static_cast<int>(ErrorCode::AuditWriteFailed));
+    EXPECT_EQ(connection.commitCount, 0);
+    EXPECT_EQ(connection.rollbackCount, 1);
+    EXPECT_EQ(connection.releaseLockCount, 1);
+}
+
 TEST(DatabaseInitializationTest, PreservesPublishedMigrationChecksumsAndExistingJournal)
 {
     // Fingerprints from the previously released SQL files: moving SQL must not
@@ -208,20 +630,24 @@ TEST(DatabaseInitializationTest, PreservesPublishedMigrationChecksumsAndExisting
     EXPECT_EQ(connection.statements.size(), 1U); // Only ensures the journal table exists.
 }
 
-TEST(DatabaseInitializationTest, UpgradesCanonicalIndexesWithoutRewritingPublishedMigrations)
+TEST(DatabaseInitializationTest, AddsSplitLogTablesWithoutRewritingPublishedMigrations)
 {
     const auto migrations = SZX::ADMIN::INFRA::embeddedMigrations();
-    ASSERT_EQ(migrations.size(), 3U);
+    ASSERT_EQ(migrations.size(), 4U);
     FakeDatabaseConnection connection;
-    for (const auto &migration : migrations.first(2))
+    for (const auto &migration : migrations.first(3))
         connection.applied.push_back({migration.version, std::string{migration.checksum}});
     const auto upgrade = MigrationRunner{}.run(connection);
     ASSERT_TRUE(upgrade.ok);
-    EXPECT_EQ(upgrade.value.currentVersion, 3U);
+    EXPECT_EQ(upgrade.value.currentVersion, 4U);
     EXPECT_EQ(upgrade.value.appliedCount, 1U);
     ASSERT_EQ(connection.recorded.size(), 1U);
-    EXPECT_EQ(connection.recorded.front().checksum, migrationChecksum(migrations[2].sql));
-    EXPECT_NE(connection.statements.back().find("utf8mb4_0900_bin"), std::string::npos);
+    EXPECT_EQ(connection.recorded.front().checksum, migrationChecksum(migrations[3].sql));
+    EXPECT_EQ(connection.recorded.front().checksum, "193446d82dbee660610cbbc8f822469529d18dbf8760ddcffbb3c1d356e8236a");
+    EXPECT_TRUE(std::ranges::any_of(connection.statements,
+                                    [](const auto &sql) { return sql.find("security_audit_logs") != std::string::npos; }));
+    EXPECT_TRUE(std::ranges::any_of(connection.statements,
+                                    [](const auto &sql) { return sql.find("client_behavior_events") != std::string::npos; }));
     const auto repeated = MigrationRunner{}.run(connection);
     ASSERT_TRUE(repeated.ok);
     EXPECT_EQ(repeated.value.appliedCount, 0U);

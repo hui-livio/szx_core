@@ -23,8 +23,6 @@ public:
     auto saveRefresh(const AUTH::LoginRefresh &token) -> SZX::COMMON::Result<void> override;
     auto revokeFamily(const std::string &userId, const std::string &familyId, const std::string &now, const std::string &reason)
         -> SZX::COMMON::Result<void> override;
-    auto insertAudit(const AUTH::LoginAudit &event) -> SZX::COMMON::Result<void> override;
-
 private:
     OrmConnection &connection_;
 };

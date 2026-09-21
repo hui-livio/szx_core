@@ -23,6 +23,13 @@
 namespace SZX::COMMON
 {
 
+enum class QueuePushResult : unsigned char
+{
+    Pushed,
+    Full,
+    Closed,
+};
+
 template <typename T>
 class BlockingQueue
 {
@@ -75,6 +82,32 @@ public:
         updateHighWaterMarkLocked();
         not_empty_cv_.notify_one();
         return true;
+    }
+
+    QueuePushResult try_push(const T &value)
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (closed_)
+            return QueuePushResult::Closed;
+        if (fullLocked())
+            return QueuePushResult::Full;
+        queue_.push_back(value);
+        updateHighWaterMarkLocked();
+        not_empty_cv_.notify_one();
+        return QueuePushResult::Pushed;
+    }
+
+    QueuePushResult try_push(T &&value)
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (closed_)
+            return QueuePushResult::Closed;
+        if (fullLocked())
+            return QueuePushResult::Full;
+        queue_.push_back(std::move(value));
+        updateHighWaterMarkLocked();
+        not_empty_cv_.notify_one();
+        return QueuePushResult::Pushed;
     }
 
     // 原地构造

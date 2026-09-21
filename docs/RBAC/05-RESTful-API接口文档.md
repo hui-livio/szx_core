@@ -1,12 +1,12 @@
 # RBAC REST API 接口参考
 
-更新日期：2026-09-20。本文按当前服务实现描述接口，采用“参数表 → 请求示例 → 响应模型 → 错误码”的参考格式。
+更新日期：2026-09-21。本文按当前服务实现描述接口，采用“参数表 → 请求示例 → 响应模型 → 错误码”的参考格式。
 
 在线 Swagger UI：启动新版服务后访问 `/api/v1`（跳转 `/api/v1/`）。支持查看全部接口、搜索、Bearer 授权和 Try it out 调试；OpenAPI 下载地址为 `/api/v1/openapi.json`。修改 `server.apiPrefix` 后文档入口和调试地址随之变化。
 
 ## 1. 接口目录
 
-**当前已实现：17 / 17 个接口。** 下表“已实现”表示后端已注册路由并实现处理逻辑，不代表对应前端页面已完成；OPTIONS 预检不单独计数。
+**当前已实现：19 / 19 个接口。** 下表“已实现”表示后端已注册路由并实现处理逻辑，不代表对应前端页面已完成；OPTIONS 预检不单独计数。
 
 默认 Base URL 为 `/api/v1`，以下路径均相对于该前缀。部署修改 `server.apiPrefix` 时，客户端同步替换前缀。
 
@@ -26,7 +26,9 @@
 | 用户 | PATCH | [/admin/users/{id}/unlock](#users-unlock) | 解锁 | Bearer + If-Match，admin/super_admin | 200 | 已实现 |
 | 用户 | PUT | [/admin/users/{id}/role](#users-role) | 修改角色 | Bearer + If-Match，super_admin | 200 | 已实现 |
 | 用户 | POST | [/admin/users/{id}/reset-password](#users-reset-password) | 重置密码 | Bearer + If-Match，admin/super_admin | 200 | 已实现 |
-| 审计 | GET | [/admin/user-logs](#user-logs) | 审计日志列表 | Bearer，admin/super_admin | 200 | 已实现 |
+| 兼容 | GET | [/admin/user-logs](#user-logs) | 审计和行为日志聚合（已废弃） | Bearer，admin/super_admin | 200 | 已实现 |
+| 审计 | GET | [/admin/audit-logs](#audit-logs) | 安全审计列表 | Bearer，admin/super_admin | 200 | 已实现 |
+| 行为 | GET | [/admin/behavior-events](#behavior-events) | 用户行为列表 | Bearer，admin/super_admin | 200 | 已实现 |
 | 客户端 | GET | [/client/me/permissions](#client-permissions) | 当前用户权限 | Bearer，任意有效角色 | 200 | 已实现 |
 | 客户端 | POST | [/client/behavior-events](#client-behavior) | 上报行为事件 | Bearer，任意有效角色 | 202 | 已实现 |
 
@@ -111,9 +113,9 @@ version 用于并发更新，冲突后应重新获取用户并使用新版本提
 | 预算 | 默认值 | 配置 | 作用范围 |
 |---|---|---|---|
 | 认证／凭据签发 | 每 IP 每分钟 30 次 | auth.attemptsPerMinute，1–1000 | 登录、改密、刷新、登出、创建用户、重置密码共享 |
-| 行为事件 | 每用户每分钟 60 次 | auth.behaviorEventsPerMinute，1–1000 | 独立于认证预算 |
+| 行为事件 | 不按分钟限流；受进程内有界接收队列约束 | telemetry.queueCapacity，默认 10000 | 队列满返回 `503 / 2225`，写入器不可用返回 `503 / 2226` |
 
-超限返回 `429 / 2211`。按实际 socket 对端 IP 计数，不信任 X-Forwarded-For。两类计数分别最多保留 4096 个未到期窗口，单进程内有效，多实例不共享。无 Cookie 的 logout 不计数；改密在 JWT 验证后计数；refresh/logout 在 Cookie 格式及 CSRF 校验后计数；创建／重置在事务鉴权后、生成凭据前计数。
+认证预算超限返回 `429 / 2211`。按实际 socket 对端 IP 计数，不信任 X-Forwarded-For。认证计数单进程内有效，多实例不共享。无 Cookie 的 logout 不计数；改密在 JWT 验证后计数；refresh/logout 在 Cookie 格式及 CSRF 校验后计数；创建／重置在事务鉴权后、生成凭据前计数。行为事件接口完成鉴权、校验和脱敏后立即尝试非阻塞入队，短时间突发由队列吸收，后台按 `telemetry.batchSize` 和 `telemetry.flushIntervalMs` 批量延迟写入；成功响应 `202` 只表示已入当前进程内存队列，不表示已提交数据库。
 
 ## 3. 响应模型
 
@@ -583,9 +585,11 @@ If-Match: 4
 
 <a id="user-logs"></a>
 
-### GET /admin/user-logs — 审计日志列表
+### GET /admin/user-logs — 审计和行为日志兼容列表（已废弃）
 
 **实现状态：已实现**
+
+新调用方必须改用 `/admin/audit-logs` 或 `/admin/behavior-events`。本接口在迁移期聚合 `security_audit_logs`、`client_behavior_events` 和尚未迁移的 `user_logs`：相同 UUID 以新表记录优先，遗留表仅补充两张新表都不存在的 UUID，`total`、筛选、排序和分页基于同一个去重集合。
 
 **权限：** admin/super_admin。
 
@@ -627,7 +631,8 @@ Authorization: Bearer <access-token>
       "request_id": "report-view-001",
       "peer_address": "",
       "details": {"source": "dashboard"},
-      "created_at": 1789636500510
+      "created_at": 1789636500510,
+      "source": "client_behavior"
     }],
     "total": 1,
     "page": 1,
@@ -637,7 +642,19 @@ Authorization: Bearer <access-token>
 }
 ```
 
-历史日志读取时也执行字段脱敏，但不会修改存储中的历史记录。业务 API 不支持修改或删除日志。
+每条兼容记录必有 `source`：`security_audit`、`client_behavior` 或 `legacy_unknown`。历史日志读取时也执行字段脱敏，但不会修改存储中的历史记录。业务 API 不支持修改或删除日志。
+
+<a id="audit-logs"></a>
+
+### GET /admin/audit-logs — 安全审计列表
+
+与兼容接口使用相同的分页和筛选参数，权限为 `audit.read`。该接口只读取 `security_audit_logs`，不返回客户端行为事件；返回的 `Page<AuditLog>` 结构与上文一致。
+
+<a id="behavior-events"></a>
+
+### GET /admin/behavior-events — 用户行为列表
+
+权限为 `behavior.read`。支持 `page`、`page_size`、`from`、`to`、`event_name`、`event_search`、`result`、`user_id`、`user_search`。`from`、`to` 必须同时提供；两者省略时默认最近 24 小时，显式跨度不得超过 31 天。返回条目包含 `id、user_id、username、event_name、result、request_id、details、created_at`，只读取 `client_behavior_events`，行为事件不会被解释为可信安全事实。
 
 ## 6. 客户端接口
 
@@ -668,7 +685,7 @@ Authorization: Bearer <access-token>
 |---|---|
 | operator | business.read、business.operate |
 | engineer | operator 能力，加 engineering.configure |
-| admin | engineer 能力，加 user.read、user.create、user.update、user.status、user.unlock、user.password.reset、audit.read |
+| admin | engineer 能力，加 user.read、user.create、user.update、user.status、user.unlock、user.password.reset、audit.read、behavior.read |
 | super_admin | admin 能力，加 user.role.assign |
 
 错误：`401 / 2200`（会话无效）、`403 / 2204`（Origin 不允许）、`500 / 2221`（数据库失败）。菜单可依据此响应显示，实际业务请求仍须服务端鉴权。密码修改建议读取登录／刷新返回的 User；此接口不返回 password_change_recommended。
@@ -699,7 +716,7 @@ Authorization: Bearer <access-token>
 
 此接口为非可信客户端 telemetry；拒绝 auth.、user. 前缀，不能伪造登录、角色变更等服务端审计。操作者和目标用户均取当前用户，调用方不能指定。
 
-错误：`401 / 2200`（会话无效）、`403 / 2204`（Origin 不允许）、`422 / 2206`（字段／名称／details 非法）、`429 / 2211`（独立用户预算耗尽）、`500 / 2212`（审计失败）。
+事件成功进入有界内存队列后立即返回 202；后台消费者按最多 200 条或 200ms 组批，并在成功提交之间保持至少 200ms。接口不执行每分钟或每用户计数限制。错误：`401 / 2200`（会话无效）、`403 / 2204`（Origin 不允许）、`422 / 2206`（字段／名称／details 非法）、`503 / 2225`（队列已满）、`503 / 2226`（写入器未接入或正在排空）。队列拒绝响应携带 `Retry-After`，事件未被接收。
 
 入库前递归处理对象和数组：字段名转 ASCII 小写并去掉非字母数字字符后，删除包含 password、token、secret、privatekey、apikey、credential、machineid、hardwareid、fingerprint、stack、traceback，或等于 authorization、cookie、setcookie 的字段。深度达到 32 的值替换为 null，其余元数据保留。此规则按字段名识别，调用方仍不得把凭据写入任意自由文本值。
 
@@ -734,6 +751,8 @@ Authorization: Bearer <access-token>
 | 2222 | DATABASE_TRANSACTION_FAILED | 500 |
 | 2223 | MIGRATION_FAILED | 500 |
 | 2224 | MIGRATION_CONFLICT | 500 |
+| 2225 | BEHAVIOR_EVENT_QUEUE_FULL | 503 |
+| 2226 | BEHAVIOR_EVENT_QUEUE_CLOSED | 503 |
 | 2299 | INTERNAL_FAILURE | 500 |
 
 包含初始化与基础设施错误，不代表每个接口都会产生全部错误码。底层 HTTP 解析错误保留 400、417、431 等原始 HTTP 状态，可对应业务码 2206，不统一改为 422。错误 details 不包含密码、token、密钥或内部堆栈。

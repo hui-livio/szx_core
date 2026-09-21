@@ -16,9 +16,14 @@ namespace AUTH
 {
 class LoginService;
 }
+namespace TELEMETRY
+{
+class BehaviorEventWriter;
+}
 /** Register service endpoints before starting transport. Database and optional login service must outlive callbacks. */
 [[nodiscard]] auto registerRoutes(INFRA::HttpTransport &transport, INFRA::DatabasePool &database,
-                                  AUTH::LoginService *login = nullptr) -> SZX::COMMON::Result<void>;
+                                  AUTH::LoginService *login = nullptr, TELEMETRY::BehaviorEventWriter *writer = nullptr)
+    -> SZX::COMMON::Result<void>;
 
 /** Install reserved GET routes through the transport adapter during its initialization. */
 [[nodiscard]] auto

@@ -3,7 +3,7 @@
   "info": {
     "title": "SZX Admin API",
     "version": "1.0.0",
-    "description": "单项目 RBAC · 17 个接口 · 四个固定角色。\n\n展开接口查看参数、示例和错误码，点击 **Try it out → Execute** 调用当前服务。\n\n**鉴权流程**：登录请求中的 password_hash 必须是原始密码 UTF-8 的 SHA-256 小写摘要。登录后复制 access_token 到 **Authorize / bearerAuth**（不用加 Bearer 前缀）。refresh Cookie 由浏览器管理；刷新/登出手动填写最新 csrf_token。Swagger 不自动登录或刷新，会话凭据不持久保存。\n\n修改用户需填写 **If-Match**；管理员仅管理操作员/工程师，不能给自己分配角色或禁用自己。操作员/工程师新密码至少6位；管理员/超管至少8位并含字母和数字。\n\n响应时间为 UTC 毫秒；日志查询 from/to 为 UTC 秒精度字符串。生产使用 HTTPS；Cookie/Origin 规则与管理后台相同。\n\nauth.allowedOrigin 默认 * 允许 HTTP/HTTPS 来源跨域携带凭据，也可配置单一来源限制；拒绝 Origin: null。refresh Cookie 使用 HttpOnly、Secure、SameSite=None。跨站调用使用 HTTPS 并启用 credentials，刷新/登出仍校验 X-CSRF-Token。所有响应设置 CSP、禁止 iframe 嵌入和 MIME 嗅探等安全头。"
+    "description": "单项目 RBAC · 19 个接口 · 四个固定角色。\n\n展开接口查看参数、示例和错误码，点击 **Try it out → Execute** 调用当前服务。\n\n**鉴权流程**：登录请求中的 password_hash 必须是原始密码 UTF-8 的 SHA-256 小写摘要。登录后复制 access_token 到 **Authorize / bearerAuth**（不用加 Bearer 前缀）。refresh Cookie 由浏览器管理；刷新/登出手动填写最新 csrf_token。Swagger 不自动登录或刷新，会话凭据不持久保存。\n\n修改用户需填写 **If-Match**；管理员仅管理操作员/工程师，不能给自己分配角色或禁用自己。操作员/工程师新密码至少6位；管理员/超管至少8位并含字母和数字。\n\n响应时间为 UTC 毫秒；日志查询 from/to 为 UTC 秒精度字符串。行为事件不按分钟限流，成功 202 仅表示进入有界内存队列，后台按批次延迟写入；队列满返回 503/2225。生产使用 HTTPS；Cookie/Origin 规则与管理后台相同。\n\nauth.allowedOrigin 默认 * 允许 HTTP/HTTPS 来源跨域携带凭据，也可配置单一来源限制；拒绝 Origin: null。refresh Cookie 使用 HttpOnly、Secure、SameSite=None。跨站调用使用 HTTPS 并启用 credentials，刷新/登出仍校验 X-CSRF-Token。所有响应设置 CSP、禁止 iframe 嵌入和 MIME 嗅探等安全头。"
   },
   "servers": [
     {
@@ -853,7 +853,8 @@
       "get": {
         "tags": ["审计日志"],
         "operationId": "listAuditLogs",
-        "summary": "查询审计日志",
+        "summary": "查询审计和行为日志（兼容接口）",
+        "deprecated": true,
         "description": "**权限：** admin/super_admin。\n\n| Query 参数 | 类型 | 必填 | 默认／约束 |\n|---|---|---|---|\n| page | integer | 否 | 默认 1；范围 1–4294967295 |\n| page_size | integer | 否 | 默认 20；范围 1–100 |\n| from | string | 否 | 起始 UTC ISO 8601 时间，包含下界 |\n| to | string | 否 | 结束 UTC ISO 8601 时间，包含该精确时刻上界 |\n| event_name | string | 否 | 精确匹配；事件名称语法见行为上报，查询允许 auth./user. 前缀 |\n| event_search | string | 否 | 事件代码或已配置中文名称的字面量子串，最多 128 个 Unicode 字符，无控制字符；空表示不过滤 |\n| result | string | 否 | success / failure / denied |\n| actor_user_id | string(UUID) | 否 | 操作者 ID |\n| actor_search | string | 否 | 操作者展示名、用户名或 UID 的字面量子串，最多 128 个 Unicode 字符，无控制字符；与其他筛选条件取交集 |\n\n按 created_at 降序、id 升序排列；不支持 sort，未知参数返回 `422 / 2206`。to 只有秒精度，不包含该精确时刻之后的微秒记录；其他错误见本节公共错误表。\n\n管理界面使用 `event_search`，提交前去除首尾空白。例如 `login` 或 `auth.login` 可匹配 `auth.login.success` / `auth.login.failure`，`登录` 还匹配中文名为“退出登录”的 `auth.logout`。未知事件可按原始代码查询。`%`、`_`、反斜杠作为普通字符。匹配在服务端分页前完成，total 使用相同条件；与其他筛选条件取交集。保留 `event_name` 原有精确语义。\n\n`actor_search` 在服务端关联 users 后，对 display_name、username、uid 三个字段进行匹配，分页与 total 均基于过滤后的日志。`%`、`_`、反斜杠作为普通字符匹配，大小写规则沿用数据库展示列的排序规则。`actor_user_id` 仅为已有 API 客户端保留兼容，管理界面不提供 UUID 搜索；二者同时提供时取交集。返回的用户名是查询时的登录标识，不是历史快照；无关联操作者的日志仍会出现在未按用户筛选的结果中。\n\n```http\nGET /api/v1/admin/user-logs?page=1&page_size=20&from=2026-09-17T00%3A00%3A00Z&event_name=report.view\nAuthorization: Bearer <access-token>\n```\n\n**成功：** 200，data 为 `Page<AuditLog>`。\n\n```json\n{\n  \"data\": {\n    \"items\": [{\n      \"id\": \"20000000-0000-4000-8000-000000000001\",\n      \"actor_user_id\": \"10000000-0000-4000-8000-000000000002\",\n      \"actor_username\": \"alice\",\n      \"target_user_id\": \"10000000-0000-4000-8000-000000000002\",\n      \"event_name\": \"report.view\",\n      \"result\": \"success\",\n      \"request_id\": \"report-view-001\",\n      \"peer_address\": \"\",\n      \"details\": {\"source\": \"dashboard\"},\n      \"created_at\": 1789636500510\n    }],\n    \"total\": 1,\n    \"page\": 1,\n    \"page_size\": 20\n  },\n  \"request_id\": \"logs-list-001\"\n}\n```\n\n历史日志读取时也执行字段脱敏，但不会修改存储中的历史记录。业务 API 不支持修改或删除日志。\n\n安全约束：待强制改密的超管（force_password_change=true）禁止调用此接口，返回 403 / 2204。须先修改密码并重新登录。其他角色的建议改密不受此限制。",
         "parameters": [
           {
@@ -946,7 +947,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AuditLogPageResponse"
+                  "$ref": "#/components/schemas/CompatibilityLogPageResponse"
                 }
               }
             }
@@ -963,6 +964,66 @@
           "500": {
             "$ref": "#/components/responses/500"
           }
+        }
+      }
+    },
+    "/admin/audit-logs": {
+      "get": {
+        "tags": ["审计日志"],
+        "operationId": "listSecurityAuditLogs",
+        "summary": "查询安全审计",
+        "description": "需要 `audit.read`。只查询 `security_audit_logs`，不返回客户端上传的行为事件。筛选和分页语义与兼容接口 `/admin/user-logs` 相同。",
+        "parameters": [
+          { "$ref": "#/components/parameters/RequestId" },
+          { "$ref": "#/components/parameters/Page" },
+          { "$ref": "#/components/parameters/PageSize" },
+          { "$ref": "#/components/parameters/LogFrom" },
+          { "$ref": "#/components/parameters/LogTo" },
+          { "$ref": "#/components/parameters/EventName" },
+          { "$ref": "#/components/parameters/EventSearch" },
+          { "$ref": "#/components/parameters/AuditResult" },
+          { "$ref": "#/components/parameters/ActorUserId" },
+          { "$ref": "#/components/parameters/ActorSearch" }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AuditLogPageResponse" } } }
+          },
+          "401": { "$ref": "#/components/responses/401" },
+          "403": { "$ref": "#/components/responses/403" },
+          "422": { "$ref": "#/components/responses/422" },
+          "500": { "$ref": "#/components/responses/500" }
+        }
+      }
+    },
+    "/admin/behavior-events": {
+      "get": {
+        "tags": ["审计日志"],
+        "operationId": "listBehaviorEvents",
+        "summary": "查询客户端行为事件",
+        "description": "需要 `behavior.read`。只查询 `client_behavior_events`。`from` 和 `to` 必须同时提供；省略时默认最近 24 小时，显式时间跨度最多 31 天。",
+        "parameters": [
+          { "$ref": "#/components/parameters/RequestId" },
+          { "$ref": "#/components/parameters/Page" },
+          { "$ref": "#/components/parameters/PageSize" },
+          { "$ref": "#/components/parameters/LogFrom" },
+          { "$ref": "#/components/parameters/LogTo" },
+          { "$ref": "#/components/parameters/EventName" },
+          { "$ref": "#/components/parameters/EventSearch" },
+          { "$ref": "#/components/parameters/BehaviorResult" },
+          { "$ref": "#/components/parameters/UserIdQuery" },
+          { "$ref": "#/components/parameters/UserSearch" }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/BehaviorEventPageResponse" } } }
+          },
+          "401": { "$ref": "#/components/responses/401" },
+          "403": { "$ref": "#/components/responses/403" },
+          "422": { "$ref": "#/components/responses/422" },
+          "500": { "$ref": "#/components/responses/500" }
         }
       }
     },
@@ -1008,7 +1069,7 @@
         "tags": ["客户端"],
         "operationId": "reportBehavior",
         "summary": "上报非可信业务行为事件",
-        "description": "**鉴权：** Bearer，任意有效角色；不要求 If-Match。\n\n| Body 字段 | 类型 | 必填 | 约束 |\n|---|---|---|---|\n| event_name | string | 是 | 1–96 个 ASCII 字符；首字符为小写字母；只允许小写字母、数字、下划线、点；无首尾点或连续点 |\n| result | string | 是 | 仅 success / failure |\n| details | object | 是 | 序列化后最多 4096 字节；可以是空对象 |\n\n```json\n{\"event_name\":\"report.view\",\"result\":\"success\",\"details\":{\"source\":\"dashboard\"}}\n```\n\n**成功：** 202 Accepted。\n\n```json\n{\"data\":{\"event_id\":\"20000000-0000-4000-8000-000000000001\"},\"request_id\":\"report-view-001\"}\n```\n\n此接口为非可信客户端 telemetry；拒绝 auth.、user. 前缀，不能伪造登录、角色变更等服务端审计。操作者和目标用户均取当前用户，调用方不能指定。\n\n错误：`401 / 2200`（会话无效）、`403 / 2204`（Origin 不允许）、`422 / 2206`（字段／名称／details 非法）、`429 / 2211`（独立用户预算耗尽）、`500 / 2212`（审计失败）。\n\n入库前递归处理对象和数组：字段名转 ASCII 小写并去掉非字母数字字符后，删除包含 password、token、secret、privatekey、apikey、credential、machineid、hardwareid、fingerprint、stack、traceback，或等于 authorization、cookie、setcookie 的字段。深度达到 32 的值替换为 null，其余元数据保留。此规则按字段名识别，调用方仍不得把凭据写入任意自由文本值。\n\n安全约束：待强制改密的超管（force_password_change=true）禁止调用此接口，返回 403 / 2204。须先修改密码并重新登录。其他角色的建议改密不受此限制。",
+        "description": "**鉴权：** Bearer，任意有效角色；不要求 If-Match。\n\n| Body 字段 | 类型 | 必填 | 约束 |\n|---|---|---|---|\n| event_name | string | 是 | 1–96 个 ASCII 字符；首字符为小写字母；只允许小写字母、数字、下划线、点；无首尾点或连续点 |\n| result | string | 是 | 仅 success / failure |\n| details | object | 是 | 序列化后最多 4096 字节；可以是空对象 |\n\n```json\n{\"event_name\":\"report.view\",\"result\":\"success\",\"details\":{\"source\":\"dashboard\"}}\n```\n\n**成功：** 202 Accepted。\n\n```json\n{\"data\":{\"event_id\":\"20000000-0000-4000-8000-000000000001\"},\"request_id\":\"report-view-001\"}\n```\n\n此接口为非可信客户端 telemetry；拒绝 auth.、user. 前缀，不能伪造登录、角色变更等服务端审计。操作者和目标用户均取当前用户，调用方不能指定。接口不执行每用户或全局分钟计数；成功校验后非阻塞入有界队列，由后台按最多 200 条或 200ms 组批，并在成功提交之间保持至少 200ms。202 只表示事件已进入当前进程内存队列，不表示已提交数据库。队列已满返回 `503 / 2225`，写入器未运行或正在排空返回 `503 / 2226`，拒绝响应携带 `Retry-After`。\n\n入库前递归处理对象和数组：字段名转 ASCII 小写并去掉非字母数字字符后，删除包含 password、token、secret、privatekey、apikey、credential、machineid、hardwareid、fingerprint、stack、traceback，或等于 authorization、cookie、setcookie 的字段。深度达到 32 的值替换为 null，其余元数据保留。此规则按字段名识别，调用方仍不得把凭据写入任意自由文本值。\n\n安全约束：待强制改密的超管（force_password_change=true）禁止调用此接口，返回 403 / 2204。须先修改密码并重新登录。其他角色的建议改密不受此限制。",
         "parameters": [
           {
             "$ref": "#/components/parameters/RequestId"
@@ -1037,11 +1098,8 @@
           "422": {
             "$ref": "#/components/responses/422"
           },
-          "429": {
-            "$ref": "#/components/responses/429"
-          },
-          "500": {
-            "$ref": "#/components/responses/500"
+          "503": {
+            "$ref": "#/components/responses/503"
           }
         },
         "requestBody": {
@@ -1283,6 +1341,36 @@
           "details",
           "created_at"
         ]
+      },
+      "CompatibilityLog": {
+        "allOf": [
+          { "$ref": "#/components/schemas/AuditLog" },
+          {
+            "type": "object",
+            "properties": {
+              "source": {
+                "type": "string",
+                "enum": ["security_audit", "client_behavior", "legacy_unknown"],
+                "description": "记录来源；新表优先，遗留 user_logs 仅补充 UUID 未命中的记录"
+              }
+            },
+            "required": ["source"]
+          }
+        ]
+      },
+      "BehaviorEvent": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "user_id": { "type": "string", "format": "uuid" },
+          "username": { "type": "string", "description": "当前用户名或UID，无法关联时为空" },
+          "event_name": { "type": "string" },
+          "result": { "type": "string", "enum": ["success", "failure"] },
+          "request_id": { "type": "string" },
+          "details": { "type": "object", "additionalProperties": true, "description": "脱敏后的对象" },
+          "created_at": { "type": "integer", "format": "int64", "description": "服务端接收时间，UTC Unix 毫秒" }
+        },
+        "required": ["id", "user_id", "username", "event_name", "result", "request_id", "details", "created_at"]
       },
       "Permissions": {
         "type": "object",
@@ -1583,6 +1671,29 @@
         },
         "required": ["items", "total", "page", "page_size"]
       },
+      "CompatibilityLogPage": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/CompatibilityLog" }
+          },
+          "total": { "type": "integer", "minimum": 0 },
+          "page": { "type": "integer", "minimum": 1 },
+          "page_size": { "type": "integer", "minimum": 1, "maximum": 100 }
+        },
+        "required": ["items", "total", "page", "page_size"]
+      },
+      "BehaviorEventPage": {
+        "type": "object",
+        "properties": {
+          "items": { "type": "array", "items": { "$ref": "#/components/schemas/BehaviorEvent" } },
+          "total": { "type": "integer", "minimum": 0 },
+          "page": { "type": "integer", "minimum": 1 },
+          "page_size": { "type": "integer", "minimum": 1, "maximum": 100 }
+        },
+        "required": ["items", "total", "page", "page_size"]
+      },
       "UserResponse": {
         "type": "object",
         "properties": {
@@ -1640,6 +1751,22 @@
           "request_id": {
             "type": "string"
           }
+        },
+        "required": ["data", "request_id"]
+      },
+      "CompatibilityLogPageResponse": {
+        "type": "object",
+        "properties": {
+          "data": { "$ref": "#/components/schemas/CompatibilityLogPage" },
+          "request_id": { "type": "string" }
+        },
+        "required": ["data", "request_id"]
+      },
+      "BehaviorEventPageResponse": {
+        "type": "object",
+        "properties": {
+          "data": { "$ref": "#/components/schemas/BehaviorEventPage" },
+          "request_id": { "type": "string" }
         },
         "required": ["data", "request_id"]
       },
@@ -1802,6 +1929,70 @@
           "maximum": 100,
           "default": 20
         }
+      },
+      "LogFrom": {
+        "name": "from",
+        "in": "query",
+        "required": false,
+        "description": "UTC 秒精度，包含下界；行为查询与 to 同时提供时最多 31 天",
+        "schema": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$" }
+      },
+      "LogTo": {
+        "name": "to",
+        "in": "query",
+        "required": false,
+        "description": "UTC 秒精度，包含上界；行为查询与 from 同时提供时最多 31 天",
+        "schema": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$" }
+      },
+      "EventName": {
+        "name": "event_name",
+        "in": "query",
+        "required": false,
+        "description": "事件代码精确匹配",
+        "schema": { "type": "string", "maxLength": 96 }
+      },
+      "EventSearch": {
+        "name": "event_search",
+        "in": "query",
+        "required": false,
+        "description": "事件代码或配置名称的字面量子串",
+        "schema": { "type": "string", "maxLength": 128 }
+      },
+      "AuditResult": {
+        "name": "result",
+        "in": "query",
+        "required": false,
+        "schema": { "type": "string", "enum": ["success", "failure", "denied"] }
+      },
+      "BehaviorResult": {
+        "name": "result",
+        "in": "query",
+        "required": false,
+        "schema": { "type": "string", "enum": ["success", "failure"] }
+      },
+      "ActorUserId": {
+        "name": "actor_user_id",
+        "in": "query",
+        "required": false,
+        "schema": { "type": "string", "format": "uuid" }
+      },
+      "ActorSearch": {
+        "name": "actor_search",
+        "in": "query",
+        "required": false,
+        "schema": { "type": "string", "maxLength": 128 }
+      },
+      "UserIdQuery": {
+        "name": "user_id",
+        "in": "query",
+        "required": false,
+        "schema": { "type": "string", "format": "uuid" }
+      },
+      "UserSearch": {
+        "name": "user_search",
+        "in": "query",
+        "required": false,
+        "schema": { "type": "string", "maxLength": 128 }
       }
     },
     "responses": {
@@ -1886,7 +2077,7 @@
         }
       },
       "503": {
-        "description": "服务或数据库不可用（2216/2220）",
+        "description": "服务、数据库或行为接收队列不可用（2216/2220/2225/2226）",
         "content": {
           "application/json": {
             "schema": {

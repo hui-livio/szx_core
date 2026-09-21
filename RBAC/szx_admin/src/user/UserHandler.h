@@ -13,9 +13,15 @@ class LoginService;
 struct LoginConfig;
 } // namespace SZX::ADMIN::AUTH
 
+namespace SZX::ADMIN::TELEMETRY
+{
+class BehaviorEventWriter;
+}
+
 namespace SZX::ADMIN::USER
 {
 /** Register user management endpoints. Requires login service for access token verification. */
-[[nodiscard]] auto registerUserRoutes(INFRA::HttpTransport &transport, INFRA::DatabasePool &database, AUTH::LoginService &login)
+[[nodiscard]] auto registerUserRoutes(INFRA::HttpTransport &transport, INFRA::DatabasePool &database, AUTH::LoginService &login,
+                                      TELEMETRY::BehaviorEventWriter &writer)
     -> SZX::COMMON::Result<void>;
 } // namespace SZX::ADMIN::USER

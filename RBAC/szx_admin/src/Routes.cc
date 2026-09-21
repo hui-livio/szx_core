@@ -2,6 +2,7 @@
 #include "HttpSupport.h"
 #include "TimeHelper.hpp"
 #include "auth/LoginService.h"
+#include "telemetry/BehaviorEventWriter.h"
 #include "user/UserHandler.h"
 
 #include "SzxAdmin/Infra/Database.h"
@@ -233,18 +234,21 @@ auto registerHealthRoutes(std::string_view apiPrefix,
     }
 }
 
-auto registerRoutes(INFRA::HttpTransport &transport, INFRA::DatabasePool &database, AUTH::LoginService *login)
+auto registerRoutes(INFRA::HttpTransport &transport, INFRA::DatabasePool &database, AUTH::LoginService *login,
+                    TELEMETRY::BehaviorEventWriter *writer)
     -> SZX::COMMON::Result<void>
 {
     try
     {
         const auto ready = transport.registerApiRoute(
             "GET", "/ready",
-            [&database](const INFRA::HttpRequest &request)
+            [&database, writer](const INFRA::HttpRequest &request)
             {
                 const auto ping = database.ping();
                 if (!ping.ok)
                     return INFRA::RestApi::error(INFRA::ErrorCode::DatabaseUnavailable, request.requestId);
+                if (writer && writer->state() != TELEMETRY::AdmissionState::Accepting)
+                    return INFRA::RestApi::error(INFRA::ErrorCode::ServiceUnavailable, request.requestId);
                 return INFRA::RestApi::success(SZX::COMMON::Json{{"status", "ready"}}, request.requestId);
             });
         if (!ready.ok || !login)
@@ -291,7 +295,9 @@ auto registerRoutes(INFRA::HttpTransport &transport, INFRA::DatabasePool &databa
             if (!options.ok)
                 return options;
         }
-        const auto userRoutes = USER::registerUserRoutes(transport, database, *login);
+        if (!writer)
+            return SZX::COMMON::Result<void>::Failure(static_cast<int>(INFRA::ErrorCode::InvalidConfiguration), {});
+        const auto userRoutes = USER::registerUserRoutes(transport, database, *login, *writer);
         if (!userRoutes.ok)
             return userRoutes;
         return SZX::COMMON::Result<void>::Success();

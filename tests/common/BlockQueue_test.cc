@@ -32,6 +32,21 @@ TEST(common_BlockQueueTest, PushAndTryPop)
     EXPECT_TRUE(queue.empty());
 }
 
+TEST(common_BlockQueueTest, TryPushReportsPushedFullAndClosedWithoutBlocking)
+{
+    BlockingQueue<int> queue(1);
+
+    EXPECT_EQ(queue.try_push(1), QueuePushResult::Pushed);
+    EXPECT_EQ(queue.try_push(2), QueuePushResult::Full);
+
+    queue.close();
+    EXPECT_EQ(queue.try_push(3), QueuePushResult::Closed);
+
+    int value = 0;
+    ASSERT_TRUE(queue.try_pop(value));
+    EXPECT_EQ(value, 1);
+}
+
 TEST(common_BlockQueueTest, CloseRejectsNewValuesButDrainsExisting)
 {
     BlockingQueue<int> queue;

@@ -32,6 +32,8 @@ enum class ErrorCode : int
     DatabaseTransactionFailed = 2222,
     MigrationFailed           = 2223,
     MigrationConflict         = 2224,
+    BehaviorEventQueueFull    = 2225,
+    BehaviorEventQueueClosed  = 2226,
     InternalFailure           = 2299,
 };
 

@@ -43,18 +43,6 @@ struct LoginRefresh
     std::optional<std::string> revocation_reason;
 };
 
-struct LoginAudit
-{
-    std::string id;
-    std::optional<std::string> actor_user_id;
-    std::optional<std::string> target_user_id;
-    std::string event_name;
-    std::string result;
-    std::string request_id;
-    std::string ip;
-    std::string details_json{"{}"};
-};
-
 /** Transaction-scoped authentication persistence. Lookups lock the user until commit/rollback. */
 class LoginRepository
 {
@@ -72,6 +60,5 @@ public:
     virtual auto saveRefresh(const LoginRefresh &token) -> SZX::COMMON::Result<void>                                 = 0;
     virtual auto revokeFamily(const std::string &userId, const std::string &familyId, const std::string &now,
                               const std::string &reason) -> SZX::COMMON::Result<void>                                = 0;
-    virtual auto insertAudit(const LoginAudit &event) -> SZX::COMMON::Result<void>                                   = 0;
 };
 } // namespace SZX::ADMIN::AUTH

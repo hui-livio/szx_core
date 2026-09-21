@@ -24,6 +24,7 @@ enum class Capability : int
     UserPasswordReset,    ///< user.password.reset
     UserRoleAssign,       ///< user.role.assign
     AuditRead,            ///< audit.read
+    BehaviorRead,         ///< behavior.read
 };
 
 /** 四个固定角色之一。 */

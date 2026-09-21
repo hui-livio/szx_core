@@ -8,6 +8,8 @@
 #include "SzxAdmin/Infra/HttpTransport.h"
 #include "SzxAdmin/Infra/ServerConfig.h"
 #include "auth/LoginService.h"
+#include "maintenance/LogMaintenanceService.h"
+#include "telemetry/BehaviorEventWriter.h"
 
 #include <atomic>
 #include <chrono>
@@ -30,10 +32,16 @@ using SZX::ADMIN::INFRA::MigrationRunner;
 using SZX::ADMIN::INFRA::ServerConfig;
 
 std::atomic_bool g_stopRequested{};
+std::atomic_bool g_writerResumeRequested{};
 
 void requestStop(int) noexcept
 {
     g_stopRequested.store(true, std::memory_order_relaxed);
+}
+
+void requestWriterResume(int) noexcept
+{
+    g_writerResumeRequested.store(true, std::memory_order_relaxed);
 }
 
 struct ServiceConfig final
@@ -52,10 +60,12 @@ struct ServiceConfig final
     } logging;
     ServerConfig server;
     DatabaseConfig database;
+    SZX::ADMIN::INFRA::LogStorageConfig logs;
     SZX::ADMIN::AUTH::LoginConfig auth;
+    SZX::ADMIN::TELEMETRY::TelemetryConfig telemetry;
 };
 SZX_REFL(ServiceConfig::Logging, level, flushLevel, loggerName, pattern, filePath, maxFileSize, maxFiles, truncate, console);
-SZX_REFL(ServiceConfig, logging, server, database, auth);
+SZX_REFL(ServiceConfig, logging, server, database, logs, auth, telemetry);
 
 auto logLevel(std::string_view value) -> std::optional<SZX::LOGGER::LogLevel>
 {
@@ -106,11 +116,13 @@ auto defaultConfigPath() -> std::filesystem::path
     return std::filesystem::exists(direct) ? direct : current / "config" / "config.yaml";
 }
 
-auto loadConfig(int argc, char **argv, ServiceConfig &config) -> int
+auto loadConfig(int argc, char **argv, ServiceConfig &config, std::string &maintenance, bool &confirmPurge) -> int
 {
     SZX::COMMON::Command command{"SZX Admin service", "SZX Admin service"};
     std::string configArgument;
     command.add_option("-c,--config", configArgument, "YAML configuration file path");
+    command.add_option("--maintenance", maintenance, "Run inspect, backfill, or purge and exit");
+    command.add_flag("--confirm-purge", confirmPurge, "Confirm retention purge deletion");
     try
     {
         command.parse(argc, argv);
@@ -155,32 +167,120 @@ auto reportFailure(std::string_view operation, const Result &result) -> int
     LOGM_ERROR("szx_admin", "{} failed ({}): {}", operation, result.error, result.message);
     return result.error == static_cast<int>(ErrorCode::InvalidConfiguration) ? 2 : 1;
 }
+
+auto runMaintenance(DatabasePool &database, const SZX::ADMIN::INFRA::LogStorageConfig &config, std::string_view operation,
+                    bool confirmPurge) -> int
+{
+    using SZX::ADMIN::MAINTENANCE::LogMaintenanceService;
+    LogMaintenanceService service(database, config);
+    if (operation == "inspect")
+    {
+        const auto result = service.inspect();
+        if (!result.ok)
+            return reportFailure("log migration inspection", result);
+        const auto &value = result.value;
+        std::cout << SZX::COMMON::Json{{"legacy_rows", value.legacyRows},
+                                       {"eligible_audit_rows", value.eligibleAuditRows},
+                                       {"eligible_behavior_rows", value.eligibleBehaviorRows},
+                                       {"legacy_unknown_rows", value.legacyUnknownRows},
+                                       {"audit_rows", value.auditRows},
+                                       {"behavior_rows", value.behaviorRows},
+                                       {"missing_audit_rows", value.missingAuditRows},
+                                       {"missing_behavior_rows", value.missingBehaviorRows},
+                                       {"conflicting_audit_rows", value.conflictingAuditRows},
+                                       {"conflicting_behavior_rows", value.conflictingBehaviorRows}}
+                         .dump(2)
+                  << '\n';
+        return 0;
+    }
+    if (operation == "backfill")
+    {
+        const auto result = service.backfill();
+        if (!result.ok)
+            return reportFailure("log migration backfill", result);
+        std::cout << SZX::COMMON::Json{{"audit_inserted", result.value.auditInserted},
+                                       {"behavior_inserted", result.value.behaviorInserted},
+                                       {"legacy_unknown_rows", result.value.after.legacyUnknownRows},
+                                       {"missing_audit_rows", result.value.after.missingAuditRows},
+                                       {"missing_behavior_rows", result.value.after.missingBehaviorRows}}
+                         .dump(2)
+                  << '\n';
+        return 0;
+    }
+    if (operation == "purge")
+    {
+        if (!confirmPurge)
+        {
+            LOGM_ERROR("szx_admin", "log purge requires --confirm-purge");
+            return 2;
+        }
+        const auto result = service.purge();
+        if (!result.ok)
+            return reportFailure("log retention purge", result);
+        std::cout << SZX::COMMON::Json{{"audit_deleted", result.value.auditDeleted},
+                                       {"audit_legacy_deleted", result.value.auditLegacyDeleted},
+                                       {"behavior_deleted", result.value.behaviorDeleted},
+                                       {"behavior_legacy_deleted", result.value.behaviorLegacyDeleted}}
+                         .dump(2)
+                  << '\n';
+        return 0;
+    }
+    LOGM_ERROR("szx_admin", "unknown maintenance operation: {}", operation);
+    return 2;
+}
+
 } // namespace
 
 int main(int argc, char **argv)
 {
     ServiceConfig options;
-    const auto configResult = loadConfig(argc, argv, options);
+    std::string maintenance;
+    bool confirmPurge{};
+    const auto configResult = loadConfig(argc, argv, options, maintenance, confirmPurge);
     if (configResult != 0)
         return configResult < 0 ? 0 : configResult;
 
-    const auto serverValid = options.server.validate();
-    if (!serverValid.ok)
-        return reportFailure("server configuration", serverValid);
     const auto databaseValid = options.database.validate();
     if (!databaseValid.ok)
         return reportFailure("database configuration", databaseValid);
+    const auto logsValid = options.logs.validate();
+    if (!logsValid.ok)
+        return reportFailure("log storage configuration", logsValid);
+    if (maintenance.empty())
+    {
+        const auto serverValid = options.server.validate();
+        if (!serverValid.ok)
+            return reportFailure("server configuration", serverValid);
+        const auto telemetryValid = options.telemetry.validate();
+        if (!telemetryValid.ok)
+            return reportFailure("telemetry configuration", telemetryValid);
+        if (static_cast<std::uint64_t>(options.database.connectTimeoutSeconds) * 1000U >
+                options.telemetry.databaseOperationTimeoutMs ||
+            static_cast<std::uint64_t>(options.database.lockWaitTimeoutSeconds) * 1000U >
+                options.telemetry.databaseOperationTimeoutMs)
+        {
+            const auto invalid = SZX::COMMON::Result<void>::Failure(
+                static_cast<int>(ErrorCode::InvalidConfiguration),
+                "Database connect and lock wait timeouts must not exceed telemetry.databaseOperationTimeoutMs.");
+            return reportFailure("database/telemetry timeout configuration", invalid);
+        }
+    }
+    DatabasePool database(options.database, options.logs);
+    auto result = database.start();
+    if (!result.ok)
+        return reportFailure("database startup", result);
+    if (!maintenance.empty())
+    {
+        const auto maintenanceResult = runMaintenance(database, options.logs, maintenance, confirmPurge);
+        const auto stopped           = database.stop();
+        return stopped.ok ? maintenanceResult : reportFailure("database shutdown", stopped);
+    }
 
-    DatabasePool database(options.database);
     SZX::ADMIN::AUTH::LoginService login(database, options.auth);
     const auto authReady = login.initialize();
     if (!authReady.ok)
         return reportFailure("authentication configuration/key initialization", authReady);
     LOGM_INFO("szx_admin", "event=authentication_initialized");
-    auto result = database.start();
-    if (!result.ok)
-        return reportFailure("database startup", result);
-
     result = database.withConnection(
         [&](auto &connection)
         {
@@ -200,33 +300,67 @@ int main(int argc, char **argv)
         return reportFailure("database initialization", result);
     }
 
+    SZX::ADMIN::TELEMETRY::BehaviorEventWriter behaviorWriter(database, options.telemetry);
+    result = behaviorWriter.start();
+    if (!result.ok)
+    {
+        (void)database.stop();
+        return reportFailure("behavior event writer startup", result);
+    }
+
     HttpTransport transport(options.server);
-    const auto routes = SZX::ADMIN::registerRoutes(transport, database, &login);
+    const auto routes = SZX::ADMIN::registerRoutes(transport, database, &login, &behaviorWriter);
     if (!routes.ok)
     {
+        (void)behaviorWriter.stop();
         (void)database.stop();
         return reportFailure("route registration", routes);
     }
 
     std::signal(SIGINT, requestStop);
     std::signal(SIGTERM, requestStop);
+#if defined(_WIN32)
+    std::signal(SIGBREAK, requestWriterResume);
+#else
+    std::signal(SIGHUP, requestWriterResume);
+#endif
     result = transport.start();
     if (!result.ok)
     {
+        (void)behaviorWriter.stop();
         (void)database.stop();
         return reportFailure("HTTP startup", result);
     }
 
     LOGM_INFO("szx_admin", "szx_admin_service listening on {}:{}", options.server.host, transport.port());
     while (!g_stopRequested.load(std::memory_order_relaxed))
+    {
+        if (g_writerResumeRequested.exchange(false, std::memory_order_relaxed))
+        {
+            const auto resumed = behaviorWriter.resumeAfterFault();
+            if (resumed.ok)
+                LOGM_INFO("szx_admin.telemetry", "event=writer_resumed");
+            else
+                LOGM_WARN("szx_admin.telemetry", "event=writer_resume_rejected code={}", resumed.error);
+        }
         std::this_thread::sleep_for(std::chrono::milliseconds{250});
+    }
 
     LOGM_INFO("szx_admin", "event=shutdown_requested");
     const auto stopResult     = transport.stop();
+    const auto drained        = behaviorWriter.stop();
     const auto databaseResult = database.stop();
     if (!stopResult.ok)
         return reportFailure("HTTP shutdown", stopResult);
     if (!databaseResult.ok)
         return reportFailure("database shutdown", databaseResult);
+    if (!drained.clean)
+    {
+        LOGM_ERROR("szx_admin",
+                   "event=behavior_writer_drain_incomplete discarded={} pending_commit_unknown={} remaining_queue={} "
+                   "remaining_batch={}",
+                   drained.discarded, drained.pendingCommitUnknown, drained.remainingQueued, drained.remainingBatch);
+        return 1;
+    }
     return 0;
 }

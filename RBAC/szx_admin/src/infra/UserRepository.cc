@@ -1,6 +1,5 @@
 #include "UserRepository.h"
 #include "../auth/LoginService.h"
-#include "JsonHelper.hpp"
 #include "OrmConnection.h"
 #include "SzxAdmin/Infra/ErrorCode.h"
 #include "UUID.hpp"
@@ -22,37 +21,16 @@ inline constexpr auto get_alias_struct_name(NewUser *)
 {
     return std::string_view{"users"};
 }
-inline constexpr auto get_alias_struct_name(LogRow *)
-{
-    return std::string_view{"user_logs"};
-}
 YLT_REFL(UserRow, id, uid, username, display_name, role, status, version, force_password_change, temporary_credential_expires_at,
          failed_login_count, locked_until, password_changed_at, disabled_at, created_by, authz_version, last_login_at, created_at,
          updated_at);
 REGISTER_CONFLICT_KEY(UserRow, id)
 YLT_REFL(NewUser, id, uid, uid_canonical, username, username_canonical, display_name, password_hash, role, status,
          force_password_change, temporary_credential_expires_at, created_by);
-YLT_REFL(LogRow, id, actor_user_id, target_user_id, event_name, result, request_id, details_json, created_at, actor_username);
 } // namespace SZX::ADMIN::USER
 
 namespace SZX::ADMIN::INFRA::DETAIL
 {
-// Read only the size in the page query. JSON has unbounded string metadata and
-// ormpp's multi-row blob binding can invalidate its own buffer above 64 KiB.
-struct LogRecord
-{
-    std::string id;
-    std::optional<std::string> actor_user_id;
-    std::optional<std::string> target_user_id;
-    std::string event_name;
-    std::string result;
-    std::string request_id;
-    std::uint64_t details_size{};
-    std::string created_at;
-    std::string actor_username;
-};
-YLT_REFL(LogRecord, id, actor_user_id, target_user_id, event_name, result, request_id, details_size, created_at, actor_username);
-
 struct UserCredential
 {
     std::string id;
@@ -301,82 +279,4 @@ auto MySqlUserRepository::saveCredential(const std::string &id, const std::strin
     }
 }
 
-auto MySqlUserRepository::queryLogs(const USER::LogFilter &filter) -> Result<USER::LogPage>
-{
-    try
-    {
-        if (filter.limit == 0)
-            return Result<USER::LogPage>::Failure(static_cast<int>(ErrorCode::InternalFailure), {});
-        const auto from         = filter.from;
-        const auto to           = filter.to;
-        const auto event        = filter.eventName;
-        const auto result       = filter.result;
-        const auto actor        = filter.actorUserId;
-        const auto username     = filter.actorSearch;
-        const auto pattern      = "%" + escapeLike(username) + "%";
-        const auto eventSearch  = filter.eventSearch;
-        const auto eventPattern = "%" + escapeLike(eventSearch) + "%";
-        const auto eventNames   = SZX::COMMON::Json(filter.eventNames).dump();
-        const auto limit        = static_cast<std::uint64_t>(filter.limit);
-        const auto offset       = filter.offset;
-        const std::string source{" FROM user_logs l LEFT JOIN users u ON u.id = l.actor_user_id WHERE "};
-        const std::string predicate{"(? = '' OR l.created_at >= ?) AND (? = '' OR l.created_at <= ?) AND "
-                                    "(? = '' OR l.event_name = ?) AND (? = '' OR l.result = ?) AND "
-                                    "(? = '' OR l.actor_user_id = ?) AND "
-                                    "(? = '' OR u.display_name LIKE ? OR u.username LIKE ? OR u.uid LIKE ?) AND "
-                                    "(? = '' OR l.event_name LIKE ? OR JSON_CONTAINS(?, JSON_QUOTE(l.event_name)))"};
-
-        const auto totals = connection_.query_s<std::tuple<std::uint64_t>>(
-            "SELECT COUNT(*)" + source + predicate, from, from, to, to, event, event, result, result, actor, actor, username,
-            pattern, pattern, pattern, eventSearch, eventPattern, eventNames);
-        if (connection_.has_error() || totals.size() != 1)
-            return queryFailed<USER::LogPage>();
-
-        USER::LogPage page{.items = {}, .total = std::get<0>(totals.front())};
-        if (page.total > offset)
-        {
-            auto rows = connection_.query_s<LogRecord>(
-                "SELECT l.id, l.actor_user_id, l.target_user_id, l.event_name, l.result, l.request_id, "
-                "OCTET_LENGTH(l.details_json), l.created_at, COALESCE(u.username, u.uid, '')" +
-                    source + predicate + " ORDER BY l.created_at DESC, l.id ASC LIMIT ? OFFSET ?",
-                from, from, to, to, event, event, result, result, actor, actor, username, pattern, pattern, pattern, eventSearch,
-                eventPattern, eventNames, limit, offset);
-            if (connection_.has_error())
-                return queryFailed<USER::LogPage>();
-            page.items.reserve(rows.size());
-            for (auto &row : rows)
-            {
-                // Binary chunks preserve UTF-8 even when a character spans chunks.
-                // Serialized JSON cannot contain a literal NUL. The explicit CAST
-                // bounds metadata as well as data, so string binding stays safe.
-                constexpr std::uint64_t chunkBytes = 16384;
-                std::string details;
-                for (std::uint64_t byteOffset = 0; byteOffset < row.details_size; byteOffset += chunkBytes)
-                {
-                    const auto chunks = connection_.query_s<std::tuple<std::string>>(
-                        "SELECT CAST(SUBSTRING(CAST(details_json AS BINARY), ?, 16384) "
-                        "AS CHAR(16384) CHARACTER SET binary) FROM user_logs WHERE id = ?",
-                        byteOffset + 1, row.id);
-                    if (connection_.has_error() || chunks.size() != 1 ||
-                        std::get<0>(chunks.front()).size() != (std::min)(chunkBytes, row.details_size - byteOffset))
-                        return queryFailed<USER::LogPage>();
-                    details += std::get<0>(chunks.front());
-                }
-                page.items.push_back({.id             = std::move(row.id),
-                                      .actor_user_id  = std::move(row.actor_user_id),
-                                      .target_user_id = std::move(row.target_user_id),
-                                      .event_name     = std::move(row.event_name),
-                                      .result         = std::move(row.result),
-                                      .request_id     = std::move(row.request_id),
-                                      .details_json   = std::move(details),
-                                      .created_at     = std::move(row.created_at),
-                                      .actor_username = std::move(row.actor_username)});
-            }
-        }
-        return Result<USER::LogPage>::Success(std::move(page));
-    } catch (...)
-    {
-        return queryFailed<USER::LogPage>();
-    }
-}
 } // namespace SZX::ADMIN::INFRA::DETAIL

@@ -1,6 +1,5 @@
 #include "UserService.h"
 #include "../auth/LoginService.h"
-#include "AuditEventLabels.h"
 #include "UserValidation.h"
 
 #include "SzxAdmin/Infra/ErrorCode.h"
@@ -20,8 +19,7 @@ constexpr std::array<std::string_view, 4> kAllRoles{"operator", "engineer", "adm
 
 UserService::UserService(INFRA::DatabasePool &database, AUTH::LoginService &auth) :
     database_(database),
-    auth_(auth),
-    behaviorLimiter_(auth.config().behaviorEventsPerMinute)
+    auth_(auth)
 {
 }
 
@@ -179,52 +177,4 @@ auto UserService::get(const ActorContext &context, const std::string &id) -> Res
     }
 }
 
-auto UserService::logs(const ActorContext &context, const LogQuery &query) -> Result<LogPage>
-{
-    try
-    {
-        const auto from = query.from.empty() ? std::optional<std::string>{std::string{}} : databaseTimestamp(query.from);
-        const auto to   = query.to.empty() ? std::optional<std::string>{std::string{}} : databaseTimestamp(query.to);
-        if (!from || !to || query.pageSize == 0 || (!query.eventName.empty() && !validEventName(query.eventName)) ||
-            (!query.result.empty() && !validAuditResult(query.result)) ||
-            (!query.actorUserId.empty() && !validUuid(query.actorUserId)) || !validSearch(query.actorSearch) ||
-            !validSearch(query.eventSearch))
-            return failed<LogPage>(ErrorCode::ValidationError);
-        LogPage output;
-        const auto operation = database_.withConnection(
-            [&](INFRA::DatabaseConnection &connection) -> Result<void>
-            {
-                auto *repository = connection.userRepository();
-                if (!repository)
-                    return failed<void>(ErrorCode::DatabaseQueryFailed);
-                const auto actor = resolve(context, *repository);
-                if (!actor.ok)
-                    return Result<void>::Failure(actor.error, {});
-                if (!POLICY::allows(actor.value.role, POLICY::Capability::AuditRead))
-                    return failed<void>(ErrorCode::Forbidden);
-                LogFilter filter{.from        = *from,
-                                 .to          = *to,
-                                 .eventName   = query.eventName,
-                                 .result      = query.result,
-                                 .actorUserId = query.actorUserId,
-                                 .limit       = query.pageSize,
-                                 .offset      = static_cast<std::uint64_t>(query.page - 1) * query.pageSize,
-                                 .actorSearch = query.actorSearch,
-                                 .eventSearch = query.eventSearch};
-                if (!query.eventSearch.empty())
-                    for (const auto &[code, label] : kAuditEventLabels)
-                        if (label.find(query.eventSearch) != std::string_view::npos)
-                            filter.eventNames.emplace_back(code);
-                const auto queried = repository->queryLogs(filter);
-                if (!queried.ok)
-                    return Result<void>::Failure(queried.error, {});
-                output = queried.value;
-                return Result<void>::Success();
-            });
-        return operation.ok ? Result<LogPage>::Success(std::move(output)) : Result<LogPage>::Failure(operation.error, {});
-    } catch (...)
-    {
-        return failed<LogPage>(ErrorCode::InternalFailure);
-    }
-}
 } // namespace SZX::ADMIN::USER

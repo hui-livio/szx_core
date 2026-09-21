@@ -1,5 +1,12 @@
 import { api } from './client'
-import type { AuditLog, CreateUser, CredentialIssue, Page, User } from './types'
+import type {
+  AuditLog,
+  BehaviorEventRecord,
+  CreateUser,
+  CredentialIssue,
+  Page,
+  User,
+} from './types'
 
 export const adminApi = {
   users: (params: Record<string, string | number>) =>
@@ -27,4 +34,8 @@ export const adminApi = {
     }),
   logs: (params: Record<string, string | number>) =>
     api.request<Page<AuditLog>>({ url: '/admin/user-logs', params }),
+  auditLogs: (params: Record<string, string | number>) =>
+    api.request<Page<AuditLog>>({ url: '/admin/audit-logs', params }),
+  behaviorEvents: (params: Record<string, string | number>) =>
+    api.request<Page<BehaviorEventRecord>>({ url: '/admin/behavior-events', params }),
 }

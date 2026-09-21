@@ -76,7 +76,7 @@ template <typename T>
     return value == "success" || value == "failure" || value == "denied";
 }
 
-/** 审计事件名：小写点分段，匹配 user_logs.event_name 列宽。 */
+/** 审计和行为事件名：小写点分段，匹配拆分日志表的 event_name 列宽。 */
 [[nodiscard]] inline auto validEventName(std::string_view value) noexcept -> bool
 {
     if (value.empty() || value.size() > 96 || value.front() == '.' || value.back() == '.')
@@ -140,7 +140,7 @@ template <typename T>
     return value.starts_with("auth.") || value.starts_with("user.");
 }
 
-/** 审计行要求可写入的 request_id 和对端地址，匹配 user_logs 列宽。 */
+/** 审计行要求可写入的 request_id 和对端地址，匹配拆分日志表列宽。 */
 [[nodiscard]] inline auto validContext(std::string_view requestId, std::string_view peerAddress) noexcept -> bool
 {
     return !peerAddress.empty() && peerAddress.size() <= 45 && !requestId.empty() && requestId.size() <= 128;

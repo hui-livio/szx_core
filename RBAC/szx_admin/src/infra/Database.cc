@@ -1,7 +1,10 @@
 #include "SzxAdmin/Infra/Database.h"
 #include "OrmConnection.h"
 
+#include "AuditRepository.h"
+#include "BehaviorEventRepository.h"
 #include "DatabaseInitialization.h"
+#include "LogMaintenanceRepository.h"
 #include "Logger.h"
 #include "LoginRepository.h"
 #include "SzxAdmin/Infra/ErrorCode.h"
@@ -79,7 +82,23 @@ auto connectAndConfigure(const DatabaseConfig &config, DETAIL::OrmConnection &co
     }
     if (!connection.execute("SET SESSION innodb_lock_wait_timeout = " + std::to_string(config.lockWaitTimeoutSeconds)))
         return databaseFailure(ErrorCode::DatabaseUnavailable, "Database session initialization failed", {});
+    if (!connection.execute("SET SESSION net_read_timeout = " + std::to_string(config.connectTimeoutSeconds) +
+                            ", net_write_timeout = " + std::to_string(config.connectTimeoutSeconds)))
+        return databaseFailure(ErrorCode::DatabaseUnavailable, "Database session initialization failed", {});
     return SZX::COMMON::Result<void>::Success();
+}
+
+auto connectAndConfigureUntil(const DatabaseConfig &config, DETAIL::OrmConnection &connection,
+                              std::chrono::steady_clock::time_point deadline) -> SZX::COMMON::Result<void>
+{
+    const auto remaining = deadline - std::chrono::steady_clock::now();
+    if (remaining < std::chrono::seconds{1})
+        return databaseFailure(ErrorCode::DatabaseUnavailable, "Database connection deadline exceeded", {});
+    auto boundedConfig          = config;
+    const auto remainingSeconds = std::chrono::duration_cast<std::chrono::seconds>(remaining).count();
+    boundedConfig.connectTimeoutSeconds =
+        static_cast<std::uint16_t>((std::min)(static_cast<std::int64_t>(config.connectTimeoutSeconds), remainingSeconds));
+    return connectAndConfigure(boundedConfig, connection);
 }
 
 auto validDatabaseIdentifier(std::string_view value) noexcept -> bool
@@ -97,10 +116,13 @@ auto validDatabaseIdentifier(std::string_view value) noexcept -> bool
 class MySqlConnection final : public DatabaseConnection
 {
 public:
-    explicit MySqlConnection(DETAIL::OrmConnection &connection) :
+    explicit MySqlConnection(DETAIL::OrmConnection &connection, const LogStorageConfig &logs) :
         connection_(connection),
         loginRepository_(connection),
-        userRepository_(connection)
+        userRepository_(connection),
+        auditRepository_(connection, logs.dualWriteLegacy, logs.readLegacy),
+        behaviorEventRepository_(connection, logs.dualWriteLegacy),
+        logMaintenanceRepository_(connection)
     {
     }
 
@@ -171,11 +193,29 @@ public:
             databaseFailure(ErrorCode::DatabaseTransactionFailed, "Failed to commit database transaction", {});
     }
 
+    auto commitWithOutcome() -> SZX::COMMON::Result<CommitOutcome> override
+    {
+        if (connection_.commit())
+            return SZX::COMMON::Result<CommitOutcome>::Success(CommitOutcome::Committed);
+        connection_.invalidate();
+        return SZX::COMMON::Result<CommitOutcome>::Success(CommitOutcome::Unknown);
+    }
+
     auto rollback() -> SZX::COMMON::Result<void> override
     {
         return connection_.rollback() ?
             SZX::COMMON::Result<void>::Success() :
             databaseFailure(ErrorCode::DatabaseTransactionFailed, "Failed to roll back database transaction", {});
+    }
+
+    void invalidate() noexcept override
+    {
+        connection_.invalidate();
+    }
+
+    auto reusable() const noexcept -> bool override
+    {
+        return connection_.reusable();
     }
 
     auto bootstrapCompleted() -> SZX::COMMON::Result<bool> override
@@ -237,10 +277,28 @@ public:
         return &userRepository_;
     }
 
+    auto auditRepository() noexcept -> AUDIT::AuditRepository * override
+    {
+        return &auditRepository_;
+    }
+
+    auto behaviorEventRepository() noexcept -> TELEMETRY::BehaviorEventRepository * override
+    {
+        return &behaviorEventRepository_;
+    }
+
+    auto logMaintenanceRepository() noexcept -> MAINTENANCE::LogMaintenanceRepository * override
+    {
+        return &logMaintenanceRepository_;
+    }
+
 private:
     DETAIL::OrmConnection &connection_;
     DETAIL::MySqlLoginRepository loginRepository_;
     DETAIL::MySqlUserRepository userRepository_;
+    DETAIL::MySqlAuditRepository auditRepository_;
+    DETAIL::MySqlBehaviorEventRepository behaviorEventRepository_;
+    DETAIL::MySqlLogMaintenanceRepository logMaintenanceRepository_;
 };
 
 } // namespace
@@ -248,8 +306,9 @@ private:
 class DatabasePool::Impl final
 {
 public:
-    explicit Impl(DatabaseConfig value) :
-        config(std::move(value))
+    explicit Impl(DatabaseConfig value, LogStorageConfig logConfig) :
+        config(std::move(value)),
+        logs(std::move(logConfig))
     {
     }
 
@@ -266,6 +325,7 @@ public:
     }
 
     DatabaseConfig config;
+    LogStorageConfig logs;
     bool started{};
     std::atomic_bool connectionUnavailable{};
     std::mutex mutex;
@@ -286,8 +346,17 @@ auto DatabaseConfig::validate() const -> SZX::COMMON::Result<void>
     return SZX::COMMON::Result<void>::Success();
 }
 
-DatabasePool::DatabasePool(DatabaseConfig config) :
-    impl_(new Impl(std::move(config)))
+auto LogStorageConfig::validate() const -> SZX::COMMON::Result<void>
+{
+    if (auditRetentionDays == 0 || behaviorRetentionDays == 0 || cleanupBatchSize == 0 || cleanupBatchSize > 100000)
+        return failure(ErrorCode::InvalidConfiguration, "Invalid log retention or cleanup configuration.");
+    if (dualWriteLegacy && !readLegacy)
+        return failure(ErrorCode::InvalidConfiguration, "Legacy log reads must remain enabled while dual write is enabled.");
+    return SZX::COMMON::Result<void>::Success();
+}
+
+DatabasePool::DatabasePool(DatabaseConfig config, LogStorageConfig logs) :
+    impl_(new Impl(std::move(config), std::move(logs)))
 {
 }
 
@@ -303,6 +372,9 @@ auto DatabasePool::start() -> SZX::COMMON::Result<void>
     const auto valid = impl_->config.validate();
     if (!valid.ok)
         return valid;
+    const auto logsValid = impl_->logs.validate();
+    if (!logsValid.ok)
+        return logsValid;
     try
     {
         std::lock_guard ormLock(DETAIL::ormMutex());
@@ -353,6 +425,20 @@ auto DatabasePool::ping() -> SZX::COMMON::Result<void>
 
 auto DatabasePool::withConnection(const ConnectionCallback &callback) -> SZX::COMMON::Result<void>
 {
+    return withConnectionImpl(callback, std::chrono::steady_clock::now() + std::chrono::seconds{3}, std::nullopt);
+}
+
+auto DatabasePool::withConnectionUntil(const ConnectionCallback &callback, std::chrono::steady_clock::time_point deadline)
+    -> SZX::COMMON::Result<void>
+{
+    return withConnectionImpl(callback, deadline, deadline);
+}
+
+auto DatabasePool::withConnectionImpl(const ConnectionCallback &callback,
+                                      std::chrono::steady_clock::time_point acquisitionDeadline,
+                                      std::optional<std::chrono::steady_clock::time_point> operationDeadline)
+    -> SZX::COMMON::Result<void>
+{
     if (impl_ == nullptr)
         return failure(ErrorCode::DatabaseUnavailable, "Database pool has not been started.");
     if (!callback)
@@ -362,7 +448,7 @@ auto DatabasePool::withConnection(const ConnectionCallback &callback) -> SZX::CO
     try
     {
         ormLock = std::unique_lock<std::recursive_timed_mutex>(DETAIL::ormMutex(), std::defer_lock);
-        if (!ormLock.try_lock_for(std::chrono::seconds(3)))
+        if (!ormLock.try_lock_until(acquisitionDeadline))
             return failure(ErrorCode::DatabaseUnavailable, "Unable to acquire database execution slot.");
     } catch (...)
     {
@@ -374,14 +460,16 @@ auto DatabasePool::withConnection(const ConnectionCallback &callback) -> SZX::CO
         std::unique_lock lock(impl_->mutex);
         if (!impl_->started)
             return failure(ErrorCode::DatabaseUnavailable, "Database pool has not been started.");
-        if (!impl_->condition.wait_for(lock, std::chrono::seconds(3),
-                                       [this] { return !impl_->started || !impl_->connections.empty(); }))
+        if (!impl_->condition.wait_until(lock, acquisitionDeadline,
+                                         [this] { return !impl_->started || !impl_->connections.empty(); }))
             return failure(ErrorCode::DatabaseUnavailable, "Unable to acquire a connection from the database pool.");
         if (!impl_->started)
             return failure(ErrorCode::DatabaseUnavailable, "Database pool has been stopped.");
         connection = std::move(impl_->connections.front());
         impl_->connections.pop_front();
     }
+    if (connection)
+        connection->setDeadline(operationDeadline);
 
     const auto returnConnection = [this, &connection](bool reusable)
     {
@@ -391,6 +479,8 @@ auto DatabasePool::withConnection(const ConnectionCallback &callback) -> SZX::CO
             impl_->reportConnectionState(false);
             connection.reset();
         }
+        else if (connection)
+            connection->setDeadline(std::nullopt);
         std::lock_guard lock(impl_->mutex);
         if (impl_->started)
             impl_->connections.push_back(std::move(connection));
@@ -405,9 +495,11 @@ auto DatabasePool::withConnection(const ConnectionCallback &callback) -> SZX::CO
             // Empty slots already reported their failure when discarded.
             if (connection)
                 impl_->reportConnectionState(false);
-            staleConnection      = std::move(connection);
-            auto replacement     = std::make_unique<DETAIL::OrmConnection>();
-            const auto connected = connectAndConfigure(impl_->config, *replacement);
+            staleConnection  = std::move(connection);
+            auto replacement = std::make_unique<DETAIL::OrmConnection>();
+            replacement->setDeadline(operationDeadline);
+            const auto connected = operationDeadline ? connectAndConfigureUntil(impl_->config, *replacement, *operationDeadline) :
+                                                       connectAndConfigure(impl_->config, *replacement);
             if (!connected.ok)
             {
                 impl_->reportConnectionState(false);
@@ -434,12 +526,17 @@ auto DatabasePool::withConnection(const ConnectionCallback &callback) -> SZX::CO
 
     try
     {
-        MySqlConnection wrapper(*connection);
+        MySqlConnection wrapper(*connection, impl_->logs);
         try
         {
-            const auto result  = callback(wrapper);
+            const auto result = callback(wrapper);
+            if (!wrapper.reusable())
+            {
+                returnConnection(false);
+                return result;
+            }
             const auto cleanup = wrapper.rollback();
-            returnConnection(cleanup.ok);
+            returnConnection(cleanup.ok && wrapper.reusable());
             if (!cleanup.ok)
                 return cleanup;
             return result;

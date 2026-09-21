@@ -1,6 +1,8 @@
 #include "UserHandler.h"
 #include "../HttpSupport.h"
+#include "../audit/AuditService.h"
 #include "../auth/LoginService.h"
+#include "../telemetry/BehaviorEventService.h"
 #include "AuditDetails.h"
 #include "UserService.h"
 #include "UserValidation.h"
@@ -23,9 +25,11 @@ using SZX::COMMON::Json;
 auto actorContext(const INFRA::HttpRequest &request) -> ActorContext
 {
     const auto token = RestApi::bearerToken(request);
+    const auto agent = request.header("User-Agent");
     return {.accessToken = token.ok ? token.value : std::string{},
             .requestId   = request.requestId,
-            .peerAddress = request.peerAddress};
+            .peerAddress = request.peerAddress,
+            .userAgent   = agent ? std::string{*agent} : std::string{}};
 }
 
 auto permissionsResponse(UserService &service, const INFRA::HttpRequest &request) -> INFRA::HttpResponse
@@ -305,7 +309,7 @@ auto resetPasswordResponse(UserService &service, const INFRA::HttpRequest &reque
     }
 }
 
-auto logsResponse(UserService &service, const INFRA::HttpRequest &request) -> INFRA::HttpResponse
+auto logsResponse(AUDIT::AuditService &service, const INFRA::HttpRequest &request, bool legacy) -> INFRA::HttpResponse
 {
     try
     {
@@ -316,16 +320,69 @@ auto logsResponse(UserService &service, const INFRA::HttpRequest &request) -> IN
         const auto pagination = RestApi::pagination(request);
         if (!pagination.ok)
             return RestApi::error(static_cast<ErrorCode>(pagination.error), request.requestId);
-        const LogQuery query{.from        = queryValue(request, "from"),
-                             .to          = queryValue(request, "to"),
-                             .eventName   = queryValue(request, "event_name"),
-                             .result      = queryValue(request, "result"),
-                             .actorUserId = queryValue(request, "actor_user_id"),
-                             .page        = pagination.value.page,
-                             .pageSize    = pagination.value.pageSize,
-                             .actorSearch = queryValue(request, "actor_search"),
-                             .eventSearch = queryValue(request, "event_search")};
-        const auto result = service.logs(actorContext(request), query);
+        const AUDIT::AuditQuery query{.from        = queryValue(request, "from"),
+                                      .to          = queryValue(request, "to"),
+                                      .eventName   = queryValue(request, "event_name"),
+                                      .result      = queryValue(request, "result"),
+                                      .actorUserId = queryValue(request, "actor_user_id"),
+                                      .page        = pagination.value.page,
+                                      .pageSize    = pagination.value.pageSize,
+                                      .actorSearch = queryValue(request, "actor_search"),
+                                      .eventSearch = queryValue(request, "event_search")};
+        const auto result = legacy ? service.listLegacy(actorContext(request), query) : service.list(actorContext(request), query);
+        if (!result.ok)
+            return RestApi::error(static_cast<ErrorCode>(result.error), request.requestId);
+        Json items = Json::array();
+        for (const auto &entry : result.value.items)
+        {
+            auto details = SZX::COMMON::JsonHelper::ParseRequiredObject(entry.details_json);
+            if (!details)
+                return RestApi::error(ErrorCode::DatabaseQueryFailed, request.requestId);
+            redactAuditDetails(*details);
+            Json item{{"id", entry.id},
+                                 {"event_name", entry.event_name},
+                                 {"result", entry.result},
+                                 {"actor_user_id", entry.actor_user_id.value_or("")},
+                                 {"actor_username", entry.actor_username},
+                                 {"target_user_id", entry.target_user_id.value_or("")},
+                                 {"request_id", entry.request_id},
+                                 {"peer_address", ""},
+                                 {"details", std::move(*details)},
+                                 {"created_at", utcTimestampJson(entry.created_at)}};
+            if (legacy)
+                item["source"] = entry.source;
+            items.push_back(std::move(item));
+        }
+        return RestApi::success(
+            Json{{"items", std::move(items)}, {"total", result.value.total}, {"page", query.page}, {"page_size", query.pageSize}},
+            request.requestId);
+    } catch (...)
+    {
+        return RestApi::error(ErrorCode::InternalFailure, request.requestId);
+    }
+}
+
+auto behaviorEventsResponse(TELEMETRY::BehaviorEventService &service, const INFRA::HttpRequest &request) -> INFRA::HttpResponse
+{
+    try
+    {
+        constexpr std::array<std::string_view, 9> allowed{"page", "page_size", "from", "to", "event_name", "result",
+                                                          "user_id", "user_search", "event_search"};
+        if (!allowedQuery(request, allowed))
+            return RestApi::error(ErrorCode::ValidationError, request.requestId);
+        const auto pagination = RestApi::pagination(request);
+        if (!pagination.ok)
+            return RestApi::error(static_cast<ErrorCode>(pagination.error), request.requestId);
+        const TELEMETRY::BehaviorEventQuery query{.from        = queryValue(request, "from"),
+                                                   .to          = queryValue(request, "to"),
+                                                   .eventName   = queryValue(request, "event_name"),
+                                                   .result      = queryValue(request, "result"),
+                                                   .userId      = queryValue(request, "user_id"),
+                                                   .page        = pagination.value.page,
+                                                   .pageSize    = pagination.value.pageSize,
+                                                   .userSearch  = queryValue(request, "user_search"),
+                                                   .eventSearch = queryValue(request, "event_search")};
+        const auto result = service.list(actorContext(request), query);
         if (!result.ok)
             return RestApi::error(static_cast<ErrorCode>(result.error), request.requestId);
         Json items = Json::array();
@@ -336,13 +393,11 @@ auto logsResponse(UserService &service, const INFRA::HttpRequest &request) -> IN
                 return RestApi::error(ErrorCode::DatabaseQueryFailed, request.requestId);
             redactAuditDetails(*details);
             items.push_back(Json{{"id", entry.id},
+                                 {"user_id", entry.user_id},
+                                 {"username", entry.username},
                                  {"event_name", entry.event_name},
                                  {"result", entry.result},
-                                 {"actor_user_id", entry.actor_user_id.value_or("")},
-                                 {"actor_username", entry.actor_username},
-                                 {"target_user_id", entry.target_user_id.value_or("")},
                                  {"request_id", entry.request_id},
-                                 {"peer_address", ""},
                                  {"details", std::move(*details)},
                                  {"created_at", utcTimestampJson(entry.created_at)}});
         }
@@ -355,7 +410,7 @@ auto logsResponse(UserService &service, const INFRA::HttpRequest &request) -> IN
     }
 }
 
-auto recordBehaviorResponse(UserService &service, const INFRA::HttpRequest &request) -> INFRA::HttpResponse
+auto recordBehaviorResponse(TELEMETRY::BehaviorEventService &service, const INFRA::HttpRequest &request) -> INFRA::HttpResponse
 {
     try
     {
@@ -369,12 +424,18 @@ auto recordBehaviorResponse(UserService &service, const INFRA::HttpRequest &requ
             !body.value.at("event_name").is_string() || !body.value.contains("result") || !body.value.at("result").is_string() ||
             !body.value.contains("details") || !body.value.at("details").is_object())
             return RestApi::error(ErrorCode::ValidationError, request.requestId);
-        const BehaviorEvent event{.eventName   = body.value.at("event_name").get<std::string>(),
-                                  .result      = body.value.at("result").get<std::string>(),
-                                  .detailsJson = body.value.at("details").dump()};
-        const auto result = service.recordBehavior(actorContext(request), event);
+        const TELEMETRY::BehaviorEvent event{.eventName   = body.value.at("event_name").get<std::string>(),
+                                              .result      = body.value.at("result").get<std::string>(),
+                                              .detailsJson = body.value.at("details").dump()};
+        const auto result = service.record(actorContext(request), event);
         if (!result.ok)
-            return RestApi::error(static_cast<ErrorCode>(result.error), request.requestId);
+        {
+            auto response = RestApi::error(static_cast<ErrorCode>(result.error), request.requestId);
+            if (result.error == static_cast<int>(ErrorCode::BehaviorEventQueueFull) ||
+                result.error == static_cast<int>(ErrorCode::BehaviorEventQueueClosed))
+                response.headers["Retry-After"] = std::to_string(service.retryAfterSeconds());
+            return response;
+        }
         return RestApi::success(Json{{"event_id", result.value}}, request.requestId, 202);
     } catch (...)
     {
@@ -383,12 +444,15 @@ auto recordBehaviorResponse(UserService &service, const INFRA::HttpRequest &requ
 }
 } // namespace
 
-auto registerUserRoutes(INFRA::HttpTransport &transport, INFRA::DatabasePool &database, AUTH::LoginService &login)
+auto registerUserRoutes(INFRA::HttpTransport &transport, INFRA::DatabasePool &database, AUTH::LoginService &login,
+                        TELEMETRY::BehaviorEventWriter &writer)
     -> SZX::COMMON::Result<void>
 {
     try
     {
         auto service             = std::make_shared<UserService>(database, login);
+        auto auditService        = std::make_shared<AUDIT::AuditService>(database, login);
+        auto behaviorService     = std::make_shared<TELEMETRY::BehaviorEventService>(database, login, writer);
         const auto allowedOrigin = login.config().allowedOrigin;
 
         const auto permissions =
@@ -489,21 +553,41 @@ auto registerUserRoutes(INFRA::HttpTransport &transport, INFRA::DatabasePool &da
             return reset;
 
         const auto logs = transport.registerApiRoute("GET", "/admin/user-logs",
-                                                     [service, allowedOrigin](const INFRA::HttpRequest &request)
+                                                     [auditService, allowedOrigin](const INFRA::HttpRequest &request)
                                                      {
                                                          if (!originAllowed(allowedOrigin, request))
                                                              return RestApi::error(ErrorCode::Forbidden, request.requestId);
-                                                         return withCors(logsResponse(*service, request), request);
+                                                         return withCors(logsResponse(*auditService, request, true), request);
                                                      });
         if (!logs.ok)
             return logs;
 
+        const auto auditLogs = transport.registerApiRoute("GET", "/admin/audit-logs",
+                                                          [auditService, allowedOrigin](const INFRA::HttpRequest &request)
+                                                          {
+                                                              if (!originAllowed(allowedOrigin, request))
+                                                                  return RestApi::error(ErrorCode::Forbidden, request.requestId);
+                                                              return withCors(logsResponse(*auditService, request, false), request);
+                                                          });
+        if (!auditLogs.ok)
+            return auditLogs;
+
+        const auto behaviorLogs = transport.registerApiRoute("GET", "/admin/behavior-events",
+                                                             [behaviorService, allowedOrigin](const INFRA::HttpRequest &request)
+                                                             {
+                                                                 if (!originAllowed(allowedOrigin, request))
+                                                                     return RestApi::error(ErrorCode::Forbidden, request.requestId);
+                                                                 return withCors(behaviorEventsResponse(*behaviorService, request), request);
+                                                             });
+        if (!behaviorLogs.ok)
+            return behaviorLogs;
+
         const auto behavior = transport.registerApiRoute("POST", "/client/behavior-events",
-                                                         [service, allowedOrigin](const INFRA::HttpRequest &request)
+                                                         [behaviorService, allowedOrigin](const INFRA::HttpRequest &request)
                                                          {
                                                              if (!originAllowed(allowedOrigin, request))
                                                                  return RestApi::error(ErrorCode::Forbidden, request.requestId);
-                                                             return withCors(recordBehaviorResponse(*service, request), request);
+                                                             return withCors(recordBehaviorResponse(*behaviorService, request), request);
                                                          });
         if (!behavior.ok)
             return behavior;
@@ -511,7 +595,7 @@ auto registerUserRoutes(INFRA::HttpTransport &transport, INFRA::DatabasePool &da
         const auto preflight = preflightHandler(allowedOrigin, "GET, POST, PUT, PATCH, OPTIONS");
         for (const auto path : {"/client/me/permissions", "/admin/users", "/admin/users/{id}", "/admin/users/{id}/status",
                                 "/admin/users/{id}/unlock", "/admin/users/{id}/role", "/admin/users/{id}/reset-password",
-                                "/admin/user-logs", "/client/behavior-events"})
+                                "/admin/user-logs", "/admin/audit-logs", "/admin/behavior-events", "/client/behavior-events"})
         {
             const auto options = transport.registerApiRoute("OPTIONS", path, preflight);
             if (!options.ok)

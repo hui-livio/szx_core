@@ -273,6 +273,25 @@ small,
   min-width: 190px;
 }
 
+.log-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 0;
+}
+
+.log-tabs button {
+  border: 0;
+  border-bottom: 3px solid transparent;
+  border-radius: 0;
+  background: transparent;
+}
+
+.log-tabs button.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
 .table-panel {
   padding: 0;
   overflow: hidden;

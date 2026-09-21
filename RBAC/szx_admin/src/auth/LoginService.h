@@ -18,11 +18,10 @@ struct LoginConfig
     int failedLoginLimit{5};
     int lockSeconds{900};
     int attemptsPerMinute{30};
-    int behaviorEventsPerMinute{60};
     [[nodiscard]] auto validate() const -> SZX::COMMON::Result<void>;
 };
 SZX_REFL(LoginConfig, issuer, audience, privateKeyPath, publicKeyPath, allowedOrigin, refreshLifetimeSeconds, failedLoginLimit,
-         lockSeconds, attemptsPerMinute, behaviorEventsPerMinute);
+         lockSeconds, attemptsPerMinute);
 
 struct LoginInput
 {

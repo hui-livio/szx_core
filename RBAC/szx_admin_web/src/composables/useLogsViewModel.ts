@@ -12,7 +12,7 @@ export function useLogsViewModel() {
   const validationError = shallowRef('')
   const selected = shallowRef<AuditLogView | null>(null)
   const query = usePagedQuery<AuditLog>((page, page_size) =>
-    adminApi.logs({
+    adminApi.auditLogs({
       page,
       page_size,
       ...Object.fromEntries(

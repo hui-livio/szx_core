@@ -83,39 +83,6 @@ struct UserPage final
     std::uint64_t total{};
 };
 
-struct LogFilter final
-{
-    std::string from;        ///< UTC "YYYY-MM-DD HH:MM:SS"；空表示不过滤。
-    std::string to;          ///< 同上，闭区间上界。
-    std::string eventName;   ///< 精确匹配；空表示不过滤。
-    std::string result;      ///< success/failure/denied；空表示不过滤。
-    std::string actorUserId; ///< 空表示不过滤。
-    std::uint32_t limit{20};
-    std::uint64_t offset{};
-    std::string actorSearch;             ///< 展示名、用户名或 UID 的字面量子串；空表示不过滤。
-    std::string eventSearch;             ///< 事件代码的字面量子串；空表示不过滤。
-    std::vector<std::string> eventNames; ///< 中文名称命中的事件代码，与 eventSearch 取并集。
-};
-
-struct LogRow final
-{
-    std::string id;
-    std::optional<std::string> actor_user_id;
-    std::optional<std::string> target_user_id;
-    std::string event_name;
-    std::string result;
-    std::string request_id;
-    std::string details_json;
-    std::string created_at;
-    std::string actor_username; ///< 当前登录标识：优先 username，其次 uid；未知操作者为空。
-};
-
-struct LogPage final
-{
-    std::vector<LogRow> items;
-    std::uint64_t total{};
-};
-
 /** 一次加锁读取的结果：调用者、目标以及最后一个超管保护所需的计数。 */
 struct MutationLock final
 {
@@ -153,6 +120,5 @@ public:
     /** 写回可变业务列；不触碰 password_hash 和身份标识。 */
     virtual auto save(const UserRow &user) -> SZX::COMMON::Result<void>                                              = 0;
     virtual auto saveCredential(const std::string &id, const std::string &passwordHash) -> SZX::COMMON::Result<void> = 0;
-    virtual auto queryLogs(const LogFilter &filter) -> SZX::COMMON::Result<LogPage>                                  = 0;
 };
 } // namespace SZX::ADMIN::USER

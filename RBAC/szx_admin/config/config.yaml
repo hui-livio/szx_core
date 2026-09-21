@@ -31,7 +31,24 @@ auth:
   failedLoginLimit: 5
   lockSeconds: 900
   attemptsPerMinute: 30
-  behaviorEventsPerMinute: 60
+
+telemetry:
+  queueCapacity: 10000
+  batchSize: 200
+  flushIntervalMs: 200
+  minCommitIntervalMs: 200
+  retryInitialMs: 500
+  retryMaxMs: 10000
+  databaseOperationTimeoutMs: 5000
+  shutdownFlushTimeoutMs: 30000
+  retryAfterSeconds: 1
+
+logs:
+  dualWriteLegacy: true
+  readLegacy: true
+  auditRetentionDays: 180
+  behaviorRetentionDays: 30
+  cleanupBatchSize: 5000
 
 database:
   host: 127.0.0.1

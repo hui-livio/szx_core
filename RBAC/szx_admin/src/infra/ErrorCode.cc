@@ -56,6 +56,10 @@ auto errorCodeName(ErrorCode code) noexcept -> std::string_view
         return "MIGRATION_FAILED";
     case ErrorCode::MigrationConflict:
         return "MIGRATION_CONFLICT";
+    case ErrorCode::BehaviorEventQueueFull:
+        return "BEHAVIOR_EVENT_QUEUE_FULL";
+    case ErrorCode::BehaviorEventQueueClosed:
+        return "BEHAVIOR_EVENT_QUEUE_CLOSED";
     case ErrorCode::InternalFailure:
         return "INTERNAL_FAILURE";
     }
@@ -93,6 +97,8 @@ auto errorCodeHttpStatus(ErrorCode code) noexcept -> int
         return 429;
     case ErrorCode::ServiceUnavailable:
     case ErrorCode::DatabaseUnavailable:
+    case ErrorCode::BehaviorEventQueueFull:
+    case ErrorCode::BehaviorEventQueueClosed:
         return 503;
     case ErrorCode::AuditWriteFailed:
     case ErrorCode::TransportFailure:
@@ -160,6 +166,10 @@ auto defaultErrorMessage(ErrorCode code) noexcept -> std::string_view
         return "The database migration failed.";
     case ErrorCode::MigrationConflict:
         return "The database migration conflicts with the recorded schema.";
+    case ErrorCode::BehaviorEventQueueFull:
+        return "The behavior event queue is full.";
+    case ErrorCode::BehaviorEventQueueClosed:
+        return "The behavior event queue is not accepting events.";
     case ErrorCode::InternalFailure:
         return "An internal server error occurred.";
     }

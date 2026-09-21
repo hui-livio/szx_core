@@ -115,7 +115,7 @@ def main():
 
         @contextmanager
         def admin(database, expect_failure=False, attempts_per_minute=200, private_key_path=None,
-                  allowed_origin="https://admin.example.test", behavior_events_per_minute=60):
+                  allowed_origin="https://admin.example.test"):
             instance = next(counter)
             http_port = free_port()
             config = root / f"config-{instance}.yaml"
@@ -127,7 +127,6 @@ def main():
                 f"auth:\n  privateKeyPath: {json.dumps((private_key_path or private_key).as_posix())}\n"
                 f"  publicKeyPath: {json.dumps(public_key.as_posix())}\n  allowedOrigin: {json.dumps(allowed_origin)}\n"
                 f"  attemptsPerMinute: {attempts_per_minute}\n"
-                f"  behaviorEventsPerMinute: {behavior_events_per_minute}\n"
                 f"database:\n  host: 127.0.0.1\n  port: {port}\n"
                 f"  database: {database}\n  username: admin_test\n  password: disposable-test-password\n  poolSize: 2\n",
                 encoding="utf-8", newline="\r\n" if instance % 2 else "\n",
@@ -150,6 +149,24 @@ def main():
                     wait_until(ready, process)
                 yield http_port
 
+        def maintenance(database, operation, confirm=False):
+            instance = next(counter)
+            config = root / f"maintenance-{instance}.yaml"
+            config.write_text(
+                "logging:\n  console: false\n  flushLevel: info\n"
+                f"  filePath: {json.dumps((root / f'maintenance-{instance}.log').as_posix())}\n"
+                f"database:\n  host: 127.0.0.1\n  port: {port}\n"
+                f"  database: {database}\n  username: admin_test\n  password: disposable-test-password\n  poolSize: 2\n",
+                encoding="utf-8",
+            )
+            command = [str(package / service.name), "--config", str(config), "--maintenance", operation]
+            if confirm:
+                command.append("--confirm-purge")
+            result = subprocess.run(command, cwd=package, capture_output=True, text=True, timeout=30)
+            if result.returncode:
+                raise RuntimeError(f"maintenance {operation} failed: {result.stdout}\n{result.stderr}")
+            return json.loads(result.stdout)
+
         with running([mysqld, "--no-defaults", f"--datadir={data}", f"--port={port}",
                       "--bind-address=127.0.0.1", "--mysqlx=OFF", "--skip-log-bin"],
                      root, root / "mysql.log") as database_process:
@@ -161,7 +178,9 @@ def main():
                     assert initial.endswith("\tsuper_admin\tactive\t1")
                     assert sql("SELECT COUNT(*) FROM fresh.users;") == "1"
                     assert sql("SELECT COUNT(*) FROM fresh.admin_bootstrap;") == "1"
-                    assert sql("SELECT COUNT(*) FROM fresh.schema_migrations;") == "3"
+                    assert sql("SELECT COUNT(*) FROM fresh.schema_migrations;") == "4"
+                    assert sql("SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA='fresh' "
+                               "AND TABLE_NAME IN ('security_audit_logs','client_behavior_events');") == "2"
                     for variable, value in (("time_zone", "+00:00"), ("transaction_isolation", "READ-COMMITTED"),
                                             ("innodb_lock_wait_timeout", "5")):
                         assert sql("SELECT COUNT(*) FROM performance_schema.variables_by_thread v "
@@ -202,6 +221,32 @@ def main():
                     assert sql("SELECT id,password_hash,role,status,force_password_change FROM fresh.users;") == initial
                 print("PASS: SQL-free runtime, HTTP isolation, fresh creation and repeated startup", flush=True)
 
+                user_id = initial.split("\t", 1)[0]
+                audit_id = "30000000-0000-4000-8000-000000000001"
+                behavior_id = "30000000-0000-4000-8000-000000000002"
+                sql("INSERT INTO fresh.user_logs "
+                    "(id,actor_user_id,target_user_id,event_name,result,request_id,ip,user_agent,details_json,created_at) VALUES "
+                    f"('{audit_id}','{user_id}','{user_id}','auth.legacy','success','legacy-audit','127.0.0.1','test',"
+                    "JSON_OBJECT('kind','audit'),'2020-01-01 00:00:00.000000'),"
+                    f"('{behavior_id}','{user_id}','{user_id}','report.legacy','success','legacy-behavior','127.0.0.1','test',"
+                    "JSON_OBJECT('kind','behavior'),'2020-01-01 00:00:00.000000');")
+                inspected = maintenance("fresh", "inspect")
+                assert inspected["missing_audit_rows"] == inspected["missing_behavior_rows"] == 1
+                backfilled = maintenance("fresh", "backfill")
+                assert backfilled["audit_inserted"] == backfilled["behavior_inserted"] == 1
+                repeated = maintenance("fresh", "backfill")
+                assert repeated["audit_inserted"] == repeated["behavior_inserted"] == 0
+                assert sql("SELECT COUNT(*) FROM fresh.client_behavior_events "
+                           "WHERE id='30000000-0000-4000-8000-000000000002' AND created_at=persisted_at;") == "1"
+                purged = maintenance("fresh", "purge", confirm=True)
+                assert purged["audit_deleted"] == purged["audit_legacy_deleted"] == 1
+                assert purged["behavior_deleted"] == purged["behavior_legacy_deleted"] == 1
+                assert sql("SELECT COUNT(*) FROM fresh.user_logs WHERE id IN "
+                           "('30000000-0000-4000-8000-000000000001','30000000-0000-4000-8000-000000000002');") == "0"
+                assert sql("SELECT COUNT(*) FROM fresh.security_audit_logs WHERE event_name IN "
+                           "('user.audit_logs.purged','user.behavior_events.purged');") == "2"
+                print("PASS: maintenance inspect, idempotent backfill, and audited purge execute on MySQL", flush=True)
+
                 # Launch both service processes before waiting for readiness.
                 with ExitStack() as services:
                     with ThreadPoolExecutor(max_workers=2) as executor:
@@ -213,23 +258,26 @@ def main():
                             future.result()
                         assert sql("SELECT COUNT(*) FROM concurrent.users;") == "1"
                         assert sql("SELECT COUNT(*) FROM concurrent.admin_bootstrap;") == "1"
-                        assert sql("SELECT COUNT(*) FROM concurrent.schema_migrations;") == "3"
+                        assert sql("SELECT COUNT(*) FROM concurrent.schema_migrations;") == "4"
                 print("PASS: concurrent first startup creates one administrator and one journal per version", flush=True)
 
-                # Simulate a v2 database, then verify v3 upgrades indexes without touching users.
+                # Simulate a v2 database, then verify v3/v4 upgrade indexes and split logs without touching users.
                 prior = sql("SELECT id,password_hash,version,authz_version FROM concurrent.users;")
                 sql("ALTER TABLE concurrent.users "
                     "MODIFY uid_canonical VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NULL, "
                     "MODIFY username_canonical VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NULL; "
-                    "DELETE FROM concurrent.schema_migrations WHERE version=3;")
+                    "DELETE FROM concurrent.schema_migrations WHERE version IN (3,4); "
+                    "DROP TABLE concurrent.client_behavior_events, concurrent.security_audit_logs;")
                 with admin("concurrent"):
                     assert sql("SELECT id,password_hash,version,authz_version FROM concurrent.users;") == prior
                     collations = sql("SELECT DISTINCT COLLATION_NAME FROM information_schema.COLUMNS "
                                      "WHERE TABLE_SCHEMA='concurrent' AND TABLE_NAME='users' "
                                      "AND COLUMN_NAME IN ('uid_canonical','username_canonical');")
                     assert collations == "utf8mb4_0900_bin"
-                    assert sql("SELECT COUNT(*) FROM concurrent.schema_migrations;") == "3"
-                print("PASS: v2 canonical indexes upgrade to binary semantics without changing account state", flush=True)
+                    assert sql("SELECT COUNT(*) FROM concurrent.schema_migrations;") == "4"
+                    assert sql("SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA='concurrent' "
+                               "AND TABLE_NAME IN ('security_audit_logs','client_behavior_events');") == "2"
+                print("PASS: v2 upgrades canonical indexes and split log tables without changing account state", flush=True)
 
                 sql("UPDATE fresh.users SET username='renamed',username_canonical='renamed',"
                     "password_hash='changed-hash',status='disabled',force_password_change=0;")
@@ -247,15 +295,15 @@ def main():
                 # Missing journal simulates interruption after MySQL auto-committed DDL.
                 sql("DELETE FROM concurrent.schema_migrations;")
                 with admin("concurrent"):
-                    assert sql("SELECT COUNT(*) FROM concurrent.schema_migrations;") == "3"
-                    assert sql("SELECT COUNT(*) FROM concurrent.users;") == "1"
-                sql("INSERT INTO concurrent.schema_migrations(version,checksum) VALUES (4,REPEAT('a',64));")
-                with admin("concurrent", expect_failure=True):
                     assert sql("SELECT COUNT(*) FROM concurrent.schema_migrations;") == "4"
                     assert sql("SELECT COUNT(*) FROM concurrent.users;") == "1"
-                sql("DELETE FROM concurrent.schema_migrations WHERE version=4;")
+                sql("INSERT INTO concurrent.schema_migrations(version,checksum) VALUES (5,REPEAT('a',64));")
+                with admin("concurrent", expect_failure=True):
+                    assert sql("SELECT COUNT(*) FROM concurrent.schema_migrations;") == "5"
+                    assert sql("SELECT COUNT(*) FROM concurrent.users;") == "1"
+                sql("DELETE FROM concurrent.schema_migrations WHERE version=5;")
                 with admin("concurrent"):
-                    assert sql("SELECT COUNT(*) FROM concurrent.schema_migrations;") == "3"
+                    assert sql("SELECT COUNT(*) FROM concurrent.schema_migrations;") == "4"
                 sql("UPDATE concurrent.schema_migrations SET checksum=REPEAT('0',64) WHERE version=1;")
                 with admin("concurrent", expect_failure=True):
                     assert sql("SELECT checksum FROM concurrent.schema_migrations WHERE version=1;") == "0" * 64

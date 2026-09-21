@@ -1,9 +1,6 @@
 #include "LoginRepository.h"
-#include "Logger.h"
 #include "OrmConnection.h"
 #include "SzxAdmin/Infra/ErrorCode.h"
-
-#include <atomic>
 
 namespace SZX::ADMIN::AUTH
 {
@@ -15,10 +12,6 @@ inline constexpr auto get_alias_struct_name(LoginRefresh *)
 {
     return std::string_view{"refresh_tokens"};
 }
-inline constexpr auto get_alias_struct_name(LoginAudit *)
-{
-    return std::string_view{"user_logs"};
-}
 YLT_REFL(LoginUser, id, uid, username, display_name, password_hash, role, status, version, force_password_change,
          temporary_credential_expires_at, failed_login_count, locked_until, authz_version, last_login_at, password_changed_at,
          created_at, updated_at);
@@ -26,7 +19,6 @@ REGISTER_CONFLICT_KEY(LoginUser, id)
 YLT_REFL(LoginRefresh, id, user_id, token_hash, family_id, expires_at, ip, replaced_by, last_used_at, revoked_at,
          revocation_reason);
 REGISTER_CONFLICT_KEY(LoginRefresh, id)
-YLT_REFL(LoginAudit, id, actor_user_id, target_user_id, event_name, result, request_id, ip, details_json);
 } // namespace SZX::ADMIN::AUTH
 
 namespace SZX::ADMIN::INFRA::DETAIL
@@ -52,18 +44,6 @@ auto written(bool success, ErrorCode code = ErrorCode::DatabaseQueryFailed) -> R
     return success ? Result<void>::Success() : Result<void>::Failure(static_cast<int>(code), {});
 }
 
-void reportAuditState(bool available) noexcept
-{
-    static std::atomic_bool unavailable{};
-    if (unavailable.exchange(!available) == !available)
-        return;
-    try
-    {
-        LOGM_INFO("szx_admin.audit", "event={}", available ? "write_recovered" : "write_failed");
-    } catch (...)
-    {
-    }
-}
 } // namespace
 
 auto MySqlLoginRepository::find(const std::string &uid, const std::string &username) -> Result<std::optional<AUTH::LoginUser>>
@@ -151,20 +131,6 @@ auto MySqlLoginRepository::insertRefresh(const AUTH::LoginRefresh &token) -> Res
     } catch (...)
     {
         return written(false);
-    }
-}
-
-auto MySqlLoginRepository::insertAudit(const AUTH::LoginAudit &event) -> Result<void>
-{
-    try
-    {
-        const auto inserted = connection_.insert(event) == 1 && !connection_.has_error();
-        reportAuditState(inserted);
-        return written(inserted, ErrorCode::AuditWriteFailed);
-    } catch (...)
-    {
-        reportAuditState(false);
-        return written(false, ErrorCode::AuditWriteFailed);
     }
 }
 

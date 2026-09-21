@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../RateLimiter.h"
+#include "ActorContext.h"
 #include "UserRepository.h"
 
 #include "SzxAdmin/Infra/Database.h"
@@ -19,14 +19,6 @@ class LoginService;
 
 namespace SZX::ADMIN::USER
 {
-/** 每个受保护请求携带的调用者上下文。peerAddress 用于审计，不信任转发请求头。 */
-struct ActorContext final
-{
-    std::string accessToken;
-    std::string requestId;
-    std::string peerAddress;
-};
-
 struct ListQuery final
 {
     std::string role;   ///< 空表示调用者可见的全部角色。
@@ -55,19 +47,6 @@ struct CredentialIssue final
     std::string temporaryCredentialExpiresAt; ///< UTC ISO 8601。
 };
 
-struct LogQuery final
-{
-    std::string from;        ///< UTC ISO 8601；空表示不过滤。
-    std::string to;          ///< 同上。
-    std::string eventName;   ///< 精确匹配。
-    std::string result;      ///< success/failure/denied。
-    std::string actorUserId; ///< UUID。
-    std::uint32_t page{1};
-    std::uint32_t pageSize{20};
-    std::string actorSearch; ///< 展示名、用户名或 UID 子串，最多 128 个字符。
-    std::string eventSearch; ///< 事件代码或中文名称子串，最多 128 个字符。
-};
-
 struct Permissions final
 {
     std::string userId;
@@ -76,14 +55,6 @@ struct Permissions final
     bool forcePasswordChange{};
     int authzVersion{};
     std::vector<std::string_view> capabilities;
-};
-
-/** 非可信客户端埋点；不得用于记录安全审计事件。 */
-struct BehaviorEvent final
-{
-    std::string eventName;
-    std::string result;
-    std::string detailsJson; ///< 控制器已校验的 JSON 对象文本。
 };
 
 /**
@@ -117,8 +88,6 @@ public:
     [[nodiscard]] auto resetPassword(const ActorContext &actor, const std::string &id, std::uint32_t version,
                                      const std::optional<std::string> &passwordHash = std::nullopt)
         -> SZX::COMMON::Result<CredentialIssue>;
-    [[nodiscard]] auto logs(const ActorContext &actor, const LogQuery &query) -> SZX::COMMON::Result<LogPage>;
-    [[nodiscard]] auto recordBehavior(const ActorContext &actor, const BehaviorEvent &event) -> SZX::COMMON::Result<std::string>;
 
 private:
     /** 一次加锁授权的结果：调用者、目标和已加锁的 active 超管计数。 */
@@ -141,6 +110,5 @@ private:
     INFRA::DatabasePool &database_;
     AUTH::LoginService &auth_;
     SZX::CRYPTO_SERVICE::CryptoService crypto_;
-    RateLimiter behaviorLimiter_;
 };
 } // namespace SZX::ADMIN::USER

@@ -1,6 +1,7 @@
 #include "../auth/LoginRepository.h"
 #include "../auth/LoginService.h"
 #include "../auth/PasswordHash.h"
+#include "../audit/AuditRepository.h"
 #include "AuditDetails.h"
 #include "UserService.h"
 #include "UserValidation.h"
@@ -52,16 +53,17 @@ auto bumpVersion(UserRow &user, bool authorization) noexcept -> bool
     return true;
 }
 
-auto writeAudit(AUTH::LoginRepository &sessions, const ActorContext &context, const std::string &actorId,
+auto writeAudit(AUDIT::AuditRepository &audit, const ActorContext &context, const std::string &actorId,
                 const std::string &targetId, std::string_view event, std::string_view result, const Json &details) -> Result<void>
 {
-    return sessions.insertAudit({.id             = SZX::COMMON::Uuid::v4().toString(),
+    return audit.append({.id             = SZX::COMMON::Uuid::v4().toString(),
                                  .actor_user_id  = actorId,
                                  .target_user_id = targetId,
                                  .event_name     = std::string{event},
                                  .result         = std::string{result},
                                  .request_id     = context.requestId,
                                  .ip             = context.peerAddress,
+                                 .user_agent     = context.userAgent,
                                  .details_json   = details.dump()});
 }
 
@@ -140,7 +142,8 @@ auto UserService::create(const ActorContext &context, const CreateUserInput &inp
             {
                 auto *users    = connection.userRepository();
                 auto *sessions = connection.loginRepository();
-                if (!users || !sessions)
+                auto *audit    = connection.auditRepository();
+                if (!users || !sessions || !audit)
                     return failed<void>(ErrorCode::DatabaseQueryFailed);
                 const auto begun = connection.begin();
                 if (!begun.ok)
@@ -209,7 +212,7 @@ auto UserService::create(const ActorContext &context, const CreateUserInput &inp
                         return failed<void>(ErrorCode::UserIdentityConflict);
                     return Result<void>::Failure(inserted.error, {});
                 }
-                const auto audited = writeAudit(*sessions, context, actor.value.id, row.id, "user.created", "success",
+                const auto audited = writeAudit(*audit, context, actor.value.id, row.id, "user.created", "success",
                                                 Json{{"role", row.role}, {"identity", input.uid ? "uid" : "username"}});
                 if (!audited.ok)
                     return audited;
@@ -249,7 +252,8 @@ auto UserService::updateProfile(const ActorContext &context, const std::string &
             {
                 auto *users    = connection.userRepository();
                 auto *sessions = connection.loginRepository();
-                if (!users || !sessions)
+                auto *audit    = connection.auditRepository();
+                if (!users || !sessions || !audit)
                     return failed<void>(ErrorCode::DatabaseQueryFailed);
                 const auto begun = connection.begin();
                 if (!begun.ok)
@@ -280,7 +284,7 @@ auto UserService::updateProfile(const ActorContext &context, const std::string &
                     const auto saved = users->save(target);
                     if (!saved.ok)
                         return saved;
-                    const auto audited = writeAudit(*sessions, context, authorized.value.actor.id, target.id, "user.updated",
+                    const auto audited = writeAudit(*audit, context, authorized.value.actor.id, target.id, "user.updated",
                                                     "success", Json{{"fields", Json::array({"display_name"})}});
                     if (!audited.ok)
                         return audited;
@@ -315,7 +319,8 @@ auto UserService::changeStatus(const ActorContext &context, const std::string &i
             {
                 auto *users    = connection.userRepository();
                 auto *sessions = connection.loginRepository();
-                if (!users || !sessions)
+                auto *audit    = connection.auditRepository();
+                if (!users || !sessions || !audit)
                     return failed<void>(ErrorCode::DatabaseQueryFailed);
                 const auto begun = connection.begin();
                 if (!begun.ok)
@@ -366,7 +371,7 @@ auto UserService::changeStatus(const ActorContext &context, const std::string &i
                     const auto revoked = sessions->revokeRefresh(target.id, stamp, "status_changed");
                     if (!revoked.ok)
                         return revoked;
-                    const auto audited = writeAudit(*sessions, context, authorized.value.actor.id, target.id,
+                    const auto audited = writeAudit(*audit, context, authorized.value.actor.id, target.id,
                                                     "user.status.changed", "success", Json{{"from", previous}, {"to", status}});
                     if (!audited.ok)
                         return audited;
@@ -399,7 +404,8 @@ auto UserService::unlock(const ActorContext &context, const std::string &id, std
             {
                 auto *users    = connection.userRepository();
                 auto *sessions = connection.loginRepository();
-                if (!users || !sessions)
+                auto *audit    = connection.auditRepository();
+                if (!users || !sessions || !audit)
                     return failed<void>(ErrorCode::DatabaseQueryFailed);
                 const auto begun = connection.begin();
                 if (!begun.ok)
@@ -436,7 +442,7 @@ auto UserService::unlock(const ActorContext &context, const std::string &id, std
                 const auto revoked = sessions->revokeRefresh(target.id, stamp, "unlocked");
                 if (!revoked.ok)
                     return revoked;
-                const auto audited = writeAudit(*sessions, context, authorized.value.actor.id, target.id, "user.unlocked",
+                const auto audited = writeAudit(*audit, context, authorized.value.actor.id, target.id, "user.unlocked",
                                                 "success", Json::object());
                 if (!audited.ok)
                     return audited;
@@ -469,7 +475,8 @@ auto UserService::assignRole(const ActorContext &context, const std::string &id,
             {
                 auto *users    = connection.userRepository();
                 auto *sessions = connection.loginRepository();
-                if (!users || !sessions)
+                auto *audit    = connection.auditRepository();
+                if (!users || !sessions || !audit)
                     return failed<void>(ErrorCode::DatabaseQueryFailed);
                 const auto begun = connection.begin();
                 if (!begun.ok)
@@ -511,7 +518,7 @@ auto UserService::assignRole(const ActorContext &context, const std::string &id,
                     const auto revoked = sessions->revokeRefresh(target.id, stamp, "role_changed");
                     if (!revoked.ok)
                         return revoked;
-                    const auto audited = writeAudit(*sessions, context, authorized.value.actor.id, target.id, "user.role.changed",
+                    const auto audited = writeAudit(*audit, context, authorized.value.actor.id, target.id, "user.role.changed",
                                                     "success", Json{{"from", previous}, {"to", role}});
                     if (!audited.ok)
                         return audited;
@@ -547,7 +554,8 @@ auto UserService::resetPassword(const ActorContext &context, const std::string &
             {
                 auto *users    = connection.userRepository();
                 auto *sessions = connection.loginRepository();
-                if (!users || !sessions)
+                auto *audit    = connection.auditRepository();
+                if (!users || !sessions || !audit)
                     return failed<void>(ErrorCode::DatabaseQueryFailed);
                 const auto begun = connection.begin();
                 if (!begun.ok)
@@ -595,7 +603,7 @@ auto UserService::resetPassword(const ActorContext &context, const std::string &
                 const auto revoked = sessions->revokeRefresh(target.id, stamp, "password_reset");
                 if (!revoked.ok)
                     return revoked;
-                const auto audited = writeAudit(*sessions, context, authorized.value.actor.id, target.id, "user.password.reset",
+                const auto audited = writeAudit(*audit, context, authorized.value.actor.id, target.id, "user.password.reset",
                                                 "success", Json::object());
                 if (!audited.ok)
                     return audited;
@@ -620,70 +628,4 @@ auto UserService::resetPassword(const ActorContext &context, const std::string &
     }
 }
 
-auto UserService::recordBehavior(const ActorContext &context, const BehaviorEvent &event) -> Result<std::string>
-{
-    try
-    {
-        if (!validContext(context.requestId, context.peerAddress) || !validEventName(event.eventName) ||
-            reservedEventName(event.eventName) || (event.result != "success" && event.result != "failure") ||
-            event.detailsJson.size() > 4096)
-            return failed<std::string>(ErrorCode::ValidationError);
-        auto details = SZX::COMMON::JsonHelper::ParseRequiredObject(event.detailsJson);
-        if (!details)
-            return failed<std::string>(ErrorCode::ValidationError);
-        redactAuditDetails(*details);
-        const auto sanitizedDetails = details->dump();
-        std::string identifier;
-        const auto operation = database_.withConnection(
-            [&](INFRA::DatabaseConnection &connection) -> Result<void>
-            {
-                auto *users    = connection.userRepository();
-                auto *sessions = connection.loginRepository();
-                if (!users || !sessions)
-                    return failed<void>(ErrorCode::DatabaseQueryFailed);
-                const auto begun = connection.begin();
-                if (!begun.ok)
-                    return begun;
-                bool committed{};
-                defer
-                {
-                    if (!committed)
-                    {
-                        try
-                        {
-                            (void)connection.rollback();
-                        } catch (...)
-                        {
-                        }
-                    }
-                };
-                const auto actor = resolve(context, *users, true);
-                if (!actor.ok)
-                    return Result<void>::Failure(actor.error, {});
-                if (!behaviorLimiter_.admit(actor.value.id))
-                    return failed<void>(ErrorCode::RateLimited);
-                const auto id      = SZX::COMMON::Uuid::v4().toString();
-                const auto audited = sessions->insertAudit({.id             = id,
-                                                            .actor_user_id  = actor.value.id,
-                                                            .target_user_id = actor.value.id,
-                                                            .event_name     = event.eventName,
-                                                            .result         = event.result,
-                                                            .request_id     = context.requestId,
-                                                            .ip             = context.peerAddress,
-                                                            .details_json   = sanitizedDetails});
-                if (!audited.ok)
-                    return audited;
-                const auto result = connection.commit();
-                committed         = result.ok;
-                if (committed)
-                    identifier = id;
-                return result;
-            });
-        return operation.ok ? Result<std::string>::Success(std::move(identifier)) :
-                              Result<std::string>::Failure(operation.error, {});
-    } catch (...)
-    {
-        return failed<std::string>(ErrorCode::InternalFailure);
-    }
-}
 } // namespace SZX::ADMIN::USER

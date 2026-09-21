@@ -109,10 +109,48 @@ constexpr std::string_view kMigration3 = R"SZXSQL(ALTER TABLE users
   MODIFY username_canonical VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_bin NULL;
 )SZXSQL";
 
+constexpr std::string_view kMigration4 = R"SZXSQL(CREATE TABLE IF NOT EXISTS security_audit_logs (
+  id CHAR(36) NOT NULL PRIMARY KEY,
+  actor_user_id CHAR(36),
+  target_user_id CHAR(36),
+  event_name VARCHAR(96) NOT NULL,
+  result VARCHAR(16) NOT NULL,
+  request_id VARCHAR(128) NOT NULL,
+  ip VARCHAR(45),
+  user_agent VARCHAR(512),
+  details_json JSON NOT NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  CONSTRAINT chk_security_audit_result CHECK (result IN ('success', 'failure', 'denied')),
+  INDEX idx_security_audit_time (created_at DESC, id ASC),
+  INDEX idx_security_audit_actor_time (actor_user_id, created_at DESC, id ASC),
+  INDEX idx_security_audit_target_time (target_user_id, created_at DESC, id ASC),
+  INDEX idx_security_audit_event_time (event_name, created_at DESC, id ASC)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS client_behavior_events (
+  id CHAR(36) NOT NULL PRIMARY KEY,
+  user_id CHAR(36) NOT NULL,
+  event_name VARCHAR(96) NOT NULL,
+  result VARCHAR(16) NOT NULL,
+  request_id VARCHAR(128) NOT NULL,
+  ip VARCHAR(45),
+  user_agent VARCHAR(512),
+  details_json JSON NOT NULL,
+  created_at DATETIME(6) NOT NULL,
+  persisted_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  CONSTRAINT chk_client_behavior_result CHECK (result IN ('success', 'failure')),
+  CONSTRAINT fk_client_behavior_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT,
+  INDEX idx_client_behavior_time (created_at DESC, id ASC),
+  INDEX idx_client_behavior_user_time (user_id, created_at DESC, id ASC),
+  INDEX idx_client_behavior_event_time (event_name, created_at DESC, id ASC)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+)SZXSQL";
+
 constexpr MigrationDefinition kMigrations[] = {
     {1, kMigration1, "86a4ac820cc8457a2131d0400d4968268576b17113f38fe86b6beceea48c2047"},
     {2, kMigration2, "f4223aadebf005f145941d06b89d2d41e964f4c059d2f765a8e1b3678d389d2d"},
     {3, kMigration3, "66db48cd7957f45317269dcad13d2c2ac5c47eeacfc8e8bb715d2ca4b7e5f065"},
+    {4, kMigration4, "193446d82dbee660610cbbc8f822469529d18dbf8760ddcffbb3c1d356e8236a"},
 };
 
 constexpr DETAIL::InitialAdministratorDefinition kInitialAdministrator{

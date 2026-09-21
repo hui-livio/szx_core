@@ -81,7 +81,7 @@ async function mockApi(
         temporary_credential_expires_at: body?.password_hash ? null : Date.now() + 86400000,
       })
     if (path.startsWith('/admin/users/')) return reply({ ...baseUser, ...body, version: 4 })
-    if (path === '/admin/user-logs')
+    if (path === '/admin/audit-logs')
       return reply({
         items: [
           {
@@ -93,6 +93,24 @@ async function mockApi(
             target_user_id: actor.id,
             request_id: 'audit-id',
             details: { password_hash: 'should-not-appear', source: 'web' },
+            created_at: Date.now(),
+          },
+        ],
+        total: 1,
+        page: 1,
+        page_size: 20,
+      })
+    if (path === '/admin/behavior-events')
+      return reply({
+        items: [
+          {
+            id: 'behavior-log',
+            user_id: actor.id,
+            username: actor.username,
+            event_name: 'report.view',
+            result: 'success',
+            request_id: 'behavior-id',
+            details: { source: 'web' },
             created_at: Date.now(),
           },
         ],
@@ -296,7 +314,7 @@ test('audit event search sends trimmed keywords and clears the filter', async ({
   for (const term of ['login', 'auth.login', '登录', '']) {
     await input.fill(` ${term} `)
     const request = page.waitForRequest((request) =>
-      new URL(request.url()).pathname.endsWith('/admin/user-logs'),
+      new URL(request.url()).pathname.endsWith('/admin/audit-logs'),
     )
     await page.getByRole('button', { name: '查询日志' }).click()
     const params = new URL((await request).url()).searchParams
@@ -309,7 +327,7 @@ test('audit event search sends trimmed keywords and clears the filter', async ({
   await page.getByRole('searchbox', { name: '搜索用户', exact: true }).fill('admin')
   await page.getByLabel('开始时间（本地）').fill('2026-09-01T00:00')
   const resetRequest = page.waitForRequest((request) =>
-    new URL(request.url()).pathname.endsWith('/admin/user-logs'),
+    new URL(request.url()).pathname.endsWith('/admin/audit-logs'),
   )
   await page.getByRole('button', { name: '重置筛选' }).click()
   const resetParams = new URL((await resetRequest).url()).searchParams
@@ -317,6 +335,24 @@ test('audit event search sends trimmed keywords and clears the filter', async ({
   await expect(input).toHaveValue('')
   await expect(page.getByRole('searchbox', { name: '搜索用户', exact: true })).toHaveValue('')
   await expect(page.getByLabel('开始时间（本地）')).toHaveValue('')
+})
+
+test('behavior tab uses the split endpoint and keeps independent filters', async ({ page }) => {
+  await mockApi(page)
+  await login(page)
+  await page.getByRole('link', { name: '审计日志' }).click()
+  await page.getByRole('tab', { name: '用户行为' }).click()
+  await expect(page.getByRole('cell', { name: /report\.view/ }).getByText('report.view')).toBeVisible()
+  await page.getByRole('searchbox', { name: '搜索用户', exact: true }).fill(' alice ')
+  const request = page.waitForRequest((candidate) =>
+    new URL(candidate.url()).pathname.endsWith('/admin/behavior-events'),
+  )
+  await page.getByRole('button', { name: '查询事件' }).click()
+  const params = new URL((await request).url()).searchParams
+  expect(params.get('user_search')).toBe('alice')
+  expect(params.has('actor_search')).toBe(false)
+  await page.getByRole('tab', { name: '安全审计' }).click()
+  await expect(page.getByRole('searchbox', { name: '搜索用户', exact: true })).toHaveValue('')
 })
 
 test('login remains usable at mobile width', async ({ page }) => {

@@ -46,17 +46,24 @@ add_library(szx_rbac_infra STATIC
     src/auth/Identifier.cc
     src/auth/LoginService.cc
     src/auth/PasswordHash.cc
+    src/audit/AuditService.cc
     src/infra/ErrorCode.cc
     src/infra/Database.cc
     src/infra/OrmRuntime.cc
     src/infra/DatabaseInitialization.cc
+    src/infra/AuditRepository.cc
+    src/infra/BehaviorEventRepository.cc
     src/infra/LoginRepository.cc
+    src/infra/LogMaintenanceRepository.cc
     src/infra/UserRepository.cc
     src/infra/HttpTransport.cc
     src/infra/RequestContext.cc
     src/infra/RestApi.cc
     src/infra/ServerConfig.cc
     src/policy/Policy.cc
+    src/telemetry/BehaviorEventService.cc
+    src/telemetry/BehaviorEventWriter.cc
+    src/maintenance/LogMaintenanceService.cc
     src/user/UserHandler.cc
     src/user/UserService.cc
     src/user/UserLifecycle.cc

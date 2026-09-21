@@ -21,8 +21,6 @@ public:
     auto insert(const USER::NewUser &user) -> SZX::COMMON::Result<void> override;
     auto save(const USER::UserRow &user) -> SZX::COMMON::Result<void> override;
     auto saveCredential(const std::string &id, const std::string &passwordHash) -> SZX::COMMON::Result<void> override;
-    auto queryLogs(const USER::LogFilter &filter) -> SZX::COMMON::Result<USER::LogPage> override;
-
 private:
     OrmConnection &connection_;
 };

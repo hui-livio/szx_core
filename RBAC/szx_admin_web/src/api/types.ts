@@ -58,6 +58,17 @@ export interface AuditLog {
   peer_address: string
   details: Record<string, unknown>
   created_at: number
+  source?: 'security_audit' | 'client_behavior' | 'legacy_unknown'
+}
+export interface BehaviorEventRecord {
+  id: string
+  user_id: string
+  username: string
+  event_name: string
+  result: 'success' | 'failure'
+  request_id: string
+  details: Record<string, unknown>
+  created_at: number
 }
 export type CreateUser = { display_name: string; role: Role; password_hash?: string } & (
   { username: string; uid?: never } | { uid: string; username?: never }

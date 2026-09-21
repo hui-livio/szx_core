@@ -1,5 +1,6 @@
 #include "LoginService.h"
 #include "../HttpSupport.h"
+#include "../audit/AuditRepository.h"
 #include "../infra/DatabaseInitialization.h"
 #include "PasswordHash.h"
 
@@ -36,7 +37,6 @@ auto LoginConfig::validate() const -> Result<void>
     if (issuer.empty() || issuer.size() > 256 || audience.empty() || audience.size() > 256 || privateKeyPath.empty() ||
         publicKeyPath.empty() || refreshLifetimeSeconds < 900 || refreshLifetimeSeconds > 2592000 || failedLoginLimit < 1 ||
         failedLoginLimit > 100 || lockSeconds < 1 || lockSeconds > 86400 || attemptsPerMinute < 1 || attemptsPerMinute > 1000 ||
-        behaviorEventsPerMinute < 1 || behaviorEventsPerMinute > 1000 ||
         (allowedOrigin != "*" && !validHttpOrigin(allowedOrigin)))
         return failed<void>(ErrorCode::InvalidConfiguration);
     return Result<void>::Success();
@@ -142,14 +142,21 @@ auto LoginService::login(const LoginInput &input) -> Result<LoginSession>
             const auto audited = database_.withConnection(
                 [&](INFRA::DatabaseConnection &connection) -> Result<void>
                 {
-                    auto *repository = connection.loginRepository();
-                    if (!repository)
+                    auto *audit = connection.auditRepository();
+                    if (!audit)
                         return failed<void>(ErrorCode::DatabaseQueryFailed);
-                    return repository->insertAudit({.id         = SZX::COMMON::Uuid::v4().toString(),
-                                                    .event_name = "auth.login.rate_limited",
-                                                    .result     = "denied",
-                                                    .request_id = input.requestId,
-                                                    .ip         = input.peerAddress});
+                    const auto begun = connection.begin();
+                    if (!begun.ok)
+                        return failed<void>(ErrorCode::AuditWriteFailed);
+                    const auto written = audit->append({.id         = SZX::COMMON::Uuid::v4().toString(),
+                                                        .event_name = "auth.login.rate_limited",
+                                                        .result     = "denied",
+                                                        .request_id = input.requestId,
+                                                        .ip         = input.peerAddress});
+                    if (!written.ok)
+                        return written;
+                    const auto committed = connection.commit();
+                    return committed.ok ? committed : failed<void>(ErrorCode::AuditWriteFailed);
                 });
             return audited.ok ? failed<LoginSession>(ErrorCode::RateLimited) : Result<LoginSession>::Failure(audited.error, {});
         }
@@ -163,7 +170,8 @@ auto LoginService::login(const LoginInput &input) -> Result<LoginSession>
             [&](INFRA::DatabaseConnection &connection) -> Result<void>
             {
                 auto *repository = connection.loginRepository();
-                if (!repository)
+                auto *audit      = connection.auditRepository();
+                if (!repository || !audit)
                     return failed<void>(ErrorCode::DatabaseQueryFailed);
                 const auto begun = connection.begin();
                 if (!begun.ok)
@@ -217,13 +225,13 @@ auto LoginService::login(const LoginInput &input) -> Result<LoginSession>
                     expired           = !expiry || *expiry <= now;
                 }
                 authenticated = user && checked.value && user->status == "active" && !expired;
-                LoginAudit event{.id             = SZX::COMMON::Uuid::v4().toString(),
-                                 .actor_user_id  = authenticated ? std::optional<std::string>{user->id} : std::nullopt,
-                                 .target_user_id = user ? std::optional<std::string>{user->id} : std::nullopt,
-                                 .event_name     = authenticated ? "auth.login.success" : "auth.login.failure",
-                                 .result         = authenticated ? "success" : "failure",
-                                 .request_id     = input.requestId,
-                                 .ip             = input.peerAddress};
+                AUDIT::AuditRecord event{.id             = SZX::COMMON::Uuid::v4().toString(),
+                                         .actor_user_id  = authenticated ? std::optional<std::string>{user->id} : std::nullopt,
+                                         .target_user_id = user ? std::optional<std::string>{user->id} : std::nullopt,
+                                         .event_name     = authenticated ? "auth.login.success" : "auth.login.failure",
+                                         .result         = authenticated ? "success" : "failure",
+                                         .request_id     = input.requestId,
+                                         .ip             = input.peerAddress};
                 bool locked{};
                 if (user && user->status == "active")
                 {
@@ -276,7 +284,7 @@ auto LoginService::login(const LoginInput &input) -> Result<LoginSession>
                         return Result<void>::Failure(issued.error, {});
                     session = issued.value;
                 }
-                auto audited = repository->insertAudit(event);
+                auto audited = audit->append(event);
                 if (!audited.ok)
                     return audited;
                 if (locked)
@@ -284,7 +292,7 @@ auto LoginService::login(const LoginInput &input) -> Result<LoginSession>
                     event.id         = SZX::COMMON::Uuid::v4().toString();
                     event.event_name = "auth.account.locked";
                     event.result     = "success";
-                    audited          = repository->insertAudit(event);
+                    audited          = audit->append(event);
                     if (!audited.ok)
                         return audited;
                 }
