@@ -61,6 +61,7 @@ Item {
     // click; callers that need edge-only read-only hit testing leave this off.
     property bool allowInteriorSelection: false
     property bool creationEnabled: false
+    property bool shiftDeleteEnabled: false
     property bool viewportInteractionEnabled: false
     property string createGroupKey: "general"
     property string createLabel: ""
@@ -88,6 +89,7 @@ Item {
     signal rectangleClicked(string key)
     signal rectangleSelected(string key)
     signal rectangleRightClicked(string key)
+    signal rectangleDeleteRequested(string key)
     signal rectangleUpdated(string key, var rectangle)
     signal rectangleEditFinished(string key, var rectangle)
     signal rectangleCreated(var rectangle)
@@ -1166,6 +1168,12 @@ Item {
                             if (mouse.button === Qt.RightButton) {
                                 rectItem.select();
                                 rectItem.overlayRoot.rectangleRightClicked(rectItem.rectKey);
+                                return;
+                            }
+                            if (mouse.button === Qt.LeftButton && (mouse.modifiers & Qt.ShiftModifier)
+                                    && rectItem.rectangleEditable && rectItem.overlayRoot.shiftDeleteEnabled) {
+                                rectItem.select();
+                                rectItem.overlayRoot.rectangleDeleteRequested(rectItem.rectKey);
                                 return;
                             }
                             if (rectItem.rectangleEditable && rectItem.overlayRoot.creationEnabled && (mouse.modifiers & Qt.ControlModifier)) {
