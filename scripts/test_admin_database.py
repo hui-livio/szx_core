@@ -115,7 +115,7 @@ def main():
 
         @contextmanager
         def admin(database, expect_failure=False, attempts_per_minute=200, private_key_path=None,
-                  allowed_origin="https://admin.example.test"):
+                  allowed_origin="https://admin.example.test", refresh_idle_timeout_seconds=1800):
             instance = next(counter)
             http_port = free_port()
             config = root / f"config-{instance}.yaml"
@@ -126,6 +126,7 @@ def main():
                 "  staticRoot: web\n"
                 f"auth:\n  privateKeyPath: {json.dumps((private_key_path or private_key).as_posix())}\n"
                 f"  publicKeyPath: {json.dumps(public_key.as_posix())}\n  allowedOrigin: {json.dumps(allowed_origin)}\n"
+                f"  refreshIdleTimeoutSeconds: {refresh_idle_timeout_seconds}\n"
                 f"  attemptsPerMinute: {attempts_per_minute}\n"
                 f"database:\n  host: 127.0.0.1\n  port: {port}\n"
                 f"  database: {database}\n  username: admin_test\n  password: disposable-test-password\n  poolSize: 2\n",

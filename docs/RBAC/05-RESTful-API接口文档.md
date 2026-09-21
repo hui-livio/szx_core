@@ -104,7 +104,7 @@ version 用于并发更新，冲突后应重新获取用户并使用新版本提
 
 ### 2.5 浏览器、Cookie 与限流
 
-生产接入使用 HTTPS。szx_refresh 为 `HttpOnly; Secure; SameSite=None`，默认有效期 7 天；Path 为 `${apiPrefix}/auth`（前缀为 `/` 时为 `/auth`）。`auth.allowedOrigin` 默认 `"*"`，允许 HTTP/HTTPS 来源跨域携带凭据，响应回显具体 Origin 并设置 `Vary: Origin`。也可配置单一 Origin 精确限制来源。非法配置阻止启动；不允许的来源或 `Origin: null` 返回 `403 / 2204`。跨站前端需启用 credentials/withCredentials，刷新和登出仍须提供 CSRF token；浏览器第三方 Cookie 策略可能限制刷新。刷新轮换 token，不延长当前会话族原到期时间。
+生产接入使用 HTTPS。szx_refresh 为 `HttpOnly; Secure; SameSite=None`，默认空闲期限为 30 分钟，当前会话族绝对期限为 7 天；Cookie `Max-Age` 取两个期限的剩余时间较小值。Path 为 `${apiPrefix}/auth`（前缀为 `/` 时为 `/auth`）。`auth.allowedOrigin` 默认 `"*"`，允许 HTTP/HTTPS 来源跨域携带凭据，响应回显具体 Origin 并设置 `Vary: Origin`。也可配置单一 Origin 精确限制来源。非法配置阻止启动；不允许的来源或 `Origin: null` 返回 `403 / 2204`。跨站前端需启用 credentials/withCredentials，刷新和登出仍须提供 CSRF token；浏览器第三方 Cookie 策略可能限制刷新。成功刷新会轮换 token 并重置空闲窗口，但不延长当前会话族原到期时间。
 
 超管 `force_password_change=true` 时，后端拒绝用户管理、审计查询、权限查询和行为上报（`403 / 2204`）；仍允许登录、刷新、登出和修改自己的密码。成功改密并重新登录后才恢复业务访问。该规则由后端检查，直接调用 API 也无法绕过；其他角色的建议改密行为不变。
 
@@ -301,12 +301,12 @@ Cookie: szx_refresh=<refresh-token>
 X-CSRF-Token: <csrf-token>
 ```
 
-**成功：** 200，data 为 Session，与登录相同；Set-Cookie 替换 refresh token。客户端须替换 access token 和 CSRF token。
+**成功：** 200，data 为 Session，与登录相同；Set-Cookie 替换 refresh token。客户端须替换 access token 和 CSRF token。成功轮换会重新开始默认 30 分钟的空闲计时，但会话族仍在首次登录后最多 7 天到期。
 
 | HTTP / code | 条件 |
 |---|---|
 | 401 / 2200 | 缺失、非法、未知或普通已撤销 Cookie；账号不可用 |
-| 401 / 2201 | refresh token 过期 |
+| 401 / 2201 | refresh token 已超过绝对期限或空闲期限 |
 | 403 / 2204 | CSRF 缺失、不匹配，或 Origin 不允许 |
 | 409 / 2202 | 使用已轮换的旧 token，整个会话族被撤销 |
 | 422 / 2206 | 重复同名 Cookie、非法请求体 |

@@ -47,7 +47,7 @@ Vue 组件不直接调用 HTTP 或实现业务操作。新增功能时将业务�
 
 Access/CSRF token 仅保存在 API 客户端闭包内，refresh token 由 HttpOnly Cookie 管理。没有 localStorage/sessionStorage 持久化，刷新页面后需要重新登录；当前也不做跨标签页会话同步。同一页面并发刷新合并为一次。429/5xx 保留会话并提示手动重试；失败的写请求不自动重复执行，只有明确的 access 鉴权失败会刷新后重试一次。退出仅在服务端成功返回后清除内存会话。
 
-发请求前，access token 已过期或剩余有效期不超过 5 秒时，先调用 `POST /auth/refresh`；收到 `401 / 2200` 或 `401 / 2201` 时也会刷新并最多重试一次。刷新使用 HttpOnly Cookie 和 `X-CSRF-Token`，服务端轮换 refresh token。页面闲置时不定时刷新；恢复操作时按需刷新，refresh token 已到期或被撤销则重新登录。
+发请求前，access token 已过期或剩余有效期不超过 5 秒时，先调用 `POST /auth/refresh`；收到 `401 / 2200` 或 `401 / 2201` 时也会刷新并最多重试一次。刷新使用 HttpOnly Cookie 和 `X-CSRF-Token`，服务端轮换 refresh token。页面闲置时不定时刷新；默认连续空闲超过 30 分钟后，恢复操作会因 refresh 空闲过期而要求重新登录。成功刷新会重置空闲窗口，但不会延长默认 7 天的会话族绝对期限。
 
 创建/重置返回的临时密码仅在当前弹窗展示，关闭或离开页面立即清除，不写入 Pinia 或浏览器存储。不要将它复制到日志或工单中。
 

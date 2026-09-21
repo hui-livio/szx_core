@@ -67,6 +67,11 @@ TEST(AdminLoginTest, RejectsInvalidLimitsAndMissingKeysBeforeServingLogin)
     config.refreshLifetimeSeconds = 899;
     EXPECT_FALSE(config.validate().ok);
     config.refreshLifetimeSeconds = 604800;
+    config.refreshIdleTimeoutSeconds = 899;
+    EXPECT_FALSE(config.validate().ok);
+    config.refreshIdleTimeoutSeconds = 604801;
+    EXPECT_FALSE(config.validate().ok);
+    config.refreshIdleTimeoutSeconds = 1800;
     config.allowedOrigin          = "null";
     EXPECT_FALSE(config.validate().ok);
     for (const auto origin :

@@ -15,13 +15,14 @@ struct LoginConfig
     std::string publicKeyPath{"config/keys/jwt-public.pem"};
     std::string allowedOrigin{"*"};
     int refreshLifetimeSeconds{604800};
+    int refreshIdleTimeoutSeconds{1800};
     int failedLoginLimit{5};
     int lockSeconds{900};
     int attemptsPerMinute{30};
     [[nodiscard]] auto validate() const -> SZX::COMMON::Result<void>;
 };
-SZX_REFL(LoginConfig, issuer, audience, privateKeyPath, publicKeyPath, allowedOrigin, refreshLifetimeSeconds, failedLoginLimit,
-         lockSeconds, attemptsPerMinute);
+SZX_REFL(LoginConfig, issuer, audience, privateKeyPath, publicKeyPath, allowedOrigin, refreshLifetimeSeconds,
+         refreshIdleTimeoutSeconds, failedLoginLimit, lockSeconds, attemptsPerMinute);
 
 struct LoginInput
 {

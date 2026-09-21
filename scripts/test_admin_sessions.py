@@ -12,7 +12,9 @@ def run_session_checks(admin, sql, root, login, post, verify_token):
     def session(response):
         assert response[0] == 200, response[:2]
         data = response[1]["data"]
-        token = SimpleCookie(response[2]["Set-Cookie"])["szx_refresh"].value
+        cookie = SimpleCookie(response[2]["Set-Cookie"])["szx_refresh"]
+        token = cookie.value
+        assert 0 < int(cookie["max-age"]) <= 1800
         assert "refresh_token" not in data and "password_hash" not in data["user"]
         assert data["csrf_token"] == hashlib.sha256(("csrf:" + token).encode()).hexdigest()
         verify_token(data["access_token"])
@@ -133,6 +135,16 @@ def run_session_checks(admin, sql, root, login, post, verify_token):
         response = call(port, expired)
         assert response[0] == 401 and response[1]["code"] == 2201
         cleared(call(port, expired, "logout"))
+
+        idle = session(login(port))
+        before = sql("SELECT COUNT(*) FROM sessions.refresh_tokens;")
+        sql(f"UPDATE sessions.refresh_tokens SET created_at=UTC_TIMESTAMP()-INTERVAL 1801 SECOND "
+            f"WHERE token_hash='{token_hash(idle)}';")
+        response = call(port, idle)
+        assert response[0] == 401 and response[1]["code"] == 2201
+        assert sql("SELECT COUNT(*) FROM sessions.refresh_tokens;") == before
+        assert sql(f"SELECT replaced_by IS NULL FROM sessions.refresh_tokens WHERE token_hash='{token_hash(idle)}';") == "1"
+        cleared(call(port, idle, "logout"))
         for state in ("disabled", "locked"):
             current = session(login(port))
             sql(f"UPDATE sessions.users SET status='{state}';")
@@ -187,5 +199,5 @@ def run_session_checks(admin, sql, root, login, post, verify_token):
 
     secrets.append("SESSION_SECRET")
     assert not any(secret in log.read_text(encoding="utf-8") for log in root.glob("admin-*.log") for secret in secrets)
-    print("PASS: refresh rotation, CSRF, family replay revocation, logout idempotency/isolation, expiry/state checks, "
-          "concurrency, rollback, restart, CORS and rate limiting", flush=True)
+    print("PASS: refresh rotation, CSRF, family replay revocation, logout idempotency/isolation, absolute/idle expiry, "
+          "state checks, concurrency, rollback, restart, CORS and rate limiting", flush=True)

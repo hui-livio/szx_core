@@ -128,7 +128,7 @@ def run_login_checks(admin, sql, public_key, root):
         assert abs(user["updated_at"] - expected_updated) < 2000, (user["updated_at"], expected_updated)
         cookie = SimpleCookie(headers["Set-Cookie"])["szx_refresh"]
         assert cookie["httponly"] and cookie["secure"] and cookie["samesite"] == "None"
-        assert cookie["path"] == "/api/v1/auth" and 604790 <= int(cookie["max-age"]) <= 604800
+        assert cookie["path"] == "/api/v1/auth" and 0 < int(cookie["max-age"]) <= 1800
         assert sql("SELECT token_hash FROM login.refresh_tokens;") == hashlib.sha256(cookie.value.encode()).hexdigest()
         assert data["csrf_token"] == hashlib.sha256(("csrf:" + cookie.value).encode()).hexdigest()
         assert sql("SELECT failed_login_count,last_login_at IS NOT NULL FROM login.users;") == "0\t1"

@@ -3,7 +3,7 @@
   "info": {
     "title": "SZX Admin API",
     "version": "1.0.0",
-    "description": "单项目 RBAC · 19 个接口 · 四个固定角色。\n\n展开接口查看参数、示例和错误码，点击 **Try it out → Execute** 调用当前服务。\n\n**鉴权流程**：登录请求中的 password_hash 必须是原始密码 UTF-8 的 SHA-256 小写摘要。登录后复制 access_token 到 **Authorize / bearerAuth**（不用加 Bearer 前缀）。refresh Cookie 由浏览器管理；刷新/登出手动填写最新 csrf_token。Swagger 不自动登录或刷新，会话凭据不持久保存。\n\n修改用户需填写 **If-Match**；管理员仅管理操作员/工程师，不能给自己分配角色或禁用自己。操作员/工程师新密码至少6位；管理员/超管至少8位并含字母和数字。\n\n响应时间为 UTC 毫秒；日志查询 from/to 为 UTC 秒精度字符串。行为事件不按分钟限流，成功 202 仅表示进入有界内存队列，后台按批次延迟写入；队列满返回 503/2225。生产使用 HTTPS；Cookie/Origin 规则与管理后台相同。\n\nauth.allowedOrigin 默认 * 允许 HTTP/HTTPS 来源跨域携带凭据，也可配置单一来源限制；拒绝 Origin: null。refresh Cookie 使用 HttpOnly、Secure、SameSite=None。跨站调用使用 HTTPS 并启用 credentials，刷新/登出仍校验 X-CSRF-Token。所有响应设置 CSP、禁止 iframe 嵌入和 MIME 嗅探等安全头。"
+    "description": "单项目 RBAC · 19 个接口 · 四个固定角色。\n\n展开接口查看参数、示例和错误码，点击 **Try it out → Execute** 调用当前服务。\n\n**鉴权流程**：登录请求中的 password_hash 必须是原始密码 UTF-8 的 SHA-256 小写摘要。登录后复制 access_token 到 **Authorize / bearerAuth**（不用加 Bearer 前缀）。refresh Cookie 由浏览器管理；刷新/登出手动填写最新 csrf_token。Swagger 不自动登录或刷新，会话凭据不持久保存。refresh token 默认空闲期限为 30 分钟，会话族绝对期限为 7 天；成功刷新重置空闲窗口但不延长绝对期限。\n\n修改用户需填写 **If-Match**；管理员仅管理操作员/工程师，不能给自己分配角色或禁用自己。操作员/工程师新密码至少6位；管理员/超管至少8位并含字母和数字。\n\n响应时间为 UTC 毫秒；日志查询 from/to 为 UTC 秒精度字符串。行为事件不按分钟限流，成功 202 仅表示进入有界内存队列，后台按批次延迟写入；队列满返回 503/2225。生产使用 HTTPS；Cookie/Origin 规则与管理后台相同。\n\nauth.allowedOrigin 默认 * 允许 HTTP/HTTPS 来源跨域携带凭据，也可配置单一来源限制；拒绝 Origin: null。refresh Cookie 使用 HttpOnly、Secure、SameSite=None。跨站调用使用 HTTPS 并启用 credentials，刷新/登出仍校验 X-CSRF-Token。所有响应设置 CSP、禁止 iframe 嵌入和 MIME 嗅探等安全头。"
   },
   "servers": [
     {
@@ -153,7 +153,7 @@
         "tags": ["认证"],
         "operationId": "refresh",
         "summary": "刷新会话并轮换令牌",
-        "description": "**鉴权：** 必须携带 szx_refresh Cookie 和当前 X-CSRF-Token；不要求 Bearer 或 If-Match。\n\nBody 可省略，或发送空对象 `{}`，不接受其他字段。refresh token 只能来自 Cookie，不能放入 body、query 或 Authorization。\n\n```http\nPOST /api/v1/auth/refresh\nCookie: szx_refresh=<refresh-token>\nX-CSRF-Token: <csrf-token>\n```\n\n**成功：** 200，data 为 Session，与登录相同；Set-Cookie 替换 refresh token。客户端须替换 access token 和 CSRF token。\n\n| HTTP / code | 条件 |\n|---|---|\n| 401 / 2200 | 缺失、非法、未知或普通已撤销 Cookie；账号不可用 |\n| 401 / 2201 | refresh token 过期 |\n| 403 / 2204 | CSRF 缺失、不匹配，或 Origin 不允许 |\n| 409 / 2202 | 使用已轮换的旧 token，整个会话族被撤销 |\n| 422 / 2206 | 重复同名 Cookie、非法请求体 |\n| 429 / 2211 | 认证预算耗尽 |\n\n客户端必须合并并发刷新：同一 token 并发刷新只有一次成功，另一请求会按重放处理，撤销同一会话族。其他登录会话族不受影响。写入或审计失败时事务回滚，不发送新的 Cookie。",
+        "description": "**鉴权：** 必须携带 szx_refresh Cookie 和当前 X-CSRF-Token；不要求 Bearer 或 If-Match。\n\nBody 可省略，或发送空对象 `{}`，不接受其他字段。refresh token 只能来自 Cookie，不能放入 body、query 或 Authorization。\n\n```http\nPOST /api/v1/auth/refresh\nCookie: szx_refresh=<refresh-token>\nX-CSRF-Token: <csrf-token>\n```\n\n**成功：** 200，data 为 Session，与登录相同；Set-Cookie 替换 refresh token。客户端须替换 access token 和 CSRF token。成功轮换会重新开始默认 30 分钟的空闲计时，但会话族仍在首次登录后最多 7 天到期。\n\n| HTTP / code | 条件 |\n|---|---|\n| 401 / 2200 | 缺失、非法、未知或普通已撤销 Cookie；账号不可用 |\n| 401 / 2201 | refresh token 已超过绝对期限或空闲期限 |\n| 403 / 2204 | CSRF 缺失、不匹配，或 Origin 不允许 |\n| 409 / 2202 | 使用已轮换的旧 token，整个会话族被撤销 |\n| 422 / 2206 | 重复同名 Cookie、非法请求体 |\n| 429 / 2211 | 认证预算耗尽 |\n\n客户端必须合并并发刷新：同一 token 并发刷新只有一次成功，另一请求会按重放处理，撤销同一会话族。其他登录会话族不受影响。写入或审计失败时事务回滚，不发送新的 Cookie。",
         "parameters": [
           {
             "$ref": "#/components/parameters/RequestId"
@@ -2098,7 +2098,7 @@
         "type": "apiKey",
         "in": "cookie",
         "name": "szx_refresh",
-        "description": "HttpOnly Cookie，由浏览器登录响应自动设置，无法通过此输入框手动设置。请先调用登录，再填写最新X-CSRF-Token。"
+        "description": "HttpOnly Cookie，由浏览器登录响应自动设置，无法通过此输入框手动设置。默认空闲期限 30 分钟、会话族绝对期限 7 天；成功刷新重置空闲窗口。请先调用登录，再填写最新X-CSRF-Token。"
       }
     }
   }

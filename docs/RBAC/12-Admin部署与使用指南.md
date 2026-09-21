@@ -71,6 +71,8 @@ server:
 
 `auth.allowedOrigin` 默认是 `"*"`，允许 HTTP/HTTPS 来源跨域调用；服务回显具体 Origin 并返回 `Access-Control-Allow-Credentials: true`，支持 OPTIONS 预检。也可配置单一来源，例如 `https://admin.example.com`，此时精确匹配协议、主机、端口，不含路径或末尾 `/`。拒绝 `Origin: null` 和非法来源。refresh Cookie 为 `HttpOnly; Secure; SameSite=None`，跨站调用必须使用 HTTPS，并在前端设置 `credentials: 'include'`（Axios 为 `withCredentials: true`）；refresh/logout 同时携带最新 `X-CSRF-Token`。浏览器的第三方 Cookie 限制仍可能影响跨站刷新。
 
+`auth.refreshIdleTimeoutSeconds` 配置 refresh token 空闲期限，默认 1800 秒，取值为 900 秒到 `auth.refreshLifetimeSeconds`；`auth.refreshLifetimeSeconds` 默认 604800 秒，是会话族从首次登录开始计算的绝对期限。修改配置后需重启服务。
+
 服务已统一提供 CSP、禁止 iframe 嵌入和 MIME 嗅探等安全头，无需 CDN。反向代理需保留这些响应头；CSP 仅允许页面连接同源 API。详细保护范围与尚需处理的凭据风险见 [安全与运维基线](07-安全与运维基线.md#6-web-攻击防护与当前边界2026-09-20)。
 
 从仓库根目录启动：
@@ -123,7 +125,7 @@ Nginx 示例不修改 CORS、CSP 或 Cookie 响应头。当前 admin 使用连�
 
 审计页面展示中文事件名称及原始代码、操作者用户名（UID 账号显示 UID）。例如事件输入 `登录`、`login` 或 `auth.login`，用户输入展示名的一部分；条件在服务端取交集，分页和 total 使用相同条件。无关联操作者显示“未知用户”。重置筛选会清空条件并回到第一页。
 
-access token 有效期 15 分钟；发请求前剩余有效期不超过 5 秒或收到可刷新的 access 鉴权错误时自动刷新，同一页面并发请求合并刷新，原请求最多重试一次。refresh token 默认有效期 7 天，每次轮换但不延长会话族原到期时间。闲置时没有定时刷新。刷新失效/撤销后重新登录，429/5xx 保留会话供手动重试。access/CSRF 仅在内存，刷新浏览器页面后需要重新登录。
+access token 有效期 15 分钟；发请求前剩余有效期不超过 5 秒或收到可刷新的 access 鉴权错误时自动刷新，同一页面并发请求合并刷新，原请求最多重试一次。refresh token 默认空闲期限为 30 分钟，会话族绝对期限为 7 天。每次成功刷新都会轮换 token 并重置空闲窗口，但不会延长绝对到期时间。页面闲置时没有定时刷新；连续空闲超过 30 分钟后恢复操作必须重新登录。刷新失效/撤销后重新登录，429/5xx 保留会话供手动重试。access/CSRF 仅在内存，刷新浏览器页面后需要重新登录。
 
 ## 5. 验证与排障
 

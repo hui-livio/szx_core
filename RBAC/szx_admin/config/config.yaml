@@ -28,6 +28,7 @@ auth:
   publicKeyPath: config/keys/jwt-public.pem
   allowedOrigin: "*"
   refreshLifetimeSeconds: 604800
+  refreshIdleTimeoutSeconds: 1800
   failedLoginLimit: 5
   lockSeconds: 900
   attemptsPerMinute: 30

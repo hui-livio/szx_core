@@ -119,7 +119,7 @@ auto defaultErrorMessage(ErrorCode code) noexcept -> std::string_view
     case ErrorCode::AuthRequired:
         return "Authentication is required.";
     case ErrorCode::TokenExpired:
-        return "The access token has expired.";
+        return "The session token has expired.";
     case ErrorCode::TokenReplayed:
         return "The refresh token was replayed.";
     case ErrorCode::AuthInvalidCredentials:

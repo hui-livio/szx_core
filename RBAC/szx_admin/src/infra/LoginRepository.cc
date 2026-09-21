@@ -16,7 +16,7 @@ YLT_REFL(LoginUser, id, uid, username, display_name, password_hash, role, status
          temporary_credential_expires_at, failed_login_count, locked_until, authz_version, last_login_at, password_changed_at,
          created_at, updated_at);
 REGISTER_CONFLICT_KEY(LoginUser, id)
-YLT_REFL(LoginRefresh, id, user_id, token_hash, family_id, expires_at, ip, replaced_by, last_used_at, revoked_at,
+YLT_REFL(LoginRefresh, id, user_id, token_hash, family_id, created_at, expires_at, ip, replaced_by, last_used_at, revoked_at,
          revocation_reason);
 REGISTER_CONFLICT_KEY(LoginRefresh, id)
 } // namespace SZX::ADMIN::AUTH

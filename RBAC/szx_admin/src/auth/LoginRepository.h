@@ -35,6 +35,7 @@ struct LoginRefresh
     std::string user_id;
     std::string token_hash;
     std::string family_id;
+    std::string created_at;
     std::string expires_at;
     std::string ip;
     std::optional<std::string> replaced_by;

@@ -8,6 +8,8 @@
 #include "TimeHelper.hpp"
 #include "UUID.hpp"
 
+#include <algorithm>
+
 namespace SZX::ADMIN::AUTH
 {
 namespace
@@ -66,19 +68,28 @@ auto LoginService::issueSession(LoginRepository &repository, LoginUser user, con
     const auto csrf = SZX::CRYPTO::digestHex(SZX::CRYPTO::HashAlgorithm::Sha256, "csrf:" + refresh.value);
     if (!hash.ok || !csrf.ok)
         return failed<LoginSession>(ErrorCode::InternalFailure);
+    const auto now    = TimeHelper::NowTimestamp();
+    const auto stamp  = TimeHelper::TimestampToString(now);
     const auto id     = SZX::COMMON::Uuid::v4().toString();
     const auto stored = repository.insertRefresh(
-        {.id = id, .user_id = user.id, .token_hash = hash.value, .family_id = familyId, .expires_at = refreshExpiry, .ip = peer});
+        {.id         = id,
+         .user_id    = user.id,
+         .token_hash = hash.value,
+         .family_id  = familyId,
+         .created_at = stamp,
+         .expires_at = refreshExpiry,
+         .ip         = peer});
     if (!stored.ok)
         return Result<LoginSession>::Failure(stored.error, {});
     user.password_hash.clear();
+    const auto idleExpiry = now + static_cast<std::int64_t>(config_.refreshIdleTimeoutSeconds) * 1000;
     return Result<LoginSession>::Success({.user             = std::move(user),
                                           .accessToken      = issued.value,
                                           .refreshToken     = refresh.value,
                                           .csrfToken        = csrf.value,
                                           .expiresAt        = claims.value.expiresAt,
                                           .refreshId        = id,
-                                          .refreshExpiresAt = *expiry / 1000});
+                                          .refreshExpiresAt = (std::min)(*expiry, idleExpiry) / 1000});
 }
 
 auto LoginService::refresh(const CookieSessionInput &input) -> Result<LoginSession>
@@ -178,8 +189,11 @@ auto LoginService::cookieSession(const CookieSessionInput &input, bool logout) -
                     denied = ErrorCode::AuthRequired;
                 else
                 {
-                    const auto expiry = TimeHelper::StringToTimestamp(token->expires_at.substr(0, 19));
-                    if (!expiry || *expiry <= now)
+                    const auto expiry  = TimeHelper::StringToTimestamp(token->expires_at.substr(0, 19));
+                    const auto created = TimeHelper::StringToTimestamp(token->created_at.substr(0, 19));
+                    const auto idleTimeout = static_cast<std::int64_t>(config_.refreshIdleTimeoutSeconds) * 1000;
+                    const auto idleExpired = !created || *created > now || now - *created >= idleTimeout;
+                    if (!expiry || *expiry <= now || idleExpired)
                         denied = ErrorCode::TokenExpired;
                     else
                     {

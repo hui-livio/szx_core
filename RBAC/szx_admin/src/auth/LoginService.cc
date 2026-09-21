@@ -35,9 +35,10 @@ auto bytes(std::string_view value) -> std::span<const std::uint8_t>
 auto LoginConfig::validate() const -> Result<void>
 {
     if (issuer.empty() || issuer.size() > 256 || audience.empty() || audience.size() > 256 || privateKeyPath.empty() ||
-        publicKeyPath.empty() || refreshLifetimeSeconds < 900 || refreshLifetimeSeconds > 2592000 || failedLoginLimit < 1 ||
-        failedLoginLimit > 100 || lockSeconds < 1 || lockSeconds > 86400 || attemptsPerMinute < 1 || attemptsPerMinute > 1000 ||
-        (allowedOrigin != "*" && !validHttpOrigin(allowedOrigin)))
+        publicKeyPath.empty() || refreshLifetimeSeconds < 900 || refreshLifetimeSeconds > 2592000 ||
+        refreshIdleTimeoutSeconds < 900 || refreshIdleTimeoutSeconds > refreshLifetimeSeconds || failedLoginLimit < 1 ||
+        failedLoginLimit > 100 || lockSeconds < 1 || lockSeconds > 86400 || attemptsPerMinute < 1 ||
+        attemptsPerMinute > 1000 || (allowedOrigin != "*" && !validHttpOrigin(allowedOrigin)))
         return failed<void>(ErrorCode::InvalidConfiguration);
     return Result<void>::Success();
 }
