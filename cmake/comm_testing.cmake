@@ -1,7 +1,7 @@
 include_guard(GLOBAL)
 include(CTest)
 
-option(SZX_FETCH_GTEST "Allow FetchContent to download GoogleTest" ON)
+unset(SZX_FETCH_GTEST CACHE) # Removed: a missing bundled source now always uses FetchContent.
 option(SZX_GTEST_BUILD_SHARED "Build GoogleTest as shared libraries" OFF)
 set(SZX_GTEST_LOCAL_SOURCE_DIR "${CMAKE_CURRENT_LIST_DIR}/../third_party/googletest" CACHE PATH "Local GoogleTest source directory")
 set(SZX_GTEST_REPOSITORY "https://github.com/google/googletest.git" CACHE STRING "GoogleTest repository")
@@ -30,14 +30,18 @@ function(szx_find_gtest)
     if(EXISTS "${SZX_GTEST_LOCAL_SOURCE_DIR}/CMakeLists.txt")
         message(STATUS "GoogleTest: bundled source (${SZX_GTEST_LOCAL_SOURCE_DIR})")
         add_subdirectory("${SZX_GTEST_LOCAL_SOURCE_DIR}" "${CMAKE_BINARY_DIR}/third_party/googletest" EXCLUDE_FROM_ALL)
-    elseif(SZX_FETCH_GTEST)
+    else()
         # Do not use a GTest installation discovered through the host
         # environment. Fetch the pinned version when the bundled source is
         # unavailable.
-            include(FetchContent)
-            message(STATUS "GoogleTest: FetchContent (${SZX_GTEST_TAG})")
-            FetchContent_Declare(googletest GIT_REPOSITORY "${SZX_GTEST_REPOSITORY}" GIT_TAG "${SZX_GTEST_TAG}" GIT_SHALLOW TRUE)
-            FetchContent_MakeAvailable(googletest)
+        include(FetchContent)
+        message(STATUS "GoogleTest: FetchContent (${SZX_GTEST_TAG})")
+        FetchContent_Declare(
+            googletest
+            GIT_REPOSITORY "${SZX_GTEST_REPOSITORY}"
+            GIT_TAG "${SZX_GTEST_TAG}"
+            GIT_SHALLOW TRUE)
+        FetchContent_MakeAvailable(googletest)
     endif()
     if(TARGET gtest AND NOT TARGET GTest::gtest)
         add_library(GTest::gtest ALIAS gtest)
