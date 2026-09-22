@@ -453,9 +453,12 @@ auto DatabasePool::stop() -> SZX::COMMON::Result<void>
     if (impl_ != nullptr)
     {
         std::lock_guard lock(impl_->mutex);
+        if (!impl_->started)
+            return SZX::COMMON::Result<void>::Success();
         impl_->started = false;
         impl_->connections.clear();
         impl_->condition.notify_all();
+        LOGM_INFO("szx_admin.database", "event=database_stop_complete database={}", impl_->config.database);
     }
     return SZX::COMMON::Result<void>::Success();
 }

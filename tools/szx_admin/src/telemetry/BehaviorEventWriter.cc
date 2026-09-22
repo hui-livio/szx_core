@@ -64,6 +64,8 @@ auto BehaviorEventWriter::start() -> Result<void>
         state_.store(AdmissionState::Accepting, std::memory_order_release);
         startedOnce_ = true;
         worker_      = std::thread([this] { run(); });
+        LOGM_INFO("szx_admin.telemetry", "event=writer_started queue_capacity={} batch_size={} flush_interval_ms={}",
+                  config_.queueCapacity, config_.batchSize, config_.flushIntervalMs);
         return Result<void>::Success();
     } catch (...)
     {
@@ -91,11 +93,13 @@ auto BehaviorEventWriter::enqueue(BehaviorEventRecord record) -> Result<void>
 
 auto BehaviorEventWriter::stop() -> DrainResult
 {
+    bool initiated{};
     {
         std::lock_guard lock(stateMutex_);
         const auto current = state_.load(std::memory_order_acquire);
         if (current != AdmissionState::Stopped && current != AdmissionState::Draining)
         {
+            initiated = true;
             state_.store(AdmissionState::Draining, std::memory_order_release);
             drainDeadline_ = Clock::now() + std::chrono::milliseconds{config_.shutdownFlushTimeoutMs};
             queue_.close();
@@ -113,6 +117,10 @@ auto BehaviorEventWriter::stop() -> DrainResult
     const auto discarded = discarded_.load(std::memory_order_relaxed);
     const auto pending   = pendingCommitUnknown_.load(std::memory_order_relaxed);
     const auto active    = activeBatchSize_.load(std::memory_order_relaxed);
+    if (initiated)
+        LOGM_INFO("szx_admin.telemetry", "event=writer_stopped clean={} discarded={} pending_commit_unknown={} remaining_queue={} "
+                                          "remaining_batch={}",
+                  discarded == 0 && pending == 0 && remaining == 0 && active == 0, discarded, pending, remaining, active);
     return {.clean                = discarded == 0 && pending == 0 && remaining == 0 && active == 0,
             .discarded            = discarded,
             .pendingCommitUnknown = pending,
@@ -290,14 +298,21 @@ auto BehaviorEventWriter::persistOrSplit(std::span<const BehaviorEventRecord> re
 
 void BehaviorEventWriter::enterFaulted() noexcept
 {
+    bool transitioned{};
     std::lock_guard lock(stateMutex_);
     if (state_.load(std::memory_order_acquire) == AdmissionState::Accepting)
+    {
         state_.store(AdmissionState::Faulted, std::memory_order_release);
-    try
+        transitioned = true;
+    }
+    if (transitioned)
     {
-        LOGM_ERROR("szx_admin.telemetry", "event=writer_faulted");
-    } catch (...)
-    {
+        try
+        {
+            LOGM_ERROR("szx_admin.telemetry", "event=writer_faulted");
+        } catch (...)
+        {
+        }
     }
 }
 

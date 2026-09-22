@@ -6,12 +6,14 @@
 
 #include "Defer.hpp"
 #include "FileHelper.hpp"
+#include "Logger.h"
 #include "SzxAdmin/Infra/ErrorCode.h"
 #include "SzxCrypto/Crypto.h"
 #include "TimeHelper.hpp"
 #include "UUID.hpp"
 
 #include <algorithm>
+#include <exception>
 #include <limits>
 
 namespace SZX::ADMIN::AUTH
@@ -58,38 +60,72 @@ auto LoginService::initialize() -> Result<void>
     {
         if (initialized_)
             return Result<void>::Success();
+        LOGM_INFO("szx_admin.auth", "event=key_initialization_begin issuer={} audience={}", config_.issuer, config_.audience);
         const auto valid = config_.validate();
         if (!valid.ok)
+        {
+            LOGM_ERROR("szx_admin.auth", "event=key_initialization_config_invalid");
             return valid;
+        }
+        LOGM_DEBUG("szx_admin.auth", "event=key_files_read_begin private_path={} public_path={}", config_.privateKeyPath,
+                   config_.publicKeyPath);
         const auto privateFile = SZX::COMMON::FileHelper::ReadBytes(config_.privateKeyPath, 65536);
         const auto publicFile  = SZX::COMMON::FileHelper::ReadBytes(config_.publicKeyPath, 65536);
         if (!privateFile || !publicFile)
+        {
+            LOGM_ERROR("szx_admin.auth", "event=key_files_read_failed");
             return failed<void>(ErrorCode::InvalidConfiguration);
+        }
         auto privateKey = SZX::CRYPTO::rsaPrivateKeyFromEncoded(*privateFile);
         auto publicKey  = SZX::CRYPTO::rsaPublicKeyFromEncoded(*publicFile);
         if (!privateKey.ok || !publicKey.ok)
+        {
+            LOGM_ERROR("szx_admin.auth", "event=key_parse_failed");
             return failed<void>(ErrorCode::InvalidConfiguration);
+        }
         const auto id = crypto_.publicKeyId(publicKey.value);
         if (!id.ok)
+        {
+            LOGM_ERROR("szx_admin.auth", "event=key_id_failed");
             return failed<void>(ErrorCode::InvalidConfiguration);
+        }
         JwtSigningKey key{id.value, std::move(privateKey.value), std::move(publicKey.value)};
         const auto probe = jwt_.issue({.subject = "startup", .jti = SZX::COMMON::Uuid::v4().toString(), .authzVersion = 1}, key);
         if (!probe.ok || !jwt_.verify(probe.value, key).ok)
+        {
+            LOGM_ERROR("szx_admin.auth", "event=jwt_probe_failed");
             return failed<void>(ErrorCode::InvalidConfiguration);
+        }
         const auto random = SZX::CRYPTO::randomBytes(32);
         if (!random.ok)
+        {
+            LOGM_ERROR("szx_admin.auth", "event=password_probe_random_failed");
             return failed<void>(ErrorCode::InternalFailure);
+        }
         const auto dummy = crypto_.hashPassword(random.value);
         if (!dummy.ok)
+        {
+            LOGM_ERROR("szx_admin.auth", "event=password_probe_hash_failed");
             return failed<void>(ErrorCode::InternalFailure);
+        }
         const auto added = keys_.addKey({.key = std::move(key), .activeForSigning = true});
         if (!added.ok)
+        {
+            LOGM_ERROR("szx_admin.auth", "event=signing_key_register_failed code={}", added.error);
             return failed<void>(ErrorCode::InvalidConfiguration);
+        }
         dummyPasswordHash_ = dummy.value;
         initialized_       = true;
+        LOGM_INFO("szx_admin.auth", "event=key_initialization_complete key_id={}", id.value);
         return Result<void>::Success();
-    } catch (...)
+    } catch (const std::exception &error)
     {
+        LOGM_ERROR("szx_admin.auth", "event=key_initialization_exception message={}", error.what());
+        return failed<void>(ErrorCode::InternalFailure);
+    }
+    catch (...)
+    {
+        LOGM_ERROR("szx_admin.auth", "event=key_initialization_exception");
         return failed<void>(ErrorCode::InternalFailure);
     }
 }
@@ -134,12 +170,14 @@ auto LoginService::login(const LoginInput &input) -> Result<LoginSession>
 {
     try
     {
+        LOGM_DEBUG("szx_admin.auth", "event=login_attempt request_id={} peer={}", input.requestId, input.peerAddress);
         if (!initialized_)
             return failed<LoginSession>(ErrorCode::ServiceUnavailable);
         if (!validClientPasswordHash(input.passwordHash) || input.peerAddress.empty() || input.peerAddress.size() > 45)
             return failed<LoginSession>(ErrorCode::ValidationError);
         if (!admit(input.peerAddress))
         {
+            LOGM_WARN("szx_admin.auth", "event=login_rate_limited request_id={} peer={}", input.requestId, input.peerAddress);
             const auto audited = database_.withConnection(
                 [&](INFRA::DatabaseConnection &connection) -> Result<void>
                 {
@@ -269,6 +307,8 @@ auto LoginService::login(const LoginInput &input) -> Result<LoginSession>
                             ++user->version;
                             ++user->authz_version;
                             locked = true;
+                            LOGM_WARN("szx_admin.auth", "event=account_locked request_id={} user_id={}", input.requestId,
+                                      user->id);
                         }
                     }
                     const auto saved = repository->saveState(*user);
@@ -302,11 +342,27 @@ auto LoginService::login(const LoginInput &input) -> Result<LoginSession>
                 return result;
             });
         if (!operation.ok)
+        {
+            LOGM_DEBUG("szx_admin.auth", "event=login_operation_failed request_id={} code={}", input.requestId,
+                       operation.error);
             return Result<LoginSession>::Failure(operation.error, {});
-        return authenticated ? Result<LoginSession>::Success(std::move(session)) :
-                               failed<LoginSession>(ErrorCode::AuthInvalidCredentials);
-    } catch (...)
+        }
+        if (authenticated)
+        {
+            LOGM_INFO("szx_admin.auth", "event=login_success request_id={} user_id={} role={}", input.requestId,
+                      session.user.id, session.user.role);
+            return Result<LoginSession>::Success(std::move(session));
+        }
+        LOGM_DEBUG("szx_admin.auth", "event=login_denied request_id={} reason=invalid_credentials", input.requestId);
+        return failed<LoginSession>(ErrorCode::AuthInvalidCredentials);
+    } catch (const std::exception &error)
     {
+        LOGM_ERROR("szx_admin.auth", "event=login_exception request_id={} message={}", input.requestId, error.what());
+        return failed<LoginSession>(ErrorCode::InternalFailure);
+    }
+    catch (...)
+    {
+        LOGM_ERROR("szx_admin.auth", "event=login_exception request_id={}", input.requestId);
         return failed<LoginSession>(ErrorCode::InternalFailure);
     }
 }

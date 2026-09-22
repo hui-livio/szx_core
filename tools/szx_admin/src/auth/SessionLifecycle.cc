@@ -3,6 +3,7 @@
 #include "PasswordHash.h"
 
 #include "Defer.hpp"
+#include "Logger.h"
 #include "SzxAdmin/Infra/ErrorCode.h"
 #include "SzxCrypto/Crypto.h"
 #include "TimeHelper.hpp"
@@ -107,6 +108,8 @@ auto LoginService::cookieSession(const CookieSessionInput &input, bool logout) -
 {
     try
     {
+        LOGM_DEBUG("szx_admin.auth", "event=session_attempt action={} request_id={} peer={}", logout ? "logout" : "refresh",
+                   input.requestId, input.peerAddress);
         if (!initialized_)
             return failed<LoginSession>(ErrorCode::ServiceUnavailable);
         if (input.peerAddress.empty() || input.peerAddress.size() > 45)
@@ -230,8 +233,18 @@ auto LoginService::cookieSession(const CookieSessionInput &input, bool logout) -
                 // A replay is a failed request whose family revocation must still commit.
                 return denied ? failed<void>(*denied) : Result<void>::Success();
             });
-        return operation.ok ? Result<LoginSession>::Success(std::move(session)) :
-                              Result<LoginSession>::Failure(operation.error, {});
+        if (!operation.ok)
+        {
+            LOGM_DEBUG("szx_admin.auth", "event=session_failed action={} request_id={} code={}", logout ? "logout" : "refresh",
+                       input.requestId, operation.error);
+            return Result<LoginSession>::Failure(operation.error, {});
+        }
+        if (logout)
+            LOGM_INFO("szx_admin.auth", "event=session_success action=logout request_id={}", input.requestId);
+        else
+            LOGM_INFO("szx_admin.auth", "event=session_success action=refresh request_id={} user_id={}", input.requestId,
+                      session.user.id);
+        return Result<LoginSession>::Success(std::move(session));
     } catch (...)
     {
         return failed<LoginSession>(ErrorCode::InternalFailure);

@@ -1,6 +1,6 @@
 logging:
   level: info
-  flushLevel: warn
+  flushLevel: info
   loggerName: szx_admin
   pattern: "[%Y-%m-%d %H:%M:%S.%e] [%5t|%5P] [%^%-4l%$] [%n] %v"
   filePath: "logs/szx_admin.log"

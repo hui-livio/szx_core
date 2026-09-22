@@ -158,6 +158,13 @@ auto loadConfig(int argc, char **argv, ServiceConfig &config, std::string &maint
         return 2;
     }
 
+    LOGM_INFO("szx_admin", "event=config_loaded path={} log_level={} flush_level={} console={}", resolvedPath.string(),
+              config.logging.level, config.logging.flushLevel, config.logging.console);
+    LOGM_DEBUG("szx_admin", "event=config_runtime server_host={} server_port={} api_prefix={} database_host={} "
+                            "database_port={} database_name={} pool_size={} access_log={}",
+               config.server.host, config.server.port, config.server.apiPrefix, config.database.host, config.database.port,
+               config.database.database, config.database.poolSize, config.server.accessLog);
+
     return 0;
 }
 
@@ -207,17 +214,21 @@ int main(int argc, char **argv)
     const auto databaseValid = options.database.validate();
     if (!databaseValid.ok)
         return reportFailure("database configuration", databaseValid);
+    LOGM_DEBUG("szx_admin", "event=database_config_validated");
     const auto logsValid = options.logs.validate();
     if (!logsValid.ok)
         return reportFailure("log storage configuration", logsValid);
+    LOGM_DEBUG("szx_admin", "event=log_storage_config_validated");
     if (maintenance.empty())
     {
         const auto serverValid = options.server.validate();
         if (!serverValid.ok)
             return reportFailure("server configuration", serverValid);
+        LOGM_DEBUG("szx_admin", "event=server_config_validated");
         const auto telemetryValid = options.telemetry.validate();
         if (!telemetryValid.ok)
             return reportFailure("telemetry configuration", telemetryValid);
+        LOGM_DEBUG("szx_admin", "event=telemetry_config_validated");
         if (static_cast<std::uint64_t>(options.database.connectTimeoutSeconds) * 1000U >
                 options.telemetry.databaseOperationTimeoutMs ||
             static_cast<std::uint64_t>(options.database.lockWaitTimeoutSeconds) * 1000U >
@@ -230,6 +241,7 @@ int main(int argc, char **argv)
         }
     }
     DatabasePool database(options.database, options.logs);
+    LOGM_INFO("szx_admin", "event=database_start_requested");
     auto result = database.start();
     if (!result.ok)
         return reportFailure("database startup", result);
@@ -241,6 +253,7 @@ int main(int argc, char **argv)
     }
 
     SZX::ADMIN::AUTH::LoginService login(database, options.auth);
+    LOGM_INFO("szx_admin", "event=authentication_initialization_requested");
     const auto authReady = login.initialize();
     if (!authReady.ok)
         return reportFailure("authentication configuration/key initialization", authReady);
@@ -265,6 +278,7 @@ int main(int argc, char **argv)
     }
 
     SZX::ADMIN::TELEMETRY::BehaviorEventWriter behaviorWriter(database, options.telemetry);
+    LOGM_INFO("szx_admin.telemetry", "event=writer_start_requested");
     result = behaviorWriter.start();
     if (!result.ok)
     {
@@ -273,6 +287,7 @@ int main(int argc, char **argv)
     }
 
     HttpTransport transport(options.server);
+    LOGM_INFO("szx_admin.http", "event=route_registration_begin api_prefix={}", options.server.apiPrefix);
     const auto routes = SZX::ADMIN::registerRoutes(transport, database, &login, &behaviorWriter);
     if (!routes.ok)
     {
@@ -280,6 +295,7 @@ int main(int argc, char **argv)
         (void)database.stop();
         return reportFailure("route registration", routes);
     }
+    LOGM_INFO("szx_admin.http", "event=route_registration_complete");
 
     std::signal(SIGINT, requestStop);
     std::signal(SIGTERM, requestStop);
@@ -296,7 +312,8 @@ int main(int argc, char **argv)
         return reportFailure("HTTP startup", result);
     }
 
-    LOGM_INFO("szx_admin", "szx_admin_service listening on {}:{}", options.server.host, transport.port());
+    LOGM_INFO("szx_admin.http", "event=server_started host={} port={} api_prefix={}", options.server.host, transport.port(),
+              options.server.apiPrefix);
     while (!g_stopRequested.load(std::memory_order_relaxed))
     {
         if (g_writerResumeRequested.exchange(false, std::memory_order_relaxed))

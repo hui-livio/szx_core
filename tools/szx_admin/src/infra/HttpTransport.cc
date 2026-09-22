@@ -337,12 +337,17 @@ public:
             const auto ready = ensureServer();
             if (!ready.ok)
                 return ready;
-            return networkResult(server_->route(std::move(method), std::move(path),
+            const auto registeredMethod = method;
+            const auto registeredPath   = path;
+            const auto result            = networkResult(server_->route(std::move(method), std::move(path),
                                                 [handler = std::move(handler)](const auto &request)
                                                 {
                                                     const auto converted = convertRequest(request);
                                                     return prepareResponse(handler(converted), converted.requestId);
                                                 }));
+            if (result.ok)
+                LOGM_DEBUG("szx_admin.http", "event=route_registered method={} path={}", registeredMethod, registeredPath);
+            return result;
         } catch (...)
         {
             return failure(ErrorCode::InternalFailure);
@@ -358,6 +363,8 @@ public:
             std::lock_guard lock(mutex_);
             if (started_)
                 return failure(ErrorCode::TransportFailure);
+            LOGM_INFO("szx_admin.http", "event=server_start_begin host={} port={} workers={} max_connections={}", config_.host,
+                      config_.port, (std::max<std::size_t>)(1, config_.workerThreads), config_.maxConnections);
             const auto ready = ensureServer();
             if (!ready.ok)
                 return ready;
@@ -372,6 +379,7 @@ public:
                     return failure(ErrorCode::InvalidConfiguration);
                 if (exists)
                 {
+                    LOGM_INFO("szx_admin.http", "event=static_root_mount path={}", config_.staticRoot);
                     auto files = Network::HttpServer::CreateStaticHandler(config_.staticRoot, config_.staticHomePage);
                     if (!files.ok)
                         return networkResult(Result<void>::Failure(files.error, {}), ErrorCode::InvalidConfiguration);
@@ -386,7 +394,10 @@ public:
                         if (!docs.ok)
                             return networkResult(Result<void>::Failure(docs.error, {}), ErrorCode::InvalidConfiguration);
                         apiDocsHandler_ = std::move(docs.value);
+                        LOGM_INFO("szx_admin.http", "event=api_docs_mount path={}", docsRoot.string());
                     }
+                    else
+                        LOGM_DEBUG("szx_admin.http", "event=api_docs_not_mounted path={} reason=not_found", docsRoot.string());
                     const auto adminRoot   = std::filesystem::path{config_.staticRoot} / "admin";
                     const bool adminExists = std::filesystem::exists(adminRoot, error);
                     if (error)
@@ -397,13 +408,20 @@ public:
                         if (!adminFiles.ok)
                             return networkResult(Result<void>::Failure(adminFiles.error, {}), ErrorCode::InvalidConfiguration);
                         adminStaticHandler_ = std::move(adminFiles.value);
+                        LOGM_INFO("szx_admin.http", "event=admin_static_mount path={}", adminRoot.string());
                     }
+                    else
+                        LOGM_DEBUG("szx_admin.http", "event=admin_static_not_mounted path={} reason=not_found",
+                                   adminRoot.string());
                 }
+                else
+                    LOGM_DEBUG("szx_admin.http", "event=static_root_not_mounted path={} reason=not_found", config_.staticRoot);
             }
             const auto result = server_->start();
             if (!result.ok)
                 return networkResult(result, ErrorCode::InvalidConfiguration);
             started_ = true;
+            LOGM_INFO("szx_admin.http", "event=server_start_complete host={} port={}", config_.host, config_.port);
             return Result<void>::Success();
         } catch (...)
         {
@@ -425,6 +443,7 @@ public:
             if (!result.ok)
                 return networkResult(result);
             started_ = false;
+            LOGM_INFO("szx_admin.http", "event=server_stop_complete host={} port={}", config_.host, config_.port);
             return Result<void>::Success();
         } catch (...)
         {
