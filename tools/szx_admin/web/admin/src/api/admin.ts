@@ -32,8 +32,6 @@ export const adminApi = {
       headers: { 'If-Match': String(user.version) },
       data: passwordHash ? { password_hash: passwordHash } : undefined,
     }),
-  logs: (params: Record<string, string | number>) =>
-    api.request<Page<AuditLog>>({ url: '/admin/user-logs', params }),
   auditLogs: (params: Record<string, string | number>) =>
     api.request<Page<AuditLog>>({ url: '/admin/audit-logs', params }),
   behaviorEvents: (params: Record<string, string | number>) =>

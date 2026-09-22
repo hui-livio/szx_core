@@ -132,11 +132,11 @@ def run_login_checks(admin, sql, public_key, root):
         assert sql("SELECT token_hash FROM login.refresh_tokens;") == hashlib.sha256(cookie.value.encode()).hexdigest()
         assert data["csrf_token"] == hashlib.sha256(("csrf:" + cookie.value).encode()).hexdigest()
         assert sql("SELECT failed_login_count,last_login_at IS NOT NULL FROM login.users;") == "0\t1"
-        assert sql("SELECT COUNT(*) FROM login.user_logs WHERE event_name='auth.login.success' AND request_id='login-success';") == "1"
+        assert sql("SELECT COUNT(*) FROM login.security_audit_logs WHERE event_name='auth.login.success' AND request_id='login-success';") == "1"
 
         # Audit failure must undo last_login, counters and the refresh row.
         sql("UPDATE login.users SET failed_login_count=2,last_login_at=NULL;")
-        sql("CREATE TRIGGER login.fail_audit BEFORE INSERT ON login.user_logs FOR EACH ROW "
+        sql("CREATE TRIGGER login.fail_audit BEFORE INSERT ON login.security_audit_logs FOR EACH ROW "
             "SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='AUDIT_SECRET';")
         rejected(port, "admin", "superadmin", 2212, 500)
         rejected(port, "admin", "wrong", 2212, 500)
@@ -159,7 +159,7 @@ def run_login_checks(admin, sql, public_key, root):
             responses = list(executor.map(lambda _: login(port, password="concurrent-wrong"), range(5)))
         assert all(response[0] == 401 for response in responses)
         assert sql("SELECT status,failed_login_count,version,authz_version FROM login.users;") == "locked\t5\t2\t2"
-        assert sql("SELECT COUNT(*) FROM login.user_logs WHERE event_name='auth.account.locked';") == "1"
+        assert sql("SELECT COUNT(*) FROM login.security_audit_logs WHERE event_name='auth.account.locked';") == "1"
         rejected(port, "admin", "superadmin")
         sql("UPDATE login.users SET status='active',locked_until=NULL,failed_login_count=0;")
 
@@ -200,7 +200,7 @@ def run_login_checks(admin, sql, public_key, root):
         sql(f"UPDATE legacy_login.users SET password_hash='{legacy_default}';")
         rejected(port, "admin", "wrong")
         assert sql("SELECT password_hash FROM legacy_login.users;") == legacy_default
-        sql("CREATE TRIGGER legacy_login.fail_audit BEFORE INSERT ON legacy_login.user_logs FOR EACH ROW "
+        sql("CREATE TRIGGER legacy_login.fail_audit BEFORE INSERT ON legacy_login.security_audit_logs FOR EACH ROW "
             "SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='AUDIT_SECRET';")
         rejected(port, "admin", "superadmin", 2212, 500)
         assert sql("SELECT password_hash FROM legacy_login.users;") == legacy_default
@@ -251,8 +251,8 @@ def run_login_checks(admin, sql, public_key, root):
                     {**payload, "new_password_hash": "A" * 64},
                     {**payload, "new_password_hash": "plaintext"}):
             assert post(port, bad, endpoint="change-password", extra_headers=headers)[0] == 422
-        assert sql("SELECT COUNT(*) FROM password_change.user_logs WHERE event_name='auth.password.change_failed';") == "1"
-        for table, operation, code in (("user_logs", "INSERT", 2212), ("refresh_tokens", "UPDATE", 2221)):
+        assert sql("SELECT COUNT(*) FROM password_change.security_audit_logs WHERE event_name='auth.password.change_failed';") == "1"
+        for table, operation, code in (("security_audit_logs", "INSERT", 2212), ("refresh_tokens", "UPDATE", 2221)):
             sql(f"CREATE TRIGGER password_change.fail_change BEFORE {operation} ON password_change.{table} "
                 "FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='CHANGE_SECRET';")
             status, body, _ = change(initial)
@@ -272,7 +272,7 @@ def run_login_checks(admin, sql, public_key, root):
         assert cookie["secure"] and cookie["httponly"] and cookie["samesite"] == "None"
         assert changed[2]["Access-Control-Allow-Origin"] == "https://business.example.test"
         assert sql("SELECT COUNT(*) FROM password_change.refresh_tokens WHERE revoked_at IS NOT NULL AND revocation_reason='password_changed';") == "2"
-        assert sql("SELECT COUNT(*) FROM password_change.user_logs WHERE event_name='auth.password.changed';") == "1"
+        assert sql("SELECT COUNT(*) FROM password_change.security_audit_logs WHERE event_name='auth.password.changed';") == "1"
         rejected(port, "admin", "superadmin")
         updated = login(port, password="changed-password-2026")[1]["data"]
         assert updated["user"]["force_password_change"] is False
@@ -315,7 +315,7 @@ def run_login_checks(admin, sql, public_key, root):
         assert login(port)[0] == 200
         assert login(port)[0] == 200
         rejected(port, "admin", "superadmin", 2211, 429)
-        assert sql("SELECT COUNT(*) FROM rate.user_logs WHERE event_name='auth.login.rate_limited';") == "1"
+        assert sql("SELECT COUNT(*) FROM rate.security_audit_logs WHERE event_name='auth.login.rate_limited';") == "1"
     with admin("wildcard_origin", allowed_origin="*") as port:
         for origin in ("http://localhost:5173", "https://another.example.test"):
             preflight = urllib.request.Request(f"http://127.0.0.1:{port}/api/v1/auth/login", method="OPTIONS",

@@ -70,9 +70,8 @@ class BehaviorEventRepository
 public:
     virtual ~BehaviorEventRepository() = default;
 
-    /** Writes the telemetry table and its migration-period legacy copy in the caller's transaction. */
-    virtual auto appendBatch(std::span<const BehaviorEventRecord> records)
-        -> SZX::COMMON::Result<BatchWriteOutcome> = 0;
+    /** Writes the telemetry table in the caller's transaction. */
+    virtual auto appendBatch(std::span<const BehaviorEventRecord> records) -> SZX::COMMON::Result<BatchWriteOutcome> = 0;
     virtual auto probe() -> SZX::COMMON::Result<void>
     {
         return SZX::COMMON::Result<void>::Success();

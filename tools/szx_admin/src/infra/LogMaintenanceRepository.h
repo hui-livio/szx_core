@@ -14,10 +14,7 @@ public:
     {
     }
 
-    auto inspect() -> SZX::COMMON::Result<MAINTENANCE::LogMigrationStatus> override;
-    auto backfillBatch(std::uint32_t batchSize) -> SZX::COMMON::Result<MAINTENANCE::LogBackfillBatch> override;
-    auto purgeAuditBatch(std::string cutoff, std::uint32_t batchSize)
-        -> SZX::COMMON::Result<MAINTENANCE::LogPurgeBatch> override;
+    auto purgeAuditBatch(std::string cutoff, std::uint32_t batchSize) -> SZX::COMMON::Result<MAINTENANCE::LogPurgeBatch> override;
     auto purgeBehaviorBatch(std::string cutoff, std::uint32_t batchSize)
         -> SZX::COMMON::Result<MAINTENANCE::LogPurgeBatch> override;
 

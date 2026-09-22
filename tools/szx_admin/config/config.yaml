@@ -1,5 +1,5 @@
 logging:
-  level: debug
+  level: info
   flushLevel: warn
   loggerName: szx_admin
   pattern: "[%Y-%m-%d %H:%M:%S.%e] [%5t|%5P] [%^%-4l%$] [%n] %v"
@@ -45,14 +45,12 @@ telemetry:
   retryAfterSeconds: 1
 
 logs:
-  dualWriteLegacy: true
-  readLegacy: true
   auditRetentionDays: 180
   behaviorRetentionDays: 30
   cleanupBatchSize: 5000
 
 database:
-  host: 127.0.0.1
+  host: 10.243.96.74
   port: 3306
   database: szx_admin
   username: root

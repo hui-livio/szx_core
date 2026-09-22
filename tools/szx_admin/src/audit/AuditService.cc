@@ -30,15 +30,10 @@ AuditService::AuditService(INFRA::DatabasePool &database, AUTH::LoginService &au
 
 auto AuditService::list(const USER::ActorContext &actor, const AuditQuery &query) -> Result<AuditPage>
 {
-    return this->query(actor, query, false);
+    return this->query(actor, query);
 }
 
-auto AuditService::listLegacy(const USER::ActorContext &actor, const AuditQuery &query) -> Result<AuditPage>
-{
-    return this->query(actor, query, true);
-}
-
-auto AuditService::query(const USER::ActorContext &context, const AuditQuery &query, bool legacy) -> Result<AuditPage>
+auto AuditService::query(const USER::ActorContext &context, const AuditQuery &query) -> Result<AuditPage>
 {
     try
     {
@@ -72,20 +67,20 @@ auto AuditService::query(const USER::ActorContext &context, const AuditQuery &qu
                     !POLICY::allows(found.value->role, POLICY::Capability::AuditRead))
                     return failed<void>(ErrorCode::Forbidden);
 
-                AuditFilter filter{.from          = *from,
-                                   .to            = *to,
-                                   .eventName     = query.eventName,
-                                   .result        = query.result,
-                                   .actorUserId   = query.actorUserId,
-                                   .limit         = query.pageSize,
-                                   .offset        = static_cast<std::uint64_t>(query.page - 1) * query.pageSize,
-                                   .actorSearch   = query.actorSearch,
-                                   .eventSearch   = query.eventSearch};
+                AuditFilter filter{.from        = *from,
+                                   .to          = *to,
+                                   .eventName   = query.eventName,
+                                   .result      = query.result,
+                                   .actorUserId = query.actorUserId,
+                                   .limit       = query.pageSize,
+                                   .offset      = static_cast<std::uint64_t>(query.page - 1) * query.pageSize,
+                                   .actorSearch = query.actorSearch,
+                                   .eventSearch = query.eventSearch};
                 if (!query.eventSearch.empty())
                     for (const auto &[code, label] : USER::kAuditEventLabels)
                         if (label.find(query.eventSearch) != std::string_view::npos)
                             filter.eventNames.emplace_back(code);
-                const auto queried = legacy ? repository->queryCompatibility(filter) : repository->query(filter);
+                const auto queried = repository->query(filter);
                 if (!queried.ok)
                     return Result<void>::Failure(queried.error, {});
                 output = queried.value;

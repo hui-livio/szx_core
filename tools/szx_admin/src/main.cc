@@ -121,7 +121,7 @@ auto loadConfig(int argc, char **argv, ServiceConfig &config, std::string &maint
     SZX::COMMON::Command command{"SZX Admin service", "SZX Admin service"};
     std::string configArgument;
     command.add_option("-c,--config", configArgument, "YAML configuration file path");
-    command.add_option("--maintenance", maintenance, "Run inspect, backfill, or purge and exit");
+    command.add_option("--maintenance", maintenance, "Run purge and exit");
     command.add_flag("--confirm-purge", confirmPurge, "Confirm retention purge deletion");
     try
     {
@@ -173,40 +173,6 @@ auto runMaintenance(DatabasePool &database, const SZX::ADMIN::INFRA::LogStorageC
 {
     using SZX::ADMIN::MAINTENANCE::LogMaintenanceService;
     LogMaintenanceService service(database, config);
-    if (operation == "inspect")
-    {
-        const auto result = service.inspect();
-        if (!result.ok)
-            return reportFailure("log migration inspection", result);
-        const auto &value = result.value;
-        std::cout << SZX::COMMON::Json{{"legacy_rows", value.legacyRows},
-                                       {"eligible_audit_rows", value.eligibleAuditRows},
-                                       {"eligible_behavior_rows", value.eligibleBehaviorRows},
-                                       {"legacy_unknown_rows", value.legacyUnknownRows},
-                                       {"audit_rows", value.auditRows},
-                                       {"behavior_rows", value.behaviorRows},
-                                       {"missing_audit_rows", value.missingAuditRows},
-                                       {"missing_behavior_rows", value.missingBehaviorRows},
-                                       {"conflicting_audit_rows", value.conflictingAuditRows},
-                                       {"conflicting_behavior_rows", value.conflictingBehaviorRows}}
-                         .dump(2)
-                  << '\n';
-        return 0;
-    }
-    if (operation == "backfill")
-    {
-        const auto result = service.backfill();
-        if (!result.ok)
-            return reportFailure("log migration backfill", result);
-        std::cout << SZX::COMMON::Json{{"audit_inserted", result.value.auditInserted},
-                                       {"behavior_inserted", result.value.behaviorInserted},
-                                       {"legacy_unknown_rows", result.value.after.legacyUnknownRows},
-                                       {"missing_audit_rows", result.value.after.missingAuditRows},
-                                       {"missing_behavior_rows", result.value.after.missingBehaviorRows}}
-                         .dump(2)
-                  << '\n';
-        return 0;
-    }
     if (operation == "purge")
     {
         if (!confirmPurge)
@@ -218,9 +184,7 @@ auto runMaintenance(DatabasePool &database, const SZX::ADMIN::INFRA::LogStorageC
         if (!result.ok)
             return reportFailure("log retention purge", result);
         std::cout << SZX::COMMON::Json{{"audit_deleted", result.value.auditDeleted},
-                                       {"audit_legacy_deleted", result.value.auditLegacyDeleted},
-                                       {"behavior_deleted", result.value.behaviorDeleted},
-                                       {"behavior_legacy_deleted", result.value.behaviorLegacyDeleted}}
+                                       {"behavior_deleted", result.value.behaviorDeleted}}
                          .dump(2)
                   << '\n';
         return 0;

@@ -67,7 +67,7 @@ def run_user_checks(admin, sql):
         before = sql("SELECT display_name,role,status,version,authz_version,password_hash FROM forced_password.users;")
         for method, path, payload in (
             ("GET", "/admin/users", None), ("GET", own_path, None),
-            ("GET", "/admin/user-logs", None), ("GET", "/client/me/permissions", None),
+            ("GET", "/admin/audit-logs", None), ("GET", "/client/me/permissions", None),
             ("POST", "/admin/users", {"username": "blocked", "display_name": "Blocked", "role": "operator"}),
             ("PATCH", own_path, {"display_name": "Blocked"}),
             ("PATCH", own_path + "/status", {"status": "disabled"}),
@@ -86,7 +86,7 @@ def run_user_checks(admin, sql):
         expect(call(port, "GET", "/admin/users", token=token), 401, 2200)
         active = raw_login("ChangedPassword2026")
         cross_origin = {"Origin": "https://separate-admin.example.test"}
-        for path in ("/admin/users", "/admin/user-logs", "/client/me/permissions"):
+        for path in ("/admin/users", "/admin/audit-logs", "/client/me/permissions"):
             response = call(port, "GET", path, token=active["access_token"], headers=cross_origin)
             expect(response, 200)
             assert response[2]["Access-Control-Allow-Origin"] == cross_origin["Origin"]
@@ -114,8 +114,8 @@ def run_user_checks(admin, sql):
         # Actual documented routes, HTTP methods and browser preflights must all work.
         for path in ("/admin/users", "/admin/users/" + actor_id, "/admin/users/" + actor_id + "/status",
                      "/admin/users/" + actor_id + "/unlock", "/admin/users/" + actor_id + "/role",
-                     "/admin/users/" + actor_id + "/reset-password", "/admin/user-logs",
-                     "/client/me/permissions", "/client/behavior-events"):
+                     "/admin/users/" + actor_id + "/reset-password", "/admin/audit-logs",
+                     "/admin/behavior-events", "/client/me/permissions", "/client/behavior-events"):
             response = call(port, "OPTIONS", path, headers={"Origin": "https://admin.example.test"})
             expect(response, 204)
             assert "PATCH" in response[2]["Access-Control-Allow-Methods"]
@@ -157,17 +157,18 @@ def run_user_checks(admin, sql):
                 assert names == sorted(names, key=str.casefold)
         for attack in ("' OR 1=1 --", "' UNION SELECT NULL --", "'; DROP TABLE users; --",
                        "' OR SLEEP(1) --", "<img src=x onerror=alert(1)>"):
-            for endpoint, field in (("/admin/users", "search"), ("/admin/user-logs", "actor_search"),
-                                    ("/admin/user-logs", "event_search")):
+            for endpoint, field in (("/admin/users", "search"), ("/admin/audit-logs", "actor_search"),
+                                    ("/admin/audit-logs", "event_search")):
                 result = expect(call(port, "GET", endpoint + "?" + urlencode({field: attack}), token=token), 200)
                 assert result["total"] == 0 and result["items"] == [], (endpoint, attack, result)
             expect(call(port, "GET", "/admin/users?" + urlencode({"sort": attack}), token=token), 422, 2206)
         assert sql("SELECT COUNT(*) FROM user_api.users;") == "5"
         expect(call(port, "GET", "/admin/users?sort=invalid", token=token), 422, 2206)
         expect(call(port, "GET", "/admin/users?sortt=role", token=token), 422, 2206)
-        logs = expect(call(port, "GET", "/admin/user-logs?actor_user_id=" + actor_id, token=token), 200)
+        expect(call(port, "GET", "/admin/user-logs", token=token), 404, 2205)
+        logs = expect(call(port, "GET", "/admin/audit-logs?actor_user_id=" + actor_id, token=token), 200)
         assert logs["total"] >= 5 and all(row["actor_user_id"] == actor_id for row in logs["items"])
-        empty = expect(call(port, "GET", "/admin/user-logs?actor_user_id=" + str(uuid.uuid4()), token=token), 200)
+        empty = expect(call(port, "GET", "/admin/audit-logs?actor_user_id=" + str(uuid.uuid4()), token=token), 200)
         assert empty["total"] == 0 and empty["items"] == []
 
         operator = users["operator"]
@@ -230,11 +231,11 @@ def run_user_checks(admin, sql):
         # Audit failure must roll back the credential, versions and refresh revocation together.
         before = sql(f"SELECT password_hash,version,authz_version FROM user_api.users WHERE id='{target_id}';")
         refresh_before = sql(f"SELECT COUNT(*) FROM user_api.refresh_tokens WHERE user_id='{target_id}' AND revoked_at IS NULL;")
-        sql("CREATE TRIGGER user_api.fail_user_audit BEFORE INSERT ON user_api.user_logs FOR EACH ROW "
+        sql("CREATE TRIGGER user_api.fail_user_audit BEFORE INSERT ON user_api.security_audit_logs FOR EACH ROW "
             "SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='USER_AUDIT_SECRET';")
         expect(call(port, "POST", target_path + "/reset-password", token=token, version=7), 500, 2212)
-        # A failing legacy dual-write target must not taint successful reads.
-        # Telemetry has already returned after admission, so the worker retries in the background.
+        # A failing audit write must not taint successful reads. Telemetry has already
+        # returned after admission, so its independent worker persists in the background.
         def concurrent_database_check(index):
             if index % 2:
                 expect(call(port, "GET", "/admin/users", token=token), 200)
@@ -253,11 +254,10 @@ def run_user_checks(admin, sql):
         deadline = time.monotonic() + 10
         while time.monotonic() < deadline:
             primary = sql("SELECT COUNT(*) FROM user_api.client_behavior_events WHERE event_name='report.injected';")
-            legacy = sql("SELECT COUNT(*) FROM user_api.user_logs WHERE event_name='report.injected';")
-            if primary == legacy == "8":
+            if primary == "8":
                 break
             time.sleep(0.05)
-        assert primary == legacy == "8", (primary, legacy)
+        assert primary == "8", primary
 
         event = expect(call(port, "POST", "/client/behavior-events", {
             "event_name": "report.view", "result": "success", "details": {"source": "dashboard"},
@@ -265,7 +265,7 @@ def run_user_checks(admin, sql):
         assert event["event_id"]
         deadline = time.monotonic() + 10
         while time.monotonic() < deadline:
-            page = expect(call(port, "GET", "/admin/user-logs?event_name=report.view", token=token), 200)
+            page = expect(call(port, "GET", "/admin/behavior-events?event_name=report.view", token=token), 200)
             if page["items"]:
                 break
             time.sleep(0.05)
@@ -273,7 +273,7 @@ def run_user_checks(admin, sql):
         assert page["items"][0]["details"] == {"source": "dashboard"}
         assert type(page["items"][0]["created_at"]) is int
         event_time = sql("SET time_zone='+00:00'; SELECT CAST(FLOOR(UNIX_TIMESTAMP(created_at)*1000) AS SIGNED) "
-                         "FROM user_api.user_logs WHERE event_name='report.view';")
+                         "FROM user_api.client_behavior_events WHERE event_name='report.view';")
         assert page["items"][0]["created_at"] == int(event_time)
         for index, details in enumerate(({}, {"source": "dashboard", "padding": "x" * 2000},
                                          {"unicode": "中文😀", "items": [{"count": 3}]})):
@@ -283,7 +283,7 @@ def run_user_checks(admin, sql):
             }, renewed["access_token"]), 202)
             deadline = time.monotonic() + 10
             while time.monotonic() < deadline:
-                page = expect(call(port, "GET", "/admin/user-logs?event_name=" + event_name, token=token), 200)
+                page = expect(call(port, "GET", "/admin/behavior-events?event_name=" + event_name, token=token), 200)
                 matched = [item for item in page["items"] if item["id"] == accepted["event_id"]]
                 if matched:
                     break
@@ -300,7 +300,7 @@ def run_user_checks(admin, sql):
         deadline = time.monotonic() + 10
         stored = ""
         while time.monotonic() < deadline:
-            stored = sql("SELECT details_json FROM user_api.user_logs "
+            stored = sql("SELECT details_json FROM user_api.client_behavior_events "
                          f"WHERE id='{accepted['event_id']}' AND event_name='report.redaction';")
             if stored:
                 break
@@ -308,15 +308,15 @@ def run_user_checks(admin, sql):
         assert json.loads(stored) == expected and "SYNTHETIC_SECRET" not in stored
         # Exercise chunk boundaries, multi-byte UTF-8 and the former >64 KiB
         # multi-row BLOB use-after-free path without changing the driver.
-        legacy_sizes = [2000, 16384, 65536, 70000, 150000]
-        for index, size in enumerate(legacy_sizes):
-            sql("INSERT INTO user_api.user_logs(id,event_name,result,request_id,details_json) VALUES "
-                f"(UUID(),'report.legacy','success','legacy-{index}',"
+        payload_sizes = [2000, 16384, 65536, 70000, 150000]
+        for index, size in enumerate(payload_sizes):
+            sql("INSERT INTO user_api.security_audit_logs(id,event_name,result,request_id,details_json) VALUES "
+                f"(UUID(),'report.payload','success','payload-{index}',"
                 f"JSON_OBJECT('password','SYNTHETIC_SECRET','padding',REPEAT('x',{size}),"
                 "'unicode',REPEAT(CONVERT(0xE4B8ADF09F9880 USING utf8mb4),3000)));")
-        page = expect(call(port, "GET", "/admin/user-logs?event_name=report.legacy", token=token), 200)
-        assert len(page["items"]) == len(legacy_sizes)
-        assert all(row["details"] == {"padding": "x" * legacy_sizes[int(row["request_id"].split("-")[1])],
+        page = expect(call(port, "GET", "/admin/audit-logs?event_name=report.payload", token=token), 200)
+        assert len(page["items"]) == len(payload_sizes)
+        assert all(row["details"] == {"padding": "x" * payload_sizes[int(row["request_id"].split("-")[1])],
                                      "unicode": "中😀" * 3000}
                    for row in page["items"])
         assert all(row["actor_username"] == "" for row in page["items"])
@@ -338,11 +338,11 @@ def run_user_checks(admin, sql):
                 f"SELECT '{fixture_id}',{sql_text(username)},{sql_text(username)},{sql_text(uid)},{sql_text(uid)},"
                 f"{sql_text(display_name)},password_hash,'operator' FROM user_api.users WHERE id='{actor_id}';")
             for index in range(count):
-                sql("INSERT INTO user_api.user_logs(id,actor_user_id,event_name,result,request_id,details_json) VALUES "
+                sql("INSERT INTO user_api.security_audit_logs(id,actor_user_id,event_name,result,request_id,details_json) VALUES "
                     f"(UUID(),'{fixture_id}','report.actor_search','success','actor-search-{index}',JSON_OBJECT());")
 
         def search_logs(term, **extra):
-            return expect(call(port, "GET", "/admin/user-logs?" + urlencode({
+            return expect(call(port, "GET", "/admin/audit-logs?" + urlencode({
                 "actor_search": term, "event_name": "report.actor_search", **extra,
             }), token=token), 200)
 
@@ -361,7 +361,7 @@ def run_user_checks(admin, sql):
             assert search_logs(term)["total"] == 0
         assert search_logs("alpha", actor_user_id=fixture_ids[1])["total"] == 0
         for invalid in ("x" * 129, "bad\nname"):
-            expect(call(port, "GET", "/admin/user-logs?" + urlencode({"actor_search": invalid}), token=token), 422, 2206)
+            expect(call(port, "GET", "/admin/audit-logs?" + urlencode({"actor_search": invalid}), token=token), 422, 2206)
         print("PASS: audit actor names, display-name/username/UID search, literal patterns, pagination and unknown actors", flush=True)
         expect(call(port, "POST", "/client/behavior-events", {
             "event_name": "auth.login.success", "result": "success", "details": {},
@@ -408,7 +408,7 @@ def run_user_checks(admin, sql):
                     {"status": "disabled"}, token, 1), 403, 2204)
         assert sql(f"SELECT role,status,version,authz_version FROM user_scope.users WHERE id='{actor_id}';") == before
         assert sql(f"SELECT COUNT(*) FROM user_scope.refresh_tokens WHERE user_id='{actor_id}' AND revoked_at IS NULL;") == sessions_before
-        assert sql("SELECT COUNT(*) FROM user_scope.user_logs WHERE event_name IN ('user.role.changed','user.status.changed');") == "0"
+        assert sql("SELECT COUNT(*) FROM user_scope.security_audit_logs WHERE event_name IN ('user.role.changed','user.status.changed');") == "0"
         expect(call(port, "GET", "/client/me/permissions", token=token), 200)
         for role, session in created.items():
             own_path = "/admin/users/" + session["user"]["id"]
@@ -436,10 +436,10 @@ def run_user_checks(admin, sql):
             "user.password.reset": "重置用户密码", "report.custom_key": "", "report.customxkey": "",
         }
         for index, event in enumerate(events):
-            sql("INSERT INTO event_search.user_logs(id,actor_user_id,event_name,result,request_id,details_json) VALUES "
+            sql("INSERT INTO event_search.security_audit_logs(id,actor_user_id,event_name,result,request_id,details_json) VALUES "
                 f"(UUID(),'{actor['user']['id']}','{event}','denied','event-{index}',JSON_OBJECT());")
         def search_events(term, **params):
-            return expect(call(port, "GET", "/admin/user-logs?" + urlencode({
+            return expect(call(port, "GET", "/admin/audit-logs?" + urlencode({
                 "event_search": term, "result": "denied", "page_size": 100, **params,
             }), token=token), 200)
         for term in ("login", "auth.login", "登录", "成功", "重置", "密码", "custom", "_key", "missing", "%", "\\", "' OR 1=1 --", ""):
@@ -457,7 +457,7 @@ def run_user_checks(admin, sql):
         assert search_events("login", event_name="auth.login.success")["total"] == 1
         assert search_events("", event_name="auth.login")["total"] == 0
         for invalid in ("x" * 129, "bad\nname"):
-            expect(call(port, "GET", "/admin/user-logs?" + urlencode({"event_search": invalid}), token=token), 422, 2206)
+            expect(call(port, "GET", "/admin/audit-logs?" + urlencode({"event_search": invalid}), token=token), 422, 2206)
         print("PASS: audit event keywords, Chinese labels, literal wildcards, pagination, combined and exact filters", flush=True)
 
     with admin("user_chosen_password") as port:
@@ -511,14 +511,14 @@ def run_user_checks(admin, sql):
             expect(call(port, "POST", "/auth/login", {
                 "identifier": next(iter(identity.values())), "password_hash": digest,
             }), 401, 2203)
-            logs = sql("SELECT details_json FROM user_chosen_password.user_logs;")
+            logs = sql("SELECT details_json FROM user_chosen_password.security_audit_logs;")
             assert new_digest not in logs and new_secret not in logs
             random_reset = expect(call(port, "POST", reset_path, {}, token, 2), 200)
             assert random_reset["temporary_credential"] and type(random_reset["temporary_credential_expires_at"]) is int
             assert login(port, next(iter(identity.values())), random_reset["temporary_credential"])["user"]["id"] == user_id
-        logs = sql("SELECT details_json FROM user_chosen_password.user_logs;")
+        logs = sql("SELECT details_json FROM user_chosen_password.security_audit_logs;")
         assert digest not in logs and secret not in logs
-        sql("CREATE TRIGGER user_chosen_password.fail_create_audit BEFORE INSERT ON user_chosen_password.user_logs "
+        sql("CREATE TRIGGER user_chosen_password.fail_create_audit BEFORE INSERT ON user_chosen_password.security_audit_logs "
             "FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='CREATE_AUDIT_FAILURE';")
         before = sql(f"SELECT password_hash,version,authz_version FROM user_chosen_password.users WHERE id='{user_id}';")
         refresh_before = sql(f"SELECT COUNT(*) FROM user_chosen_password.refresh_tokens WHERE user_id='{user_id}' AND revoked_at IS NULL;")
@@ -627,9 +627,8 @@ def run_user_checks(admin, sql):
         while time.monotonic() < deadline:
             primary = sql("SELECT COUNT(*) FROM behavior_burst.client_behavior_events "
                           "WHERE event_name='report.view';")
-            legacy = sql("SELECT COUNT(*) FROM behavior_burst.user_logs WHERE event_name='report.view';")
-            if primary == legacy == "75":
+            if primary == "75":
                 break
             time.sleep(0.05)
-        assert primary == legacy == "75", (primary, legacy)
+        assert primary == "75", primary
         print("PASS: telemetry accepts more than 60 events per minute and persists them in delayed batches", flush=True)

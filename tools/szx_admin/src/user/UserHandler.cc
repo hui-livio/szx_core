@@ -309,7 +309,7 @@ auto resetPasswordResponse(UserService &service, const INFRA::HttpRequest &reque
     }
 }
 
-auto logsResponse(AUDIT::AuditService &service, const INFRA::HttpRequest &request, bool legacy) -> INFRA::HttpResponse
+auto logsResponse(AUDIT::AuditService &service, const INFRA::HttpRequest &request) -> INFRA::HttpResponse
 {
     try
     {
@@ -329,7 +329,7 @@ auto logsResponse(AUDIT::AuditService &service, const INFRA::HttpRequest &reques
                                       .pageSize    = pagination.value.pageSize,
                                       .actorSearch = queryValue(request, "actor_search"),
                                       .eventSearch = queryValue(request, "event_search")};
-        const auto result = legacy ? service.listLegacy(actorContext(request), query) : service.list(actorContext(request), query);
+        const auto result = service.list(actorContext(request), query);
         if (!result.ok)
             return RestApi::error(static_cast<ErrorCode>(result.error), request.requestId);
         Json items = Json::array();
@@ -340,17 +340,15 @@ auto logsResponse(AUDIT::AuditService &service, const INFRA::HttpRequest &reques
                 return RestApi::error(ErrorCode::DatabaseQueryFailed, request.requestId);
             redactAuditDetails(*details);
             Json item{{"id", entry.id},
-                                 {"event_name", entry.event_name},
-                                 {"result", entry.result},
-                                 {"actor_user_id", entry.actor_user_id.value_or("")},
-                                 {"actor_username", entry.actor_username},
-                                 {"target_user_id", entry.target_user_id.value_or("")},
-                                 {"request_id", entry.request_id},
-                                 {"peer_address", ""},
-                                 {"details", std::move(*details)},
-                                 {"created_at", utcTimestampJson(entry.created_at)}};
-            if (legacy)
-                item["source"] = entry.source;
+                      {"event_name", entry.event_name},
+                      {"result", entry.result},
+                      {"actor_user_id", entry.actor_user_id.value_or("")},
+                      {"actor_username", entry.actor_username},
+                      {"target_user_id", entry.target_user_id.value_or("")},
+                      {"request_id", entry.request_id},
+                      {"peer_address", ""},
+                      {"details", std::move(*details)},
+                      {"created_at", utcTimestampJson(entry.created_at)}};
             items.push_back(std::move(item));
         }
         return RestApi::success(
@@ -366,22 +364,22 @@ auto behaviorEventsResponse(TELEMETRY::BehaviorEventService &service, const INFR
 {
     try
     {
-        constexpr std::array<std::string_view, 9> allowed{"page", "page_size", "from", "to", "event_name", "result",
-                                                          "user_id", "user_search", "event_search"};
+        constexpr std::array<std::string_view, 9> allowed{"page",   "page_size", "from",        "to",          "event_name",
+                                                          "result", "user_id",   "user_search", "event_search"};
         if (!allowedQuery(request, allowed))
             return RestApi::error(ErrorCode::ValidationError, request.requestId);
         const auto pagination = RestApi::pagination(request);
         if (!pagination.ok)
             return RestApi::error(static_cast<ErrorCode>(pagination.error), request.requestId);
         const TELEMETRY::BehaviorEventQuery query{.from        = queryValue(request, "from"),
-                                                   .to          = queryValue(request, "to"),
-                                                   .eventName   = queryValue(request, "event_name"),
-                                                   .result      = queryValue(request, "result"),
-                                                   .userId      = queryValue(request, "user_id"),
-                                                   .page        = pagination.value.page,
-                                                   .pageSize    = pagination.value.pageSize,
-                                                   .userSearch  = queryValue(request, "user_search"),
-                                                   .eventSearch = queryValue(request, "event_search")};
+                                                  .to          = queryValue(request, "to"),
+                                                  .eventName   = queryValue(request, "event_name"),
+                                                  .result      = queryValue(request, "result"),
+                                                  .userId      = queryValue(request, "user_id"),
+                                                  .page        = pagination.value.page,
+                                                  .pageSize    = pagination.value.pageSize,
+                                                  .userSearch  = queryValue(request, "user_search"),
+                                                  .eventSearch = queryValue(request, "event_search")};
         const auto result = service.list(actorContext(request), query);
         if (!result.ok)
             return RestApi::error(static_cast<ErrorCode>(result.error), request.requestId);
@@ -425,8 +423,8 @@ auto recordBehaviorResponse(TELEMETRY::BehaviorEventService &service, const INFR
             !body.value.contains("details") || !body.value.at("details").is_object())
             return RestApi::error(ErrorCode::ValidationError, request.requestId);
         const TELEMETRY::BehaviorEvent event{.eventName   = body.value.at("event_name").get<std::string>(),
-                                              .result      = body.value.at("result").get<std::string>(),
-                                              .detailsJson = body.value.at("details").dump()};
+                                             .result      = body.value.at("result").get<std::string>(),
+                                             .detailsJson = body.value.at("details").dump()};
         const auto result = service.record(actorContext(request), event);
         if (!result.ok)
         {
@@ -445,8 +443,7 @@ auto recordBehaviorResponse(TELEMETRY::BehaviorEventService &service, const INFR
 } // namespace
 
 auto registerUserRoutes(INFRA::HttpTransport &transport, INFRA::DatabasePool &database, AUTH::LoginService &login,
-                        TELEMETRY::BehaviorEventWriter &writer)
-    -> SZX::COMMON::Result<void>
+                        TELEMETRY::BehaviorEventWriter &writer) -> SZX::COMMON::Result<void>
 {
     try
     {
@@ -552,50 +549,42 @@ auto registerUserRoutes(INFRA::HttpTransport &transport, INFRA::DatabasePool &da
         if (!reset.ok)
             return reset;
 
-        const auto logs = transport.registerApiRoute("GET", "/admin/user-logs",
-                                                     [auditService, allowedOrigin](const INFRA::HttpRequest &request)
-                                                     {
-                                                         if (!originAllowed(allowedOrigin, request))
-                                                             return RestApi::error(ErrorCode::Forbidden, request.requestId);
-                                                         return withCors(logsResponse(*auditService, request, true), request);
-                                                     });
-        if (!logs.ok)
-            return logs;
-
         const auto auditLogs = transport.registerApiRoute("GET", "/admin/audit-logs",
                                                           [auditService, allowedOrigin](const INFRA::HttpRequest &request)
                                                           {
                                                               if (!originAllowed(allowedOrigin, request))
                                                                   return RestApi::error(ErrorCode::Forbidden, request.requestId);
-                                                              return withCors(logsResponse(*auditService, request, false), request);
+                                                              return withCors(logsResponse(*auditService, request), request);
                                                           });
         if (!auditLogs.ok)
             return auditLogs;
 
-        const auto behaviorLogs = transport.registerApiRoute("GET", "/admin/behavior-events",
-                                                             [behaviorService, allowedOrigin](const INFRA::HttpRequest &request)
-                                                             {
-                                                                 if (!originAllowed(allowedOrigin, request))
-                                                                     return RestApi::error(ErrorCode::Forbidden, request.requestId);
-                                                                 return withCors(behaviorEventsResponse(*behaviorService, request), request);
-                                                             });
+        const auto behaviorLogs =
+            transport.registerApiRoute("GET", "/admin/behavior-events",
+                                       [behaviorService, allowedOrigin](const INFRA::HttpRequest &request)
+                                       {
+                                           if (!originAllowed(allowedOrigin, request))
+                                               return RestApi::error(ErrorCode::Forbidden, request.requestId);
+                                           return withCors(behaviorEventsResponse(*behaviorService, request), request);
+                                       });
         if (!behaviorLogs.ok)
             return behaviorLogs;
 
-        const auto behavior = transport.registerApiRoute("POST", "/client/behavior-events",
-                                                         [behaviorService, allowedOrigin](const INFRA::HttpRequest &request)
-                                                         {
-                                                             if (!originAllowed(allowedOrigin, request))
-                                                                 return RestApi::error(ErrorCode::Forbidden, request.requestId);
-                                                             return withCors(recordBehaviorResponse(*behaviorService, request), request);
-                                                         });
+        const auto behavior =
+            transport.registerApiRoute("POST", "/client/behavior-events",
+                                       [behaviorService, allowedOrigin](const INFRA::HttpRequest &request)
+                                       {
+                                           if (!originAllowed(allowedOrigin, request))
+                                               return RestApi::error(ErrorCode::Forbidden, request.requestId);
+                                           return withCors(recordBehaviorResponse(*behaviorService, request), request);
+                                       });
         if (!behavior.ok)
             return behavior;
 
         const auto preflight = preflightHandler(allowedOrigin, "GET, POST, PUT, PATCH, OPTIONS");
         for (const auto path : {"/client/me/permissions", "/admin/users", "/admin/users/{id}", "/admin/users/{id}/status",
                                 "/admin/users/{id}/unlock", "/admin/users/{id}/role", "/admin/users/{id}/reset-password",
-                                "/admin/user-logs", "/admin/audit-logs", "/admin/behavior-events", "/client/behavior-events"})
+                                "/admin/audit-logs", "/admin/behavior-events", "/client/behavior-events"})
         {
             const auto options = transport.registerApiRoute("OPTIONS", path, preflight);
             if (!options.ok)

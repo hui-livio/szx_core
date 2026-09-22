@@ -30,9 +30,7 @@ using SZX::ADMIN::INFRA::MigrationRunner;
 
 namespace
 {
-using SZX::ADMIN::MAINTENANCE::LogBackfillBatch;
 using SZX::ADMIN::MAINTENANCE::LogMaintenanceRepository;
-using SZX::ADMIN::MAINTENANCE::LogMigrationStatus;
 using SZX::ADMIN::MAINTENANCE::LogPurgeBatch;
 using SZX::ADMIN::TELEMETRY::BatchWriteOutcome;
 using SZX::ADMIN::TELEMETRY::BehaviorEventFilter;
@@ -93,26 +91,6 @@ public:
 class FakeLogMaintenanceRepository final : public LogMaintenanceRepository
 {
 public:
-    auto inspect() -> SZX::COMMON::Result<LogMigrationStatus> override
-    {
-        if (statuses.empty())
-            return SZX::COMMON::Result<LogMigrationStatus>::Success({});
-        const auto status = statuses.front();
-        statuses.pop_front();
-        return SZX::COMMON::Result<LogMigrationStatus>::Success(status);
-    }
-
-    auto backfillBatch(std::uint32_t batchSize) -> SZX::COMMON::Result<LogBackfillBatch> override
-    {
-        requestedBatchSizes.push_back(batchSize);
-        if (failBackfill)
-            return SZX::COMMON::Result<LogBackfillBatch>::Failure(static_cast<int>(ErrorCode::DatabaseQueryFailed), {});
-        const auto batch = backfillBatches.empty() ? LogBackfillBatch{} : backfillBatches.front();
-        if (!backfillBatches.empty())
-            backfillBatches.pop_front();
-        return SZX::COMMON::Result<LogBackfillBatch>::Success(batch);
-    }
-
     auto purgeAuditBatch(std::string cutoff, std::uint32_t batchSize) -> SZX::COMMON::Result<LogPurgeBatch> override
     {
         auditCutoffs.push_back(std::move(cutoff));
@@ -133,14 +111,11 @@ public:
         return SZX::COMMON::Result<LogPurgeBatch>::Success(batch);
     }
 
-    std::deque<LogMigrationStatus> statuses;
-    std::deque<LogBackfillBatch> backfillBatches;
     std::deque<LogPurgeBatch> auditPurgeBatches;
     std::deque<LogPurgeBatch> behaviorPurgeBatches;
     std::vector<std::uint32_t> requestedBatchSizes;
     std::vector<std::string> auditCutoffs;
     std::vector<std::string> behaviorCutoffs;
-    bool failBackfill{};
 };
 
 class FakeAuditRepository final : public SZX::ADMIN::AUDIT::AuditRepository
@@ -154,11 +129,6 @@ public:
     }
 
     auto query(const SZX::ADMIN::AUDIT::AuditFilter &) -> SZX::COMMON::Result<SZX::ADMIN::AUDIT::AuditPage> override
-    {
-        return SZX::COMMON::Result<SZX::ADMIN::AUDIT::AuditPage>::Success({});
-    }
-
-    auto queryLegacy(const SZX::ADMIN::AUDIT::AuditFilter &) -> SZX::COMMON::Result<SZX::ADMIN::AUDIT::AuditPage> override
     {
         return SZX::COMMON::Result<SZX::ADMIN::AUDIT::AuditPage>::Success({});
     }
@@ -506,60 +476,11 @@ TEST(BehaviorEventWriterTest, ShutdownDeadlineReportsDiscardedRetryingBatch)
     EXPECT_EQ(drained.discarded, 1U);
 }
 
-TEST(LogMaintenanceServiceTest, BackfillUsesLockBatchesTransactionsAndIsIdempotent)
+TEST(LogMaintenanceServiceTest, PurgeDeletesCurrentTablesWithAuditInEachTransaction)
 {
     FakeLogMaintenanceRepository repository;
-    repository.statuses        = {{.missingAuditRows = 2, .missingBehaviorRows = 1}, {}};
-    repository.backfillBatches = {{.auditInserted = 2, .behaviorInserted = 1}, {}};
-    FakeDatabaseConnection connection;
-    connection.maintenanceRepository = &repository;
-    SZX::ADMIN::INFRA::LogStorageConfig config;
-    config.cleanupBatchSize = 17;
-    SZX::ADMIN::MAINTENANCE::LogMaintenanceService service([&](const auto &callback) { return callback(connection); }, config);
-
-    const auto result = service.backfill();
-
-    ASSERT_TRUE(result.ok);
-    EXPECT_EQ(result.value.auditInserted, 2U);
-    EXPECT_EQ(result.value.behaviorInserted, 1U);
-    EXPECT_EQ(repository.requestedBatchSizes, (std::vector<std::uint32_t>{17, 17}));
-    EXPECT_EQ(connection.events, (std::vector<std::string>{"lock", "begin", "commit", "begin", "rollback", "unlock"}));
-
-    repository.statuses = {{}, {}};
-    connection.events.clear();
-    const auto repeated = service.backfill();
-    ASSERT_TRUE(repeated.ok);
-    EXPECT_EQ(repeated.value.auditInserted, 0U);
-    EXPECT_EQ(repeated.value.behaviorInserted, 0U);
-    EXPECT_EQ(connection.events, (std::vector<std::string>{"lock", "begin", "rollback", "unlock"}));
-}
-
-TEST(LogMaintenanceServiceTest, ConflictAndAdvisoryLockStopBeforeTransaction)
-{
-    for (const auto lockAvailable : {true, false})
-    {
-        SCOPED_TRACE(lockAvailable);
-        FakeLogMaintenanceRepository repository;
-        repository.statuses = {{.conflictingAuditRows = 1}};
-        FakeDatabaseConnection connection;
-        connection.maintenanceRepository = &repository;
-        connection.lockAcquired          = lockAvailable;
-        SZX::ADMIN::MAINTENANCE::LogMaintenanceService service([&](const auto &callback) { return callback(connection); }, {});
-
-        const auto result = service.backfill();
-
-        ASSERT_FALSE(result.ok);
-        EXPECT_EQ(result.error, static_cast<int>(lockAvailable ? ErrorCode::MigrationConflict : ErrorCode::ServiceUnavailable));
-        EXPECT_EQ(connection.beginCount, 0);
-        EXPECT_EQ(connection.releaseLockCount, lockAvailable ? 1 : 0);
-    }
-}
-
-TEST(LogMaintenanceServiceTest, PurgeDeletesPrimaryAndLegacyCopiesWithAuditInEachTransaction)
-{
-    FakeLogMaintenanceRepository repository;
-    repository.behaviorPurgeBatches = {{.primaryDeleted = 2, .legacyDeleted = 2}, {}};
-    repository.auditPurgeBatches    = {{.primaryDeleted = 3, .legacyDeleted = 1}, {}};
+    repository.behaviorPurgeBatches = {{.deleted = 2}, {}};
+    repository.auditPurgeBatches    = {{.deleted = 3}, {}};
     FakeAuditRepository audit;
     FakeDatabaseConnection connection;
     connection.maintenanceRepository = &repository;
@@ -572,9 +493,7 @@ TEST(LogMaintenanceServiceTest, PurgeDeletesPrimaryAndLegacyCopiesWithAuditInEac
 
     ASSERT_TRUE(result.ok);
     EXPECT_EQ(result.value.behaviorDeleted, 2U);
-    EXPECT_EQ(result.value.behaviorLegacyDeleted, 2U);
     EXPECT_EQ(result.value.auditDeleted, 3U);
-    EXPECT_EQ(result.value.auditLegacyDeleted, 1U);
     ASSERT_EQ(audit.records.size(), 2U);
     EXPECT_EQ(audit.records[0].event_name, "user.behavior_events.purged");
     EXPECT_EQ(audit.records[1].event_name, "user.audit_logs.purged");
@@ -587,7 +506,7 @@ TEST(LogMaintenanceServiceTest, PurgeDeletesPrimaryAndLegacyCopiesWithAuditInEac
 TEST(LogMaintenanceServiceTest, PurgeRollsBackDeletionWhenAuditWriteFails)
 {
     FakeLogMaintenanceRepository repository;
-    repository.behaviorPurgeBatches = {{.primaryDeleted = 1, .legacyDeleted = 1}};
+    repository.behaviorPurgeBatches = {{.deleted = 1}};
     FakeAuditRepository audit;
     audit.failAppend = true;
     FakeDatabaseConnection connection;
@@ -630,24 +549,22 @@ TEST(DatabaseInitializationTest, PreservesPublishedMigrationChecksumsAndExisting
     EXPECT_EQ(connection.statements.size(), 1U); // Only ensures the journal table exists.
 }
 
-TEST(DatabaseInitializationTest, AddsSplitLogTablesWithoutRewritingPublishedMigrations)
+TEST(DatabaseInitializationTest, DropsLegacyLogTableWithoutRewritingPublishedMigrations)
 {
     const auto migrations = SZX::ADMIN::INFRA::embeddedMigrations();
-    ASSERT_EQ(migrations.size(), 4U);
+    ASSERT_EQ(migrations.size(), 5U);
     FakeDatabaseConnection connection;
-    for (const auto &migration : migrations.first(3))
+    for (const auto &migration : migrations.first(4))
         connection.applied.push_back({migration.version, std::string{migration.checksum}});
     const auto upgrade = MigrationRunner{}.run(connection);
     ASSERT_TRUE(upgrade.ok);
-    EXPECT_EQ(upgrade.value.currentVersion, 4U);
+    EXPECT_EQ(upgrade.value.currentVersion, 5U);
     EXPECT_EQ(upgrade.value.appliedCount, 1U);
     ASSERT_EQ(connection.recorded.size(), 1U);
-    EXPECT_EQ(connection.recorded.front().checksum, migrationChecksum(migrations[3].sql));
-    EXPECT_EQ(connection.recorded.front().checksum, "193446d82dbee660610cbbc8f822469529d18dbf8760ddcffbb3c1d356e8236a");
-    EXPECT_TRUE(std::ranges::any_of(connection.statements,
-                                    [](const auto &sql) { return sql.find("security_audit_logs") != std::string::npos; }));
-    EXPECT_TRUE(std::ranges::any_of(connection.statements,
-                                    [](const auto &sql) { return sql.find("client_behavior_events") != std::string::npos; }));
+    EXPECT_EQ(connection.recorded.front().checksum, migrationChecksum(migrations[4].sql));
+    EXPECT_EQ(connection.recorded.front().checksum, "df5a342ab4da5db2515c8469d3fe17751a6570cc6ee9b009bef9bed9d2463241");
+    EXPECT_TRUE(std::ranges::any_of(connection.statements, [](const auto &sql)
+                                    { return sql.find("DROP TABLE IF EXISTS user_logs") != std::string::npos; }));
     const auto repeated = MigrationRunner{}.run(connection);
     ASSERT_TRUE(repeated.ok);
     EXPECT_EQ(repeated.value.appliedCount, 0U);

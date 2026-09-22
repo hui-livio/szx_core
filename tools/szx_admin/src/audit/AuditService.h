@@ -1,7 +1,7 @@
 #pragma once
 
-#include "AuditRepository.h"
 #include "../user/ActorContext.h"
+#include "AuditRepository.h"
 
 #include "SzxAdmin/Infra/Database.h"
 
@@ -32,14 +32,10 @@ class AuditService final
 public:
     AuditService(INFRA::DatabasePool &database, AUTH::LoginService &auth);
 
-    [[nodiscard]] auto list(const USER::ActorContext &actor, const AuditQuery &query)
-        -> SZX::COMMON::Result<AuditPage>;
-    [[nodiscard]] auto listLegacy(const USER::ActorContext &actor, const AuditQuery &query)
-        -> SZX::COMMON::Result<AuditPage>;
+    [[nodiscard]] auto list(const USER::ActorContext &actor, const AuditQuery &query) -> SZX::COMMON::Result<AuditPage>;
 
 private:
-    auto query(const USER::ActorContext &actor, const AuditQuery &query, bool legacy)
-        -> SZX::COMMON::Result<AuditPage>;
+    auto query(const USER::ActorContext &actor, const AuditQuery &query) -> SZX::COMMON::Result<AuditPage>;
 
     INFRA::DatabasePool &database_;
     AUTH::LoginService &auth_;

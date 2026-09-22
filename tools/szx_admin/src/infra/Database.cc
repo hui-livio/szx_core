@@ -67,24 +67,52 @@ auto databaseFailure(ErrorCode code, std::string_view operation, std::string_vie
 
 auto connectAndConfigure(const DatabaseConfig &config, DETAIL::OrmConnection &connection) -> SZX::COMMON::Result<void>
 {
+    LOGM_DEBUG("szx_admin.database", "event=connection_attempt host={} port={} database={} username={} timeout_seconds={}",
+               config.host, config.port, config.database, config.username, config.connectTimeoutSeconds);
     if (!connection.connect(config.host, config.username, config.password, config.database,
                             static_cast<int>(config.connectTimeoutSeconds), static_cast<int>(config.port)))
+    {
+        LOGM_ERROR("szx_admin.database", "event=connection_failed host={} port={} database={} username={} driver_error={}",
+                   config.host, config.port, config.database, config.username, connection.lastError());
         return databaseFailure(ErrorCode::DatabaseUnavailable, "Database connection failed", {});
+    }
+    LOGM_DEBUG("szx_admin.database", "event=connection_established host={} port={} database={} username={}", config.host,
+               config.port, config.database, config.username);
 
     constexpr std::array<std::string_view, 2> sessionStatements{
         "SET SESSION time_zone = '+00:00'",
         "SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED",
     };
-    for (const auto statement : sessionStatements)
+    constexpr std::array<std::string_view, 2> sessionNames{"time_zone", "transaction_isolation"};
+    for (std::size_t index = 0; index < sessionStatements.size(); ++index)
     {
-        if (!connection.execute(std::string{statement}))
+        if (!connection.execute(std::string{sessionStatements[index]}))
+        {
+            LOGM_ERROR("szx_admin.database",
+                       "event=session_initialization_failed setting={} host={} port={} database={} driver_error={}",
+                       sessionNames[index], config.host, config.port, config.database, connection.lastError());
             return databaseFailure(ErrorCode::DatabaseUnavailable, "Database session initialization failed", {});
+        }
+        LOGM_DEBUG("szx_admin.database", "event=session_initialized setting={}", sessionNames[index]);
     }
     if (!connection.execute("SET SESSION innodb_lock_wait_timeout = " + std::to_string(config.lockWaitTimeoutSeconds)))
+    {
+        LOGM_ERROR(
+            "szx_admin.database",
+            "event=session_initialization_failed setting=innodb_lock_wait_timeout host={} port={} database={} driver_error={}",
+            config.host, config.port, config.database, connection.lastError());
         return databaseFailure(ErrorCode::DatabaseUnavailable, "Database session initialization failed", {});
+    }
+    LOGM_DEBUG("szx_admin.database", "event=session_initialized setting=innodb_lock_wait_timeout");
     if (!connection.execute("SET SESSION net_read_timeout = " + std::to_string(config.connectTimeoutSeconds) +
                             ", net_write_timeout = " + std::to_string(config.connectTimeoutSeconds)))
+    {
+        LOGM_ERROR("szx_admin.database",
+                   "event=session_initialization_failed setting=network_timeout host={} port={} database={} driver_error={}",
+                   config.host, config.port, config.database, connection.lastError());
         return databaseFailure(ErrorCode::DatabaseUnavailable, "Database session initialization failed", {});
+    }
+    LOGM_DEBUG("szx_admin.database", "event=session_initialized setting=network_timeout");
     return SZX::COMMON::Result<void>::Success();
 }
 
@@ -120,8 +148,8 @@ public:
         connection_(connection),
         loginRepository_(connection),
         userRepository_(connection),
-        auditRepository_(connection, logs.dualWriteLegacy, logs.readLegacy),
-        behaviorEventRepository_(connection, logs.dualWriteLegacy),
+        auditRepository_(connection),
+        behaviorEventRepository_(connection),
         logMaintenanceRepository_(connection)
     {
     }
@@ -350,8 +378,6 @@ auto LogStorageConfig::validate() const -> SZX::COMMON::Result<void>
 {
     if (auditRetentionDays == 0 || behaviorRetentionDays == 0 || cleanupBatchSize == 0 || cleanupBatchSize > 100000)
         return failure(ErrorCode::InvalidConfiguration, "Invalid log retention or cleanup configuration.");
-    if (dualWriteLegacy && !readLegacy)
-        return failure(ErrorCode::InvalidConfiguration, "Legacy log reads must remain enabled while dual write is enabled.");
     return SZX::COMMON::Result<void>::Success();
 }
 
@@ -375,6 +401,11 @@ auto DatabasePool::start() -> SZX::COMMON::Result<void>
     const auto logsValid = impl_->logs.validate();
     if (!logsValid.ok)
         return logsValid;
+    LOGM_INFO(
+        "szx_admin.database",
+        "event=database_start_begin host={} port={} database={} username={} pool_size={} timeout_seconds={} lock_wait_timeout_seconds={}",
+        impl_->config.host, impl_->config.port, impl_->config.database, impl_->config.username, impl_->config.poolSize,
+        impl_->config.connectTimeoutSeconds, impl_->config.lockWaitTimeoutSeconds);
     try
     {
         std::lock_guard ormLock(DETAIL::ormMutex());
@@ -383,19 +414,30 @@ auto DatabasePool::start() -> SZX::COMMON::Result<void>
             return SZX::COMMON::Result<void>::Success();
         const auto database = DETAIL::ensureDatabase(impl_->config);
         if (!database.ok)
+        {
+            LOGM_ERROR("szx_admin.database", "event=ensure_database_failed code={} message={}", database.error, database.message);
             return database;
+        }
+        LOGM_INFO("szx_admin.database", "event=database_available database={}", impl_->config.database);
         std::deque<std::unique_ptr<DETAIL::OrmConnection>> connections;
         for (std::uint16_t index = 0; index < impl_->config.poolSize; ++index)
         {
             auto connection      = std::make_unique<DETAIL::OrmConnection>();
             const auto connected = connectAndConfigure(impl_->config, *connection);
             if (!connected.ok)
+            {
+                LOGM_ERROR("szx_admin.database", "event=pool_connection_failed index={} code={} message={}", index,
+                           connected.error, connected.message);
                 return connected;
+            }
             connections.push_back(std::move(connection));
+            LOGM_DEBUG("szx_admin.database", "event=pool_connection_ready index={} total={}", index, connections.size());
         }
         impl_->connections = std::move(connections);
         impl_->started     = true;
         impl_->condition.notify_all();
+        LOGM_INFO("szx_admin.database", "event=database_start_complete database={} pool_size={}", impl_->config.database,
+                  impl_->connections.size());
         return SZX::COMMON::Result<void>::Success();
     } catch (const std::exception &error)
     {

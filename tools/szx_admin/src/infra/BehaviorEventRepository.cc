@@ -7,7 +7,6 @@
 
 #include <algorithm>
 #include <cctype>
-#include <optional>
 #include <tuple>
 
 namespace SZX::ADMIN::TELEMETRY
@@ -25,26 +24,6 @@ namespace
 {
 using SZX::COMMON::Result;
 using TELEMETRY::BatchWriteOutcome;
-
-struct LegacyBehaviorRecord final
-{
-    std::string id;
-    std::optional<std::string> actor_user_id;
-    std::optional<std::string> target_user_id;
-    std::string event_name;
-    std::string result;
-    std::string request_id;
-    std::string ip;
-    std::string user_agent;
-    std::string details_json;
-    std::string created_at;
-};
-inline constexpr auto get_alias_struct_name(LegacyBehaviorRecord *)
-{
-    return std::string_view{"user_logs"};
-}
-YLT_REFL(LegacyBehaviorRecord, id, actor_user_id, target_user_id, event_name, result, request_id, ip, user_agent, details_json,
-         created_at);
 
 struct BehaviorPageRecord final
 {
@@ -103,27 +82,6 @@ auto sameRecord(const TELEMETRY::BehaviorEventRecord &lhs, const TELEMETRY::Beha
         sameJson(lhs.details_json, rhs.details_json) && lhs.created_at == rhs.created_at;
 }
 
-auto sameLegacy(const LegacyBehaviorRecord &lhs, const TELEMETRY::BehaviorEventRecord &rhs) -> bool
-{
-    return lhs.id == rhs.id && lhs.actor_user_id == rhs.user_id && lhs.target_user_id == rhs.user_id &&
-        lhs.event_name == rhs.event_name && lhs.result == rhs.result && lhs.request_id == rhs.request_id && lhs.ip == rhs.ip &&
-        lhs.user_agent == rhs.user_agent && sameJson(lhs.details_json, rhs.details_json) && lhs.created_at == rhs.created_at;
-}
-
-auto legacyRecord(const TELEMETRY::BehaviorEventRecord &record) -> LegacyBehaviorRecord
-{
-    return {.id             = record.id,
-            .actor_user_id  = record.user_id,
-            .target_user_id = record.user_id,
-            .event_name     = record.event_name,
-            .result         = record.result,
-            .request_id     = record.request_id,
-            .ip             = record.ip,
-            .user_agent     = record.user_agent,
-            .details_json   = record.details_json,
-            .created_at     = record.created_at};
-}
-
 auto failureOutcome(const OrmConnection &connection) -> BatchWriteOutcome
 {
     auto diagnostic = connection.lastError();
@@ -159,31 +117,16 @@ auto MySqlBehaviorEventRepository::appendBatch(std::span<const TELEMETRY::Behavi
             const auto current = connection_.query_s<TELEMETRY::BehaviorEventRecord>("id = ?", record.id);
             if (connection_.has_error())
                 return Result<BatchWriteOutcome>::Success(failureOutcome(connection_));
-            std::vector<LegacyBehaviorRecord> legacy;
-            if (dualWriteLegacy_)
+            if (!current.empty())
             {
-                legacy = connection_.query_s<LegacyBehaviorRecord>("id = ?", record.id);
-                if (connection_.has_error())
-                    return Result<BatchWriteOutcome>::Success(failureOutcome(connection_));
-            }
-            if (!current.empty() || !legacy.empty())
-            {
-                const auto identical = current.size() == 1 && sameRecord(current.front(), record) &&
-                    (!dualWriteLegacy_ || (legacy.size() == 1 && sameLegacy(legacy.front(), record)));
+                const auto identical = current.size() == 1 && sameRecord(current.front(), record);
                 return Result<BatchWriteOutcome>::Success(identical ? BatchWriteOutcome::AlreadyCommitted :
                                                                       BatchWriteOutcome::RecordPermanentFailure);
             }
         }
 
         std::vector<TELEMETRY::BehaviorEventRecord> current(records.begin(), records.end());
-        std::vector<LegacyBehaviorRecord> legacy;
-        legacy.reserve(records.size());
-        for (const auto &record : records)
-            legacy.push_back(legacyRecord(record));
-
         if (connection_.insert(current) != static_cast<int>(current.size()) || connection_.has_error())
-            return Result<BatchWriteOutcome>::Success(failureOutcome(connection_));
-        if (dualWriteLegacy_ && (connection_.insert(legacy) != static_cast<int>(legacy.size()) || connection_.has_error()))
             return Result<BatchWriteOutcome>::Success(failureOutcome(connection_));
         return Result<BatchWriteOutcome>::Success(BatchWriteOutcome::ReadyToCommit);
     } catch (...)
@@ -201,13 +144,7 @@ auto MySqlBehaviorEventRepository::probe() -> Result<void>
                 "INSERT INTO client_behavior_events "
                 "(id,user_id,event_name,result,request_id,ip,user_agent,details_json,created_at) "
                 "SELECT @szx_behavior_probe_id,id,'system.probe','success','writer-resume-probe',NULL,NULL,JSON_OBJECT(),"
-                "CURRENT_TIMESTAMP(6) FROM users ORDER BY id LIMIT 1") ||
-            (dualWriteLegacy_ &&
-             !connection_.execute(
-                 "INSERT INTO user_logs "
-                 "(id,actor_user_id,target_user_id,event_name,result,request_id,ip,user_agent,details_json,created_at) "
-                 "SELECT @szx_behavior_probe_id,id,id,'system.probe','success','writer-resume-probe',NULL,NULL,JSON_OBJECT(),"
-                 "CURRENT_TIMESTAMP(6) FROM users ORDER BY id LIMIT 1")))
+                "CURRENT_TIMESTAMP(6) FROM users ORDER BY id LIMIT 1"))
         {
             (void)connection_.execute("ROLLBACK TO SAVEPOINT szx_behavior_probe");
             (void)connection_.execute("RELEASE SAVEPOINT szx_behavior_probe");

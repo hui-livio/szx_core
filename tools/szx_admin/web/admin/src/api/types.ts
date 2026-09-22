@@ -58,7 +58,6 @@ export interface AuditLog {
   peer_address: string
   details: Record<string, unknown>
   created_at: number
-  source?: 'security_audit' | 'client_behavior' | 'legacy_unknown'
 }
 export interface BehaviorEventRecord {
   id: string

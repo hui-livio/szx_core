@@ -48,7 +48,6 @@ struct AuditRow final
     std::string details_json;
     std::string created_at;
     std::string actor_username;
-    std::string source{"security_audit"};
 };
 
 struct AuditPage final
@@ -62,15 +61,8 @@ class AuditRepository
 public:
     virtual ~AuditRepository() = default;
 
-    /** Writes the trusted audit table and its migration-period legacy copy in the caller's transaction. */
-    virtual auto append(const AuditRecord &record) -> SZX::COMMON::Result<void> = 0;
+    /** Writes the trusted audit table in the caller's transaction. */
+    virtual auto append(const AuditRecord &record) -> SZX::COMMON::Result<void>     = 0;
     virtual auto query(const AuditFilter &filter) -> SZX::COMMON::Result<AuditPage> = 0;
-    /** Compatibility reader for the v1 /admin/user-logs endpoint during the dual-write release. */
-    virtual auto queryLegacy(const AuditFilter &filter) -> SZX::COMMON::Result<AuditPage> = 0;
-    /** Deduplicated migration-period projection across both new tables and user_logs. */
-    virtual auto queryCompatibility(const AuditFilter &filter) -> SZX::COMMON::Result<AuditPage>
-    {
-        return queryLegacy(filter);
-    }
 };
 } // namespace SZX::ADMIN::AUDIT

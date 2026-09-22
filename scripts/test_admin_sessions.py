@@ -70,7 +70,7 @@ def run_session_checks(admin, sql, root, login, post, verify_token):
         cleared(call(port, unknown, "logout"))
 
         # Every rotation write must roll back, including when the new token has already been inserted.
-        for table, operation, code in (("user_logs", "INSERT", 2212), ("refresh_tokens", "INSERT", 2221),
+        for table, operation, code in (("security_audit_logs", "INSERT", 2212), ("refresh_tokens", "INSERT", 2221),
                                         ("refresh_tokens", "UPDATE", 2221)):
             before = sql("SELECT COUNT(*) FROM sessions.refresh_tokens;")
             sql(f"CREATE TRIGGER sessions.fail_session BEFORE {operation} ON sessions.{table} "
@@ -102,7 +102,7 @@ def run_session_checks(admin, sql, root, login, post, verify_token):
         independent = session(login(port))
 
         # Replay revocation itself must roll back when its mandatory audit fails.
-        sql("CREATE TRIGGER sessions.fail_session BEFORE INSERT ON sessions.user_logs FOR EACH ROW "
+        sql("CREATE TRIGGER sessions.fail_session BEFORE INSERT ON sessions.security_audit_logs FOR EACH ROW "
             "SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='SESSION_SECRET';")
         response = call(port, first)
         assert response[0] == 500 and response[1]["code"] == 2212
@@ -111,13 +111,13 @@ def run_session_checks(admin, sql, root, login, post, verify_token):
         response = call(port, first)
         assert response[0] == 409 and response[1]["code"] == 2202
         assert active(second) == "0" and call(port, second)[0] == 401
-        assert sql("SELECT COUNT(*) FROM sessions.user_logs WHERE event_name='auth.refresh.replayed';") == "1"
+        assert sql("SELECT COUNT(*) FROM sessions.security_audit_logs WHERE event_name='auth.refresh.replayed';") == "1"
         independent = session(call(port, independent))  # A different login family survives replay.
 
         # Logout is atomic, idempotent and can revoke descendants using a rotated ancestor cookie.
         parent = session(login(port))
         child = session(call(port, parent))
-        for table, operation, code in (("user_logs", "INSERT", 2212), ("refresh_tokens", "UPDATE", 2221)):
+        for table, operation, code in (("security_audit_logs", "INSERT", 2212), ("refresh_tokens", "UPDATE", 2221)):
             sql(f"CREATE TRIGGER sessions.fail_session BEFORE {operation} ON sessions.{table} "
                 "FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='SESSION_SECRET';")
             response = call(port, parent, "logout")

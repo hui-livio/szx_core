@@ -1,12 +1,12 @@
 # RBAC REST API 接口参考
 
-更新日期：2026-09-21。本文按当前服务实现描述接口，采用“参数表 → 请求示例 → 响应模型 → 错误码”的参考格式。
+更新日期：2026-09-22。本文按当前服务实现描述接口，采用“参数表 → 请求示例 → 响应模型 → 错误码”的参考格式。
 
 在线 Swagger UI：启动新版服务后访问 `/api/v1`（跳转 `/api/v1/`）。支持查看全部接口、搜索、Bearer 授权和 Try it out 调试；OpenAPI 下载地址为 `/api/v1/openapi.json`。修改 `server.apiPrefix` 后文档入口和调试地址随之变化。
 
 ## 1. 接口目录
 
-**当前已实现：19 / 19 个接口。** 下表“已实现”表示后端已注册路由并实现处理逻辑，不代表对应前端页面已完成；OPTIONS 预检不单独计数。
+**当前已实现：18 / 18 个接口操作。** 下表“已实现”表示后端已注册路由并实现处理逻辑，不代表对应前端页面已完成；OPTIONS 预检不单独计数。
 
 默认 Base URL 为 `/api/v1`，以下路径均相对于该前缀。部署修改 `server.apiPrefix` 时，客户端同步替换前缀。
 
@@ -26,7 +26,6 @@
 | 用户 | PATCH | [/admin/users/{id}/unlock](#users-unlock) | 解锁 | Bearer + If-Match，admin/super_admin | 200 | 已实现 |
 | 用户 | PUT | [/admin/users/{id}/role](#users-role) | 修改角色 | Bearer + If-Match，super_admin | 200 | 已实现 |
 | 用户 | POST | [/admin/users/{id}/reset-password](#users-reset-password) | 重置密码 | Bearer + If-Match，admin/super_admin | 200 | 已实现 |
-| 兼容 | GET | [/admin/user-logs](#user-logs) | 审计和行为日志聚合（已废弃） | Bearer，admin/super_admin | 200 | 已实现 |
 | 审计 | GET | [/admin/audit-logs](#audit-logs) | 安全审计列表 | Bearer，admin/super_admin | 200 | 已实现 |
 | 行为 | GET | [/admin/behavior-events](#behavior-events) | 用户行为列表 | Bearer，admin/super_admin | 200 | 已实现 |
 | 客户端 | GET | [/client/me/permissions](#client-permissions) | 当前用户权限 | Bearer，任意有效角色 | 200 | 已实现 |
@@ -583,72 +582,13 @@ If-Match: 4
 
 未指定密码时，服务端生成新的临时密码并设置 24 小时有效期；指定密码时不设置临时有效期，响应 `temporary_credential` 和 `temporary_credential_expires_at` 均为 null，不回传密码或摘要。两种方式均设置待改密标记，递增 version/authz_version，撤销全部 refresh 会话，旧密码失效。是否强制改密由目标角色决定，见 User 模型。超出签发预算返回 `429 / 2211`，不产生部分密码变更；其他错误见本节公共错误表。
 
-<a id="user-logs"></a>
-
-### GET /admin/user-logs — 审计和行为日志兼容列表（已废弃）
-
-**实现状态：已实现**
-
-新调用方必须改用 `/admin/audit-logs` 或 `/admin/behavior-events`。本接口在迁移期聚合 `security_audit_logs`、`client_behavior_events` 和尚未迁移的 `user_logs`：相同 UUID 以新表记录优先，遗留表仅补充两张新表都不存在的 UUID，`total`、筛选、排序和分页基于同一个去重集合。
-
-**权限：** admin/super_admin。
-
-| Query 参数 | 类型 | 必填 | 默认／约束 |
-|---|---|---|---|
-| page | integer | 否 | 默认 1；范围 1–4294967295 |
-| page_size | integer | 否 | 默认 20；范围 1–100 |
-| from | string | 否 | 起始 UTC ISO 8601 时间，包含下界 |
-| to | string | 否 | 结束 UTC ISO 8601 时间，包含该精确时刻上界 |
-| event_name | string | 否 | 精确匹配；事件名称语法见行为上报，查询允许 auth./user. 前缀 |
-| event_search | string | 否 | 事件代码或已配置中文名称的字面量子串，最多 128 个 Unicode 字符，无控制字符；空表示不过滤 |
-| result | string | 否 | success / failure / denied |
-| actor_user_id | string(UUID) | 否 | 操作者 ID |
-| actor_search | string | 否 | 操作者展示名、用户名或 UID 的字面量子串，最多 128 个 Unicode 字符，无控制字符；与其他筛选条件取交集 |
-
-按 created_at 降序、id 升序排列；不支持 sort，未知参数返回 `422 / 2206`。to 只有秒精度，不包含该精确时刻之后的微秒记录；其他错误见本节公共错误表。
-
-管理界面使用 `event_search`，提交前去除首尾空白。例如 `login` 或 `auth.login` 可匹配 `auth.login.success` / `auth.login.failure`，`登录` 还匹配中文名为“退出登录”的 `auth.logout`。未知事件可按原始代码查询。`%`、`_`、反斜杠作为普通字符。匹配在服务端分页前完成，total 使用相同条件；与其他筛选条件取交集。保留 `event_name` 原有精确语义。
-
-`actor_search` 在服务端关联 users 后，对 display_name、username、uid 三个字段进行匹配，分页与 total 均基于过滤后的日志。`%`、`_`、反斜杠作为普通字符匹配，大小写规则沿用数据库展示列的排序规则。`actor_user_id` 仅为已有 API 客户端保留兼容，管理界面不提供 UUID 搜索；二者同时提供时取交集。返回的用户名是查询时的登录标识，不是历史快照；无关联操作者的日志仍会出现在未按用户筛选的结果中。
-
-```http
-GET /api/v1/admin/user-logs?page=1&page_size=20&from=2026-09-17T00%3A00%3A00Z&event_name=report.view
-Authorization: Bearer <access-token>
-```
-
-**成功：** 200，data 为 `Page<AuditLog>`。
-
-```json
-{
-  "data": {
-    "items": [{
-      "id": "20000000-0000-4000-8000-000000000001",
-      "actor_user_id": "10000000-0000-4000-8000-000000000002",
-      "actor_username": "alice",
-      "target_user_id": "10000000-0000-4000-8000-000000000002",
-      "event_name": "report.view",
-      "result": "success",
-      "request_id": "report-view-001",
-      "peer_address": "",
-      "details": {"source": "dashboard"},
-      "created_at": 1789636500510,
-      "source": "client_behavior"
-    }],
-    "total": 1,
-    "page": 1,
-    "page_size": 20
-  },
-  "request_id": "logs-list-001"
-}
-```
-
-每条兼容记录必有 `source`：`security_audit`、`client_behavior` 或 `legacy_unknown`。历史日志读取时也执行字段脱敏，但不会修改存储中的历史记录。业务 API 不支持修改或删除日志。
-
 <a id="audit-logs"></a>
 
 ### GET /admin/audit-logs — 安全审计列表
 
-与兼容接口使用相同的分页和筛选参数，权限为 `audit.read`。该接口只读取 `security_audit_logs`，不返回客户端行为事件；返回的 `Page<AuditLog>` 结构与上文一致。
+支持 `page`、`page_size`、`from`、`to`、`event_name`、`event_search`、`result`、`actor_user_id` 和 `actor_search`。权限为 `audit.read`，只读取 `security_audit_logs`，不返回客户端行为事件；返回 `Page<AuditLog>`。
+
+按 `created_at DESC, id ASC` 排序；查询和分页前完成事件/操作者过滤，业务 API 不支持修改或删除日志。
 
 <a id="behavior-events"></a>
 

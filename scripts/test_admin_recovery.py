@@ -27,7 +27,7 @@ def run_recovery_checks(admin, sql, root):
                 return response.status, json.load(response)
 
         credentials = {"identifier": "admin", "password_hash": hashlib.sha256(b"superadmin").hexdigest()}
-        sql("CREATE TRIGGER pool_recovery.slow_audit BEFORE INSERT ON pool_recovery.user_logs "
+        sql("CREATE TRIGGER pool_recovery.slow_audit BEFORE INSERT ON pool_recovery.security_audit_logs "
             "FOR EACH ROW DO SLEEP(15);")
         for _ in range(2):
             with ThreadPoolExecutor(max_workers=1) as executor:
@@ -49,7 +49,7 @@ def run_recovery_checks(admin, sql, root):
                 assert pending.result()[0] == 500
         sql("DROP TRIGGER pool_recovery.slow_audit;")
         assert sql("SELECT COUNT(*) FROM pool_recovery.refresh_tokens;") == "0"
-        assert sql("SELECT COUNT(*) FROM pool_recovery.user_logs;") == "0"
+        assert sql("SELECT COUNT(*) FROM pool_recovery.security_audit_logs;") == "0"
 
         # Failed reconnection must also retain capacity, and must not log each retry.
         sql("ALTER USER admin_test@localhost ACCOUNT LOCK;")

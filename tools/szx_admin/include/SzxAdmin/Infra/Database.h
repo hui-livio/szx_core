@@ -56,15 +56,13 @@ SZX_REFL(DatabaseConfig, host, port, database, username, password, poolSize, con
 
 struct LogStorageConfig final
 {
-    bool dualWriteLegacy{true};
-    bool readLegacy{true};
     std::uint32_t auditRetentionDays{180};
     std::uint32_t behaviorRetentionDays{30};
     std::uint32_t cleanupBatchSize{5000};
 
     [[nodiscard]] auto validate() const -> SZX::COMMON::Result<void>;
 };
-SZX_REFL(LogStorageConfig, dualWriteLegacy, readLegacy, auditRetentionDays, behaviorRetentionDays, cleanupBatchSize);
+SZX_REFL(LogStorageConfig, auditRetentionDays, behaviorRetentionDays, cleanupBatchSize);
 
 struct AppliedMigration final
 {
@@ -154,8 +152,10 @@ public:
         return result.ok ? SZX::COMMON::Result<CommitOutcome>::Success(CommitOutcome::Committed) :
                            SZX::COMMON::Result<CommitOutcome>::Success(CommitOutcome::NotCommitted);
     }
-    [[nodiscard]] virtual auto rollback() -> SZX::COMMON::Result<void>                                  = 0;
-    virtual void invalidate() noexcept {}
+    [[nodiscard]] virtual auto rollback() -> SZX::COMMON::Result<void> = 0;
+    virtual void invalidate() noexcept
+    {
+    }
     [[nodiscard]] virtual auto reusable() const noexcept -> bool
     {
         return true;
@@ -195,8 +195,7 @@ public:
     [[nodiscard]] auto stop() -> SZX::COMMON::Result<void>;
     [[nodiscard]] auto ping() -> SZX::COMMON::Result<void>;
     [[nodiscard]] auto withConnection(const ConnectionCallback &callback) -> SZX::COMMON::Result<void>;
-    [[nodiscard]] auto withConnectionUntil(const ConnectionCallback &callback,
-                                            std::chrono::steady_clock::time_point deadline)
+    [[nodiscard]] auto withConnectionUntil(const ConnectionCallback &callback, std::chrono::steady_clock::time_point deadline)
         -> SZX::COMMON::Result<void>;
 
 private:

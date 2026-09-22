@@ -2,6 +2,7 @@
 #include "../auth/PasswordHash.h"
 #include "OrmConnection.h"
 
+#include "Logger.h"
 #include "SzxAdmin/Infra/Database.h"
 #include "SzxAdmin/Infra/ErrorCode.h"
 #include "SzxCrypto/Hash.h"
@@ -146,11 +147,14 @@ CREATE TABLE IF NOT EXISTS client_behavior_events (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 )SZXSQL";
 
+constexpr std::string_view kMigration5 = "DROP TABLE IF EXISTS user_logs;";
+
 constexpr MigrationDefinition kMigrations[] = {
     {1, kMigration1, "86a4ac820cc8457a2131d0400d4968268576b17113f38fe86b6beceea48c2047"},
     {2, kMigration2, "f4223aadebf005f145941d06b89d2d41e964f4c059d2f765a8e1b3678d389d2d"},
     {3, kMigration3, "66db48cd7957f45317269dcad13d2c2ac5c47eeacfc8e8bb715d2ca4b7e5f065"},
     {4, kMigration4, "193446d82dbee660610cbbc8f822469529d18dbf8760ddcffbb3c1d356e8236a"},
+    {5, kMigration5, "df5a342ab4da5db2515c8469d3fe17751a6570cc6ee9b009bef9bed9d2463241"},
 };
 
 constexpr DETAIL::InitialAdministratorDefinition kInitialAdministrator{
@@ -329,22 +333,40 @@ auto DETAIL::ensureDatabase(const DatabaseConfig &config) -> SZX::COMMON::Result
 {
     try
     {
+        LOGM_INFO("szx_admin.database", "event=ensure_database_begin host={} port={} database={} username={} timeout_seconds={}",
+                  config.host, config.port, config.database, config.username, config.connectTimeoutSeconds);
         const auto valid = config.validate();
         if (!valid.ok)
+        {
+            LOGM_ERROR("szx_admin.database", "event=ensure_database_config_invalid code={} message={}", valid.error,
+                       valid.message);
             return valid;
+        }
         DETAIL::OrmConnection connection;
         if (!connection.connect(config.host, config.username, config.password, "", static_cast<int>(config.connectTimeoutSeconds),
                                 static_cast<int>(config.port)))
+        {
+            LOGM_ERROR("szx_admin.database", "event=server_connect_failed host={} port={} username={} driver_error={}",
+                       config.host, config.port, config.username, connection.lastError());
             return SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::DatabaseUnavailable),
                                                       "Database server connection failed.");
+        }
+        LOGM_DEBUG("szx_admin.database", "event=server_connected host={} port={} username={}", config.host, config.port,
+                   config.username);
         const auto statement =
             "CREATE DATABASE IF NOT EXISTS `" + config.database + "` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci";
         if (!connection.execute(statement))
+        {
+            LOGM_ERROR("szx_admin.database", "event=database_create_failed database={} driver_error={}", config.database,
+                       connection.lastError());
             return SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::DatabaseQueryFailed),
                                                       "Database creation failed.");
+        }
+        LOGM_INFO("szx_admin.database", "event=ensure_database_complete database={}", config.database);
         return SZX::COMMON::Result<void>::Success();
     } catch (...)
     {
+        LOGM_ERROR("szx_admin.database", "event=ensure_database_exception database={}", config.database);
         return SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::DatabaseUnavailable),
                                                   "Database server initialization failed.");
     }
@@ -360,6 +382,7 @@ auto MigrationRunner::run(DatabaseConnection &connection, std::span<const Migrat
 {
     try
     {
+        LOGM_INFO("szx_admin.database", "event=migrations_begin definition_count={}", definitions.size());
         std::unordered_map<std::uint32_t, std::string_view> supported;
         std::uint32_t latest{};
         for (const auto &migration : definitions)
@@ -381,20 +404,37 @@ auto MigrationRunner::run(DatabaseConnection &connection, std::span<const Migrat
         }
 
         constexpr std::string_view lockName = "szx_rbac_schema_migrations";
-        const auto acquired                 = connection.acquireMigrationLock(lockName, 10);
+        LOGM_DEBUG("szx_admin.database", "event=migration_lock_acquire name={} timeout_seconds=10", lockName);
+        const auto acquired = connection.acquireMigrationLock(lockName, 10);
         if (!acquired.ok)
+        {
+            LOGM_ERROR("szx_admin.database", "event=migration_lock_failed name={} code={} message={}", lockName, acquired.error,
+                       acquired.message);
             return SZX::COMMON::Result<MigrationSummary>::Failure(acquired.error, acquired.message);
+        }
         if (!acquired.value)
+        {
+            LOGM_ERROR("szx_admin.database", "event=migration_lock_busy name={}", lockName);
             return SZX::COMMON::Result<MigrationSummary>::Failure(static_cast<int>(ErrorCode::MigrationFailed),
                                                                   "Migration is being executed by another instance.");
+        }
+        LOGM_DEBUG("szx_admin.database", "event=migration_lock_acquired name={}", lockName);
         MigrationLockGuard lock(connection, lockName);
         lock.lock();
         const auto schema = connection.executeMigrationStatement(kCreateMigrationJournal);
         if (!schema.ok)
+        {
+            LOGM_ERROR("szx_admin.database", "event=migration_journal_failed code={} message={}", schema.error, schema.message);
             return SZX::COMMON::Result<MigrationSummary>::Failure(schema.error, schema.message);
+        }
         const auto applied = connection.loadAppliedMigrations();
         if (!applied.ok)
+        {
+            LOGM_ERROR("szx_admin.database", "event=migration_journal_read_failed code={} message={}", applied.error,
+                       applied.message);
             return SZX::COMMON::Result<MigrationSummary>::Failure(applied.error, applied.message);
+        }
+        LOGM_INFO("szx_admin.database", "event=migration_journal_loaded applied_count={}", applied.value.size());
         std::unordered_map<std::uint32_t, std::string> recorded;
         for (const auto &migration : applied.value)
         {
@@ -414,34 +454,62 @@ auto MigrationRunner::run(DatabaseConnection &connection, std::span<const Migrat
         {
             const auto recordedMigration = recorded.find(migration.version);
             if (recordedMigration != recorded.end())
+            {
+                LOGM_DEBUG("szx_admin.database", "event=migration_skip version={} reason=already_applied", migration.version);
                 continue;
+            }
+            LOGM_INFO("szx_admin.database", "event=migration_apply_begin version={}", migration.version);
+            std::size_t statementIndex{};
             for (const auto &statement : splitStatements(migration.sql))
             {
                 const auto result = connection.executeMigrationStatement(statement);
                 if (!result.ok)
+                {
+                    LOGM_ERROR("szx_admin.database",
+                               "event=migration_statement_failed version={} statement_index={} code={} message={}",
+                               migration.version, statementIndex, result.error, result.message);
                     return SZX::COMMON::Result<MigrationSummary>::Failure(static_cast<int>(ErrorCode::MigrationFailed),
                                                                           result.message);
+                }
+                ++statementIndex;
             }
+            LOGM_DEBUG("szx_admin.database", "event=migration_statements_applied version={} statement_count={}",
+                       migration.version, statementIndex);
             TransactionGuard transaction(connection);
             const auto started = connection.begin();
             if (!started.ok)
+            {
+                LOGM_ERROR("szx_admin.database", "event=migration_transaction_begin_failed version={} code={} message={}",
+                           migration.version, started.error, started.message);
                 return SZX::COMMON::Result<MigrationSummary>::Failure(started.error, started.message);
+            }
             transaction.started();
             const auto journal = connection.recordMigration(AppliedMigration{migration.version, std::string{migration.checksum}});
             if (!journal.ok)
+            {
+                LOGM_ERROR("szx_admin.database", "event=migration_record_failed version={} code={} message={}", migration.version,
+                           journal.error, journal.message);
                 return SZX::COMMON::Result<MigrationSummary>::Failure(static_cast<int>(ErrorCode::MigrationFailed),
                                                                       journal.message);
+            }
             const auto committed = transaction.commit();
             if (!committed.ok)
+            {
+                LOGM_ERROR("szx_admin.database", "event=migration_commit_failed version={} code={} message={}", migration.version,
+                           committed.error, committed.message);
                 return SZX::COMMON::Result<MigrationSummary>::Failure(static_cast<int>(ErrorCode::MigrationFailed),
                                                                       committed.message);
+            }
+            LOGM_INFO("szx_admin.database", "event=migration_apply_complete version={}", migration.version);
             ++appliedCount;
         }
+        LOGM_INFO("szx_admin.database", "event=migrations_complete current_version={} applied_count={}", latest, appliedCount);
         return SZX::COMMON::Result<MigrationSummary>::Success(MigrationSummary{latest, appliedCount});
     }
 
     catch (...)
     {
+        LOGM_ERROR("szx_admin.database", "event=migrations_exception");
         return SZX::COMMON::Result<MigrationSummary>::Failure(static_cast<int>(ErrorCode::MigrationFailed),
                                                               "Migration execution threw an exception.");
     }
@@ -452,38 +520,78 @@ auto BootstrapAdminService::run(DatabaseConnection &connection) -> SZX::COMMON::
     try
     {
         constexpr std::string_view lockName = "szx_rbac_bootstrap";
-        const auto acquired                 = connection.acquireMigrationLock(lockName, 10);
+        LOGM_INFO("szx_admin.database", "event=bootstrap_begin username={} role={}", kInitialAdministrator.username,
+                  kInitialAdministrator.role);
+        LOGM_DEBUG("szx_admin.database", "event=bootstrap_lock_acquire name={} timeout_seconds=10", lockName);
+        const auto acquired = connection.acquireMigrationLock(lockName, 10);
         if (!acquired.ok)
+        {
+            LOGM_ERROR("szx_admin.database", "event=bootstrap_lock_failed name={} code={} message={}", lockName, acquired.error,
+                       acquired.message);
             return SZX::COMMON::Result<bool>::Failure(acquired.error, acquired.message);
+        }
         if (!acquired.value)
+        {
+            LOGM_ERROR("szx_admin.database", "event=bootstrap_lock_busy name={}", lockName);
             return SZX::COMMON::Result<bool>::Failure(static_cast<int>(ErrorCode::DatabaseTransactionFailed),
                                                       "Bootstrap initialization is being executed by another instance.");
+        }
+        LOGM_DEBUG("szx_admin.database", "event=bootstrap_lock_acquired name={}", lockName);
         MigrationLockGuard lock(connection, lockName);
         lock.lock();
         TransactionGuard transaction(connection);
         const auto started = connection.begin();
         if (!started.ok)
+        {
+            LOGM_ERROR("szx_admin.database", "event=bootstrap_transaction_begin_failed code={} message={}", started.error,
+                       started.message);
             return SZX::COMMON::Result<bool>::Failure(started.error, started.message);
+        }
         transaction.started();
         const auto completed = connection.bootstrapCompleted();
         if (!completed.ok)
+        {
+            LOGM_ERROR("szx_admin.database", "event=bootstrap_state_read_failed code={} message={}", completed.error,
+                       completed.message);
             return SZX::COMMON::Result<bool>::Failure(completed.error, completed.message);
+        }
+        LOGM_DEBUG("szx_admin.database", "event=bootstrap_state_read completed={}", completed.value);
         if (completed.value)
+        {
+            LOGM_INFO("szx_admin.database", "event=bootstrap_skip reason=already_completed");
             return SZX::COMMON::Result<bool>::Success(false);
+        }
         const auto existing = connection.findBootstrapAdministrator();
         if (!existing.ok)
+        {
+            LOGM_ERROR("szx_admin.database", "event=bootstrap_account_lookup_failed code={} message={}", existing.error,
+                       existing.message);
             return SZX::COMMON::Result<bool>::Failure(existing.error, existing.message);
+        }
         if (existing.value)
         {
+            LOGM_INFO("szx_admin.database", "event=bootstrap_account_found role={}", existing.value->role);
             if (existing.value->role != kInitialAdministrator.role)
+            {
+                LOGM_ERROR("szx_admin.database", "event=bootstrap_account_conflict role={}", existing.value->role);
                 return SZX::COMMON::Result<bool>::Failure(static_cast<int>(ErrorCode::UserIdentityConflict),
                                                           "The bootstrap username belongs to a non-super-admin user.");
+            }
             const auto marked = connection.recordBootstrapCompletion(existing.value->id);
             if (!marked.ok)
+            {
+                LOGM_ERROR("szx_admin.database", "event=bootstrap_completion_record_failed code={} message={}", marked.error,
+                           marked.message);
                 return SZX::COMMON::Result<bool>::Failure(marked.error, marked.message);
+            }
             const auto committed = transaction.commit();
             if (!committed.ok)
+            {
+                LOGM_ERROR("szx_admin.database", "event=bootstrap_existing_commit_failed code={} message={}", committed.error,
+                           committed.message);
                 return SZX::COMMON::Result<bool>::Failure(committed.error, committed.message);
+            }
+            LOGM_INFO("szx_admin.database", "event=bootstrap_reconciled account_id={}", existing.value->id);
             return SZX::COMMON::Result<bool>::Success(false);
         }
         const auto password = kInitialAdministrator.password;
@@ -493,23 +601,41 @@ auto BootstrapAdminService::run(DatabaseConnection &connection) -> SZX::COMMON::
             return SZX::COMMON::Result<bool>::Failure(static_cast<int>(ErrorCode::InternalFailure), {});
         const auto hash = AUTH::storeClientPasswordHash(cryptoService, clientHash.value);
         if (!hash.ok)
+        {
+            LOGM_ERROR("szx_admin.database", "event=bootstrap_password_hash_failed code={} message={}", hash.error, hash.message);
             return SZX::COMMON::Result<bool>::Failure(static_cast<int>(ErrorCode::InternalFailure),
                                                       "Bootstrap password hashing failed.");
+        }
         const auto id       = SZX::COMMON::Uuid::v4().toString();
         const auto inserted = connection.insertBootstrapAdministrator(BootstrapAdministrator{
             id, std::string{kInitialAdministrator.username}, hash.value, std::string{kInitialAdministrator.role},
             std::string{kInitialAdministrator.status}, kInitialAdministrator.forcePasswordChange});
         if (!inserted.ok)
+        {
+            LOGM_ERROR("szx_admin.database", "event=bootstrap_account_insert_failed code={} message={}", inserted.error,
+                       inserted.message);
             return SZX::COMMON::Result<bool>::Failure(inserted.error, inserted.message);
+        }
         const auto marked = connection.recordBootstrapCompletion(id);
         if (!marked.ok)
+        {
+            LOGM_ERROR("szx_admin.database", "event=bootstrap_completion_record_failed code={} message={}", marked.error,
+                       marked.message);
             return SZX::COMMON::Result<bool>::Failure(marked.error, marked.message);
+        }
         const auto committed = transaction.commit();
         if (!committed.ok)
+        {
+            LOGM_ERROR("szx_admin.database", "event=bootstrap_commit_failed code={} message={}", committed.error,
+                       committed.message);
             return SZX::COMMON::Result<bool>::Failure(committed.error, committed.message);
+        }
+        LOGM_INFO("szx_admin.database", "event=bootstrap_created account_id={} username={} role={}", id,
+                  kInitialAdministrator.username, kInitialAdministrator.role);
         return SZX::COMMON::Result<bool>::Success(true);
     } catch (...)
     {
+        LOGM_ERROR("szx_admin.database", "event=bootstrap_exception");
         return SZX::COMMON::Result<bool>::Failure(static_cast<int>(ErrorCode::DatabaseQueryFailed),
                                                   "Bootstrap administrator initialization failed.");
     }
