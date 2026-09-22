@@ -1,6 +1,6 @@
 # Admin 部署与使用指南
 
-本文对应 `tools/szx_admin` C++ 服务和 `tools/szx_admin/web/admin` Vue 3 管理界面，说明当前实现（2026-09-20）。API 字段和错误码以 [接口文档](05-RESTful-API接口文档.md) 为准。
+本文对应 `tools/szx_admin` C++ 服务和 `tools/szx_admin/web/admin` Vue 3 管理界面，说明当前实现（2026-09-22）。Admin 已初步完成服务、认证、用户管理、审计/行为事件接口和管理页面；当前仍需完成业务 Client 接入、真实 HTTPS 联调及生产运维验收。API 字段和错误码以 [接口文档](05-RESTful-API接口文档.md) 为准。
 
 ## 1. 地址与目录
 
