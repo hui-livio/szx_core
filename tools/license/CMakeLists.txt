@@ -1,0 +1,5 @@
+add_subdirectory(license-issuer)
+add_subdirectory(license-demo)
+if(SZX_COMPONENTS_BUILD_UI_TOOLKITS)
+    add_subdirectory(license-issuer-gui)
+endif()

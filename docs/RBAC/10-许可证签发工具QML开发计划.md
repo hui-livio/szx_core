@@ -153,7 +153,7 @@ datasets/
 
 ### 阶段 1：工程骨架（1 天）
 
-- 新增 `tools/license-issuer-gui/` CMake target。
+- 新增 `tools/license/license-issuer-gui/` CMake target。
 - 接入 Qt 6 Quick、QuickControls2 和 `UIToolkits`。
 - 建立 `Main.qml`、导航模型、主题和 C++ 控制器注册。
 - 交付：可启动的空壳窗口、Debug/RelWithDebInfo 构建和部署配置。

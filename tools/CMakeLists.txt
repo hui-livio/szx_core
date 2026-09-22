@@ -2,12 +2,7 @@ if(SZX_COMPONENTS_BUILD_RBAC)
     add_subdirectory(szx_admin)
 endif()
 
-add_subdirectory(license-issuer)
-add_subdirectory(license-demo)
-
-if(SZX_COMPONENTS_BUILD_UI_TOOLKITS)
-    add_subdirectory(license-issuer-gui)
-endif()
+add_subdirectory(license)
 
 if(SZX_COMPONENTS_BUILD_UI_TOOLKITS_APP)
     if(NOT SZX_COMPONENTS_BUILD_UI_TOOLKITS)
