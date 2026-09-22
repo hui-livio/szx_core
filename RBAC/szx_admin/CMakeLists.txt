@@ -117,10 +117,10 @@ szx_copy_runtime_dlls(szx_admin_service)
 
 # npm owns frontend compilation. Copy an existing production bundle on every
 # service build, including builds where the executable does not need relinking.
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../szx_admin_web/dist/index.html")
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/web/admin/dist/index.html")
     add_custom_target(szx_admin_web_assets
         COMMAND ${CMAKE_COMMAND} -E copy_directory
-        "${CMAKE_CURRENT_SOURCE_DIR}/../szx_admin_web/dist"
+        "${CMAKE_CURRENT_SOURCE_DIR}/web/admin/dist"
         "$<TARGET_FILE_DIR:szx_admin_service>/web/admin"
         COMMENT "Deploying admin frontend at /admin"
         VERBATIM
@@ -134,12 +134,12 @@ add_custom_command(TARGET szx_admin_service POST_BUILD
     "$<TARGET_FILE_DIR:szx_admin_service>/config"
     COMMENT "Copying szx_admin_service configuration"
 )
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/web")
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/web/api-docs/index.html")
     add_custom_target(szx_admin_service_web_assets
         COMMAND ${CMAKE_COMMAND} -E copy_directory
-        "${CMAKE_CURRENT_SOURCE_DIR}/web"
-        "$<TARGET_FILE_DIR:szx_admin_service>/web"
-        COMMENT "Copying szx_admin_service web assets"
+        "${CMAKE_CURRENT_SOURCE_DIR}/web/api-docs"
+        "$<TARGET_FILE_DIR:szx_admin_service>/web/api-docs"
+        COMMENT "Copying szx_admin_service API documentation assets"
         VERBATIM
     )
     add_dependencies(szx_admin_service szx_admin_service_web_assets)

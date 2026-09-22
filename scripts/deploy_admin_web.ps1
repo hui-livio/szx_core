@@ -5,10 +5,10 @@ param(
 
 $ErrorActionPreference = "Stop"
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
-$dist = Join-Path $repoRoot "RBAC/szx_admin_web/dist"
+$dist = Join-Path $repoRoot "RBAC/szx_admin/web/admin/dist"
 $index = Join-Path $dist "index.html"
 if (-not (Test-Path -LiteralPath $index -PathType Leaf)) {
-    throw "Build the frontend first: cd RBAC/szx_admin_web; npm run build"
+    throw "Build the frontend first: cd RBAC/szx_admin/web/admin; npm run build"
 }
 if (-not (Get-Content -LiteralPath $index -Raw).Contains('/admin/assets/')) {
     throw "The frontend must be built with base /admin/. Run npm run build again."

@@ -1,13 +1,13 @@
 # szx_admin_web
 
-数自星智能用户管理系统，接入同目录下 `../szx_admin` 的 REST API。
+数自星智能用户管理系统，接入 `RBAC/szx_admin` 的 REST API。
 
 ## 启动
 
 使用 Node.js 22.12+（或 24 LTS）和 npm。
 
 ```powershell
-cd RBAC/szx_admin_web
+cd RBAC/szx_admin/web/admin
 npm ci
 npm run dev
 ```
@@ -71,7 +71,7 @@ npm run format:check
 
 ## 发布
 
-服务配置、首次启动、操作说明和端口占用排查见 [Admin 部署与使用指南](../../docs/RBAC/12-Admin部署与使用指南.md)。
+服务配置、首次启动、操作说明和端口占用排查见 [Admin 部署与使用指南](../../../../docs/RBAC/12-Admin部署与使用指南.md)。
 
 `npm run build` 生成以 `/admin/` 为资源和路由前缀的 `dist/`，开发服务器仍使用 `/`。Vue Router 自动使用构建时的 BASE_URL，接口仍走同源 `/api/v1`。
 
@@ -81,4 +81,4 @@ npm run format:check
 
 CMake 在配置时发现 dist 后，会通过 `szx_admin_web_assets` 目标在每次构建服务时复制产物；前端仍由 npm 独立构建，首次生成 dist 后可重新配置 CMake 或直接运行部署脚本。生产使用 HTTPS 同源提供页面与 API。局域网普通 HTTP 下 Web Crypto 不可用时，需要 HTTPS 才能完成密码摘要和登录。
 
-接口依据：[RESTful API 接口文档](../../docs/RBAC/05-RESTful-API接口文档.md)。
+接口依据：[RESTful API 接口文档](../../../../docs/RBAC/05-RESTful-API接口文档.md)。
