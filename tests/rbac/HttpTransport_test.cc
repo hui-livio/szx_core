@@ -5,7 +5,7 @@
 #include <stdexcept>
 #include <string>
 
-#include "../../RBAC/szx_admin/src/Routes.h"
+#include "../../tools/szx_admin/src/Routes.h"
 #include "../support/HttpClient.h"
 #include "FileHelper.hpp"
 #include "Serializer.hpp"

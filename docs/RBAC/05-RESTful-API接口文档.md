@@ -801,7 +801,7 @@ if (!refreshed.ok) throw new Error(`${refreshBody.code}: ${refreshBody.message}`
 
 ### 8.3 部署与凭据说明
 
-Admin 前端入口为 `/admin`（308 跳转 `/admin/`），与本文 API 前缀 `/api/v1` 独立；例如页面 `/admin/users` 调用接口 `/api/v1/admin/users`。将 `RBAC/szx_admin/web/admin/dist` 内容部署到 `server.staticRoot/admin`，配置 `spaFallback: true`。完整构建、启动和故障排查见 [Admin 部署与使用指南](12-Admin部署与使用指南.md)。
+Admin 前端入口为 `/admin`（308 跳转 `/admin/`），与本文 API 前缀 `/api/v1` 独立；例如页面 `/admin/users` 调用接口 `/api/v1/admin/users`。将 `tools/szx_admin/web/admin/dist` 内容部署到 `server.staticRoot/admin`，配置 `spaFallback: true`。完整构建、启动和故障排查见 [Admin 部署与使用指南](12-Admin部署与使用指南.md)。
 
 启动前配置 auth.privateKeyPath 和 auth.publicKeyPath（PEM/DER，路径相对进程工作目录）；不自动生成临时密钥。当前使用 PS256／RSA-3072，issuer/audience 默认 szx-admin / szx-client。
 

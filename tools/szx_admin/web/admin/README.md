@@ -1,13 +1,13 @@
 # szx_admin_web
 
-数自星智能用户管理系统，接入 `RBAC/szx_admin` 的 REST API。
+数自星智能用户管理系统，接入 `tools/szx_admin` 的 REST API。
 
 ## 启动
 
 使用 Node.js 22.12+（或 24 LTS）和 npm。
 
 ```powershell
-cd RBAC/szx_admin/web/admin
+cd tools/szx_admin/web/admin
 npm ci
 npm run dev
 ```

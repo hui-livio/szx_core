@@ -1,3 +1,7 @@
+if(SZX_COMPONENTS_BUILD_RBAC)
+    add_subdirectory(szx_admin)
+endif()
+
 add_subdirectory(license-issuer)
 add_subdirectory(license-demo)
 

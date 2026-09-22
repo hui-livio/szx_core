@@ -367,7 +367,7 @@ if (!mounted.ok) return mounted.error;
 
 需要自行决定目录首页或回退条件时，使用 `HttpServer::CreateStaticHandler(directory, homePage)` 创建可复用的文件 handler，再注入 `onNotFound()` 或路由。它复用上述路径安全和大小检查，缺失文件返回 404，不自动执行 SPA 回退。业务层可依据请求和结果决定后续行为。
 
-RBAC admin 使用这些扩展点：`useBeforeRouting()` 注入路径归一化，`use()` 注入 request ID 与访问日志，`onRequestError()` 注入 JSON 错误，`onNotFound()` 决定 API 路径排除和无扩展名路径的 SPA 回退。所有 RBAC 策略位于 `RBAC/szx_admin`；网络库不依赖 admin、JSON 或 logger。
+RBAC admin 使用这些扩展点：`useBeforeRouting()` 注入路径归一化，`use()` 注入 request ID 与访问日志，`onRequestError()` 注入 JSON 错误，`onNotFound()` 决定 API 路径排除和无扩展名路径的 SPA 回退。所有 RBAC 策略位于 `tools/szx_admin`；网络库不依赖 admin、JSON 或 logger。
 
 ## TLS 与后续范围
 

@@ -1,4 +1,4 @@
-#include "../../RBAC/szx_admin/src/infra/OrmRuntime.h"
+#include "../../tools/szx_admin/src/infra/OrmRuntime.h"
 
 #include <gtest/gtest.h>
 

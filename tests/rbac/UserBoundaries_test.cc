@@ -5,9 +5,9 @@
 #include <thread>
 #include <vector>
 
-#include "../../RBAC/szx_admin/src/HttpSupport.h"
-#include "../../RBAC/szx_admin/src/RateLimiter.h"
-#include "../../RBAC/szx_admin/src/user/AuditDetails.h"
+#include "../../tools/szx_admin/src/HttpSupport.h"
+#include "../../tools/szx_admin/src/RateLimiter.h"
+#include "../../tools/szx_admin/src/user/AuditDetails.h"
 
 TEST(AdminOriginTest, ExactOriginRestrictsSourcesAndWildcardAcceptsHttpOrigins)
 {

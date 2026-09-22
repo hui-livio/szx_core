@@ -1,6 +1,6 @@
 # Admin 部署与使用指南
 
-本文对应 `RBAC/szx_admin` C++ 服务和 `RBAC/szx_admin/web/admin` Vue 3 管理界面，说明当前实现（2026-09-20）。API 字段和错误码以 [接口文档](05-RESTful-API接口文档.md) 为准。
+本文对应 `tools/szx_admin` C++ 服务和 `tools/szx_admin/web/admin` Vue 3 管理界面，说明当前实现（2026-09-20）。API 字段和错误码以 [接口文档](05-RESTful-API接口文档.md) 为准。
 
 ## 1. 地址与目录
 
@@ -12,7 +12,7 @@
 | REST API | `http://localhost:7364/api/v1` |
 | 健康检查 | `GET /api/v1/health` |
 | 前端开发服务 | `http://localhost:5173`，代理 API 到 `127.0.0.1:7364` |
-| 前端构建产物 | `RBAC/szx_admin/web/admin/dist` |
+| 前端构建产物 | `tools/szx_admin/web/admin/dist` |
 | 默认部署位置 | `build/bin/web/admin` |
 | 默认服务程序 | `build/bin/szx_admin_service.exe` |
 | 默认运行配置 | `build/bin/config/config.yaml` |
@@ -26,7 +26,7 @@
 使用 Node.js 22.12+ 或 24 LTS，在仓库根目录运行：
 
 ```powershell
-Set-Location RBAC/szx_admin/web/admin
+Set-Location tools/szx_admin/web/admin
 npm ci
 npm run build
 npm run deploy
@@ -53,7 +53,7 @@ CMake 在配置时发现 `dist/index.html` 后添加 `szx_admin_web_assets`，�
 
 ## 3. 配置与启动
 
-配置模板为 [config.yaml](../../RBAC/szx_admin/config/config.yaml)。部署前设置数据库连接、JWT 密钥和实际允许的 Origin；首次启动执行迁移及幂等 bootstrap。密钥需预先提供，生成方式见 API 文档“部署与凭据说明”。
+配置模板为 [config.yaml](../../tools/szx_admin/config/config.yaml)。仓库内 `config/keys` 的 PEM 仅供本地开发调试；生产部署前必须替换全部 JWT/TLS 密钥，并设置数据库连接和实际允许的 Origin。首次启动执行迁移及幂等 bootstrap。生产密钥需由受控来源预先提供，生成方式见 API 文档“部署与凭据说明”。
 
 静态托管相关配置：
 
@@ -103,7 +103,7 @@ Nginx 示例不修改 CORS、CSP 或 Cookie 响应头。当前 admin 使用连�
 
 ### 在线接口文档
 
-构建服务会自动复制 `RBAC/szx_admin/web/api-docs` 到 `build/bin/web/api-docs`，不依赖 Vue 构建或外网 CDN。自定义 staticRoot 时复制到 `<staticRoot>/api-docs`；首次创建目录后重启服务。
+构建服务会自动复制 `tools/szx_admin/web/api-docs` 到 `build/bin/web/api-docs`，不依赖 Vue 构建或外网 CDN。自定义 staticRoot 时复制到 `<staticRoot>/api-docs`；首次创建目录后重启服务。
 
 访问 `/api/v1`，展开接口查看参数、示例与响应，点击 Try it out → Execute 发起真实请求。登录提交 SHA-256 摘要，随后将 access_token 填入 Authorize 的 bearerAuth（不用添加 Bearer 前缀）；刷新/登出所需 Cookie 由浏览器自动携带，手动填写最新 X-CSRF-Token。授权信息仅保留在当前页面，不会自动刷新。可下载 OpenAPI 文件导入接口工具。
 
@@ -160,4 +160,4 @@ Get-Process -Id <上一步的OwningProcess>
 
 确认进程身份后退出旧实例，再启动服务；不要同时运行两个监听同一地址和端口的实例。修改端口后同步更新开发代理和访问地址。
 
-自动化验证命令见 [前端 README](../../RBAC/szx_admin/web/admin/README.md)。后端静态挂载测试位于 `tests/rbac/HttpTransport_test.cc`，可构建 `test_rbac_infra` 后运行 `ctest --test-dir build -R '^test_rbac_infra$' --output-on-failure`。前端浏览器测试使用模拟 API，不能替代真实数据库、HTTPS Cookie 和生产环境验收。
+自动化验证命令见 [前端 README](../../tools/szx_admin/web/admin/README.md)。后端静态挂载测试位于 `tests/rbac/HttpTransport_test.cc`，可构建 `test_rbac_infra` 后运行 `ctest --test-dir build -R '^test_rbac_infra$' --output-on-failure`。前端浏览器测试使用模拟 API，不能替代真实数据库、HTTPS Cookie 和生产环境验收。

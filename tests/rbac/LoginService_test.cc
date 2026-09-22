@@ -1,5 +1,5 @@
-#include "../../RBAC/szx_admin/src/auth/LoginService.h"
-#include "../../RBAC/szx_admin/src/auth/PasswordHash.h"
+#include "../../tools/szx_admin/src/auth/LoginService.h"
+#include "../../tools/szx_admin/src/auth/PasswordHash.h"
 #include "SzxAdmin/Infra/ErrorCode.h"
 
 #include <gtest/gtest.h>

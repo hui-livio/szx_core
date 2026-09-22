@@ -1,6 +1,6 @@
 #include "SzxAdmin/Infra/Database.h"
-#include "../../RBAC/szx_admin/src/maintenance/LogMaintenanceService.h"
-#include "../../RBAC/szx_admin/src/telemetry/BehaviorEventWriter.h"
+#include "../../tools/szx_admin/src/maintenance/LogMaintenanceService.h"
+#include "../../tools/szx_admin/src/telemetry/BehaviorEventWriter.h"
 #include "SzxAdmin/Infra/ErrorCode.h"
 #include "SzxCrypto/Random.h"
 

@@ -162,9 +162,6 @@ elseif(SZX_COMPONENTS_BUILD_COMPRESSION AND NOT SZX_COMPRESSION_BACKEND STREQUAL
 endif()
 
 add_subdirectory(components)
-if(SZX_COMPONENTS_BUILD_RBAC)
-    add_subdirectory(RBAC)
-endif()
 add_subdirectory(tools)
 
 szx_install_components_package()
