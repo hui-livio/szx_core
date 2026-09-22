@@ -1,4 +1,5 @@
 include_guard(GLOBAL)
+include(szx_find_openssl)
 
 # Single source of truth for the bundled libhv build.
 #
@@ -52,17 +53,9 @@ function(szx_add_libhv)
     endif()
 
     if(SZX_NETWORK_ENABLE_TLS)
+        szx_find_openssl(MIN_VERSION 3.5.8 COMPONENTS SSL)
         set(WITH_OPENSSL ON)
-        # SZX_OPENSSL_ROOT is the cache path components/crypto defines, but that
-        # only happens once crypto has been configured.  Fall back to the same
-        # bundled SDK so this does not depend on subdirectory order.
-        if(SZX_OPENSSL_ROOT)
-            set(_szx_openssl_root "${SZX_OPENSSL_ROOT}")
-        else()
-            set(_szx_openssl_root
-                "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../third_party/OpenSSL/WIN64_Static")
-        endif()
-        set(OPENSSL_ROOT_DIR "${_szx_openssl_root}")
+        set(OPENSSL_ROOT_DIR "${SZX_OPENSSL_ROOT}")
     else()
         set(WITH_OPENSSL OFF)
     endif()

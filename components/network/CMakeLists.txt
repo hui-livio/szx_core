@@ -14,8 +14,8 @@ target_include_directories(szx_network PRIVATE "${SZX_LIBHV_ROOT}/http" "${SZX_L
 target_include_directories(szx_network PRIVATE "${SZX_LIBHV_ROOT}/include/hv")
 target_link_libraries(szx_network PUBLIC szx::common PRIVATE hv_static)
 if(SZX_NETWORK_ENABLE_TLS AND SZX_NETWORK_ENABLE_HTTP_CLIENT)
-    find_package(OpenSSL REQUIRED)
-    target_link_libraries(szx_network PRIVATE OpenSSL::SSL)
+    szx_find_openssl(MIN_VERSION 3.5.8 COMPONENTS SSL)
+    target_link_libraries(szx_network PRIVATE SZX::OpenSSL::SSL)
 endif()
 target_compile_definitions(szx_network PRIVATE SZX_NETWORK_EXPORTS
     SZX_NETWORK_HAS_TLS=$<BOOL:${SZX_NETWORK_ENABLE_TLS}>

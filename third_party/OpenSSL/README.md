@@ -1,18 +1,46 @@
-# OpenSSL 预编译静态 SDK
+# OpenSSL 3.5.8 Windows x64 SDK
 
-本目录保存项目基于 OpenSSL 官方源码自行编译的 Windows x64 静态 OpenSSL SDK 制品。
+本目录保存项目使用的 OpenSSL 3.5.8 LTS Windows x64 预编译制品，不包含
+OpenSSL 源码。制品于 2026-09-21 从维护者本机安装目录
+`C:\Program Files\OpenSSL-Win64` 提取；OpenSSL 项目本身不发布 Windows
+二进制安装包，因此发布审计应以 `manifest.json` 中的文件校验和为准。
 
-- 版本：OpenSSL 4.0.2
-- 架构：Windows x64
-- 链接方式：静态 `libcrypto.lib` / `libssl.lib`
-- Provider：当前仅保留 `default`；`legacy.dll` 仅在使用旧算法时需要
-- CMake 配置：`lib/cmake/OpenSSL/OpenSSLConfig.cmake`
-- 官方项目：https://github.com/openssl/openssl
-- 官方许可证页面：https://www.openssl.org/source/license.html
-- 许可证：OpenSSL 3.0 及以后版本适用 Apache License 2.0
-- 制品来源：项目维护者使用官方源码本地构建，不是 OpenSSL 官方发布的二进制安装包
-- Configure 参数：`perl Configure VC-WIN64A no-shared --release --prefix="D:\third_party\openssl\static\x64"`
+目录只保留项目构建和运行需要的文件：
 
-当前安装前缀为 `D:\third_party\openssl\static\x64`，随后将安装产物整理到本仓库的 `third_party/OpenSSL/WIN64_Static`。该 SDK 的源码版本/提交、编译器、运行库（`/MT`/`/MD`）、Configure 参数、完整构建命令和源码校验和应在发布制品清单中维护。升级 OpenSSL 时必须同步更新版本、源码来源、校验和、许可证和兼容性测试记录。
+```text
+third_party/OpenSSL/
+  bin/
+    libcrypto-3-x64.dll
+    libssl-3-x64.dll
+  include/openssl/
+  lib/VC/x64/MD/
+    libcrypto.lib
+    libcrypto_static.lib
+    libssl.lib
+    libssl_static.lib
+  lib/VC/x64/MT/
+    libcrypto.lib
+    libcrypto_static.lib
+    libssl.lib
+    libssl_static.lib
+  LICENSE.txt
+  manifest.json
+```
 
-注意：本目录中的 `.lib`、`.dll` 和头文件是预编译制品，不代表 OpenSSL 源码；分发时应同时提供 Apache License 2.0 文本和本说明中的来源信息。
+未保留 `MDd`、`MTd` 调试库、测试库、示例、命令行工具和非核心 provider
+DLL。所有 CMake 配置都使用 Release OpenSSL 库，包括项目 Debug 配置。
+
+## CMake 选项
+
+- `SZX_OPENSSL_ROOT`：SDK 根目录，默认指向本目录。
+- `SZX_OPENSSL_LINKAGE=STATIC|SHARED`：默认 `STATIC`。动态模式使用同一运行库
+  目录下的导入库，并从 `bin` 部署两个核心 DLL。
+- `SZX_OPENSSL_MSVC_RUNTIME=MD|MT`：默认 `MD`。选择 `MT` 时必须同时通过
+  `CMAKE_MSVC_RUNTIME_LIBRARY` 让项目使用静态 MSVC 运行库。
+
+`cmake/szx_find_openssl.cmake` 只接受 Windows MSVC x64，并校验版本不低于
+3.5.8、头文件、所选库和动态运行文件。默认静态链接不会把 OpenSSL DLL
+带入应用运行时依赖；动态模式会将 `bin` 下两个 DLL 复制到目标输出目录。
+
+OpenSSL 3.0 及以后版本采用 Apache License 2.0，许可证正文见
+`LICENSE.txt`。

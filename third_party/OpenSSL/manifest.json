@@ -1,0 +1,76 @@
+{
+  "name": "OpenSSL",
+  "version": "3.5.8",
+  "release_date": "2026-08-25",
+  "support_line": "LTS",
+  "platform": "VC-WIN64A",
+  "architecture": "x86_64",
+  "configuration": "Release",
+  "source": {
+    "type": "local-installed-binary-distribution",
+    "path": "C:\\Program Files\\OpenSSL-Win64",
+    "copied_at": "2026-09-21"
+  },
+  "msvc_runtimes": [
+    "MD",
+    "MT"
+  ],
+  "license": "Apache-2.0",
+  "files": [
+    {
+      "path": "bin/libcrypto-3-x64.dll",
+      "size": 7222784,
+      "sha256": "a7f745cad9209c33db5de9d6a5efc80a2fbb1cfca95c90226acaeb2557eec6de"
+    },
+    {
+      "path": "bin/libssl-3-x64.dll",
+      "size": 1314816,
+      "sha256": "6f3fd991b65826601c32a54a6bf65fb383da7f3953f6e98ceab32a99f8cd4384"
+    },
+    {
+      "path": "lib/VC/x64/MD/libcrypto_static.lib",
+      "size": 60325812,
+      "sha256": "c0b78fd2f1c32111d66a673db9f9836d9cda2f862f51fb20403c22dd13a8dd6b"
+    },
+    {
+      "path": "lib/VC/x64/MD/libcrypto.lib",
+      "size": 1377216,
+      "sha256": "f81322c5ac0b748a839af6827d079c4bdd28248702efd7a90042ea714dbc2a92"
+    },
+    {
+      "path": "lib/VC/x64/MD/libssl_static.lib",
+      "size": 13026398,
+      "sha256": "dda9145ef4fc0aaf10740faca63a1fb638a60dc833497e775cfc38ba23fac7c1"
+    },
+    {
+      "path": "lib/VC/x64/MD/libssl.lib",
+      "size": 147386,
+      "sha256": "740ec7af4d0e22c32e873fbf2fc317f7ef1458e7898d500c47dcecf0fd2bfe6a"
+    },
+    {
+      "path": "lib/VC/x64/MT/libcrypto_static.lib",
+      "size": 60312780,
+      "sha256": "57eda550df8d5f7d78ab146005609dbf9345c326124a640c79ee15dcc7bd14ed"
+    },
+    {
+      "path": "lib/VC/x64/MT/libcrypto.lib",
+      "size": 1377216,
+      "sha256": "f81322c5ac0b748a839af6827d079c4bdd28248702efd7a90042ea714dbc2a92"
+    },
+    {
+      "path": "lib/VC/x64/MT/libssl_static.lib",
+      "size": 13024944,
+      "sha256": "f7e5220b1c6a82027d0cb8518b5201e2662a3ae505d24f0732c55353939a64d2"
+    },
+    {
+      "path": "lib/VC/x64/MT/libssl.lib",
+      "size": 147386,
+      "sha256": "740ec7af4d0e22c32e873fbf2fc317f7ef1458e7898d500c47dcecf0fd2bfe6a"
+    },
+    {
+      "path": "LICENSE.txt",
+      "size": 10352,
+      "sha256": "ed72ce2b51ee58f117e5a021e2e04af158857f40269fbc03491f0b2a99dbcc96"
+    }
+  ]
+}

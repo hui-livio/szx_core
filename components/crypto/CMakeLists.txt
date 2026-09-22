@@ -31,12 +31,12 @@ target_include_directories(szx_crypto PUBLIC
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/szx/common>
 )
 
-set(SZX_OPENSSL_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/OpenSSL/WIN64_Static" CACHE PATH "OpenSSL static SDK root")
-set(OPENSSL_USE_STATIC_LIBS TRUE)
-find_package(OpenSSL 4 CONFIG REQUIRED COMPONENTS Crypto PATHS "${SZX_OPENSSL_ROOT}/lib/cmake/OpenSSL" NO_DEFAULT_PATH)
+include(szx_find_openssl)
+szx_find_openssl(MIN_VERSION 3.5.8 COMPONENTS Crypto)
 
-target_link_libraries(szx_crypto PUBLIC szx::common PRIVATE OpenSSL::Crypto)
+target_link_libraries(szx_crypto PUBLIC szx::common PRIVATE SZX::OpenSSL::Crypto)
 target_compile_definitions(szx_crypto PRIVATE SZX_CRYPTO_EXPORTS)
 target_compile_features(szx_crypto PUBLIC cxx_std_20)
 szx_apply_default_compile_policy(szx_crypto)
+szx_copy_openssl_runtime_dlls(szx_crypto)
 
