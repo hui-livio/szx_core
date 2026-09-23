@@ -373,6 +373,8 @@ RBAC admin 使用这些扩展点：`useBeforeRouting()` 注入路径归一化，
 
 默认 `SZX_NETWORK_ENABLE_TLS=OFF`，此时 `tls.enabled=true` 在 Create 返回 `TlsUnavailable`。打开该构建选项时复用 `szx_add_libhv()` 的 OpenSSL 配置，透传 PEM 证书、私钥、CA 与 peer 校验选项，不管理证书轮换。HTTP 服务端每个实例拥有独立 IO 线程；后续增加其他协议时再设计共享循环与异步响应，不提前发布占位接口。
 
+网络组件加载时按 libhv 官方接口调用 `hlog_disable()`，关闭 libhv 默认日志，不创建 `libhv.<日期>.log` 文件。应用访问日志和业务日志仍由上层使用项目 logger 管理。
+
 ## 初版验证记录
 
 在 Windows x64 / MSVC 19.44 / RelWithDebInfo / TLS OFF 下，21 个网络用例全部通过，覆盖真实回环连接、路由参数隔离、二进制 body、中间件顺序和短路、路由前改写、提前 413、超大 chunk 长度与数值溢出拒绝、请求行/头/体分片、大小写混合的 100-continue、HEAD/GET 流水线、报文定界与尾部字段隔离、目标路径解析、异常隔离、错误响应注入、连接上限、重启、端口冲突、并发、停止等待与静态目录约束。已有 `test_rbac_auth`、`test_rbac_infra`、`test_rbac_database` 3 组测试通过，其中 infra 包含 6 个 admin 真实 TCP 集成用例；`szx_admin_service` 构建通过。

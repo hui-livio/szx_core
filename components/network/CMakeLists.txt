@@ -1,5 +1,14 @@
 szx_add_libhv()
-add_library(szx_network SHARED src/HttpServer.cc src/HttpClient.cc src/Tcp.cc src/WebSocket.cc src/NetworkTypes.cc src/detail/HttpTransport.cc src/detail/WebSocketProtocol.cc)
+add_library(szx_network SHARED
+    src/HttpServer.cc
+    src/HttpClient.cc
+    src/Tcp.cc
+    src/WebSocket.cc
+    src/NetworkTypes.cc
+    src/LibhvLogging.cc
+    src/detail/HttpTransport.cc
+    src/detail/WebSocketProtocol.cc
+)
 if(SZX_NETWORK_ENABLE_HTTP_CLIENT)
     target_sources(szx_network PRIVATE src/detail/HttpClientTransport.cc)
 endif()
