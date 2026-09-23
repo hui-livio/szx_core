@@ -33,14 +33,14 @@ DLL。所有 CMake 配置都使用 Release OpenSSL 库，包括项目 Debug 配�
 ## CMake 选项
 
 - `SZX_OPENSSL_ROOT`：SDK 根目录，默认指向本目录。
-- `SZX_OPENSSL_LINKAGE=STATIC|SHARED`：默认 `STATIC`。动态模式使用同一运行库
-  目录下的导入库，并从 `bin` 部署两个核心 DLL。
+- `SZX_OPENSSL_LINKAGE=STATIC|SHARED`：默认 `SHARED`。动态模式使用同一运行库
+  目录下的导入库，并从 `bin` 部署两个核心 DLL；可显式指定 `STATIC` 使用静态库。
 - `SZX_OPENSSL_MSVC_RUNTIME=MD|MT`：默认 `MD`。选择 `MT` 时必须同时通过
   `CMAKE_MSVC_RUNTIME_LIBRARY` 让项目使用静态 MSVC 运行库。
 
 `cmake/szx_find_openssl.cmake` 只接受 Windows MSVC x64，并校验版本不低于
-3.5.8、头文件、所选库和动态运行文件。默认静态链接不会把 OpenSSL DLL
-带入应用运行时依赖；动态模式会将 `bin` 下两个 DLL 复制到目标输出目录。
+3.5.8、头文件和所选链接模式的制品。默认动态模式会将 `bin` 下两个 DLL
+复制到目标输出目录，安装运行时也会包含这两个 DLL；静态模式不部署 DLL。
 
 OpenSSL 3.0 及以后版本采用 Apache License 2.0，许可证正文见
 `LICENSE.txt`。
