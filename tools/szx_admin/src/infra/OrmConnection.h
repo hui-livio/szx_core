@@ -1,5 +1,7 @@
 #pragma once
 
+#include <coroutine>
+
 #include "OrmRuntime.h"
 
 #include <ormpp/mysql.hpp>

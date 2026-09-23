@@ -25,7 +25,7 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     set(SZX_COMPONENTS_STANDALONE_BUILD TRUE)
     # RBAC also needs an external MySQL Connector/C installation; keep it
     # opt-in so a clean WSL/Arch environment builds the core libraries.
-    set(_SZX_COMPONENTS_DEFAULT_RBAC OFF)
+    set(_SZX_COMPONENTS_DEFAULT_RBAC ON)
     set(_SZX_COMPONENTS_DEFAULT_TESTS ON)
     set(_SZX_COMPONENTS_DEFAULT_INSTALL ON)
     set(_SZX_COMPONENTS_DEFAULT_CAMERA ON)
