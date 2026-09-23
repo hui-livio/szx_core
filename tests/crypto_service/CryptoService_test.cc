@@ -36,14 +36,10 @@ TEST(CryptoServiceTest, EncryptsAndDecryptsThroughFacade)
     CryptoService service;
     std::vector<std::uint8_t> key(32, 7), data{1, 2, 3};
     auto e = service.encrypt(key, data);
-#if defined(_WIN32)
     ASSERT_TRUE(e.ok) << e.message;
     auto d = service.decrypt(key, e.value);
     ASSERT_TRUE(d.ok) << d.message;
     EXPECT_EQ(d.value, data);
-#else
-    EXPECT_FALSE(e.ok);
-#endif
 }
 
 TEST(CryptoServiceTest, HashesPasswordThroughRbacFacade)
@@ -52,7 +48,6 @@ TEST(CryptoServiceTest, HashesPasswordThroughRbacFacade)
     const std::vector<std::uint8_t> password{'p', 'a', 's', 's', 'w', 'o', 'r', 'd'};
     const Argon2idParameters parameters{.memoryCostKiB = 8192, .iterations = 2, .lanes = 1, .saltLength = 16, .hashLength = 32};
     auto encoded = service.hashPassword(password, parameters);
-#if defined(_WIN32)
     ASSERT_TRUE(encoded.ok) << encoded.message;
     auto valid = service.verifyPassword(password, encoded.value);
     ASSERT_TRUE(valid.ok) << valid.message;
@@ -60,9 +55,6 @@ TEST(CryptoServiceTest, HashesPasswordThroughRbacFacade)
     auto invalid = service.verifyPassword(std::vector<std::uint8_t>{'n', 'o'}, encoded.value);
     ASSERT_TRUE(invalid.ok) << invalid.message;
     EXPECT_FALSE(invalid.value);
-#else
-    EXPECT_FALSE(encoded.ok);
-#endif
 }
 
 TEST(CryptoServiceTest, ExposesPs256AndStablePublicKeyId)

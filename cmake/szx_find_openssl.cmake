@@ -13,7 +13,32 @@ function(szx_find_openssl)
     cmake_parse_arguments(ARG "" "MIN_VERSION" "COMPONENTS" ${ARGN})
 
     if(NOT WIN32 OR NOT MSVC)
-        message(FATAL_ERROR "The bundled OpenSSL SDK supports Windows MSVC x64 only")
+        # The bundled SDK is Windows/MSVC-specific. Use the host package on
+        # Linux and other Unix hosts so WSL builds retain crypto support.
+        if(NOT ARG_MIN_VERSION)
+            set(ARG_MIN_VERSION 3.5.8)
+        endif()
+        # This repository ships cmake/FindOpenSSL.cmake for the Windows SDK;
+        # temporarily remove that module path to avoid recursively finding
+        # this wrapper while resolving the host package.
+        set(_szx_saved_module_path "${CMAKE_MODULE_PATH}")
+        list(REMOVE_ITEM CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}")
+        find_package(OpenSSL ${ARG_MIN_VERSION} REQUIRED COMPONENTS ${ARG_COMPONENTS})
+        set(CMAKE_MODULE_PATH "${_szx_saved_module_path}")
+        if(NOT TARGET SZX::OpenSSL::Crypto)
+            add_library(SZX::OpenSSL::Crypto INTERFACE IMPORTED GLOBAL)
+            target_link_libraries(SZX::OpenSSL::Crypto INTERFACE OpenSSL::Crypto)
+        endif()
+        if(TARGET OpenSSL::SSL AND NOT TARGET SZX::OpenSSL::SSL)
+            add_library(SZX::OpenSSL::SSL INTERFACE IMPORTED GLOBAL)
+            target_link_libraries(SZX::OpenSSL::SSL INTERFACE OpenSSL::SSL)
+        endif()
+        message(STATUS "Using system OpenSSL ${OpenSSL_VERSION} on ${CMAKE_SYSTEM_NAME}")
+        set(SZX_OPENSSL_LINKAGE "SYSTEM" CACHE STRING "OpenSSL linkage" FORCE)
+        set(OpenSSL_FOUND TRUE PARENT_SCOPE)
+        set(OPENSSL_FOUND TRUE PARENT_SCOPE)
+        set(OpenSSL_VERSION "${OpenSSL_VERSION}" PARENT_SCOPE)
+        return()
     endif()
     if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
         message(FATAL_ERROR "The bundled OpenSSL SDK requires a 64-bit target")
