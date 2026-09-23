@@ -115,18 +115,23 @@ target_compile_features(szx_admin_service PRIVATE cxx_std_20)
 szx_apply_default_compile_policy(szx_admin_service)
 szx_copy_runtime_dlls(szx_admin_service)
 
-# npm owns frontend compilation. Copy an existing production bundle on every
-# service build, including builds where the executable does not need relinking.
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/web/admin/dist/index.html")
-    add_custom_target(szx_admin_web_assets
-        COMMAND ${CMAKE_COMMAND} -E copy_directory
-        "${CMAKE_CURRENT_SOURCE_DIR}/web/admin/dist"
-        "$<TARGET_FILE_DIR:szx_admin_service>/web/admin"
-        COMMENT "Deploying admin frontend at /admin"
-        VERBATIM
-    )
-    add_dependencies(szx_admin_service szx_admin_web_assets)
+# Build the admin frontend and deploy the freshly generated production bundle
+# whenever the service target is built, including builds without relinking.
+if(WIN32)
+    find_program(_SZX_ADMIN_NPM_EXECUTABLE NAMES npm.cmd npm REQUIRED NO_CACHE)
+else()
+    find_program(_SZX_ADMIN_NPM_EXECUTABLE NAMES npm REQUIRED NO_CACHE)
 endif()
+add_custom_target(szx_admin_web_assets
+    COMMAND "${_SZX_ADMIN_NPM_EXECUTABLE}" run build
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+    "${CMAKE_CURRENT_SOURCE_DIR}/web/admin/dist"
+    "$<TARGET_FILE_DIR:szx_admin_service>/web/admin"
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/web/admin"
+    COMMENT "Building and deploying admin frontend at /admin"
+    VERBATIM
+)
+add_dependencies(szx_admin_service szx_admin_web_assets)
 
 add_custom_command(TARGET szx_admin_service POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory

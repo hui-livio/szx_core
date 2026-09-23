@@ -28,20 +28,11 @@
 ```powershell
 Set-Location tools/szx_admin/web/admin
 npm ci
-npm run build
-npm run deploy
-Set-Location ../..
-```
-
-`build` 先执行类型检查，再生成以 `/admin/` 为 base 的产物；`deploy` 只复制已有 dist，不负责构建。脚本默认写入 `build/bin/web/admin`，先复制资源再复制 index，并保留旧的哈希资源文件，避免已打开的页面加载旧资源失败。
-
-在已配置的 Visual Studio 2022 x64 开发终端中，构建服务：
-
-```powershell
+Set-Location ../../../..
 cmake --build build --target szx_admin_service --parallel 6
 ```
 
-CMake 在配置时发现 `dist/index.html` 后添加 `szx_admin_web_assets`，每次构建服务都会复制已有产物。若首次配置时没有 dist，可在生成 dist 后运行 `cmake -S . -B build`，或直接用 `npm run deploy`。CMake 不运行 npm，也不会自动更新过期的前端产物。构建前退出占用目标 exe 的旧服务。
+CMake 配置时定位 npm。每次构建 `szx_admin_service` 都会自动执行 `npm run build`：先进行类型检查，再生成以 `/admin/` 为 base 的最新 `dist`，随后将产物复制到可执行文件目录下的 `web/admin`；该流程不依赖后端是否需要重新链接。构建前退出占用目标 exe 的旧服务。
 
 自定义部署目录时，在仓库根目录运行：
 
@@ -49,7 +40,7 @@ CMake 在配置时发现 `dist/index.html` 后添加 `szx_admin_web_assets`，�
 ./scripts/deploy_admin_web.ps1 -StaticRoot 'D:/services/szx_admin/web'
 ```
 
-这会写入 `D:/services/szx_admin/web/admin`；服务应配置 `staticRoot: D:/services/szx_admin/web`。不要把 staticRoot 设置为其 admin 子目录，否则挂载位置会多出一层。
+这会将已构建的 `dist` 写入 `D:/services/szx_admin/web/admin`；服务应配置 `staticRoot: D:/services/szx_admin/web`。不要把 staticRoot 设置为其 admin 子目录，否则挂载位置会多出一层。
 
 ## 3. 配置与启动
 

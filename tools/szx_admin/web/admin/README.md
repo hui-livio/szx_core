@@ -75,10 +75,10 @@ npm run format:check
 
 `npm run build` 生成以 `/admin/` 为资源和路由前缀的 `dist/`，开发服务器仍使用 `/`。Vue Router 自动使用构建时的 BASE_URL，接口仍走同源 `/api/v1`。
 
-在前端目录执行 `npm run deploy`，将已构建的 `dist/` 部署到 `build/bin/web/admin/`。从 `build/bin` 启动新版 `szx_admin_service.exe`，访问 `http://<host>:<port>/admin`；服务会跳转到 `/admin/`，支持 `/admin/login`、`/admin/users`、`/admin/logs` 等页面直接打开和刷新。首次创建部署目录后需重启服务。
+构建 `szx_admin_service` 时，会自动执行 `npm run build`，并将新生成的 `dist/` 部署到可执行文件目录下的 `web/admin/`；即使后端无需重新链接，也会重新构建并部署前端。启动新版 `szx_admin_service.exe` 后访问 `http://<host>:<port>/admin`；服务会跳转到 `/admin/`，支持 `/admin/login`、`/admin/users`、`/admin/logs` 等页面直接打开和刷新。首次创建部署目录后需重启服务。
 
-自定义静态目录时，在仓库根目录执行 `./scripts/deploy_admin_web.ps1 -StaticRoot <server.staticRoot的实际目录>`。始终把 dist 内容放在 staticRoot 的 `admin` 子目录，保持 `spaFallback: true`；只公开构建产物。API 和不存在的 JS/CSS 文件不会回退为 HTML。
+自定义静态目录时，先执行 `npm run build`，再在仓库根目录执行 `./scripts/deploy_admin_web.ps1 -StaticRoot <server.staticRoot的实际目录>`。脚本会把 dist 内容放在 staticRoot 的 `admin` 子目录；保持 `spaFallback: true`，只公开构建产物。API 和不存在的 JS/CSS 文件不会回退为 HTML。
 
-CMake 在配置时发现 dist 后，会通过 `szx_admin_web_assets` 目标在每次构建服务时复制产物；前端仍由 npm 独立构建，首次生成 dist 后可重新配置 CMake 或直接运行部署脚本。生产使用 HTTPS 同源提供页面与 API。局域网普通 HTTP 下 Web Crypto 不可用时，需要 HTTPS 才能完成密码摘要和登录。
+CMake 配置时定位 npm；构建 `szx_admin_service` 时自动构建并复制前端产物。生产使用 HTTPS 同源提供页面与 API。局域网普通 HTTP 下 Web Crypto 不可用时，需要 HTTPS 才能完成密码摘要和登录。
 
 接口依据：[RESTful API 接口文档](../../../../docs/RBAC/05-RESTful-API接口文档.md)。
