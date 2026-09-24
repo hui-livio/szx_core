@@ -2,6 +2,7 @@
 #include "HttpSupport.h"
 #include "TimeHelper.hpp"
 #include "auth/LoginService.h"
+#include "rbac/RbacHandler.h"
 #include "telemetry/BehaviorEventWriter.h"
 #include "user/UserHandler.h"
 
@@ -300,6 +301,9 @@ auto registerRoutes(INFRA::HttpTransport &transport, INFRA::DatabasePool &databa
         const auto userRoutes = USER::registerUserRoutes(transport, database, *login, *writer);
         if (!userRoutes.ok)
             return userRoutes;
+        const auto rbacRoutes = RBAC::registerRbacRoutes(transport, database, *login);
+        if (!rbacRoutes.ok)
+            return rbacRoutes;
         return SZX::COMMON::Result<void>::Success();
     } catch (...)
     {
