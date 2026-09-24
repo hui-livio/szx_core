@@ -1,5 +1,6 @@
 #include "SzxAdmin/Infra/Database.h"
 #include "../../tools/szx_admin/src/infra/DatabaseUnitOfWork.h"
+#include "../../tools/szx_admin/src/rbac/PermissionCodes.h"
 #include "../../tools/szx_admin/src/maintenance/LogMaintenanceService.h"
 #include "../../tools/szx_admin/src/telemetry/BehaviorEventWriter.h"
 #include "SzxAdmin/Infra/ErrorCode.h"
@@ -553,11 +554,12 @@ TEST(DatabaseInitializationTest, PreservesPublishedMigrationChecksumsAndExisting
 TEST(DatabaseInitializationTest, DropsLegacyLogTableWithoutRewritingPublishedMigrations)
 {
     const auto migrations = SZX::ADMIN::INFRA::embeddedMigrations();
-    ASSERT_EQ(migrations.size(), 5U);
+    ASSERT_EQ(migrations.size(), 6U);
     FakeDatabaseConnection connection;
-    for (const auto &migration : migrations.first(4))
+    const auto legacy = migrations.first(5);
+    for (const auto &migration : legacy.first(4))
         connection.applied.push_back({migration.version, std::string{migration.checksum}});
-    const auto upgrade = MigrationRunner{}.run(connection);
+    const auto upgrade = MigrationRunner{}.run(connection, legacy);
     ASSERT_TRUE(upgrade.ok);
     EXPECT_EQ(upgrade.value.currentVersion, 5U);
     EXPECT_EQ(upgrade.value.appliedCount, 1U);
@@ -566,9 +568,19 @@ TEST(DatabaseInitializationTest, DropsLegacyLogTableWithoutRewritingPublishedMig
     EXPECT_EQ(connection.recorded.front().checksum, "df5a342ab4da5db2515c8469d3fe17751a6570cc6ee9b009bef9bed9d2463241");
     EXPECT_TRUE(std::ranges::any_of(connection.statements, [](const auto &sql)
                                     { return sql.find("DROP TABLE IF EXISTS user_logs") != std::string::npos; }));
-    const auto repeated = MigrationRunner{}.run(connection);
+    const auto repeated = MigrationRunner{}.run(connection, legacy);
     ASSERT_TRUE(repeated.ok);
     EXPECT_EQ(repeated.value.appliedCount, 0U);
+}
+
+TEST(DatabaseInitializationTest, RegistersTheDynamicRbacCatalog)
+{
+    const auto migrations = SZX::ADMIN::INFRA::embeddedMigrations();
+    ASSERT_EQ(migrations.back().version, 6U);
+    EXPECT_NE(migrations.back().sql.find("CREATE TABLE IF NOT EXISTS roles"), std::string_view::npos);
+    EXPECT_NE(migrations.back().sql.find("CREATE TABLE IF NOT EXISTS permissions"), std::string_view::npos);
+    EXPECT_NE(migrations.back().sql.find("role_manage_scopes"), std::string_view::npos);
+    EXPECT_EQ(SZX::ADMIN::RBAC::PERMISSIONS::definitions().size(), 24U);
 }
 
 TEST(MigrationRunnerTest, AppliesPendingMigrationAndRecordsIt)
