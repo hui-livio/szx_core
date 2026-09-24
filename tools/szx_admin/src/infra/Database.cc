@@ -364,6 +364,20 @@ public:
             if (connection_.has_error() || roles.size() != 1 || std::get<0>(roles.front()) != 4)
                 return SZX::COMMON::Result<bool>::Success(false);
 
+            const auto identityRows = connection_.query_s<std::tuple<std::uint64_t>>(
+                "SELECT COUNT(*) FROM users u LEFT JOIN roles r ON r.id = u.role_id "
+                "WHERE u.role_id IS NULL OR r.id IS NULL OR r.code <> u.role "
+                "OR u.login_identifier IS NULL OR u.login_identifier_canonical IS NULL "
+                "OR u.identifier_type NOT IN ('uid', 'username') "
+                "OR (u.identifier_type = 'uid' AND (u.uid IS NULL OR BINARY u.login_identifier <> BINARY u.uid "
+                "OR BINARY u.login_identifier_canonical <> BINARY u.uid_canonical)) "
+                "OR (u.identifier_type = 'username' AND (u.username IS NULL OR BINARY u.login_identifier <> BINARY u.username "
+                "OR BINARY u.login_identifier_canonical <> BINARY u.username_canonical))");
+            if (connection_.has_error() || identityRows.size() != 1)
+                return SZX::COMMON::Result<bool>::Failure(static_cast<int>(ErrorCode::DatabaseQueryFailed), {});
+            if (std::get<0>(identityRows.front()) != 0)
+                return SZX::COMMON::Result<bool>::Success(false);
+
             const auto permissionRows = connection_.query_s<std::tuple<std::string>>(
                 "SELECT code FROM permissions WHERE source = 'system' AND enforcement = 'server' AND status <> 'archived'");
             if (connection_.has_error())
