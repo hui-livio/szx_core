@@ -224,6 +224,16 @@ SpinBox {
         }
     }
     Keys.onPressed: event => {
+        if (root.editable && event.matches(StandardKey.Copy)) {
+            valueInput.copy();
+            event.accepted = true;
+            return;
+        }
+        if (root.editable && event.matches(StandardKey.Paste)) {
+            valueInput.paste();
+            event.accepted = true;
+            return;
+        }
         if (root.enabled && root.buttonsVisible && (event.key === Qt.Key_PageUp || event.key === Qt.Key_PageDown)) {
             root.stepInput(event.key === Qt.Key_PageUp ? 10 : -10, Qt.NoModifier);
             event.accepted = true;
