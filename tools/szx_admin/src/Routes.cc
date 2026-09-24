@@ -248,6 +248,20 @@ auto registerRoutes(INFRA::HttpTransport &transport, INFRA::DatabasePool &databa
                 const auto ping = database.ping();
                 if (!ping.ok)
                     return INFRA::RestApi::error(INFRA::ErrorCode::DatabaseUnavailable, request.requestId);
+                const auto rbac = database.withConnection(
+                    [](INFRA::DatabaseConnection &connection) -> SZX::COMMON::Result<void>
+                    {
+                        const auto ready = connection.rbacCatalogReady();
+                        if (!ready.ok)
+                            return SZX::COMMON::Result<void>::Failure(ready.error, {});
+                        return ready.value ? SZX::COMMON::Result<void>::Success() :
+                                             SZX::COMMON::Result<void>::Failure(
+                                                 static_cast<int>(INFRA::ErrorCode::ServiceUnavailable), {});
+                    });
+                if (!rbac.ok)
+                    return INFRA::RestApi::error(rbac.error == static_cast<int>(INFRA::ErrorCode::ServiceUnavailable) ?
+                                                     INFRA::ErrorCode::ServiceUnavailable : INFRA::ErrorCode::DatabaseUnavailable,
+                                                 request.requestId);
                 if (writer && writer->state() != TELEMETRY::AdmissionState::Accepting)
                     return INFRA::RestApi::error(INFRA::ErrorCode::ServiceUnavailable, request.requestId);
                 return INFRA::RestApi::success(SZX::COMMON::Json{{"status", "ready"}}, request.requestId);

@@ -9,6 +9,7 @@
 #include "Logger.h"
 #include "LoginRepository.h"
 #include "RoleRepository.h"
+#include "../rbac/PermissionCodes.h"
 #include "SzxAdmin/Infra/ErrorCode.h"
 #include "UserRepository.h"
 
@@ -23,6 +24,7 @@
 #include <memory>
 #include <mutex>
 #include <tuple>
+#include <unordered_set>
 #include <utility>
 
 namespace SZX::ADMIN::INFRA
@@ -332,6 +334,56 @@ public:
     auto permissionRepository() noexcept -> RBAC::PermissionRepository * override
     {
         return &permissionRepository_;
+    }
+
+    auto rbacCatalogReady() -> SZX::COMMON::Result<bool> override
+    {
+        try
+        {
+            const auto roles = connection_.query_s<std::tuple<std::uint64_t>>(
+                "SELECT COUNT(*) FROM roles WHERE system_key IN (?, ?, ?, ?) AND status <> 'archived'", "operator", "engineer",
+                "admin", "super_admin");
+            if (connection_.has_error() || roles.size() != 1 || std::get<0>(roles.front()) != 4)
+                return SZX::COMMON::Result<bool>::Success(false);
+
+            const auto permissionRows = connection_.query_s<std::tuple<std::string>>(
+                "SELECT code FROM permissions WHERE source = 'system' AND enforcement = 'server' AND status <> 'archived'");
+            if (connection_.has_error())
+                return SZX::COMMON::Result<bool>::Failure(static_cast<int>(ErrorCode::DatabaseQueryFailed), {});
+            std::unordered_set<std::string> registered;
+            registered.reserve(permissionRows.size());
+            for (const auto &row : permissionRows)
+                registered.emplace(std::get<0>(row));
+            if (registered.size() != RBAC::PERMISSIONS::definitions().size())
+                return SZX::COMMON::Result<bool>::Success(false);
+            for (const auto &definition : RBAC::PERMISSIONS::definitions())
+                if (!registered.contains(std::string{definition.code}))
+                    return SZX::COMMON::Result<bool>::Success(false);
+
+            const auto bottomLine = connection_.query_s<std::tuple<std::uint64_t>>(
+                "SELECT COUNT(*) FROM role_permissions rp JOIN roles r ON r.id = rp.role_id "
+                "JOIN permissions p ON p.id = rp.permission_id WHERE r.system_key = 'super_admin' "
+                "AND p.required_for_super_admin = TRUE AND p.status <> 'archived'");
+            if (connection_.has_error() || bottomLine.size() != 1 ||
+                std::get<0>(bottomLine.front()) != RBAC::PERMISSIONS::definitions().size())
+                return SZX::COMMON::Result<bool>::Success(false);
+
+            const auto scopes = connection_.query_s<std::tuple<std::uint64_t>>(
+                "SELECT COUNT(*) FROM role_manage_scopes scope JOIN roles manager ON manager.id = scope.manager_role_id "
+                "JOIN roles target ON target.id = scope.target_role_id WHERE manager.system_key = 'super_admin' "
+                "AND target.status <> 'archived'");
+            if (connection_.has_error() || scopes.size() != 1)
+                return SZX::COMMON::Result<bool>::Failure(static_cast<int>(ErrorCode::DatabaseQueryFailed), {});
+            const auto nonArchived = connection_.query_s<std::tuple<std::uint64_t>>(
+                "SELECT COUNT(*) FROM roles WHERE status <> 'archived'");
+            if (connection_.has_error() || nonArchived.size() != 1)
+                return SZX::COMMON::Result<bool>::Failure(static_cast<int>(ErrorCode::DatabaseQueryFailed), {});
+            return SZX::COMMON::Result<bool>::Success(std::get<0>(scopes.front()) == std::get<0>(nonArchived.front()));
+        }
+        catch (...)
+        {
+            return SZX::COMMON::Result<bool>::Failure(static_cast<int>(ErrorCode::DatabaseQueryFailed), {});
+        }
     }
 
 private:

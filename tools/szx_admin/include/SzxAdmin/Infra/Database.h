@@ -156,6 +156,12 @@ public:
         return nullptr;
     }
 
+    /** Validate the runtime RBAC catalog before advertising readiness. */
+    [[nodiscard]] virtual auto rbacCatalogReady() -> SZX::COMMON::Result<bool>
+    {
+        return SZX::COMMON::Result<bool>::Success(true);
+    }
+
     [[nodiscard]] virtual auto executeMigrationStatement(std::string_view sql) -> SZX::COMMON::Result<void>    = 0;
     [[nodiscard]] virtual auto loadAppliedMigrations() -> SZX::COMMON::Result<std::vector<AppliedMigration>>   = 0;
     [[nodiscard]] virtual auto recordMigration(const AppliedMigration &migration) -> SZX::COMMON::Result<void> = 0;
