@@ -554,7 +554,7 @@ TEST(DatabaseInitializationTest, PreservesPublishedMigrationChecksumsAndExisting
 TEST(DatabaseInitializationTest, DropsLegacyLogTableWithoutRewritingPublishedMigrations)
 {
     const auto migrations = SZX::ADMIN::INFRA::embeddedMigrations();
-    ASSERT_EQ(migrations.size(), 7U);
+    ASSERT_EQ(migrations.size(), 8U);
     FakeDatabaseConnection connection;
     const auto legacy = migrations.first(5);
     for (const auto &migration : legacy.first(4))
@@ -576,12 +576,13 @@ TEST(DatabaseInitializationTest, DropsLegacyLogTableWithoutRewritingPublishedMig
 TEST(DatabaseInitializationTest, RegistersTheDynamicRbacCatalog)
 {
     const auto migrations = SZX::ADMIN::INFRA::embeddedMigrations();
-    ASSERT_EQ(migrations.back().version, 7U);
+    ASSERT_EQ(migrations.back().version, 8U);
     EXPECT_NE(migrations[5].sql.find("CREATE TABLE IF NOT EXISTS roles"), std::string_view::npos);
     EXPECT_NE(migrations[5].sql.find("CREATE TABLE IF NOT EXISTS permissions"), std::string_view::npos);
     EXPECT_NE(migrations[5].sql.find("role_manage_scopes"), std::string_view::npos);
-    EXPECT_NE(migrations.back().sql.find("login_identifier"), std::string_view::npos);
-    EXPECT_NE(migrations.back().sql.find("role_id"), std::string_view::npos);
+    EXPECT_NE(migrations[6].sql.find("login_identifier"), std::string_view::npos);
+    EXPECT_NE(migrations[6].sql.find("role_id"), std::string_view::npos);
+    EXPECT_NE(migrations.back().sql.find("UNIQUE KEY uk_users_login_identifier_canonical"), std::string_view::npos);
     EXPECT_EQ(SZX::ADMIN::RBAC::PERMISSIONS::definitions().size(), 24U);
 }
 

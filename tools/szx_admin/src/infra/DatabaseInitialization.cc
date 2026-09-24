@@ -300,6 +300,13 @@ SET login_identifier = CASE WHEN uid IS NOT NULL THEN uid ELSE username END,
 WHERE login_identifier IS NULL;
 )SZXSQL";
 
+// Enforce the single login-identifier namespace only after migration 7 has
+// populated and readiness has verified every formal identity projection.
+constexpr std::string_view kMigration8 = R"SZXSQL(ALTER TABLE users
+  DROP INDEX idx_users_login_identifier_canonical,
+  ADD UNIQUE KEY uk_users_login_identifier_canonical (login_identifier_canonical);
+)SZXSQL";
+
 constexpr MigrationDefinition kMigrations[] = {
     {1, kMigration1, "86a4ac820cc8457a2131d0400d4968268576b17113f38fe86b6beceea48c2047"},
     {2, kMigration2, "f4223aadebf005f145941d06b89d2d41e964f4c059d2f765a8e1b3678d389d2d"},
@@ -308,6 +315,7 @@ constexpr MigrationDefinition kMigrations[] = {
     {5, kMigration5, "df5a342ab4da5db2515c8469d3fe17751a6570cc6ee9b009bef9bed9d2463241"},
     {6, kMigration6, "ce30e1ba660394557f1ad3ae3eaeb043d265f685a3cfec6c00ef785b024c6e3e"},
     {7, kMigration7, "870047693dce68a887ef633fd3b08dc164e7ddd64d9da3ffab1131465b32b6be"},
+    {8, kMigration8, "3ff6dc5983213744cceb8879b5af8f2522147cd42768843272178526b643cc72"},
 };
 
 constexpr DETAIL::InitialAdministratorDefinition kInitialAdministrator{
