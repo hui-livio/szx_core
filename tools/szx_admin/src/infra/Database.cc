@@ -48,6 +48,9 @@ struct users final
     std::string id;
     std::string username;
     std::string username_canonical;
+    std::string login_identifier;
+    std::string login_identifier_canonical;
+    std::string identifier_type;
     std::string display_name;
     std::string password_hash;
     std::string role;
@@ -56,7 +59,8 @@ struct users final
 };
 // Deliberately project only initialized columns. Nullable identities and timestamps
 // are supplied by MySQL defaults, rather than empty strings.
-YLT_REFL(users, id, username, username_canonical, display_name, password_hash, role, status, force_password_change);
+YLT_REFL(users, id, username, username_canonical, login_identifier, login_identifier_canonical, identifier_type, display_name,
+         password_hash, role, status, force_password_change);
 
 auto failure(ErrorCode code, const std::string &message) -> SZX::COMMON::Result<void>
 {
@@ -284,9 +288,17 @@ public:
             administrator.status != initial.status || administrator.forcePasswordChange != initial.forcePasswordChange ||
             administrator.passwordHash.empty())
             return failure(ErrorCode::ValidationError, "Invalid bootstrap administrator.");
-        const users row{
-            administrator.id,           administrator.username, administrator.username, std::string{initial.displayName},
-            administrator.passwordHash, administrator.role,     administrator.status,   administrator.forcePasswordChange};
+        const users row{administrator.id,
+                        administrator.username,
+                        administrator.username,
+                        administrator.username,
+                        administrator.username,
+                        "username",
+                        std::string{initial.displayName},
+                        administrator.passwordHash,
+                        administrator.role,
+                        administrator.status,
+                        administrator.forcePasswordChange};
         const auto affected = connection_.insert(row);
         if (affected != 1 || connection_.has_error())
             return databaseFailure(ErrorCode::DatabaseQueryFailed, "Failed to create bootstrap administrator", {});

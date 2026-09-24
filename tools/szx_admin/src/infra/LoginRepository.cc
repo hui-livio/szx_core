@@ -50,12 +50,15 @@ auto MySqlLoginRepository::find(const std::string &uid, const std::string &usern
 {
     try
     {
-        // Indexed equality narrows candidates; binary equality prevents the schema's
-        // accent/case-insensitive collation from authenticating a different UID.
+        // Migration 7 gives both identifier kinds one indexed lookup. UID remains
+        // byte-sensitive during the dual-read window; usernames are normalized at
+        // the HTTP boundary before reaching this repository.
         auto rows = connection_.query_s<AUTH::LoginUser>(
-            "((uid_canonical = ? AND BINARY uid_canonical = ?) OR "
-            "(username_canonical = ? AND BINARY username_canonical = ?)) ORDER BY id LIMIT 2 FOR UPDATE",
-            uid, uid, username, username);
+            "((identifier_type = 'uid' AND login_identifier_canonical = ? AND "
+            "BINARY login_identifier_canonical = ?) OR "
+            "(identifier_type = 'username' AND login_identifier_canonical = ?)) "
+            "ORDER BY id LIMIT 2 FOR UPDATE",
+            uid, uid, username);
         if (connection_.has_error())
             return Result<std::optional<AUTH::LoginUser>>::Failure(static_cast<int>(ErrorCode::DatabaseQueryFailed), {});
         if (rows.size() != 1)
