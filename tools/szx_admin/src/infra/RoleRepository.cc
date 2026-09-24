@@ -2,6 +2,7 @@
 
 #include "OrmConnection.h"
 #include "SzxAdmin/Infra/ErrorCode.h"
+#include "UUID.hpp"
 
 #include <tuple>
 
@@ -49,6 +50,22 @@ struct role_update final
 };
 YLT_REFL(role_update, id, name, description, status, version, authz_version, updated_by, archived_at);
 REGISTER_CONFLICT_KEY(role_update, id)
+
+struct role_permission_insert final
+{
+    std::string role_id;
+    std::string permission_id;
+    std::optional<std::string> assigned_by;
+};
+YLT_REFL(role_permission_insert, role_id, permission_id, assigned_by);
+
+struct role_scope_insert final
+{
+    std::string manager_role_id;
+    std::string target_role_id;
+    std::optional<std::string> assigned_by;
+};
+YLT_REFL(role_scope_insert, manager_role_id, target_role_id, assigned_by);
 
 template <typename T>
 auto failed() -> SZX::COMMON::Result<T>
@@ -178,6 +195,109 @@ auto MySqlRoleRepository::updateStatus(std::string_view id, std::string_view sta
     catch (...)
     {
         return SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::DatabaseQueryFailed), {});
+    }
+}
+
+auto validUuidList(std::string_view roleId, const std::vector<std::string> &ids, std::string_view assignedBy) noexcept -> bool
+{
+    if (!SZX::COMMON::Uuid::parse(roleId) || !SZX::COMMON::Uuid::parse(assignedBy))
+        return false;
+    for (const auto &id : ids)
+        if (!SZX::COMMON::Uuid::parse(id))
+            return false;
+    return true;
+}
+
+auto MySqlRoleRepository::replacePermissions(std::string_view roleId, const std::vector<std::string> &permissionIds,
+                                             std::string_view assignedBy) -> SZX::COMMON::Result<void>
+{
+    try
+    {
+        if (!validUuidList(roleId, permissionIds, assignedBy))
+            return SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::ValidationError), {});
+        const auto deleted = connection_.execute("DELETE FROM role_permissions WHERE role_id = '" + std::string{roleId} + "'");
+        if (!deleted)
+            return SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::DatabaseQueryFailed), {});
+        std::vector<role_permission_insert> rows;
+        rows.reserve(permissionIds.size());
+        for (const auto &permissionId : permissionIds)
+            rows.push_back({std::string{roleId}, permissionId, std::string{assignedBy}});
+        if (!rows.empty() && connection_.insert(rows) != static_cast<int>(rows.size()))
+            return SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::DatabaseQueryFailed), {});
+        return SZX::COMMON::Result<void>::Success();
+    }
+    catch (...)
+    {
+        return SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::DatabaseQueryFailed), {});
+    }
+}
+
+auto MySqlRoleRepository::replaceManageScopes(std::string_view roleId, const std::vector<std::string> &targetRoleIds,
+                                              std::string_view assignedBy) -> SZX::COMMON::Result<void>
+{
+    try
+    {
+        if (!validUuidList(roleId, targetRoleIds, assignedBy))
+            return SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::ValidationError), {});
+        const auto deleted = connection_.execute("DELETE FROM role_manage_scopes WHERE manager_role_id = '" + std::string{roleId} + "'");
+        if (!deleted)
+            return SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::DatabaseQueryFailed), {});
+        std::vector<role_scope_insert> rows;
+        rows.reserve(targetRoleIds.size());
+        for (const auto &targetId : targetRoleIds)
+            rows.push_back({std::string{roleId}, targetId, std::string{assignedBy}});
+        if (!rows.empty() && connection_.insert(rows) != static_cast<int>(rows.size()))
+            return SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::DatabaseQueryFailed), {});
+        return SZX::COMMON::Result<void>::Success();
+    }
+    catch (...)
+    {
+        return SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::DatabaseQueryFailed), {});
+    }
+}
+
+auto MySqlRoleRepository::permissionIds(std::string_view roleId) -> SZX::COMMON::Result<std::vector<std::string>>
+{
+    try
+    {
+        if (!SZX::COMMON::Uuid::parse(roleId))
+            return SZX::COMMON::Result<std::vector<std::string>>::Failure(static_cast<int>(ErrorCode::ValidationError), {});
+        const auto rows = connection_.query_s<std::tuple<std::string>>(
+            "SELECT permission_id FROM role_permissions WHERE role_id = ? ORDER BY permission_id", std::string{roleId});
+        if (connection_.has_error())
+            return failed<std::vector<std::string>>();
+        std::vector<std::string> result;
+        result.reserve(rows.size());
+        for (const auto &row : rows)
+            result.push_back(std::get<0>(row));
+        return SZX::COMMON::Result<std::vector<std::string>>::Success(std::move(result));
+    }
+    catch (...)
+    {
+        return failed<std::vector<std::string>>();
+    }
+}
+
+auto MySqlRoleRepository::manageScopeIds(std::string_view roleId) -> SZX::COMMON::Result<std::vector<std::string>>
+{
+    try
+    {
+        if (!SZX::COMMON::Uuid::parse(roleId))
+            return SZX::COMMON::Result<std::vector<std::string>>::Failure(static_cast<int>(ErrorCode::ValidationError), {});
+        const auto rows = connection_.query_s<std::tuple<std::string>>(
+            "SELECT target_role_id FROM role_manage_scopes WHERE manager_role_id = ? ORDER BY target_role_id",
+            std::string{roleId});
+        if (connection_.has_error())
+            return failed<std::vector<std::string>>();
+        std::vector<std::string> result;
+        result.reserve(rows.size());
+        for (const auto &row : rows)
+            result.push_back(std::get<0>(row));
+        return SZX::COMMON::Result<std::vector<std::string>>::Success(std::move(result));
+    }
+    catch (...)
+    {
+        return failed<std::vector<std::string>>();
     }
 }
 

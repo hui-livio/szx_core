@@ -49,6 +49,28 @@ public:
         return SZX::COMMON::Result<void>::Success();
     }
 
+    auto replacePermissions(std::string_view, const std::vector<std::string> &, std::string_view)
+        -> SZX::COMMON::Result<void> override
+    {
+        return SZX::COMMON::Result<void>::Success();
+    }
+
+    auto replaceManageScopes(std::string_view, const std::vector<std::string> &, std::string_view)
+        -> SZX::COMMON::Result<void> override
+    {
+        return SZX::COMMON::Result<void>::Success();
+    }
+
+    auto permissionIds(std::string_view) -> SZX::COMMON::Result<std::vector<std::string>> override
+    {
+        return SZX::COMMON::Result<std::vector<std::string>>::Success({});
+    }
+
+    auto manageScopeIds(std::string_view) -> SZX::COMMON::Result<std::vector<std::string>> override
+    {
+        return SZX::COMMON::Result<std::vector<std::string>>::Success({});
+    }
+
     auto hasPermission(std::string_view role, std::string_view permission) -> SZX::COMMON::Result<bool> override
     {
         return SZX::COMMON::Result<bool>::Success(role == "custom_viewer" && permission == "user.read");

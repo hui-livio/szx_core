@@ -36,6 +36,16 @@ public:
         -> SZX::COMMON::Result<RoleRow>;
     [[nodiscard]] auto changeStatus(const USER::ActorContext &context, std::string_view id, std::string_view status,
                                     std::uint32_t version) -> SZX::COMMON::Result<RoleRow>;
+    [[nodiscard]] auto permissionIds(const USER::ActorContext &context, std::string_view id)
+        -> SZX::COMMON::Result<std::vector<std::string>>;
+    [[nodiscard]] auto manageScopeIds(const USER::ActorContext &context, std::string_view id)
+        -> SZX::COMMON::Result<std::vector<std::string>>;
+    [[nodiscard]] auto replacePermissionIds(const USER::ActorContext &context, std::string_view id,
+                                             const std::vector<std::string> &permissionIds, std::uint32_t version)
+        -> SZX::COMMON::Result<RoleRow>;
+    [[nodiscard]] auto replaceManageScopeIds(const USER::ActorContext &context, std::string_view id,
+                                             const std::vector<std::string> &targetRoleIds, std::uint32_t version)
+        -> SZX::COMMON::Result<RoleRow>;
 
 private:
     INFRA::DatabasePool &database_;

@@ -52,6 +52,12 @@ public:
                               std::uint32_t authzVersion, std::string_view updatedBy,
                               std::optional<std::string_view> archivedAt = std::nullopt)
         -> SZX::COMMON::Result<void> = 0;
+    virtual auto replacePermissions(std::string_view roleId, const std::vector<std::string> &permissionIds,
+                                    std::string_view assignedBy) -> SZX::COMMON::Result<void> = 0;
+    virtual auto replaceManageScopes(std::string_view roleId, const std::vector<std::string> &targetRoleIds,
+                                     std::string_view assignedBy) -> SZX::COMMON::Result<void> = 0;
+    virtual auto permissionIds(std::string_view roleId) -> SZX::COMMON::Result<std::vector<std::string>> = 0;
+    virtual auto manageScopeIds(std::string_view roleId) -> SZX::COMMON::Result<std::vector<std::string>> = 0;
     virtual auto hasPermission(std::string_view roleCode, std::string_view permissionCode)
         -> SZX::COMMON::Result<bool> = 0;
     virtual auto canManageRole(std::string_view managerCode, std::string_view targetCode)
