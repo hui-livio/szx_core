@@ -170,6 +170,11 @@ auto RoleService::updateProfile(const USER::ActorContext &context, std::string_v
             return Result<void>::Failure(found.error, {});
         if (!found.value)
             return failed<void>(ErrorCode::ResourceNotFound);
+        const auto inScope = repository->canManageRole(actor.value.user.role, found.value->code);
+        if (!inScope.ok)
+            return Result<void>::Failure(inScope.error, {});
+        if (!inScope.value)
+            return failed<void>(ErrorCode::Forbidden);
         if (found.value->version != version)
             return failed<void>(ErrorCode::ConflictVersion);
         auto row = *found.value;
@@ -212,6 +217,11 @@ auto RoleService::changeStatus(const USER::ActorContext &context, std::string_vi
             return Result<void>::Failure(found.error, {});
         if (!found.value)
             return failed<void>(ErrorCode::ResourceNotFound);
+        const auto inScope = repository->canManageRole(actor.value.user.role, found.value->code);
+        if (!inScope.ok)
+            return Result<void>::Failure(inScope.error, {});
+        if (!inScope.value)
+            return failed<void>(ErrorCode::Forbidden);
         if (found.value->version != version)
             return failed<void>(ErrorCode::ConflictVersion);
         if (found.value->systemKey && *found.value->systemKey == "super_admin" && status != "active")
@@ -323,6 +333,11 @@ auto RoleService::replacePermissionIds(const USER::ActorContext &context, std::s
             return Result<void>::Failure(found.error, {});
         if (!found.value)
             return failed<void>(ErrorCode::ResourceNotFound);
+        const auto inScope = repository->canManageRole(actor.value.user.role, found.value->code);
+        if (!inScope.ok)
+            return Result<void>::Failure(inScope.error, {});
+        if (!inScope.value)
+            return failed<void>(ErrorCode::Forbidden);
         if (found.value->version != version)
             return failed<void>(ErrorCode::ConflictVersion);
         const auto current = repository->permissionIds(id);
@@ -384,6 +399,11 @@ auto RoleService::replaceManageScopeIds(const USER::ActorContext &context, std::
             return Result<void>::Failure(found.error, {});
         if (!found.value)
             return failed<void>(ErrorCode::ResourceNotFound);
+        const auto inScope = repository->canManageRole(actor.value.user.role, found.value->code);
+        if (!inScope.ok)
+            return Result<void>::Failure(inScope.error, {});
+        if (!inScope.value)
+            return failed<void>(ErrorCode::Forbidden);
         if (found.value->version != version)
             return failed<void>(ErrorCode::ConflictVersion);
         for (const auto &targetId : *normalized)
