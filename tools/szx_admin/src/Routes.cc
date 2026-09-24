@@ -45,9 +45,17 @@ auto sessionResponse(const AUTH::LoginSession &session, const INFRA::HttpRequest
                      {"created_at", utcTimestampJson(user.created_at)},
                      {"updated_at", utcTimestampJson(user.updated_at)}};
         if (user.uid)
+        {
             profile["uid"] = *user.uid;
+            profile["login_identifier"] = *user.uid;
+            profile["identifier_type"] = "uid";
+        }
         if (user.username)
+        {
             profile["username"] = *user.username;
+            profile["login_identifier"] = *user.username;
+            profile["identifier_type"] = "username";
+        }
         auto response = RestApi::success(Json{{"user", std::move(profile)},
                                               {"access_token", session.accessToken},
                                               {"token_type", "Bearer"},
