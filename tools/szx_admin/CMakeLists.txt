@@ -46,6 +46,7 @@ add_library(szx_rbac_infra STATIC
     src/auth/Identifier.cc
     src/auth/LoginService.cc
     src/auth/PasswordHash.cc
+    src/rbac/AuthorizationService.cc
     src/audit/AuditService.cc
     src/infra/ErrorCode.cc
     src/infra/Database.cc

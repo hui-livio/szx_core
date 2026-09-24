@@ -492,9 +492,14 @@ auto DatabasePool::withConnectionImpl(const ConnectionCallback &callback,
     std::unique_lock<std::recursive_timed_mutex> ormLock;
     try
     {
+        const auto slotWaitStarted = std::chrono::steady_clock::now();
         ormLock = std::unique_lock<std::recursive_timed_mutex>(DETAIL::ormMutex(), std::defer_lock);
         if (!ormLock.try_lock_until(acquisitionDeadline))
             return failure(ErrorCode::DatabaseUnavailable, "Unable to acquire database execution slot.");
+        const auto slotWait = std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - slotWaitStarted);
+        if (slotWait >= std::chrono::microseconds{50})
+            LOGM_DEBUG("szx_admin.database", "event=orm_execution_slot_wait wait_microseconds={}", slotWait.count());
     } catch (...)
     {
         return failure(ErrorCode::DatabaseUnavailable, "Unable to acquire database execution slot.");

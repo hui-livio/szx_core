@@ -3,8 +3,9 @@
 #include "ActorContext.h"
 #include "UserRepository.h"
 
+#include "../rbac/AuthorizationService.h"
+
 #include "SzxAdmin/Infra/Database.h"
-#include "SzxAdmin/Policy/Policy.h"
 #include "SzxCryptoService/CryptoService.h"
 
 #include <string>
@@ -90,25 +91,20 @@ public:
         -> SZX::COMMON::Result<CredentialIssue>;
 
 private:
-    /** 一次加锁授权的结果：调用者、目标和已加锁的 active 超管计数。 */
-    struct Mutation final
-    {
-        UserRow actor;
-        UserRow target;
-        std::uint64_t activeSuperAdmins{};
-    };
-
     /** 校验 token 和数据库当前状态；写操作须在事务内令 lock=true。 */
-    auto resolve(const ActorContext &context, UserRepository &repository, bool lock = false) -> SZX::COMMON::Result<UserRow>;
+    auto resolve(const ActorContext &context, UserRepository &repository, bool lock = false)
+        -> SZX::COMMON::Result<RBAC::AuthorizedActor>;
     /** 在已开启的事务中锁定调用者、目标及 active 超管行，并校验能力、目标角色和版本。 */
     auto authorize(const ActorContext &context, UserRepository &repository, const std::string &targetId,
-                   POLICY::Capability required, std::uint32_t version) -> SZX::COMMON::Result<Mutation>;
+                   std::string_view permissionCode, std::uint32_t version)
+        -> SZX::COMMON::Result<RBAC::AuthorizedMutation>;
     /** 生成一次性临时凭据，返回 {明文, 可存储的 Argon2id 记录}。 */
     auto issueCredential(const std::optional<std::string> &passwordHash)
         -> SZX::COMMON::Result<std::pair<std::string, std::string>>;
 
     INFRA::DatabasePool &database_;
     AUTH::LoginService &auth_;
+    RBAC::AuthorizationService authorization_;
     SZX::CRYPTO_SERVICE::CryptoService crypto_;
 };
 } // namespace SZX::ADMIN::USER

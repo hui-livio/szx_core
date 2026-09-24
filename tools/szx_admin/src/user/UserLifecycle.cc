@@ -1,5 +1,6 @@
 #include "../auth/LoginRepository.h"
 #include "../auth/LoginService.h"
+#include "../rbac/PermissionCodes.h"
 #include "../auth/PasswordHash.h"
 #include "../audit/AuditRepository.h"
 #include "AuditDetails.h"
@@ -125,7 +126,7 @@ auto UserService::create(const ActorContext &context, const CreateUserInput &inp
             return failed<CredentialIssue>(ErrorCode::ValidationError);
         if (input.uid.has_value() == input.username.has_value())
             return failed<CredentialIssue>(ErrorCode::UserIdentityOneOfRequired);
-        if (!validDisplayName(input.displayName) || !POLICY::validRole(input.role))
+        if (!validDisplayName(input.displayName) || !authorization_.validRole(input.role))
             return failed<CredentialIssue>(ErrorCode::ValidationError);
         if (input.passwordHash && !AUTH::validClientPasswordHash(*input.passwordHash))
             return failed<CredentialIssue>(ErrorCode::ValidationError);
@@ -171,9 +172,9 @@ auto UserService::create(const ActorContext &context, const CreateUserInput &inp
                 const auto actor = resolve(context, *users, true);
                 if (!actor.ok)
                     return Result<void>::Failure(actor.error, {});
-                if (!POLICY::allows(actor.value.role, POLICY::Capability::UserCreate))
+                if (!authorization_.allows(actor.value.user.role, RBAC::PERMISSIONS::UserCreate))
                     return failed<void>(ErrorCode::Forbidden);
-                if (!POLICY::mayTarget(actor.value.role, input.role))
+                if (!authorization_.mayTarget(actor.value.user.role, input.role))
                     return failed<void>(ErrorCode::Forbidden);
                 const auto uid      = input.uid ? canonical.value : std::string{};
                 const auto username = input.uid ? std::string{} : canonical.value;
@@ -202,7 +203,7 @@ auto UserService::create(const ActorContext &context, const CreateUserInput &inp
                     .status                          = "active",
                     .force_password_change           = true,
                     .temporary_credential_expires_at = expiresAt,
-                    .created_by                      = actor.value.id,
+                    .created_by                      = actor.value.user.id,
                 };
                 if (const auto inserted = users->insert(row); !inserted.ok)
                 {
@@ -212,7 +213,7 @@ auto UserService::create(const ActorContext &context, const CreateUserInput &inp
                         return failed<void>(ErrorCode::UserIdentityConflict);
                     return Result<void>::Failure(inserted.error, {});
                 }
-                const auto audited = writeAudit(*audit, context, actor.value.id, row.id, "user.created", "success",
+                const auto audited = writeAudit(*audit, context, actor.value.user.id, row.id, "user.created", "success",
                                                 Json{{"role", row.role}, {"identity", input.uid ? "uid" : "username"}});
                 if (!audited.ok)
                     return audited;
@@ -271,7 +272,7 @@ auto UserService::updateProfile(const ActorContext &context, const std::string &
                         }
                     }
                 };
-                const auto authorized = authorize(context, *users, id, POLICY::Capability::UserUpdate, version);
+                const auto authorized = authorize(context, *users, id, RBAC::PERMISSIONS::UserUpdate, version);
                 if (!authorized.ok)
                     return Result<void>::Failure(authorized.error, {});
                 auto target = authorized.value.target;
@@ -338,7 +339,7 @@ auto UserService::changeStatus(const ActorContext &context, const std::string &i
                         }
                     }
                 };
-                const auto authorized = authorize(context, *users, id, POLICY::Capability::UserStatus, version);
+                const auto authorized = authorize(context, *users, id, RBAC::PERMISSIONS::UserStatus, version);
                 if (!authorized.ok)
                     return Result<void>::Failure(authorized.error, {});
                 if (status == "disabled" && authorized.value.actor.id == authorized.value.target.id)
@@ -423,7 +424,7 @@ auto UserService::unlock(const ActorContext &context, const std::string &id, std
                         }
                     }
                 };
-                const auto authorized = authorize(context, *users, id, POLICY::Capability::UserUnlock, version);
+                const auto authorized = authorize(context, *users, id, RBAC::PERMISSIONS::UserUnlock, version);
                 if (!authorized.ok)
                     return Result<void>::Failure(authorized.error, {});
                 auto target = authorized.value.target;
@@ -467,7 +468,7 @@ auto UserService::assignRole(const ActorContext &context, const std::string &id,
 {
     try
     {
-        if (!validContext(context.requestId, context.peerAddress) || !validUuid(id) || !POLICY::validRole(role))
+        if (!validContext(context.requestId, context.peerAddress) || !validUuid(id) || !authorization_.validRole(role))
             return failed<UserRow>(ErrorCode::ValidationError);
         UserRow output;
         const auto operation = database_.withConnection(
@@ -494,14 +495,14 @@ auto UserService::assignRole(const ActorContext &context, const std::string &id,
                         }
                     }
                 };
-                const auto authorized = authorize(context, *users, id, POLICY::Capability::UserRoleAssign, version);
+                const auto authorized = authorize(context, *users, id, RBAC::PERMISSIONS::UserRoleAssign, version);
                 if (!authorized.ok)
                     return Result<void>::Failure(authorized.error, {});
                 if (authorized.value.actor.id == authorized.value.target.id)
                     return failed<void>(ErrorCode::Forbidden);
                 auto target = authorized.value.target;
                 // The new role must also be inside the actor's manageable set.
-                if (!POLICY::mayTarget(authorized.value.actor.role, role))
+                if (!authorization_.mayTarget(authorized.value.actor.role, role))
                     return failed<void>(ErrorCode::Forbidden);
                 if (target.role != role)
                 {
@@ -573,7 +574,7 @@ auto UserService::resetPassword(const ActorContext &context, const std::string &
                         }
                     }
                 };
-                const auto authorized = authorize(context, *users, id, POLICY::Capability::UserPasswordReset, version);
+                const auto authorized = authorize(context, *users, id, RBAC::PERMISSIONS::UserPasswordReset, version);
                 if (!authorized.ok)
                     return Result<void>::Failure(authorized.error, {});
                 const auto admitted = auth_.admitCredentialIssue(context.peerAddress);

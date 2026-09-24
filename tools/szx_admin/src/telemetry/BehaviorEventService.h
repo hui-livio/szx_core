@@ -3,6 +3,7 @@
 #include "BehaviorEventRepository.h"
 #include "BehaviorEventWriter.h"
 #include "../user/ActorContext.h"
+#include "../rbac/AuthorizationService.h"
 
 #include "SzxAdmin/Infra/Database.h"
 
@@ -51,7 +52,7 @@ public:
 
 private:
     INFRA::DatabasePool &database_;
-    AUTH::LoginService &auth_;
+    RBAC::AuthorizationService authorization_;
     BehaviorEventWriter &writer_;
 };
 } // namespace SZX::ADMIN::TELEMETRY

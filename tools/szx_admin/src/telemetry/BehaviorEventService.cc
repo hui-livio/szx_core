@@ -5,9 +5,10 @@
 #include "../user/UserRepository.h"
 #include "../user/UserValidation.h"
 
+#include "../rbac/PermissionCodes.h"
+
 #include "JsonHelper.hpp"
 #include "SzxAdmin/Infra/ErrorCode.h"
-#include "SzxAdmin/Policy/Policy.h"
 #include "TimeHelper.hpp"
 #include "UUID.hpp"
 
@@ -36,27 +37,11 @@ auto acceptedAt() -> std::string
     return stream.str();
 }
 
-auto activeUser(AUTH::LoginService &auth, USER::UserRepository &users, const USER::ActorContext &context)
-    -> Result<USER::UserRow>
-{
-    const auto claims = auth.verifyAccess(context.accessToken);
-    if (!claims.ok || !USER::validUuid(claims.value.subject))
-        return failed<USER::UserRow>(claims.ok ? ErrorCode::AuthRequired : static_cast<ErrorCode>(claims.error));
-    const auto found = users.findById(claims.value.subject);
-    if (!found.ok)
-        return Result<USER::UserRow>::Failure(found.error, {});
-    if (!found.value || found.value->status != "active" || found.value->authz_version <= 0 ||
-        static_cast<std::uint64_t>(found.value->authz_version) != claims.value.authzVersion)
-        return failed<USER::UserRow>(ErrorCode::AuthRequired);
-    if (found.value->role == "super_admin" && found.value->force_password_change)
-        return failed<USER::UserRow>(ErrorCode::Forbidden);
-    return Result<USER::UserRow>::Success(*found.value);
-}
 } // namespace
 
 BehaviorEventService::BehaviorEventService(INFRA::DatabasePool &database, AUTH::LoginService &auth, BehaviorEventWriter &writer) :
     database_(database),
-    auth_(auth),
+    authorization_(auth),
     writer_(writer)
 {
 }
@@ -81,10 +66,10 @@ auto BehaviorEventService::record(const USER::ActorContext &context, const Behav
                 auto *users = connection.userRepository();
                 if (!users)
                     return failed<void>(ErrorCode::DatabaseQueryFailed);
-                const auto actor = activeUser(auth_, *users, context);
+                const auto actor = authorization_.resolve(context, *users);
                 if (!actor.ok)
                     return Result<void>::Failure(actor.error, {});
-                userId = actor.value.id;
+                userId = actor.value.user.id;
                 return Result<void>::Success();
             });
         if (!authorized.ok)
@@ -143,10 +128,10 @@ auto BehaviorEventService::list(const USER::ActorContext &context, const Behavio
                 auto *repository = connection.behaviorEventRepository();
                 if (!users || !repository)
                     return failed<void>(ErrorCode::DatabaseQueryFailed);
-                const auto actor = activeUser(auth_, *users, context);
+                const auto actor = authorization_.resolve(context, *users);
                 if (!actor.ok)
                     return Result<void>::Failure(actor.error, {});
-                if (!POLICY::allows(actor.value.role, POLICY::Capability::BehaviorRead))
+                if (!authorization_.allows(actor.value.user.role, RBAC::PERMISSIONS::BehaviorRead))
                     return failed<void>(ErrorCode::Forbidden);
                 const auto queried = repository->query({.from        = *from,
                                                         .to          = *to,

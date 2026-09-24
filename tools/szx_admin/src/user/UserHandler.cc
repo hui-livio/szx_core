@@ -9,7 +9,6 @@
 
 #include "SzxAdmin/Infra/Database.h"
 #include "SzxAdmin/Infra/RestApi.h"
-#include "SzxAdmin/Policy/Policy.h"
 #include "TimeHelper.hpp"
 
 #include <array>

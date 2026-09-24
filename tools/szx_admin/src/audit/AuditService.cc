@@ -5,8 +5,9 @@
 #include "../user/UserRepository.h"
 #include "../user/UserValidation.h"
 
+#include "../rbac/PermissionCodes.h"
+
 #include "SzxAdmin/Infra/ErrorCode.h"
-#include "SzxAdmin/Policy/Policy.h"
 
 namespace SZX::ADMIN::AUDIT
 {
@@ -24,7 +25,7 @@ auto failed(ErrorCode code) -> Result<T>
 
 AuditService::AuditService(INFRA::DatabasePool &database, AUTH::LoginService &auth) :
     database_(database),
-    auth_(auth)
+    authorization_(auth)
 {
 }
 
@@ -54,17 +55,10 @@ auto AuditService::query(const USER::ActorContext &context, const AuditQuery &qu
                 auto *repository = connection.auditRepository();
                 if (!users || !repository)
                     return failed<void>(ErrorCode::DatabaseQueryFailed);
-                const auto claims = auth_.verifyAccess(context.accessToken);
-                if (!claims.ok || !USER::validUuid(claims.value.subject))
-                    return failed<void>(claims.ok ? ErrorCode::AuthRequired : static_cast<ErrorCode>(claims.error));
-                const auto found = users->findById(claims.value.subject);
-                if (!found.ok)
-                    return Result<void>::Failure(found.error, {});
-                if (!found.value || found.value->status != "active" || found.value->authz_version <= 0 ||
-                    static_cast<std::uint64_t>(found.value->authz_version) != claims.value.authzVersion)
-                    return failed<void>(ErrorCode::AuthRequired);
-                if ((found.value->role == "super_admin" && found.value->force_password_change) ||
-                    !POLICY::allows(found.value->role, POLICY::Capability::AuditRead))
+                const auto actor = authorization_.resolve(context, *users);
+                if (!actor.ok)
+                    return Result<void>::Failure(actor.error, {});
+                if (!authorization_.allows(actor.value.user.role, RBAC::PERMISSIONS::AuditRead))
                     return failed<void>(ErrorCode::Forbidden);
 
                 AuditFilter filter{.from        = *from,
