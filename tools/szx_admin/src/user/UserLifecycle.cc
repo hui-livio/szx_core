@@ -125,19 +125,44 @@ auto UserService::create(const ActorContext &context, const CreateUserInput &inp
     {
         if (!validContext(context.requestId, context.peerAddress))
             return failed<CredentialIssue>(ErrorCode::ValidationError);
-        if (input.uid.has_value() == input.username.has_value())
+        const bool formalIdentifier = input.loginIdentifier.has_value() || input.identifierType.has_value();
+        if (formalIdentifier && (input.uid || input.username || !input.loginIdentifier || !input.identifierType))
+            return failed<CredentialIssue>(ErrorCode::ValidationError);
+        if (!formalIdentifier && input.uid.has_value() == input.username.has_value())
             return failed<CredentialIssue>(ErrorCode::UserIdentityOneOfRequired);
         if (!validDisplayName(input.displayName) || !validRoleCode(input.role))
             return failed<CredentialIssue>(ErrorCode::ValidationError);
         if (input.passwordHash && !AUTH::validClientPasswordHash(*input.passwordHash))
             return failed<CredentialIssue>(ErrorCode::ValidationError);
-        // uid keeps its case; usernames additionally use invariant lowercase for the canonical column.
-        const auto display = AUTH::canonicalIdentifier(input.uid ? *input.uid : *input.username, false);
-        if (!display.ok)
-            return Result<CredentialIssue>::Failure(display.error, {});
-        const auto canonical = input.uid ? display : AUTH::canonicalIdentifier(*input.username, true);
-        if (!canonical.ok)
-            return Result<CredentialIssue>::Failure(canonical.error, {});
+        bool isUid{};
+        std::string displayValue;
+        std::string canonicalValue;
+        if (formalIdentifier)
+        {
+            if (*input.identifierType != "uid" && *input.identifierType != "username")
+                return failed<CredentialIssue>(ErrorCode::ValidationError);
+            const auto normalized = AUTH::normalizeLoginIdentifier(
+                *input.loginIdentifier, *input.identifierType == "uid" ? AUTH::IdentifierType::Uid : AUTH::IdentifierType::Username);
+            if (!normalized.ok)
+                return Result<CredentialIssue>::Failure(normalized.error, {});
+            isUid        = *input.identifierType == "uid";
+            displayValue = normalized.value.displayValue;
+            // Keep the old storage adapter's UID case semantics until migration 9
+            // is applied; the formal DTO is already normalized at the boundary.
+            canonicalValue = isUid ? displayValue : normalized.value.canonicalValue;
+        }
+        else
+        {
+            isUid = input.uid.has_value();
+            const auto display = AUTH::canonicalIdentifier(isUid ? *input.uid : *input.username, false);
+            if (!display.ok)
+                return Result<CredentialIssue>::Failure(display.error, {});
+            const auto canonical = isUid ? display : AUTH::canonicalIdentifier(*input.username, true);
+            if (!canonical.ok)
+                return Result<CredentialIssue>::Failure(canonical.error, {});
+            displayValue  = display.value;
+            canonicalValue = canonical.value;
+        }
         CredentialIssue output;
         const auto operation = database_.withConnection(
             [&](INFRA::DatabaseConnection &connection) -> Result<void>
@@ -176,8 +201,8 @@ auto UserService::create(const ActorContext &context, const CreateUserInput &inp
                 else if (!authorization_.allows(actor.value.user.role, RBAC::PERMISSIONS::UserCreate) ||
                          !authorization_.mayTarget(actor.value.user.role, input.role))
                     return failed<void>(ErrorCode::Forbidden);
-                const auto uid      = input.uid ? canonical.value : std::string{};
-                const auto username = input.uid ? std::string{} : canonical.value;
+                const auto uid      = isUid ? canonicalValue : std::string{};
+                const auto username = isUid ? std::string{} : canonicalValue;
                 const auto existing = users->findByCanonical(uid, username);
                 if (!existing.ok)
                     return Result<void>::Failure(existing.error, {});
@@ -193,10 +218,10 @@ auto UserService::create(const ActorContext &context, const CreateUserInput &inp
                     input.passwordHash ? std::optional<std::string>{} : std::optional{expiry(kTemporaryCredentialSeconds)};
                 const NewUser row{
                     .id                              = SZX::COMMON::Uuid::v4().toString(),
-                    .uid                             = input.uid ? std::optional{display.value} : std::nullopt,
-                    .uid_canonical                   = input.uid ? std::optional{canonical.value} : std::nullopt,
-                    .username                        = input.uid ? std::nullopt : std::optional{display.value},
-                    .username_canonical              = input.uid ? std::nullopt : std::optional{canonical.value},
+                    .uid                             = isUid ? std::optional{displayValue} : std::nullopt,
+                    .uid_canonical                   = isUid ? std::optional{canonicalValue} : std::nullopt,
+                    .username                        = isUid ? std::nullopt : std::optional{displayValue},
+                    .username_canonical              = isUid ? std::nullopt : std::optional{canonicalValue},
                     .display_name                    = input.displayName,
                     .password_hash                   = credential.value.second,
                     .role                            = input.role,
@@ -214,7 +239,7 @@ auto UserService::create(const ActorContext &context, const CreateUserInput &inp
                     return Result<void>::Failure(inserted.error, {});
                 }
                 const auto audited = writeAudit(*audit, context, actor.value.user.id, row.id, "user.created", "success",
-                                                Json{{"role", row.role}, {"identity", input.uid ? "uid" : "username"}});
+                                                Json{{"role", row.role}, {"identity", isUid ? "uid" : "username"}});
                 if (!audited.ok)
                     return audited;
                 const auto stored = users->findById(row.id);

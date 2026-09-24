@@ -68,9 +68,17 @@ auto userRowJson(const UserRow &row) -> Json
                  {"created_at", utcTimestampJson(row.created_at)},
                  {"updated_at", utcTimestampJson(row.updated_at)}};
     if (row.uid)
+    {
         profile["uid"] = *row.uid;
+        profile["login_identifier"] = *row.uid;
+        profile["identifier_type"] = "uid";
+    }
     if (row.username)
+    {
         profile["username"] = *row.username;
+        profile["login_identifier"] = *row.username;
+        profile["identifier_type"] = "username";
+    }
     return profile;
 }
 
@@ -128,22 +136,36 @@ auto createResponse(UserService &service, const INFRA::HttpRequest &request) -> 
         const auto body = RestApi::jsonObject(request);
         if (!body.ok)
             return RestApi::error(static_cast<ErrorCode>(body.error), request.requestId);
-        constexpr std::array<std::string_view, 5> fields{"uid", "username", "display_name", "role", "password_hash"};
+        constexpr std::array<std::string_view, 7> fields{"uid", "username", "login_identifier", "identifier_type",
+                                                         "display_name", "role", "password_hash"};
         if (!RestApi::allowedFields(body.value, fields).ok || !body.value.contains("display_name") ||
             !body.value.at("display_name").is_string() || !body.value.contains("role") || !body.value.at("role").is_string())
             return RestApi::error(ErrorCode::ValidationError, request.requestId);
         const bool hasUid      = body.value.contains("uid") && !body.value.at("uid").is_null();
         const bool hasUsername = body.value.contains("username") && !body.value.at("username").is_null();
-        if (hasUid == hasUsername)
+        const bool hasLoginIdentifier = body.value.contains("login_identifier");
+        const bool hasIdentifierType  = body.value.contains("identifier_type");
+        if (hasLoginIdentifier != hasIdentifierType || (hasLoginIdentifier && (hasUid || hasUsername)) ||
+            (!hasLoginIdentifier && hasUid == hasUsername))
             return RestApi::error(ErrorCode::UserIdentityOneOfRequired, request.requestId);
-        if ((hasUid && !body.value.at("uid").is_string()) || (hasUsername && !body.value.at("username").is_string()))
+        if ((hasUid && !body.value.at("uid").is_string()) || (hasUsername && !body.value.at("username").is_string()) ||
+            (hasLoginIdentifier && (!body.value.at("login_identifier").is_string() ||
+                                    !body.value.at("identifier_type").is_string())))
             return RestApi::error(ErrorCode::ValidationError, request.requestId);
         CreateUserInput input{.displayName = body.value.at("display_name").get<std::string>(),
                               .role        = body.value.at("role").get<std::string>()};
         if (hasUid)
             input.uid = body.value.at("uid").get<std::string>();
-        else
+        else if (hasUsername)
             input.username = body.value.at("username").get<std::string>();
+        else
+        {
+            const auto type = body.value.at("identifier_type").get<std::string>();
+            if (type != "uid" && type != "username")
+                return RestApi::error(ErrorCode::ValidationError, request.requestId);
+            input.loginIdentifier = body.value.at("login_identifier").get<std::string>();
+            input.identifierType  = type;
+        }
         if (body.value.contains("password_hash"))
         {
             if (!body.value.at("password_hash").is_string())

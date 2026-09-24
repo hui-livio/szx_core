@@ -38,6 +38,9 @@ struct CreateUserInput final
     std::string displayName;
     std::string role;
     std::optional<std::string> passwordHash; ///< 可选的客户端 SHA-256 摘要；省略时生成临时密码。
+    /** V1.2 formal identifier; old uid/username fields are an HTTP-only compatibility input. */
+    std::optional<std::string> loginIdentifier;
+    std::optional<std::string> identifierType;
 };
 
 /** 创建和重置密码的结果；临时凭据明文只在本次响应中出现，不落库。 */
