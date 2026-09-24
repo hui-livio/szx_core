@@ -1,8 +1,8 @@
 #include "LoginService.h"
 #include "../audit/AuditRepository.h"
+#include "../infra/DatabaseUnitOfWork.h"
 #include "PasswordHash.h"
 
-#include "Defer.hpp"
 #include "Logger.h"
 #include "SzxAdmin/Infra/ErrorCode.h"
 #include "SzxCrypto/Crypto.h"
@@ -126,26 +126,14 @@ auto LoginService::cookieSession(const CookieSessionInput &input, bool logout) -
         const auto operation = database_.withConnection(
             [&](INFRA::DatabaseConnection &connection) -> Result<void>
             {
-                auto *repository = connection.loginRepository();
-                auto *audit      = connection.auditRepository();
+                INFRA::DatabaseUnitOfWork unit(connection);
+                auto *repository = unit.sessions();
+                auto *audit      = unit.audit();
                 if (!repository || !audit)
                     return failed<void>(ErrorCode::DatabaseQueryFailed);
-                const auto begun = connection.begin();
+                const auto begun = unit.begin();
                 if (!begun.ok)
                     return begun;
-                bool committed{};
-                defer
-                {
-                    if (!committed)
-                    {
-                        try
-                        {
-                            (void)connection.rollback();
-                        } catch (...)
-                        {
-                        }
-                    }
-                };
                 // Resolve the owner without locking the token, preserving user-before-token lock order.
                 const auto candidate = repository->findRefresh(hash.value, false);
                 if (!candidate.ok)
@@ -226,8 +214,7 @@ auto LoginService::cookieSession(const CookieSessionInput &input, bool logout) -
                                    .ip             = input.peerAddress});
                 if (!audited.ok)
                     return audited;
-                const auto result = connection.commit();
-                committed         = result.ok;
+                const auto result = unit.commit();
                 if (!result.ok)
                     return result;
                 // A replay is a failed request whose family revocation must still commit.

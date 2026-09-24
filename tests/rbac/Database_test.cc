@@ -1,4 +1,5 @@
 #include "SzxAdmin/Infra/Database.h"
+#include "../../tools/szx_admin/src/infra/DatabaseUnitOfWork.h"
 #include "../../tools/szx_admin/src/maintenance/LogMaintenanceService.h"
 #include "../../tools/szx_admin/src/telemetry/BehaviorEventWriter.h"
 #include "SzxAdmin/Infra/ErrorCode.h"
@@ -834,4 +835,30 @@ TEST(MigrationRunnerTest, ValidatesEntireJournalBeforeApplyingPendingMigrations)
     EXPECT_EQ(result.error, static_cast<int>(ErrorCode::MigrationConflict));
     EXPECT_EQ(connection.statements.size(), 1U);
     EXPECT_TRUE(connection.recorded.empty());
+}
+
+TEST(DatabaseUnitOfWorkTest, RollsBackAnUncommittedTransactionAtScopeExit)
+{
+    FakeDatabaseConnection connection;
+    {
+        SZX::ADMIN::INFRA::DatabaseUnitOfWork unit(connection);
+        ASSERT_TRUE(unit.begin().ok);
+        EXPECT_TRUE(unit.inTransaction());
+    }
+    EXPECT_EQ(connection.beginCount, 1);
+    EXPECT_EQ(connection.commitCount, 0);
+    EXPECT_EQ(connection.rollbackCount, 1);
+}
+
+TEST(DatabaseUnitOfWorkTest, DoesNotRollbackAfterSuccessfulCommit)
+{
+    FakeDatabaseConnection connection;
+    {
+        SZX::ADMIN::INFRA::DatabaseUnitOfWork unit(connection);
+        ASSERT_TRUE(unit.begin().ok);
+        ASSERT_TRUE(unit.commit().ok);
+        EXPECT_FALSE(unit.inTransaction());
+    }
+    EXPECT_EQ(connection.commitCount, 1);
+    EXPECT_EQ(connection.rollbackCount, 0);
 }
