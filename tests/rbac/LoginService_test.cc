@@ -53,6 +53,18 @@ TEST(AdminLoginTest, CanonicalizesUnicodeWithoutMakingUidCaseInsensitive)
     }
 }
 
+TEST(AdminLoginTest, ProvidesUnifiedIdentifierProjectionForV12Adapters)
+{
+    const auto uid = AUTH::normalizeLoginIdentifier(" U10086 ", AUTH::IdentifierType::Uid);
+    ASSERT_TRUE(uid.ok);
+    EXPECT_EQ(uid.value.displayValue, "U10086");
+    EXPECT_EQ(uid.value.canonicalValue, "u10086");
+    const auto username = AUTH::normalizeLoginIdentifier(" E\xCC\x81NGINEER ", AUTH::IdentifierType::Username);
+    ASSERT_TRUE(username.ok);
+    EXPECT_EQ(username.value.displayValue, "ÉNGINEER");
+    EXPECT_EQ(username.value.canonicalValue, "éngineer");
+}
+
 TEST(AdminLoginTest, RejectsInvalidLimitsAndMissingKeysBeforeServingLogin)
 {
     AUTH::LoginConfig config;

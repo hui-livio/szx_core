@@ -199,10 +199,27 @@ auto LoginService::login(const LoginInput &input) -> Result<LoginSession>
                 });
             return audited.ok ? failed<LoginSession>(ErrorCode::RateLimited) : Result<LoginSession>::Failure(audited.error, {});
         }
-        const auto uid      = canonicalIdentifier(input.identifier, false);
-        const auto username = canonicalIdentifier(input.identifier, true);
-        if (!uid.ok || !username.ok)
-            return Result<LoginSession>::Failure(!uid.ok ? uid.error : username.error, {});
+        std::string uid;
+        std::string username;
+        if (input.identifierType)
+        {
+            const auto normalized = normalizeLoginIdentifier(input.identifier, *input.identifierType);
+            if (!normalized.ok)
+                return Result<LoginSession>::Failure(normalized.error, {});
+            if (*input.identifierType == IdentifierType::Uid)
+                uid = normalized.value.displayValue; // legacy adapter; migration 9 switches this to canonicalValue.
+            else
+                username = normalized.value.canonicalValue;
+        }
+        else
+        {
+            const auto uidValue      = canonicalIdentifier(input.identifier, false);
+            const auto usernameValue = canonicalIdentifier(input.identifier, true);
+            if (!uidValue.ok || !usernameValue.ok)
+                return Result<LoginSession>::Failure(!uidValue.ok ? uidValue.error : usernameValue.error, {});
+            uid      = uidValue.value;
+            username = usernameValue.value;
+        }
         LoginSession session;
         bool authenticated{};
         const auto operation = database_.withConnection(
@@ -228,7 +245,7 @@ auto LoginService::login(const LoginInput &input) -> Result<LoginSession>
                         }
                     }
                 };
-                const auto found = repository->find(uid.value, username.value);
+                const auto found = repository->find(uid, username);
                 if (!found.ok)
                     return Result<void>::Failure(found.error, {});
                 auto user                = found.value;

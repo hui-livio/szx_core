@@ -80,15 +80,38 @@ auto loginResponse(AUTH::LoginService &service, const INFRA::HttpRequest &reques
         const auto body = RestApi::jsonObject(request);
         if (!body.ok)
             return RestApi::error(static_cast<ErrorCode>(body.error), request.requestId);
-        constexpr std::array<std::string_view, 2> fields{"identifier", "password_hash"};
-        if (!RestApi::allowedFields(body.value, fields).ok || !body.value.contains("identifier") ||
-            !body.value.contains("password_hash") || !body.value.at("identifier").is_string() ||
+        constexpr std::array<std::string_view, 4> fields{"identifier", "login_identifier", "identifier_type", "password_hash"};
+        if (!RestApi::allowedFields(body.value, fields).ok || !body.value.contains("password_hash") ||
             !body.value.at("password_hash").is_string())
             return RestApi::error(ErrorCode::ValidationError, request.requestId);
-        const auto session = service.login({.identifier   = body.value.at("identifier").get<std::string>(),
-                                            .passwordHash = body.value.at("password_hash").get<std::string>(),
-                                            .requestId    = request.requestId,
-                                            .peerAddress  = request.peerAddress});
+        const bool legacy = body.value.contains("identifier");
+        const bool formal = body.value.contains("login_identifier") || body.value.contains("identifier_type");
+        if (legacy == formal)
+            return RestApi::error(ErrorCode::ValidationError, request.requestId);
+        AUTH::LoginInput input{.identifier = {},
+                               .passwordHash = body.value.at("password_hash").get<std::string>(),
+                               .requestId = request.requestId,
+                               .peerAddress = request.peerAddress};
+        if (legacy)
+        {
+            if (!body.value.at("identifier").is_string())
+                return RestApi::error(ErrorCode::ValidationError, request.requestId);
+            input.identifier = body.value.at("identifier").get<std::string>();
+        }
+        else
+        {
+            if (!body.value.at("login_identifier").is_string() || !body.value.at("identifier_type").is_string())
+                return RestApi::error(ErrorCode::ValidationError, request.requestId);
+            input.identifier = body.value.at("login_identifier").get<std::string>();
+            const auto type = body.value.at("identifier_type").get<std::string>();
+            if (type == "username")
+                input.identifierType = AUTH::IdentifierType::Username;
+            else if (type == "uid")
+                input.identifierType = AUTH::IdentifierType::Uid;
+            else
+                return RestApi::error(ErrorCode::ValidationError, request.requestId);
+        }
+        const auto session = service.login(input);
         return session.ok ? sessionResponse(session.value, request, cookiePath) :
                             RestApi::error(static_cast<ErrorCode>(session.error), request.requestId);
     } catch (...)
