@@ -16,6 +16,11 @@ class LoginService;
 
 namespace SZX::ADMIN::RBAC
 {
+class RoleRepository;
+}
+
+namespace SZX::ADMIN::RBAC
+{
 struct AuthorizedActor final
 {
     USER::UserRow user;
@@ -41,12 +46,18 @@ class AuthorizationService final
 public:
     explicit AuthorizationService(AUTH::LoginService &auth) noexcept;
 
-    [[nodiscard]] auto resolve(const USER::ActorContext &context, USER::UserRepository &repository, bool lock = false)
+    [[nodiscard]] auto resolve(const USER::ActorContext &context, USER::UserRepository &repository, bool lock = false,
+                               RoleRepository *roles = nullptr)
         -> SZX::COMMON::Result<AuthorizedActor>;
 
     [[nodiscard]] auto authorizeUserMutation(const USER::ActorContext &context, USER::UserRepository &repository,
-                                             std::string_view targetId, std::string_view permissionCode, std::uint32_t version)
+                                             std::string_view targetId, std::string_view permissionCode, std::uint32_t version,
+                                             RoleRepository *roles = nullptr)
         -> SZX::COMMON::Result<AuthorizedMutation>;
+
+    /** Runtime RBAC projection; the fixed Policy adapter remains the compatibility fallback. */
+    [[nodiscard]] auto manageableRoles(RoleRepository &roles, std::string_view actorRole) const
+        -> SZX::COMMON::Result<std::vector<std::string>>;
 
     [[nodiscard]] auto allows(std::string_view role, std::string_view permissionCode) const noexcept -> bool;
     [[nodiscard]] auto mayTarget(std::string_view actorRole, std::string_view targetRole) const noexcept -> bool;

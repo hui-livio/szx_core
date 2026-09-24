@@ -5,8 +5,10 @@
 #include "BehaviorEventRepository.h"
 #include "DatabaseInitialization.h"
 #include "LogMaintenanceRepository.h"
+#include "PermissionRepository.h"
 #include "Logger.h"
 #include "LoginRepository.h"
+#include "RoleRepository.h"
 #include "SzxAdmin/Infra/ErrorCode.h"
 #include "UserRepository.h"
 
@@ -150,7 +152,9 @@ public:
         userRepository_(connection),
         auditRepository_(connection),
         behaviorEventRepository_(connection),
-        logMaintenanceRepository_(connection)
+        logMaintenanceRepository_(connection),
+        roleRepository_(connection),
+        permissionRepository_(connection)
     {
     }
 
@@ -320,6 +324,16 @@ public:
         return &logMaintenanceRepository_;
     }
 
+    auto roleRepository() noexcept -> RBAC::RoleRepository * override
+    {
+        return &roleRepository_;
+    }
+
+    auto permissionRepository() noexcept -> RBAC::PermissionRepository * override
+    {
+        return &permissionRepository_;
+    }
+
 private:
     DETAIL::OrmConnection &connection_;
     DETAIL::MySqlLoginRepository loginRepository_;
@@ -327,6 +341,8 @@ private:
     DETAIL::MySqlAuditRepository auditRepository_;
     DETAIL::MySqlBehaviorEventRepository behaviorEventRepository_;
     DETAIL::MySqlLogMaintenanceRepository logMaintenanceRepository_;
+    DETAIL::MySqlRoleRepository roleRepository_;
+    DETAIL::MySqlPermissionRepository permissionRepository_;
 };
 
 } // namespace

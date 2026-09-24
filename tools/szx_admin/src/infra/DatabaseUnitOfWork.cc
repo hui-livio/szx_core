@@ -77,4 +77,14 @@ auto DatabaseUnitOfWork::logMaintenance() noexcept -> MAINTENANCE::LogMaintenanc
 {
     return connection_.logMaintenanceRepository();
 }
+
+auto DatabaseUnitOfWork::roles() noexcept -> RBAC::RoleRepository *
+{
+    return connection_.roleRepository();
+}
+
+auto DatabaseUnitOfWork::permissions() noexcept -> RBAC::PermissionRepository *
+{
+    return connection_.permissionRepository();
+}
 } // namespace SZX::ADMIN::INFRA

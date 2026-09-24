@@ -37,6 +37,12 @@ namespace SZX::ADMIN::USER
 class UserRepository;
 }
 
+namespace SZX::ADMIN::RBAC
+{
+class RoleRepository;
+class PermissionRepository;
+}
+
 namespace SZX::ADMIN::INFRA
 {
 struct DatabaseConfig final
@@ -134,6 +140,18 @@ public:
     }
 
     [[nodiscard]] virtual auto logMaintenanceRepository() noexcept -> MAINTENANCE::LogMaintenanceRepository *
+    {
+        return nullptr;
+    }
+
+    /** Borrow the runtime role catalog for this connection's transaction lifetime. */
+    [[nodiscard]] virtual auto roleRepository() noexcept -> RBAC::RoleRepository *
+    {
+        return nullptr;
+    }
+
+    /** Borrow the runtime permission catalog for this connection's transaction lifetime. */
+    [[nodiscard]] virtual auto permissionRepository() noexcept -> RBAC::PermissionRepository *
     {
         return nullptr;
     }

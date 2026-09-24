@@ -51,6 +51,8 @@ add_library(szx_rbac_infra STATIC
     src/infra/ErrorCode.cc
     src/infra/Database.cc
     src/infra/DatabaseUnitOfWork.cc
+    src/infra/RoleRepository.cc
+    src/infra/PermissionRepository.cc
     src/infra/OrmRuntime.cc
     src/infra/DatabaseInitialization.cc
     src/infra/AuditRepository.cc

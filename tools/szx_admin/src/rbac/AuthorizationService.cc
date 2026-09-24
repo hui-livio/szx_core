@@ -2,6 +2,7 @@
 #include "PermissionCodes.h"
 
 #include "../auth/LoginService.h"
+#include "RoleRepository.h"
 #include "../user/UserValidation.h"
 #include "SzxAdmin/Infra/ErrorCode.h"
 #include "SzxAdmin/Policy/Policy.h"
@@ -61,7 +62,8 @@ AuthorizationService::AuthorizationService(AUTH::LoginService &auth) noexcept :
 {
 }
 
-auto AuthorizationService::resolve(const USER::ActorContext &context, USER::UserRepository &repository, bool lock)
+auto AuthorizationService::resolve(const USER::ActorContext &context, USER::UserRepository &repository, bool lock,
+                                   RoleRepository *roles)
     -> Result<AuthorizedActor>
 {
     try
@@ -79,6 +81,14 @@ auto AuthorizationService::resolve(const USER::ActorContext &context, USER::User
             return failed<AuthorizedActor>(ErrorCode::AuthRequired);
         if (found.value->role == "super_admin" && found.value->force_password_change)
             return failed<AuthorizedActor>(ErrorCode::Forbidden);
+        if (roles)
+        {
+            const auto currentRole = roles->findByCode(found.value->role);
+            if (!currentRole.ok)
+                return Result<AuthorizedActor>::Failure(currentRole.error, {});
+            if (!currentRole.value || currentRole.value->status != "active")
+                return failed<AuthorizedActor>(ErrorCode::AuthRequired);
+        }
         return Result<AuthorizedActor>::Success({.user = *found.value});
     }
     catch (...)
@@ -89,7 +99,7 @@ auto AuthorizationService::resolve(const USER::ActorContext &context, USER::User
 
 auto AuthorizationService::authorizeUserMutation(const USER::ActorContext &context, USER::UserRepository &repository,
                                                   std::string_view targetId, std::string_view permissionCode,
-                                                  std::uint32_t version) -> Result<AuthorizedMutation>
+                                                  std::uint32_t version, RoleRepository *roles)
 {
     try
     {
@@ -107,11 +117,32 @@ auto AuthorizationService::authorizeUserMutation(const USER::ActorContext &conte
             return failed<AuthorizedMutation>(ErrorCode::AuthRequired);
         if (actor->role == "super_admin" && actor->force_password_change)
             return failed<AuthorizedMutation>(ErrorCode::Forbidden);
-        if (!allows(actor->role, permissionCode))
+        if (roles)
+        {
+            const auto currentRole = roles->findByCode(actor->role);
+            if (!currentRole.ok)
+                return Result<AuthorizedMutation>::Failure(currentRole.error, {});
+            if (!currentRole.value || currentRole.value->status != "active")
+                return failed<AuthorizedMutation>(ErrorCode::AuthRequired);
+            const auto permitted = roles->hasPermission(actor->role, permissionCode);
+            if (!permitted.ok)
+                return Result<AuthorizedMutation>::Failure(permitted.error, {});
+            if (!permitted.value)
+                return failed<AuthorizedMutation>(ErrorCode::Forbidden);
+        }
+        else if (!allows(actor->role, permissionCode))
             return failed<AuthorizedMutation>(ErrorCode::Forbidden);
         if (!locked.value.target)
             return failed<AuthorizedMutation>(ErrorCode::ResourceNotFound);
-        if (!mayTarget(actor->role, locked.value.target->role))
+        if (roles)
+        {
+            const auto manageable = roles->canManageRole(actor->role, locked.value.target->role);
+            if (!manageable.ok)
+                return Result<AuthorizedMutation>::Failure(manageable.error, {});
+            if (!manageable.value)
+                return failed<AuthorizedMutation>(ErrorCode::Forbidden);
+        }
+        else if (!mayTarget(actor->role, locked.value.target->role))
             return failed<AuthorizedMutation>(ErrorCode::Forbidden);
         if (locked.value.target->version != static_cast<int>(version))
             return failed<AuthorizedMutation>(ErrorCode::ConflictVersion);
@@ -165,5 +196,18 @@ auto AuthorizationService::manageableRoles(std::string_view actorRole) const -> 
         if (mayTarget(actorRole, role))
             result.push_back(role);
     return result;
+}
+
+auto AuthorizationService::manageableRoles(RoleRepository &roles, std::string_view actorRole) const
+    -> Result<std::vector<std::string>>
+{
+    try
+    {
+        return roles.manageableRoles(actorRole);
+    }
+    catch (...)
+    {
+        return failed<std::vector<std::string>>(ErrorCode::InternalFailure);
+    }
 }
 } // namespace SZX::ADMIN::RBAC

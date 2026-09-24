@@ -27,6 +27,12 @@ namespace SZX::ADMIN::USER
 class UserRepository;
 }
 
+namespace SZX::ADMIN::RBAC
+{
+class RoleRepository;
+class PermissionRepository;
+}
+
 namespace SZX::ADMIN::INFRA
 {
 /**
@@ -56,6 +62,8 @@ public:
     [[nodiscard]] auto audit() noexcept -> AUDIT::AuditRepository *;
     [[nodiscard]] auto behaviorEvents() noexcept -> TELEMETRY::BehaviorEventRepository *;
     [[nodiscard]] auto logMaintenance() noexcept -> MAINTENANCE::LogMaintenanceRepository *;
+    [[nodiscard]] auto roles() noexcept -> RBAC::RoleRepository *;
+    [[nodiscard]] auto permissions() noexcept -> RBAC::PermissionRepository *;
 
 private:
     DatabaseConnection &connection_;
