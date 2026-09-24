@@ -71,6 +71,17 @@ template <typename T>
     return !hasControlCharacter(value) && characterCount(value) <= 128;
 }
 
+/** Stable role code syntax; existence and status are checked by RoleRepository. */
+[[nodiscard]] inline auto validRoleCode(std::string_view value) noexcept -> bool
+{
+    if (value.size() < 2 || value.size() > 64 || value.front() < 'a' || value.front() > 'z')
+        return false;
+    for (const auto character : value)
+        if (!((character >= 'a' && character <= 'z') || (character >= '0' && character <= '9') || character == '_'))
+            return false;
+    return true;
+}
+
 [[nodiscard]] inline auto validAuditResult(std::string_view value) noexcept -> bool
 {
     return value == "success" || value == "failure" || value == "denied";

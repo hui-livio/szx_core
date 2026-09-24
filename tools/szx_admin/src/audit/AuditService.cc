@@ -6,6 +6,7 @@
 #include "../user/UserValidation.h"
 
 #include "../rbac/PermissionCodes.h"
+#include "../rbac/RoleRepository.h"
 
 #include "SzxAdmin/Infra/ErrorCode.h"
 
@@ -55,10 +56,19 @@ auto AuditService::query(const USER::ActorContext &context, const AuditQuery &qu
                 auto *repository = connection.auditRepository();
                 if (!users || !repository)
                     return failed<void>(ErrorCode::DatabaseQueryFailed);
-                const auto actor = authorization_.resolve(context, *users);
+                auto *roles      = connection.roleRepository();
+                const auto actor = authorization_.resolve(context, *users, false, roles);
                 if (!actor.ok)
                     return Result<void>::Failure(actor.error, {});
-                if (!authorization_.allows(actor.value.user.role, RBAC::PERMISSIONS::AuditRead))
+                if (roles)
+                {
+                    const auto allowed = authorization_.allows(*roles, actor.value.user.role, RBAC::PERMISSIONS::AuditRead);
+                    if (!allowed.ok)
+                        return Result<void>::Failure(allowed.error, {});
+                    if (!allowed.value)
+                        return failed<void>(ErrorCode::Forbidden);
+                }
+                else if (!authorization_.allows(actor.value.user.role, RBAC::PERMISSIONS::AuditRead))
                     return failed<void>(ErrorCode::Forbidden);
 
                 AuditFilter filter{.from        = *from,

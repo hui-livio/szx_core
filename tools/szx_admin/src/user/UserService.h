@@ -55,7 +55,7 @@ struct Permissions final
     std::string status;
     bool forcePasswordChange{};
     int authzVersion{};
-    std::vector<std::string_view> capabilities;
+    std::vector<std::string> capabilities;
 };
 
 /**
@@ -92,11 +92,12 @@ public:
 
 private:
     /** 校验 token 和数据库当前状态；写操作须在事务内令 lock=true。 */
-    auto resolve(const ActorContext &context, UserRepository &repository, bool lock = false)
+    auto resolve(const ActorContext &context, UserRepository &repository, bool lock = false,
+                 RBAC::RoleRepository *roles = nullptr)
         -> SZX::COMMON::Result<RBAC::AuthorizedActor>;
     /** 在已开启的事务中锁定调用者、目标及 active 超管行，并校验能力、目标角色和版本。 */
     auto authorize(const ActorContext &context, UserRepository &repository, const std::string &targetId,
-                   std::string_view permissionCode, std::uint32_t version)
+                   std::string_view permissionCode, std::uint32_t version, RBAC::RoleRepository *roles = nullptr)
         -> SZX::COMMON::Result<RBAC::AuthorizedMutation>;
     /** 生成一次性临时凭据，返回 {明文, 可存储的 Argon2id 记录}。 */
     auto issueCredential(const std::optional<std::string> &passwordHash)

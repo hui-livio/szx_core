@@ -2,6 +2,7 @@
 #include "PermissionCodes.h"
 
 #include "../auth/LoginService.h"
+#include "PermissionRepository.h"
 #include "RoleRepository.h"
 #include "../user/UserValidation.h"
 #include "SzxAdmin/Infra/ErrorCode.h"
@@ -99,7 +100,7 @@ auto AuthorizationService::resolve(const USER::ActorContext &context, USER::User
 
 auto AuthorizationService::authorizeUserMutation(const USER::ActorContext &context, USER::UserRepository &repository,
                                                   std::string_view targetId, std::string_view permissionCode,
-                                                  std::uint32_t version, RoleRepository *roles)
+                                                  std::uint32_t version, RoleRepository *roles) -> Result<AuthorizedMutation>
 {
     try
     {
@@ -162,6 +163,24 @@ auto AuthorizationService::allows(std::string_view role, std::string_view permis
     return capability && POLICY::allows(role, *capability);
 }
 
+auto AuthorizationService::allows(RoleRepository &roles, std::string_view role, std::string_view permissionCode) const
+    -> Result<bool>
+{
+    try
+    {
+        const auto currentRole = roles.findByCode(role);
+        if (!currentRole.ok)
+            return Result<bool>::Failure(currentRole.error, {});
+        if (!currentRole.value || currentRole.value->status != "active")
+            return Result<bool>::Success(false);
+        return roles.hasPermission(role, permissionCode);
+    }
+    catch (...)
+    {
+        return failed<bool>(ErrorCode::InternalFailure);
+    }
+}
+
 auto AuthorizationService::mayTarget(std::string_view actorRole, std::string_view targetRole) const noexcept -> bool
 {
     return POLICY::mayTarget(actorRole, targetRole);
@@ -186,6 +205,19 @@ auto AuthorizationService::capabilities(std::string_view role) const -> Result<s
     catch (...)
     {
         return failed<std::vector<std::string_view>>(ErrorCode::InternalFailure);
+    }
+}
+
+auto AuthorizationService::capabilities(PermissionRepository &permissions, std::string_view role) const
+    -> Result<std::vector<std::string>>
+{
+    try
+    {
+        return permissions.listActiveCodes(role);
+    }
+    catch (...)
+    {
+        return failed<std::vector<std::string>>(ErrorCode::InternalFailure);
     }
 }
 

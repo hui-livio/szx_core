@@ -1,6 +1,7 @@
 #include "../auth/LoginRepository.h"
 #include "../auth/LoginService.h"
 #include "../rbac/PermissionCodes.h"
+#include "../rbac/RoleRepository.h"
 #include "../auth/PasswordHash.h"
 #include "../audit/AuditRepository.h"
 #include "../infra/DatabaseUnitOfWork.h"
@@ -126,7 +127,7 @@ auto UserService::create(const ActorContext &context, const CreateUserInput &inp
             return failed<CredentialIssue>(ErrorCode::ValidationError);
         if (input.uid.has_value() == input.username.has_value())
             return failed<CredentialIssue>(ErrorCode::UserIdentityOneOfRequired);
-        if (!validDisplayName(input.displayName) || !authorization_.validRole(input.role))
+        if (!validDisplayName(input.displayName) || !validRoleCode(input.role))
             return failed<CredentialIssue>(ErrorCode::ValidationError);
         if (input.passwordHash && !AUTH::validClientPasswordHash(*input.passwordHash))
             return failed<CredentialIssue>(ErrorCode::ValidationError);
@@ -157,12 +158,23 @@ auto UserService::create(const ActorContext &context, const CreateUserInput &inp
                     return Result<void>::Failure(namespaceLock.error, {});
                 if (!namespaceLock.value)
                     return failed<void>(ErrorCode::DatabaseQueryFailed);
-                const auto actor = resolve(context, *users, true);
+                auto *roles = unit.roles();
+                const auto actor = resolve(context, *users, true, roles);
                 if (!actor.ok)
                     return Result<void>::Failure(actor.error, {});
-                if (!authorization_.allows(actor.value.user.role, RBAC::PERMISSIONS::UserCreate))
-                    return failed<void>(ErrorCode::Forbidden);
-                if (!authorization_.mayTarget(actor.value.user.role, input.role))
+                if (roles)
+                {
+                    const auto allowed = authorization_.allows(*roles, actor.value.user.role, RBAC::PERMISSIONS::UserCreate);
+                    if (!allowed.ok)
+                        return Result<void>::Failure(allowed.error, {});
+                    const auto manageable = roles->canManageRole(actor.value.user.role, input.role);
+                    if (!manageable.ok)
+                        return Result<void>::Failure(manageable.error, {});
+                    if (!allowed.value || !manageable.value)
+                        return failed<void>(ErrorCode::Forbidden);
+                }
+                else if (!authorization_.allows(actor.value.user.role, RBAC::PERMISSIONS::UserCreate) ||
+                         !authorization_.mayTarget(actor.value.user.role, input.role))
                     return failed<void>(ErrorCode::Forbidden);
                 const auto uid      = input.uid ? canonical.value : std::string{};
                 const auto username = input.uid ? std::string{} : canonical.value;
@@ -247,7 +259,7 @@ auto UserService::updateProfile(const ActorContext &context, const std::string &
                 const auto begun = unit.begin();
                 if (!begun.ok)
                     return begun;
-                const auto authorized = authorize(context, *users, id, RBAC::PERMISSIONS::UserUpdate, version);
+                const auto authorized = authorize(context, *users, id, RBAC::PERMISSIONS::UserUpdate, version, unit.roles());
                 if (!authorized.ok)
                     return Result<void>::Failure(authorized.error, {});
                 auto target = authorized.value.target;
@@ -301,7 +313,7 @@ auto UserService::changeStatus(const ActorContext &context, const std::string &i
                 const auto begun = unit.begin();
                 if (!begun.ok)
                     return begun;
-                const auto authorized = authorize(context, *users, id, RBAC::PERMISSIONS::UserStatus, version);
+                const auto authorized = authorize(context, *users, id, RBAC::PERMISSIONS::UserStatus, version, unit.roles());
                 if (!authorized.ok)
                     return Result<void>::Failure(authorized.error, {});
                 if (status == "disabled" && authorized.value.actor.id == authorized.value.target.id)
@@ -373,7 +385,7 @@ auto UserService::unlock(const ActorContext &context, const std::string &id, std
                 const auto begun = unit.begin();
                 if (!begun.ok)
                     return begun;
-                const auto authorized = authorize(context, *users, id, RBAC::PERMISSIONS::UserUnlock, version);
+                const auto authorized = authorize(context, *users, id, RBAC::PERMISSIONS::UserUnlock, version, unit.roles());
                 if (!authorized.ok)
                     return Result<void>::Failure(authorized.error, {});
                 auto target = authorized.value.target;
@@ -416,7 +428,7 @@ auto UserService::assignRole(const ActorContext &context, const std::string &id,
 {
     try
     {
-        if (!validContext(context.requestId, context.peerAddress) || !validUuid(id) || !authorization_.validRole(role))
+        if (!validContext(context.requestId, context.peerAddress) || !validUuid(id) || !validRoleCode(role))
             return failed<UserRow>(ErrorCode::ValidationError);
         UserRow output;
         const auto operation = database_.withConnection(
@@ -431,14 +443,22 @@ auto UserService::assignRole(const ActorContext &context, const std::string &id,
                 const auto begun = unit.begin();
                 if (!begun.ok)
                     return begun;
-                const auto authorized = authorize(context, *users, id, RBAC::PERMISSIONS::UserRoleAssign, version);
+                const auto authorized = authorize(context, *users, id, RBAC::PERMISSIONS::UserRoleAssign, version, unit.roles());
                 if (!authorized.ok)
                     return Result<void>::Failure(authorized.error, {});
                 if (authorized.value.actor.id == authorized.value.target.id)
                     return failed<void>(ErrorCode::Forbidden);
                 auto target = authorized.value.target;
                 // The new role must also be inside the actor's manageable set.
-                if (!authorization_.mayTarget(authorized.value.actor.role, role))
+                if (unit.roles())
+                {
+                    const auto manageable = unit.roles()->canManageRole(authorized.value.actor.role, role);
+                    if (!manageable.ok)
+                        return Result<void>::Failure(manageable.error, {});
+                    if (!manageable.value)
+                        return failed<void>(ErrorCode::Forbidden);
+                }
+                else if (!authorization_.mayTarget(authorized.value.actor.role, role))
                     return failed<void>(ErrorCode::Forbidden);
                 if (target.role != role)
                 {
@@ -497,7 +517,7 @@ auto UserService::resetPassword(const ActorContext &context, const std::string &
                 const auto begun = unit.begin();
                 if (!begun.ok)
                     return begun;
-                const auto authorized = authorize(context, *users, id, RBAC::PERMISSIONS::UserPasswordReset, version);
+                const auto authorized = authorize(context, *users, id, RBAC::PERMISSIONS::UserPasswordReset, version, unit.roles());
                 if (!authorized.ok)
                     return Result<void>::Failure(authorized.error, {});
                 const auto admitted = auth_.admitCredentialIssue(context.peerAddress);

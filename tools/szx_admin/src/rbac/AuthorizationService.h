@@ -17,6 +17,7 @@ class LoginService;
 namespace SZX::ADMIN::RBAC
 {
 class RoleRepository;
+class PermissionRepository;
 }
 
 namespace SZX::ADMIN::RBAC
@@ -60,10 +61,14 @@ public:
         -> SZX::COMMON::Result<std::vector<std::string>>;
 
     [[nodiscard]] auto allows(std::string_view role, std::string_view permissionCode) const noexcept -> bool;
+    [[nodiscard]] auto allows(RoleRepository &roles, std::string_view role, std::string_view permissionCode) const
+        -> SZX::COMMON::Result<bool>;
     [[nodiscard]] auto mayTarget(std::string_view actorRole, std::string_view targetRole) const noexcept -> bool;
     [[nodiscard]] auto validRole(std::string_view role) const noexcept -> bool;
     [[nodiscard]] auto validStatus(std::string_view status) const noexcept -> bool;
     [[nodiscard]] auto capabilities(std::string_view role) const -> SZX::COMMON::Result<std::vector<std::string_view>>;
+    [[nodiscard]] auto capabilities(PermissionRepository &permissions, std::string_view role) const
+        -> SZX::COMMON::Result<std::vector<std::string>>;
     /** 返回调用者可以管理的目标角色；角色清单只在授权边界维护。 */
     [[nodiscard]] auto manageableRoles(std::string_view actorRole) const -> std::vector<std::string_view>;
 

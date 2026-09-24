@@ -6,6 +6,7 @@
 #include "../user/UserValidation.h"
 
 #include "../rbac/PermissionCodes.h"
+#include "../rbac/RoleRepository.h"
 
 #include "JsonHelper.hpp"
 #include "SzxAdmin/Infra/ErrorCode.h"
@@ -66,7 +67,7 @@ auto BehaviorEventService::record(const USER::ActorContext &context, const Behav
                 auto *users = connection.userRepository();
                 if (!users)
                     return failed<void>(ErrorCode::DatabaseQueryFailed);
-                const auto actor = authorization_.resolve(context, *users);
+                const auto actor = authorization_.resolve(context, *users, false, connection.roleRepository());
                 if (!actor.ok)
                     return Result<void>::Failure(actor.error, {});
                 userId = actor.value.user.id;
@@ -128,10 +129,19 @@ auto BehaviorEventService::list(const USER::ActorContext &context, const Behavio
                 auto *repository = connection.behaviorEventRepository();
                 if (!users || !repository)
                     return failed<void>(ErrorCode::DatabaseQueryFailed);
-                const auto actor = authorization_.resolve(context, *users);
+                auto *roles      = connection.roleRepository();
+                const auto actor = authorization_.resolve(context, *users, false, roles);
                 if (!actor.ok)
                     return Result<void>::Failure(actor.error, {});
-                if (!authorization_.allows(actor.value.user.role, RBAC::PERMISSIONS::BehaviorRead))
+                if (roles)
+                {
+                    const auto allowed = authorization_.allows(*roles, actor.value.user.role, RBAC::PERMISSIONS::BehaviorRead);
+                    if (!allowed.ok)
+                        return Result<void>::Failure(allowed.error, {});
+                    if (!allowed.value)
+                        return failed<void>(ErrorCode::Forbidden);
+                }
+                else if (!authorization_.allows(actor.value.user.role, RBAC::PERMISSIONS::BehaviorRead))
                     return failed<void>(ErrorCode::Forbidden);
                 const auto queried = repository->query({.from        = *from,
                                                         .to          = *to,
