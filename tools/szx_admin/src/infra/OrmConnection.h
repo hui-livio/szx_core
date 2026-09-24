@@ -4,6 +4,8 @@
 
 #include "OrmRuntime.h"
 
+#include "Logger.h"
+
 #include <ormpp/mysql.hpp>
 
 #include <algorithm>
@@ -30,7 +32,11 @@ class OrmConnection final
         hasError_ = true;
         connection_.reset_error();
         connection_.set_enable_transaction(false);
+        const auto started = std::chrono::steady_clock::now();
         auto result = callback();
+        const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - started);
+        if (elapsed >= std::chrono::microseconds{5000})
+            LOGM_DEBUG("szx_admin.database", "event=orm_operation_slow duration_microseconds={}", elapsed.count());
         hasError_   = connection_.has_error();
         lastError_  = connection_.get_last_error();
         return result;
