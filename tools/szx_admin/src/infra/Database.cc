@@ -51,6 +51,7 @@ struct users final
     std::string login_identifier;
     std::string login_identifier_canonical;
     std::string identifier_type;
+    std::optional<std::string> role_id;
     std::string display_name;
     std::string password_hash;
     std::string role;
@@ -59,8 +60,8 @@ struct users final
 };
 // Deliberately project only initialized columns. Nullable identities and timestamps
 // are supplied by MySQL defaults, rather than empty strings.
-YLT_REFL(users, id, username, username_canonical, login_identifier, login_identifier_canonical, identifier_type, display_name,
-         password_hash, role, status, force_password_change);
+YLT_REFL(users, id, username, username_canonical, login_identifier, login_identifier_canonical, identifier_type, role_id,
+         display_name, password_hash, role, status, force_password_change);
 
 auto failure(ErrorCode code, const std::string &message) -> SZX::COMMON::Result<void>
 {
@@ -288,12 +289,17 @@ public:
             administrator.status != initial.status || administrator.forcePasswordChange != initial.forcePasswordChange ||
             administrator.passwordHash.empty())
             return failure(ErrorCode::ValidationError, "Invalid bootstrap administrator.");
+        const auto roles = connection_.query_s<std::tuple<std::string>>("SELECT id FROM roles WHERE code = ? LIMIT 1",
+                                                                          administrator.role);
+        if (connection_.has_error() || roles.size() != 1)
+            return databaseFailure(ErrorCode::DatabaseQueryFailed, "Failed to resolve bootstrap role", {});
         const users row{administrator.id,
                         administrator.username,
                         administrator.username,
                         administrator.username,
                         administrator.username,
                         "username",
+                        std::get<0>(roles.front()),
                         std::string{initial.displayName},
                         administrator.passwordHash,
                         administrator.role,
