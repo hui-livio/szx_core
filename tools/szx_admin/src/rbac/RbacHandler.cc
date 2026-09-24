@@ -55,6 +55,8 @@ auto permissionJson(const PermissionRow &row) -> Json
 
 auto roleListResponse(RoleService &service, const INFRA::HttpRequest &request) -> INFRA::HttpResponse
 {
+    if (!allowedQuery(request, std::array<std::string_view, 1>{"include_archived"}))
+        return RestApi::error(ErrorCode::ValidationError, request.requestId);
     const auto archived = includeArchived(request);
     if (!archived)
         return RestApi::error(ErrorCode::ValidationError, request.requestId);
@@ -124,6 +126,16 @@ auto roleStatusResponse(RoleService &service, const INFRA::HttpRequest &request)
                        RestApi::error(static_cast<ErrorCode>(result.error), request.requestId);
 }
 
+auto roleArchiveResponse(RoleService &service, const INFRA::HttpRequest &request) -> INFRA::HttpResponse
+{
+    const auto version = RestApi::ifMatch(request);
+    if (!version.ok)
+        return RestApi::error(static_cast<ErrorCode>(version.error), request.requestId);
+    const auto result = service.changeStatus(actorContext(request), request.pathParams.at("id"), "archived", version.value);
+    return result.ok ? RestApi::noContent(request.requestId) :
+                       RestApi::error(static_cast<ErrorCode>(result.error), request.requestId);
+}
+
 auto stringArray(const Json &body, std::string_view field) -> std::optional<std::vector<std::string>>
 {
     if (!body.contains(field) || !body.at(field).is_array())
@@ -169,6 +181,8 @@ auto roleCollectionPut(RoleService &service, const INFRA::HttpRequest &request, 
 
 auto permissionListResponse(PermissionService &service, const INFRA::HttpRequest &request) -> INFRA::HttpResponse
 {
+    if (!allowedQuery(request, std::array<std::string_view, 1>{"include_archived"}))
+        return RestApi::error(ErrorCode::ValidationError, request.requestId);
     const auto archived = includeArchived(request);
     if (!archived)
         return RestApi::error(ErrorCode::ValidationError, request.requestId);
@@ -236,6 +250,16 @@ auto permissionStatusResponse(PermissionService &service, const INFRA::HttpReque
     return result.ok ? RestApi::success(permissionJson(result.value), request.requestId) :
                        RestApi::error(static_cast<ErrorCode>(result.error), request.requestId);
 }
+
+auto permissionArchiveResponse(PermissionService &service, const INFRA::HttpRequest &request) -> INFRA::HttpResponse
+{
+    const auto version = RestApi::ifMatch(request);
+    if (!version.ok)
+        return RestApi::error(static_cast<ErrorCode>(version.error), request.requestId);
+    const auto result = service.changeStatus(actorContext(request), request.pathParams.at("id"), "archived", version.value);
+    return result.ok ? RestApi::noContent(request.requestId) :
+                       RestApi::error(static_cast<ErrorCode>(result.error), request.requestId);
+}
 } // namespace
 
 auto registerRbacRoutes(INFRA::HttpTransport &transport, INFRA::DatabasePool &database, AUTH::LoginService &login)
@@ -264,6 +288,9 @@ auto registerRbacRoutes(INFRA::HttpTransport &transport, INFRA::DatabasePool &da
         const auto roleStatus = bind("PATCH", "/admin/roles/{id}/status", [roles, origin](const INFRA::HttpRequest &request)
         { return originAllowed(origin, request) ? withCors(roleStatusResponse(*roles, request), request) : RestApi::error(ErrorCode::Forbidden, request.requestId); });
         if (!roleStatus.ok) return roleStatus;
+        const auto roleArchive = bind("DELETE", "/admin/roles/{id}", [roles, origin](const INFRA::HttpRequest &request)
+        { return originAllowed(origin, request) ? withCors(roleArchiveResponse(*roles, request), request) : RestApi::error(ErrorCode::Forbidden, request.requestId); });
+        if (!roleArchive.ok) return roleArchive;
         const auto rolePermissionsGet = bind("GET", "/admin/roles/{id}/permissions", [roles, origin](const INFRA::HttpRequest &request)
         { return originAllowed(origin, request) ? withCors(roleCollectionGet(*roles, request, false), request) : RestApi::error(ErrorCode::Forbidden, request.requestId); });
         if (!rolePermissionsGet.ok) return rolePermissionsGet;
@@ -292,8 +319,11 @@ auto registerRbacRoutes(INFRA::HttpTransport &transport, INFRA::DatabasePool &da
         const auto permissionStatus = bind("PATCH", "/admin/permissions/{id}/status", [permissions, origin](const INFRA::HttpRequest &request)
         { return originAllowed(origin, request) ? withCors(permissionStatusResponse(*permissions, request), request) : RestApi::error(ErrorCode::Forbidden, request.requestId); });
         if (!permissionStatus.ok) return permissionStatus;
+        const auto permissionArchive = bind("DELETE", "/admin/permissions/{id}", [permissions, origin](const INFRA::HttpRequest &request)
+        { return originAllowed(origin, request) ? withCors(permissionArchiveResponse(*permissions, request), request) : RestApi::error(ErrorCode::Forbidden, request.requestId); });
+        if (!permissionArchive.ok) return permissionArchive;
 
-        const auto preflight = preflightHandler(origin, "GET, POST, PATCH, OPTIONS");
+        const auto preflight = preflightHandler(origin, "GET, POST, PATCH, PUT, DELETE, OPTIONS");
         for (const auto path : {"/admin/roles", "/admin/roles/{id}", "/admin/roles/{id}/status", "/admin/roles/{id}/permissions",
                                 "/admin/roles/{id}/manage-scopes", "/admin/permissions", "/admin/permissions/{id}",
                                 "/admin/permissions/{id}/status"})
