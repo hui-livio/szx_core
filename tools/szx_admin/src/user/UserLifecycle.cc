@@ -203,6 +203,16 @@ auto UserService::create(const ActorContext &context, const CreateUserInput &inp
                     return failed<void>(ErrorCode::Forbidden);
                 const auto uid      = isUid ? canonicalValue : std::string{};
                 const auto username = isUid ? std::string{} : canonicalValue;
+                std::optional<std::string> roleId;
+                if (roles)
+                {
+                    const auto targetRole = roles->findByCode(input.role, true);
+                    if (!targetRole.ok)
+                        return Result<void>::Failure(targetRole.error, {});
+                    if (!targetRole.value || targetRole.value->status != "active")
+                        return failed<void>(ErrorCode::ValidationError);
+                    roleId = targetRole.value->id;
+                }
                 const auto existing = users->findByCanonical(uid, username);
                 if (!existing.ok)
                     return Result<void>::Failure(existing.error, {});
@@ -222,8 +232,13 @@ auto UserService::create(const ActorContext &context, const CreateUserInput &inp
                     .uid_canonical                   = isUid ? std::optional{canonicalValue} : std::nullopt,
                     .username                        = isUid ? std::nullopt : std::optional{displayValue},
                     .username_canonical              = isUid ? std::nullopt : std::optional{canonicalValue},
+                    .login_identifier                = displayValue,
+                    .login_identifier_canonical      = canonicalValue,
+                    .identifier_type                 = isUid ? std::optional<std::string>{"uid"} :
+                                                              std::optional<std::string>{"username"},
                     .display_name                    = input.displayName,
                     .password_hash                   = credential.value.second,
+                    .role_id                         = roleId,
                     .role                            = input.role,
                     .status                          = "active",
                     .force_password_change           = true,

@@ -21,11 +21,12 @@ inline constexpr auto get_alias_struct_name(NewUser *)
 {
     return std::string_view{"users"};
 }
-YLT_REFL(UserRow, id, uid, username, display_name, role, status, version, force_password_change, temporary_credential_expires_at,
+YLT_REFL(UserRow, id, uid, username, login_identifier, login_identifier_canonical, identifier_type, display_name, role_id, role, status, version, force_password_change, temporary_credential_expires_at,
          failed_login_count, locked_until, password_changed_at, disabled_at, created_by, authz_version, last_login_at, created_at,
          updated_at);
 REGISTER_CONFLICT_KEY(UserRow, id)
-YLT_REFL(NewUser, id, uid, uid_canonical, username, username_canonical, display_name, password_hash, role, status,
+YLT_REFL(NewUser, id, uid, uid_canonical, username, username_canonical, login_identifier, login_identifier_canonical, identifier_type,
+         display_name, password_hash, role_id, role, status,
          force_password_change, temporary_credential_expires_at, created_by);
 } // namespace SZX::ADMIN::USER
 

@@ -12,7 +12,7 @@ inline constexpr auto get_alias_struct_name(LoginRefresh *)
 {
     return std::string_view{"refresh_tokens"};
 }
-YLT_REFL(LoginUser, id, uid, username, display_name, password_hash, role, status, version, force_password_change,
+YLT_REFL(LoginUser, id, uid, username, login_identifier, login_identifier_canonical, identifier_type, display_name, role_id, password_hash, role, status, version, force_password_change,
          temporary_credential_expires_at, failed_login_count, locked_until, authz_version, last_login_at, password_changed_at,
          created_at, updated_at);
 REGISTER_CONFLICT_KEY(LoginUser, id)

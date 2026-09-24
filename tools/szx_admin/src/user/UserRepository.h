@@ -19,7 +19,11 @@ struct UserRow final
     std::string id;
     std::optional<std::string> uid;
     std::optional<std::string> username;
+    std::optional<std::string> login_identifier;
+    std::optional<std::string> login_identifier_canonical;
+    std::optional<std::string> identifier_type;
     std::string display_name;
+    std::optional<std::string> role_id;
     std::string role;
     std::string status;
     int version{};
@@ -44,8 +48,12 @@ struct NewUser final
     std::optional<std::string> uid_canonical;
     std::optional<std::string> username;
     std::optional<std::string> username_canonical;
+    std::optional<std::string> login_identifier;
+    std::optional<std::string> login_identifier_canonical;
+    std::optional<std::string> identifier_type;
     std::string display_name;
     std::string password_hash;
+    std::optional<std::string> role_id;
     std::string role;
     std::string status;
     bool force_password_change{};

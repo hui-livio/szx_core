@@ -12,7 +12,11 @@ struct LoginUser
     std::string id;
     std::optional<std::string> uid;
     std::optional<std::string> username;
+    std::optional<std::string> login_identifier;
+    std::optional<std::string> login_identifier_canonical;
+    std::optional<std::string> identifier_type;
     std::string display_name;
+    std::optional<std::string> role_id;
     std::string password_hash;
     std::string role;
     std::string status;

@@ -278,6 +278,28 @@ INSERT IGNORE INTO role_manage_scopes (manager_role_id, target_role_id)
  WHERE (manager.code = 'admin' AND target.code IN ('operator', 'engineer')) OR manager.code = 'super_admin';
 )SZXSQL";
 
+// Identity migration is additive: old columns remain available while the
+// application dual-writes and verifies the formal RBAC/user model.
+constexpr std::string_view kMigration7 = R"SZXSQL(ALTER TABLE users
+  ADD COLUMN role_id CHAR(36) NULL AFTER role,
+  ADD COLUMN login_identifier VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NULL AFTER username,
+  ADD COLUMN login_identifier_canonical VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NULL AFTER login_identifier,
+  ADD COLUMN identifier_type VARCHAR(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NULL AFTER login_identifier_canonical,
+  ADD KEY idx_users_role_id (role_id),
+  ADD KEY idx_users_login_identifier_canonical (login_identifier_canonical),
+  ADD CONSTRAINT fk_users_role_id FOREIGN KEY (role_id) REFERENCES roles(id);
+
+UPDATE users u JOIN roles r ON r.code = u.role
+SET u.role_id = r.id
+WHERE u.role_id IS NULL;
+
+UPDATE users
+SET login_identifier = CASE WHEN uid IS NOT NULL THEN uid ELSE username END,
+    login_identifier_canonical = CASE WHEN uid IS NOT NULL THEN uid_canonical ELSE username_canonical END,
+    identifier_type = CASE WHEN uid IS NOT NULL THEN 'uid' ELSE 'username' END
+WHERE login_identifier IS NULL;
+)SZXSQL";
+
 constexpr MigrationDefinition kMigrations[] = {
     {1, kMigration1, "86a4ac820cc8457a2131d0400d4968268576b17113f38fe86b6beceea48c2047"},
     {2, kMigration2, "f4223aadebf005f145941d06b89d2d41e964f4c059d2f765a8e1b3678d389d2d"},
@@ -285,6 +307,7 @@ constexpr MigrationDefinition kMigrations[] = {
     {4, kMigration4, "193446d82dbee660610cbbc8f822469529d18dbf8760ddcffbb3c1d356e8236a"},
     {5, kMigration5, "df5a342ab4da5db2515c8469d3fe17751a6570cc6ee9b009bef9bed9d2463241"},
     {6, kMigration6, "ce30e1ba660394557f1ad3ae3eaeb043d265f685a3cfec6c00ef785b024c6e3e"},
+    {7, kMigration7, "870047693dce68a887ef633fd3b08dc164e7ddd64d9da3ffab1131465b32b6be"},
 };
 
 constexpr DETAIL::InitialAdministratorDefinition kInitialAdministrator{
