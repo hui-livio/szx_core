@@ -23,6 +23,19 @@ struct PermissionRow final
     std::uint32_t version{};
 };
 
+struct NewPermission final
+{
+    std::string id;
+    std::string code;
+    std::string name;
+    std::string description;
+    std::string module;
+    std::string enforcement{"client"};
+    std::string source{"custom"};
+    std::string status{"active"};
+    bool requiredForSuperAdmin{};
+};
+
 /** Runtime permission catalog reads; write behavior belongs to PermissionService. */
 class PermissionRepository
 {
@@ -33,6 +46,13 @@ public:
         -> SZX::COMMON::Result<std::optional<PermissionRow>> = 0;
     virtual auto findByCode(std::string_view code, bool lock = false)
         -> SZX::COMMON::Result<std::optional<PermissionRow>> = 0;
+    virtual auto list(bool includeArchived = false) -> SZX::COMMON::Result<std::vector<PermissionRow>> = 0;
+    virtual auto insert(const NewPermission &permission) -> SZX::COMMON::Result<void> = 0;
+    virtual auto updateProfile(std::string_view id, std::string_view name, std::string_view description,
+                               std::uint32_t version, std::string_view updatedBy) -> SZX::COMMON::Result<void> = 0;
+    virtual auto updateStatus(std::string_view id, std::string_view status, std::uint32_t version,
+                              std::string_view updatedBy, std::optional<std::string_view> archivedAt = std::nullopt)
+        -> SZX::COMMON::Result<void> = 0;
     virtual auto listActiveCodes(std::string_view roleCode)
         -> SZX::COMMON::Result<std::vector<std::string>> = 0;
 };

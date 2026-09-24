@@ -27,6 +27,28 @@ public:
             SZX::ADMIN::RBAC::RoleRow{.code = std::string{code}, .status = "active"});
     }
 
+    auto list(bool) -> SZX::COMMON::Result<std::vector<SZX::ADMIN::RBAC::RoleRow>> override
+    {
+        return SZX::COMMON::Result<std::vector<SZX::ADMIN::RBAC::RoleRow>>::Success({});
+    }
+
+    auto insert(const SZX::ADMIN::RBAC::NewRole &) -> SZX::COMMON::Result<void> override
+    {
+        return SZX::COMMON::Result<void>::Success();
+    }
+
+    auto updateProfile(std::string_view, std::string_view, std::string_view, std::uint32_t, std::string_view)
+        -> SZX::COMMON::Result<void> override
+    {
+        return SZX::COMMON::Result<void>::Success();
+    }
+
+    auto updateStatus(std::string_view, std::string_view, std::uint32_t, std::uint32_t, std::string_view,
+                      std::optional<std::string_view>) -> SZX::COMMON::Result<void> override
+    {
+        return SZX::COMMON::Result<void>::Success();
+    }
+
     auto hasPermission(std::string_view role, std::string_view permission) -> SZX::COMMON::Result<bool> override
     {
         return SZX::COMMON::Result<bool>::Success(role == "custom_viewer" && permission == "user.read");
