@@ -22,6 +22,10 @@ struct role_record final
     std::uint32_t authz_version{};
 };
 YLT_REFL(role_record, id, code, name, description, system_key, status, version, authz_version);
+inline constexpr auto get_alias_struct_name(role_record *)
+{
+    return std::string_view{"roles"};
+}
 
 struct role_insert final
 {
@@ -36,6 +40,10 @@ struct role_insert final
     std::optional<std::string> created_by;
 };
 YLT_REFL(role_insert, id, code, name, description, system_key, status, version, authz_version, created_by);
+inline constexpr auto get_alias_struct_name(role_insert *)
+{
+    return std::string_view{"roles"};
+}
 
 struct role_update final
 {
@@ -50,6 +58,10 @@ struct role_update final
 };
 YLT_REFL(role_update, id, name, description, status, version, authz_version, updated_by, archived_at);
 REGISTER_CONFLICT_KEY(role_update, id)
+inline constexpr auto get_alias_struct_name(role_update *)
+{
+    return std::string_view{"roles"};
+}
 
 struct role_permission_insert final
 {
@@ -58,6 +70,10 @@ struct role_permission_insert final
     std::optional<std::string> assigned_by;
 };
 YLT_REFL(role_permission_insert, role_id, permission_id, assigned_by);
+inline constexpr auto get_alias_struct_name(role_permission_insert *)
+{
+    return std::string_view{"role_permissions"};
+}
 
 struct role_scope_insert final
 {
@@ -66,6 +82,10 @@ struct role_scope_insert final
     std::optional<std::string> assigned_by;
 };
 YLT_REFL(role_scope_insert, manager_role_id, target_role_id, assigned_by);
+inline constexpr auto get_alias_struct_name(role_scope_insert *)
+{
+    return std::string_view{"role_manage_scopes"};
+}
 
 template <typename T>
 auto failed() -> SZX::COMMON::Result<T>

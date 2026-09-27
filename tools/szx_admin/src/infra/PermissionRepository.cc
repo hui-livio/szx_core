@@ -22,6 +22,10 @@ struct permission_record final
     std::uint32_t version{};
 };
 YLT_REFL(permission_record, id, code, name, module, enforcement, source, status, required_for_super_admin, version);
+inline constexpr auto get_alias_struct_name(permission_record *)
+{
+    return std::string_view{"permissions"};
+}
 
 struct permission_insert final
 {
@@ -36,6 +40,10 @@ struct permission_insert final
     bool required_for_super_admin{};
 };
 YLT_REFL(permission_insert, id, code, name, description, module, enforcement, source, status, required_for_super_admin);
+inline constexpr auto get_alias_struct_name(permission_insert *)
+{
+    return std::string_view{"permissions"};
+}
 
 struct permission_update final
 {
@@ -49,6 +57,10 @@ struct permission_update final
 };
 YLT_REFL(permission_update, id, name, description, status, version, updated_by, archived_at);
 REGISTER_CONFLICT_KEY(permission_update, id)
+inline constexpr auto get_alias_struct_name(permission_update *)
+{
+    return std::string_view{"permissions"};
+}
 
 template <typename T>
 auto failed() -> SZX::COMMON::Result<T>
