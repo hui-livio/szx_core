@@ -1,44 +1,50 @@
 <script setup lang="ts">
 import { useHomeViewModel } from '../composables/useAuthViewModel'
 import { formatTime } from '../domain'
+import { useI18n } from 'vue-i18n'
 const { user, role, capabilities, canManage, canAudit, busy, error, load } = useHomeViewModel()
+const { t } = useI18n()
 </script>
 <template>
   <header class="page-heading">
     <div>
-      <p class="eyebrow">WORKSPACE</p>
-      <h1>你好，{{ user?.display_name }}</h1>
-      <p>查看当前身份与可用权限。</p>
+      <p class="eyebrow">{{ t('home.eyebrow') }}</p>
+      <h1>{{ t('home.greeting', { name: user?.display_name }) }}</h1>
+      <p>{{ t('home.subtitle') }}</p>
     </div>
     <span class="role-badge">{{ role }}</span>
   </header>
   <section class="panel">
-    <h2>账号概览</h2>
+    <h2>{{ t('home.accountOverview') }}</h2>
     <dl class="details-grid">
       <div>
-        <dt>登录账号</dt>
+        <dt>{{ t('common.loginIdentifier') }}</dt>
         <dd>{{ user?.login_identifier }}</dd>
       </div>
       <div>
-        <dt>最近登录</dt>
+        <dt>{{ t('home.recentLogin') }}</dt>
         <dd>{{ formatTime(user?.last_login_at ?? null) }}</dd>
       </div>
     </dl>
     <div class="actions">
-      <RouterLink v-if="canManage" class="button primary" to="/users">进入用户管理 →</RouterLink>
-      <RouterLink v-if="canAudit" class="button" to="/logs">查看审计日志</RouterLink>
-      <RouterLink class="button" to="/change-password">修改密码</RouterLink>
+      <RouterLink v-if="canManage" class="button primary" to="/users">{{
+        t('home.enterUsers')
+      }}</RouterLink>
+      <RouterLink v-if="canAudit" class="button" to="/logs">{{ t('home.viewAudit') }}</RouterLink>
+      <RouterLink class="button" to="/change-password">{{ t('shell.password') }}</RouterLink>
     </div>
   </section>
   <section class="panel">
     <div class="section-heading">
-      <h2>我的权限</h2>
-      <button :disabled="busy" @click="load">{{ busy ? '加载中…' : '刷新权限' }}</button>
+      <h2>{{ t('home.myPermissions') }}</h2>
+      <button :disabled="busy" @click="load">
+        {{ busy ? t('common.loading') : t('home.refreshPermissions') }}
+      </button>
     </div>
     <p v-if="error" class="alert error" role="alert">{{ error }}</p>
     <div class="capability-list">
       <span v-for="item in capabilities" :key="item.code">✓ {{ item.label }}</span>
     </div>
-    <p class="hint">业务操作请在对应业务客户端中使用。</p>
+    <p class="hint">{{ t('home.businessHint') }}</p>
   </section>
 </template>

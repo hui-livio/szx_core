@@ -1,35 +1,33 @@
 import axios, { type AxiosInstance, type AxiosRequestConfig } from 'axios'
 import type { Envelope, Session } from './types'
+import { translate } from '../i18n'
 
 const messages: Record<number, string> = {
-  2200: '会话已失效，请重新登录。',
-  2201: '会话已过期，请重新登录。',
-  2202: '会话已被撤销，请重新登录。',
-  2203: '账号或密码不正确，或账号当前不可用。',
-  2204: '没有执行此操作的权限。',
-  2205: '用户不存在，请重新加载列表。',
-  2206: '输入不符合要求，请检查后重试。',
-  2207: '请只提供一种登录标识。',
-  2208: '登录标识已被使用，请更换。',
-  2209: '数据已被其他请求修改，请重新加载后确认并提交。',
-  2210: '不能禁用或降级最后一位启用的超级管理员。',
-  2211: '请求过于频繁，请稍后手动重试。',
-  2212: '审计记录写入失败，本次操作未完成。',
-  2225: '行为事件接收队列已满，请稍后重试。',
-  2226: '行为事件写入暂不可用，请稍后重试。',
-  2215: '提交的内容过大。',
-  2216: '服务暂不可用，请稍后重试。',
-  2220: '数据库暂不可用，请稍后重试。',
+  2200: 'errors.sessionInvalid',
+  2201: 'errors.sessionExpired',
+  2202: 'errors.sessionRevoked',
+  2203: 'errors.invalidCredentials',
+  2204: 'errors.forbidden',
+  2205: 'errors.userNotFound',
+  2206: 'errors.invalidInput',
+  2207: 'errors.oneIdentifier',
+  2208: 'errors.identifierUsed',
+  2209: 'errors.conflict',
+  2210: 'errors.lastSuperAdmin',
+  2211: 'errors.rateLimited',
+  2212: 'errors.auditWrite',
+  2225: 'errors.behaviorQueue',
+  2226: 'errors.behaviorWrite',
+  2215: 'errors.tooLarge',
+  2216: 'errors.serviceUnavailable',
+  2220: 'errors.databaseUnavailable',
 }
 export class ApiError extends Error {
   code: number
   requestId: string
   status: number
   constructor(code: number, requestId = '', status = 0) {
-    super(
-      messages[code] ??
-        (status >= 500 ? '服务处理失败，请稍后重试。' : '请求失败，请检查网络或服务配置后重试。'),
-    )
+    super(translate(messages[code] ?? (status >= 500 ? 'errors.server' : 'errors.request')))
     this.name = 'ApiError'
     this.code = code
     this.requestId = requestId
@@ -38,8 +36,8 @@ export class ApiError extends Error {
 }
 export function errorMessage(error: unknown): string {
   if (error instanceof ApiError)
-    return `${error.message}${error.code ? `（${error.code}）` : ''}${error.requestId ? ` · 请求 ID：${error.requestId}` : ''}`
-  return error instanceof Error ? error.message : '操作未完成，请重试。'
+    return `${error.message}${error.code ? ` (${error.code})` : ''}${error.requestId ? ` · ${translate('common.requestId')}: ${error.requestId}` : ''}`
+  return error instanceof Error ? error.message : translate('errors.operation')
 }
 function apiError(error: unknown): ApiError {
   if (error instanceof ApiError) return error

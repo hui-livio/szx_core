@@ -5,5 +5,8 @@ const { authenticated } = useSessionNavigation()
 </script>
 
 <template>
-  <AdminShell v-if="authenticated"><RouterView /></AdminShell><RouterView v-else />
+  <AdminShell v-if="authenticated">
+    <RouterView />
+  </AdminShell>
+  <RouterView v-else />
 </template>

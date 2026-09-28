@@ -1,14 +1,16 @@
 <script setup lang="ts">
 import PasswordForm from '../components/auth/PasswordForm.vue'
 import { usePasswordViewModel } from '../composables/useAuthViewModel'
+import { useI18n } from 'vue-i18n'
 const { form, busy, error, forced, recommended, policy, submit, skip } = usePasswordViewModel()
+const { t } = useI18n()
 </script>
 <template>
   <header class="page-heading">
     <div>
-      <p class="eyebrow">ACCOUNT SECURITY</p>
-      <h1>修改密码</h1>
-      <p>为你的账号设置新的登录密码。</p>
+      <p class="eyebrow">{{ t('password.eyebrow') }}</p>
+      <h1>{{ t('password.title') }}</h1>
+      <p>{{ t('password.subtitle') }}</p>
     </div>
   </header>
   <section class="panel narrow">

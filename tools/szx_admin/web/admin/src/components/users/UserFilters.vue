@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import type { Role, UserStatus } from '../../api/types'
 import { roleLabels, statusLabels } from '../../domain'
+import { useI18n } from 'vue-i18n'
+const { t } = useI18n()
 const filters = defineModel<{
   search: string
   role: Role | ''
@@ -13,32 +15,36 @@ const emit = defineEmits<{ search: [] }>()
 <template>
   <form class="filters" @submit.prevent="emit('search')">
     <label class="search-field"
-      >搜索用户<input
+      >{{ t('users.search')
+      }}<input
         v-model="filters.search"
-        placeholder="搜索登录标识或展示名"
+        :placeholder="t('users.searchPlaceholder')"
         maxlength="128"
         type="search" /></label
     ><label
-      >角色<select v-model="filters.role">
-        <option value="">全部角色</option>
-        <option v-for="role in roles" :key="role" :value="role">{{ roleLabels[role] }}</option>
+      >{{ t('common.role')
+      }}<select v-model="filters.role">
+        <option value="">{{ t('users.allRoles') }}</option>
+        <option v-for="role in roles" :key="role" :value="role">{{ t(roleLabels[role]) }}</option>
       </select></label
     ><label
-      >状态<select v-model="filters.status">
-        <option value="">全部状态</option>
+      >{{ t('common.status')
+      }}<select v-model="filters.status">
+        <option value="">{{ t('users.allStatuses') }}</option>
         <option v-for="(label, value) in statusLabels" :key="value" :value="value">
-          {{ label }}
+          {{ t(label) }}
         </option>
       </select></label
     ><label
-      >排序<select v-model="filters.sort">
-        <option value="-created_at">最新创建</option>
-        <option value="created_at">最早创建</option>
-        <option value="display_name">展示名</option>
-        <option value="-last_login_at">最近登录</option>
-        <option value="role">角色</option>
-        <option value="status">状态</option>
+      >{{ t('users.sort')
+      }}<select v-model="filters.sort">
+        <option value="-created_at">{{ t('users.newest') }}</option>
+        <option value="created_at">{{ t('users.oldest') }}</option>
+        <option value="display_name">{{ t('users.displayName') }}</option>
+        <option value="-last_login_at">{{ t('users.newestLogin') }}</option>
+        <option value="role">{{ t('common.role') }}</option>
+        <option value="status">{{ t('common.status') }}</option>
       </select></label
-    ><button class="primary" :disabled="busy">查询</button>
+    ><button class="primary" :disabled="busy">{{ t('common.search') }}</button>
   </form>
 </template>

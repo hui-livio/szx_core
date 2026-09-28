@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import type { BehaviorEventRecord } from '../../api/types'
 import { formatTime, resultLabels } from '../../domain'
+import { useI18n } from 'vue-i18n'
+const { t } = useI18n()
 defineProps<{ events: BehaviorEventRecord[]; busy: boolean; failed: boolean }>()
 const emit = defineEmits<{ details: [event: BehaviorEventRecord] }>()
 </script>
@@ -9,11 +11,11 @@ const emit = defineEmits<{ details: [event: BehaviorEventRecord] }>()
     <table>
       <thead>
         <tr>
-          <th>事件 / 请求 ID</th>
-          <th>结果</th>
-          <th>用户</th>
-          <th>发生时间</th>
-          <th>详情</th>
+          <th>{{ t('common.event') }} / {{ t('common.requestId') }}</th>
+          <th>{{ t('audit.result') }}</th>
+          <th>{{ t('common.user') }}</th>
+          <th>{{ t('audit.time') }}</th>
+          <th>{{ t('common.details') }}</th>
         </tr>
       </thead>
       <tbody>
@@ -21,20 +23,26 @@ const emit = defineEmits<{ details: [event: BehaviorEventRecord] }>()
           <td>
             <strong>{{ event.event_name }}</strong
             ><small class="identity"
-              >请求 ID：<span class="mono">{{ event.request_id }}</span></small
+              >{{ t('common.requestId') }}：<span class="mono">{{ event.request_id }}</span></small
             >
           </td>
           <td>
-            <span class="status-badge" :class="event.result">{{ resultLabels[event.result] }}</span>
+            <span class="status-badge" :class="event.result">{{
+              t(resultLabels[event.result])
+            }}</span>
           </td>
-          <td>{{ event.login_identifier || '未知用户' }}</td>
+          <td>{{ event.login_identifier || t('common.unknownUser') }}</td>
           <td class="time-cell">{{ formatTime(event.created_at) }}</td>
-          <td><button class="text-button" @click="emit('details', event)">查看详情</button></td>
+          <td>
+            <button class="text-button" @click="emit('details', event)">
+              {{ t('common.details') }}
+            </button>
+          </td>
         </tr>
         <tr v-if="!events.length">
           <td colspan="5" class="empty">
             {{
-              busy ? '正在加载行为事件…' : failed ? '加载失败，请重试。' : '没有匹配的行为事件。'
+              busy ? t('audit.loadingEvents') : failed ? t('audit.failed') : t('audit.emptyEvents')
             }}
           </td>
         </tr>

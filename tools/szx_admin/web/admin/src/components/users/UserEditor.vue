@@ -2,6 +2,8 @@
 import type { Role, User } from '../../api/types'
 import type { UserAction, UserDraft } from '../../composables/useUsersViewModel'
 import { roleLabels, statusLabels, formatTime } from '../../domain'
+import { useI18n } from 'vue-i18n'
+const { t } = useI18n()
 const draft = defineModel<UserDraft>({ required: true })
 defineProps<{
   action: UserAction
@@ -24,28 +26,26 @@ const emit = defineEmits<{ submit: []; close: []; reload: [] }>()
       :disabled="busy"
       @click="emit('reload')"
     >
-      重新加载用户
+      {{ t('users.reload') }}
     </button>
     <label v-if="action === 'create'"
-      >登录标识<input
-        v-model="draft.identity"
-        required
-        maxlength="64"
-        autocomplete="off"
-        :disabled="busy"
+      >{{ t('users.identity')
+      }}<input v-model="draft.identity" required maxlength="64" autocomplete="off" :disabled="busy"
     /></label>
-    <p v-if="action === 'create'" class="hint">登录标识创建后不可修改。</p>
+    <p v-if="action === 'create'" class="hint">{{ t('users.identityImmutable') }}</p>
     <label v-if="action === 'create' || action === 'name'"
-      >展示名<input v-model="draft.displayName" required maxlength="128" :disabled="busy"
+      >{{ t('users.displayName')
+      }}<input v-model="draft.displayName" required maxlength="128" :disabled="busy"
     /></label>
     <label v-if="action === 'create' || action === 'role'"
-      >角色<select v-model="draft.role" aria-label="角色" :disabled="busy">
-        <option v-for="role in roles" :key="role" :value="role">{{ roleLabels[role] }}</option>
+      >{{ t('common.role')
+      }}<select v-model="draft.role" :aria-label="t('common.role')" :disabled="busy">
+        <option v-for="role in roles" :key="role" :value="role">{{ t(roleLabels[role]) }}</option>
       </select></label
     >
     <template v-if="action === 'create' || action === 'reset'">
       <label
-        >{{ action === 'create' ? '初始密码' : '新密码'
+        >{{ action === 'create' ? t('users.initialPassword') : t('users.newPassword')
         }}<input
           v-model="draft.password"
           name="initial-password"
@@ -55,10 +55,10 @@ const emit = defineEmits<{ submit: []; close: []; reload: [] }>()
           :disabled="busy"
       /></label>
       <p id="initial-password-rule" class="hint">
-        选填，{{ passwordHint }}；留空则自动生成有效期为 24 小时的临时密码。
+        {{ t('users.optionalPassword', { hint: passwordHint }) }}
       </p>
       <label
-        >{{ action === 'create' ? '确认初始密码' : '确认新密码'
+        >{{ action === 'create' ? t('users.confirmInitialPassword') : t('users.confirmNewPassword')
         }}<input
           v-model="draft.confirmation"
           name="confirm-initial-password"
@@ -69,64 +69,60 @@ const emit = defineEmits<{ submit: []; close: []; reload: [] }>()
     </template>
     <template v-if="user"
       ><p v-if="action !== 'details'" class="hint">
-        目标用户：{{ user.display_name }}（{{ user.login_identifier }}）
+        {{ t('users.target', { name: user.display_name, identifier: user.login_identifier }) }}
       </p>
       <dl v-if="action === 'details'" class="details-grid">
         <div>
-          <dt>用户 ID</dt>
+          <dt>{{ t('common.userId') }}</dt>
           <dd class="mono">{{ user.id }}</dd>
         </div>
         <div>
-          <dt>登录标识</dt>
+          <dt>{{ t('common.loginIdentifier') }}</dt>
           <dd>{{ user.login_identifier }}</dd>
         </div>
         <div>
-          <dt>展示名</dt>
+          <dt>{{ t('users.displayName') }}</dt>
           <dd>{{ user.display_name }}</dd>
         </div>
         <div>
-          <dt>角色 / 状态</dt>
-          <dd>{{ roleLabels[user.role] }} / {{ statusLabels[user.status] }}</dd>
+          <dt>{{ t('users.roleStatus') }}</dt>
+          <dd>{{ t(roleLabels[user.role]) }} / {{ t(statusLabels[user.status]) }}</dd>
         </div>
         <div>
-          <dt>创建时间</dt>
+          <dt>{{ t('common.createdAt') }}</dt>
           <dd>{{ formatTime(user.created_at) }}</dd>
         </div>
         <div>
-          <dt>更新时间</dt>
+          <dt>{{ t('common.updatedAt') }}</dt>
           <dd>{{ formatTime(user.updated_at) }}</dd>
         </div>
         <div>
-          <dt>最近登录</dt>
+          <dt>{{ t('common.lastLogin') }}</dt>
           <dd>{{ formatTime(user.last_login_at) }}</dd>
         </div>
         <div>
-          <dt>版本</dt>
+          <dt>{{ t('common.version') }}</dt>
           <dd>{{ user.version }}</dd>
         </div>
       </dl></template
     >
     <p v-if="action === 'status'" class="alert warning">
-      {{
-        targetStatus === 'disabled'
-          ? '禁用后，此用户将无法登录，现有会话也会失效。'
-          : '启用后，此用户可以重新登录。'
-      }}
+      {{ targetStatus === 'disabled' ? t('users.disableWarning') : t('users.enableWarning') }}
     </p>
-    <p v-if="action === 'unlock'" class="alert info">解锁后清除失败登录计数，用户可以重新登录。</p>
-    <p v-if="action === 'role'" class="alert warning">角色变更会使该用户的现有会话失效。</p>
+    <p v-if="action === 'unlock'" class="alert info">{{ t('users.unlockInfo') }}</p>
+    <p v-if="action === 'role'" class="alert warning">{{ t('users.roleWarning') }}</p>
     <p v-if="action === 'reset'" class="alert warning">
-      重置后旧密码和现有会话失效。填写新密码则使用指定密码；留空则随机生成临时密码，并在下一步展示一次。
+      {{ t('users.resetWarning') }}
     </p>
     <div class="modal-actions">
       <button type="button" :disabled="busy" @click="emit('close')">
-        {{ action === 'details' ? '关闭' : '取消' }}</button
+        {{ action === 'details' ? t('common.close') : t('common.cancel') }}</button
       ><button
         v-if="action !== 'details'"
         class="primary"
         :disabled="busy || conflict || (!!error && !!user && action !== 'reset')"
       >
-        {{ busy ? '处理中…' : '确认' }}
+        {{ busy ? t('common.processing') : t('common.confirm') }}
       </button>
     </div>
   </form>

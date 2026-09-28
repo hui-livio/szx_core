@@ -2,6 +2,8 @@
 import type { User } from '../../api/types'
 import type { UserAction, UserRowView } from '../../composables/useUsersViewModel'
 import { roleLabels, statusLabels, formatTime } from '../../domain'
+import { useI18n } from 'vue-i18n'
+const { t } = useI18n()
 defineProps<{ users: UserRowView[]; busy: boolean; failed: boolean; canAssignRole: boolean }>()
 const emit = defineEmits<{ action: [action: UserAction, user: User] }>()
 </script>
@@ -10,11 +12,11 @@ const emit = defineEmits<{ action: [action: UserAction, user: User] }>()
     <table>
       <thead>
         <tr>
-          <th>用户</th>
-          <th>角色</th>
-          <th>状态</th>
-          <th>最近登录</th>
-          <th class="action-column">操作</th>
+          <th>{{ t('common.user') }}</th>
+          <th>{{ t('common.role') }}</th>
+          <th>{{ t('common.status') }}</th>
+          <th>{{ t('common.lastLogin') }}</th>
+          <th class="action-column">{{ t('common.details') }}</th>
         </tr>
       </thead>
       <tbody>
@@ -25,48 +27,45 @@ const emit = defineEmits<{ action: [action: UserAction, user: User] }>()
             ><small class="identity">{{ user.login_identifier }}</small>
           </td>
           <td>
-            <span class="role-badge">{{ roleLabels[user.role] }}</span>
+            <span class="role-badge">{{ t(roleLabels[user.role]) }}</span>
           </td>
           <td>
-            <span class="status-badge" :class="user.status">{{ statusLabels[user.status] }}</span>
+            <span class="status-badge" :class="user.status">{{
+              t(statusLabels[user.status])
+            }}</span>
           </td>
           <td class="time-cell">{{ formatTime(user.last_login_at) }}</td>
           <td>
             <div class="table-actions">
-              <button :disabled="!user.canManage" @click="emit('action', 'name', user)">编辑</button
+              <button :disabled="!user.canManage" @click="emit('action', 'name', user)">
+                {{ t('users.edit') }}</button
               ><button
                 v-if="canAssignRole"
                 :disabled="!user.canAssignRole"
                 @click="emit('action', 'role', user)"
               >
-                分配角色</button
+                {{ t('users.assignRole') }}</button
               ><button
                 v-if="user.status === 'locked'"
                 :disabled="!user.canManage"
                 @click="emit('action', 'unlock', user)"
               >
-                解锁</button
+                {{ t('users.unlock') }}</button
               ><button
                 :class="user.status === 'disabled' ? '' : 'danger-text'"
                 :disabled="!user.canChangeStatus"
                 @click="emit('action', 'status', user)"
               >
-                {{ user.status === 'disabled' ? '启用' : '禁用' }}</button
+                {{ user.status === 'disabled' ? t('users.enable') : t('users.disable') }}</button
               ><button :disabled="!user.canManage" @click="emit('action', 'reset', user)">
-                重置密码
+                {{ t('users.resetPassword') }}
               </button>
             </div>
           </td>
         </tr>
         <tr v-if="!users.length">
           <td colspan="5" class="empty">
-            {{
-              busy
-                ? '正在加载用户…'
-                : failed
-                  ? '加载失败，请重试。'
-                  : '没有匹配的用户。调整筛选条件，或创建新用户。'
-            }}
+            {{ busy ? t('users.loading') : failed ? t('users.failed') : t('users.empty') }}
           </td>
         </tr>
       </tbody>

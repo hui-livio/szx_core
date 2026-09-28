@@ -3,6 +3,7 @@ import { acceptHMRUpdate, defineStore } from 'pinia'
 import { api } from '../api/client'
 import type { Permissions, User } from '../api/types'
 import { hashPassword, isAdmin } from '../domain'
+import { translate } from '../i18n'
 
 export const useAuthStore = defineStore('auth', () => {
   const user = shallowRef<User | null>(null)
@@ -38,7 +39,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
   async function changePassword(oldPassword: string, password: string) {
     await api.refresh()
-    if (!user.value) throw new Error('会话已失效，请重新登录。')
+    if (!user.value) throw new Error(translate('errors.sessionInvalid'))
     const version = user.value.version
     const [oldHash, newHash] = await Promise.all([
       hashPassword(oldPassword),
@@ -51,13 +52,13 @@ export const useAuthStore = defineStore('auth', () => {
       data: { old_password_hash: oldHash, new_password_hash: newHash },
     })
     api.setSession(null)
-    notice.value = '密码已修改，请使用新密码重新登录。'
+    notice.value = translate('password.changedNotice')
   }
   function updateSelf(value: User) {
     if (value.id !== user.value?.id) return
     if (value.authz_version !== user.value.authz_version) {
       api.setSession(null)
-      notice.value = '账号权限或凭据已变更，请重新登录。'
+      notice.value = translate('errors.credentialsChanged')
     } else user.value = value
   }
   return {

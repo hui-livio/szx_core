@@ -6,6 +6,8 @@ import UserEditor from '../components/users/UserEditor.vue'
 import CredentialNotice from '../components/users/CredentialNotice.vue'
 import ModalDialog from '../components/ModalDialog.vue'
 import PaginationBar from '../components/PaginationBar.vue'
+import { useI18n } from 'vue-i18n'
+const { t } = useI18n()
 const {
   filters,
   users,
@@ -36,20 +38,20 @@ const { busy: saving, error: saveError } = mutation
 <template>
   <header class="page-heading">
     <div>
-      <p class="eyebrow">IDENTITY DIRECTORY</p>
-      <h1>用户管理</h1>
-      <p>管理账号、角色与访问状态。</p>
+      <p class="eyebrow">{{ t('users.eyebrow') }}</p>
+      <h1>{{ t('users.title') }}</h1>
+      <p>{{ t('users.subtitle') }}</p>
     </div>
-    <button class="primary" @click="open('create')">＋ 创建用户</button>
+    <button class="primary" @click="open('create')">＋ {{ t('users.create') }}</button>
   </header>
   <p v-if="success" class="alert success" role="status">{{ success }}</p>
   <section class="panel table-panel">
     <UserFilters v-model="filters" :roles="roles" :busy="busy" @search="search" />
     <div class="section-heading table-heading">
       <h2>
-        用户目录 <span class="count">{{ total }}</span>
+        {{ t('users.directory') }} <span class="count">{{ total }}</span>
       </h2>
-      <button :disabled="busy" @click="load()">刷新列表</button>
+      <button :disabled="busy" @click="load()">{{ t('users.refresh') }}</button>
     </div>
     <p v-if="error" class="alert error" role="alert">{{ error }}</p>
     <UserTable
@@ -67,7 +69,7 @@ const { busy: saving, error: saveError } = mutation
       @change="load"
     />
   </section>
-  <p v-if="requestId" class="request-id">请求 ID：{{ requestId }}</p>
+  <p v-if="requestId" class="request-id">{{ t('common.requestId') }}：{{ requestId }}</p>
   <ModalDialog v-if="action" :title="dialogTitle" :busy="saving" @close="close">
     <UserEditor
       v-model="draft"
@@ -84,7 +86,7 @@ const { busy: saving, error: saveError } = mutation
       @reload="reloadSelected"
     />
   </ModalDialog>
-  <ModalDialog v-if="credential" title="临时密码已生成" @close="closeCredential">
+  <ModalDialog v-if="credential" :title="t('users.credentialTitle')" @close="closeCredential">
     <CredentialNotice
       :issue="credential"
       :request-id="credentialRequestId"

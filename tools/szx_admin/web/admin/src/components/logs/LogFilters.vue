@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+const { t } = useI18n()
 const filters = defineModel<{
   event_search: string
   result: string
@@ -12,10 +14,11 @@ const emit = defineEmits<{ search: []; reset: [] }>()
 <template>
   <form class="filters log-filters" @submit.prevent="emit('search')">
     <label
-      >事件名称<input
+      >{{ t('audit.eventName')
+      }}<input
         v-model="filters.event_search"
         type="search"
-        placeholder="搜索中文名称或事件代码，如登录、login"
+        :placeholder="t('audit.eventSearchPlaceholder')"
         maxlength="128"
         list="audit-event-options"
         autocomplete="off"
@@ -29,23 +32,27 @@ const emit = defineEmits<{ search: []; reset: [] }>()
       />
     </datalist>
     <label
-      >结果<select v-model="filters.result">
-        <option value="">全部结果</option>
-        <option value="success">成功</option>
-        <option value="failure">失败</option>
-        <option value="denied">拒绝</option>
+      >{{ t('audit.result')
+      }}<select v-model="filters.result">
+        <option value="">{{ t('audit.allResults') }}</option>
+        <option value="success">{{ t('result.success') }}</option>
+        <option value="failure">{{ t('result.failure') }}</option>
+        <option value="denied">{{ t('result.denied') }}</option>
       </select></label
     >
     <label
-      >搜索用户<input
+      >{{ t('audit.searchUser')
+      }}<input
         v-model="filters.actor_search"
-        placeholder="搜索展示名或登录标识"
+        :placeholder="t('audit.searchUserPlaceholder')"
         maxlength="128"
         type="search"
     /></label>
-    <label>开始时间（本地）<input v-model="filters.from" type="datetime-local" step="1" /></label>
-    <label>结束时间（本地）<input v-model="filters.to" type="datetime-local" step="1" /></label>
-    <button class="primary" :disabled="busy">查询日志</button>
-    <button type="button" :disabled="busy" @click="emit('reset')">重置筛选</button>
+    <label
+      >{{ t('audit.start') }}<input v-model="filters.from" type="datetime-local" step="1"
+    /></label>
+    <label>{{ t('audit.end') }}<input v-model="filters.to" type="datetime-local" step="1" /></label>
+    <button class="primary" :disabled="busy">{{ t('audit.queryLogs') }}</button>
+    <button type="button" :disabled="busy" @click="emit('reset')">{{ t('common.reset') }}</button>
   </form>
 </template>

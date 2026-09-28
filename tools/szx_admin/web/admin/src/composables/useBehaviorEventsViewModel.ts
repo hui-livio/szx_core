@@ -3,8 +3,10 @@ import { adminApi } from '../api/admin'
 import type { BehaviorEventRecord } from '../api/types'
 import { redactDetails, toUtcSeconds } from '../domain'
 import { usePagedQuery } from './usePagedQuery'
+import { useI18n } from 'vue-i18n'
 
 export function useBehaviorEventsViewModel() {
+  const { t } = useI18n()
   const filters = reactive({ event_search: '', result: '', user_search: '', from: '', to: '' })
   let applied = { ...filters }
   const validationError = shallowRef('')
@@ -31,11 +33,11 @@ export function useBehaviorEventsViewModel() {
   function search() {
     validationError.value = ''
     if (!!filters.from !== !!filters.to) {
-      validationError.value = '行为事件查询必须同时提供开始和结束时间。'
+      validationError.value = t('audit.validationRange')
       return
     }
     if (filters.from && filters.to && new Date(filters.from) > new Date(filters.to)) {
-      validationError.value = '开始时间不能晚于结束时间。'
+      validationError.value = t('audit.validationOrder')
       return
     }
     applied = {

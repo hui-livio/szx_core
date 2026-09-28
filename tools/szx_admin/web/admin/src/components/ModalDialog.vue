@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { useId } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useDialog } from '../composables/useDialog'
 defineProps<{ title: string; busy?: boolean }>()
 const emit = defineEmits<{ close: [] }>()
 const titleId = useId()
 useDialog()
+const { t } = useI18n()
 </script>
 <template>
   <dialog
@@ -18,7 +20,7 @@ useDialog()
       <button
         type="button"
         class="icon-button"
-        aria-label="关闭对话框"
+        :aria-label="t('common.close')"
         :disabled="busy"
         @click="emit('close')"
       >

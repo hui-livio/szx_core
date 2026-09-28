@@ -6,6 +6,8 @@ import { hashPassword, manageableRoles, passwordPolicy, passwordProblem } from '
 import { useAuthStore } from '../stores/auth'
 import { usePagedQuery } from './usePagedQuery'
 import { useTask } from './useTask'
+import { translate } from '../i18n'
+import { useI18n } from 'vue-i18n'
 
 export type UserAction = 'create' | 'details' | 'name' | 'role' | 'status' | 'unlock' | 'reset'
 export type UserRowView = User & {
@@ -21,17 +23,18 @@ export interface UserDraft {
   confirmation: string
 }
 export const actionLabels: Record<UserAction, string> = {
-  create: '创建用户',
-  details: '用户详情',
-  name: '编辑展示名',
-  role: '分配角色',
-  status: '变更用户状态',
-  unlock: '解锁用户',
-  reset: '重置密码',
+  create: 'users.createAction',
+  details: 'users.detailsAction',
+  name: 'users.nameAction',
+  role: 'users.roleAction',
+  status: 'users.statusAction',
+  unlock: 'users.unlockAction',
+  reset: 'users.resetAction',
 }
 
 export function useUsersViewModel() {
   const auth = useAuthStore()
+  const { t } = useI18n()
   const filters = reactive({
     search: '',
     role: '' as Role | '',
@@ -79,7 +82,7 @@ export function useUsersViewModel() {
       }
     }),
   )
-  const dialogTitle = computed(() => (action.value ? actionLabels[action.value] : ''))
+  const dialogTitle = computed(() => (action.value ? t(actionLabels[action.value]) : ''))
   const targetStatus = computed(() =>
     selected.value?.status === 'disabled' ? 'active' : 'disabled',
   )
@@ -137,7 +140,7 @@ export function useUsersViewModel() {
   }
   const submit = () =>
     mutation.run(async () => {
-      if (conflict.value) throw new Error('请先重新加载用户，再确认操作。')
+      if (conflict.value) throw new Error(translate('errors.reloadUser'))
       try {
         const operation = action.value
         if (!operation || operation === 'details') return
@@ -145,10 +148,12 @@ export function useUsersViewModel() {
         let requestId: string
         if (operation === 'create') {
           const identity = draft.identity.trim().normalize('NFC')
-          if (!identity || [...identity].length > 64) throw new Error('登录标识须为 1–64 个字符。')
+          if (!identity || [...identity].length > 64)
+            throw new Error(translate('errors.identityLength'))
           if (!draft.displayName.trim() || [...draft.displayName].length > 128)
-            throw new Error('展示名须为 1–128 个字符。')
-          if (!roles.value.includes(draft.role)) throw new Error('不能创建此角色的用户。')
+            throw new Error(translate('errors.displayNameLength'))
+          if (!roles.value.includes(draft.role))
+            throw new Error(translate('errors.invalidRoleCreate'))
           const passwordHash = await draftPasswordHash(draft.role)
           const response = await adminApi.create({
             login_identifier: identity,
@@ -163,11 +168,13 @@ export function useUsersViewModel() {
         } else {
           const user = selected.value
           if (!user) return
-          if (!roles.value.includes(user.role)) throw new Error('无权管理此用户。')
+          if (!roles.value.includes(user.role)) throw new Error(translate('errors.manageForbidden'))
           if (user.id === auth.user?.id && (operation === 'role' || operation === 'status'))
-            throw new Error(operation === 'role' ? '不能给自己分配角色。' : '不能禁用自己。')
+            throw new Error(
+              translate(operation === 'role' ? 'errors.selfRole' : 'errors.selfDisable'),
+            )
           if (operation === 'role' && (!canAssignRole.value || !roles.value.includes(draft.role)))
-            throw new Error('无权分配此角色。')
+            throw new Error(translate('errors.roleForbidden'))
           if (operation === 'reset') {
             const response = await adminApi.resetPassword(user, await draftPasswordHash(user.role))
             clearPassword()
@@ -175,7 +182,8 @@ export function useUsersViewModel() {
             changed = response.data.user
             requestId = response.request_id
           } else {
-            if (operation === 'name' && !draft.displayName.trim()) throw new Error('请填写展示名。')
+            if (operation === 'name' && !draft.displayName.trim())
+              throw new Error(translate('errors.displayNameRequired'))
             const value =
               operation === 'name'
                 ? draft.displayName
@@ -187,7 +195,7 @@ export function useUsersViewModel() {
             requestId = response.request_id
           }
         }
-        success.value = `${actionLabels[operation]}成功 · 请求 ID：${requestId}`
+        success.value = t('users.success', { action: t(actionLabels[operation]), requestId })
         credentialRequestId.value = credential.value ? requestId : ''
         action.value = null
         selected.value = null

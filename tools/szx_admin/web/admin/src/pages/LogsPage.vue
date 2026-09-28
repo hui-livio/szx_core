@@ -9,6 +9,8 @@ import BehaviorEventFilters from '../components/logs/BehaviorEventFilters.vue'
 import BehaviorEventTable from '../components/logs/BehaviorEventTable.vue'
 import PaginationBar from '../components/PaginationBar.vue'
 import ModalDialog from '../components/ModalDialog.vue'
+import { useI18n } from 'vue-i18n'
+const { t } = useI18n()
 
 const audit = useLogsViewModel()
 const behavior = useBehaviorEventsViewModel()
@@ -49,27 +51,27 @@ const {
 <template>
   <header class="page-heading">
     <div>
-      <p class="eyebrow">AUDIT TRAIL</p>
-      <h1>{{ activeTab === 'audit' ? '安全审计' : '用户行为' }}</h1>
-      <p>分别查询可信安全事实和客户端上传的非可信行为事件。</p>
+      <p class="eyebrow">{{ t('audit.eyebrow') }}</p>
+      <h1>{{ activeTab === 'audit' ? t('audit.title') : t('audit.behaviorTitle') }}</h1>
+      <p>{{ t('audit.subtitle') }}</p>
     </div>
-    <span class="role-badge">只读记录</span>
+    <span class="role-badge">{{ t('audit.readOnly') }}</span>
   </header>
-  <nav class="log-tabs" aria-label="日志类型" role="tablist">
+  <nav class="log-tabs" :aria-label="t('audit.tabs')" role="tablist">
     <button
       role="tab"
       :aria-selected="activeTab === 'audit'"
       :class="{ active: activeTab === 'audit' }"
       @click="activeTab = 'audit'"
     >
-      安全审计</button
+      {{ t('audit.auditTab') }}</button
     ><button
       role="tab"
       :aria-selected="activeTab === 'behavior'"
       :class="{ active: activeTab === 'behavior' }"
       @click="activeTab = 'behavior'"
     >
-      用户行为
+      {{ t('audit.behaviorTab') }}
     </button>
   </nav>
   <section v-if="activeTab === 'audit'" class="panel table-panel">
@@ -83,9 +85,9 @@ const {
     <p v-if="auditValidationError" class="alert error" role="alert">{{ auditValidationError }}</p>
     <div class="section-heading table-heading">
       <h2>
-        操作记录 <span class="count">{{ total }}</span>
+        {{ t('audit.records') }} <span class="count">{{ total }}</span>
       </h2>
-      <button :disabled="busy" @click="load()">刷新日志</button>
+      <button :disabled="busy" @click="load()">{{ t('audit.refreshLogs') }}</button>
     </div>
     <p v-if="error" class="alert error" role="alert">{{ error }}</p>
     <LogTable :logs="logs" :busy="busy" :failed="!!error" @details="showAudit" /><PaginationBar
@@ -108,9 +110,11 @@ const {
     </p>
     <div class="section-heading table-heading">
       <h2>
-        用户行为 <span class="count">{{ behaviorTotal }}</span>
+        {{ t('audit.events') }} <span class="count">{{ behaviorTotal }}</span>
       </h2>
-      <button :disabled="behaviorBusy" @click="loadBehavior()">刷新事件</button>
+      <button :disabled="behaviorBusy" @click="loadBehavior()">
+        {{ t('audit.refreshEvents') }}
+      </button>
     </div>
     <p v-if="behaviorError" class="alert error" role="alert">{{ behaviorError }}</p>
     <BehaviorEventTable
@@ -126,78 +130,89 @@ const {
       @change="loadBehavior"
     />
   </section>
-  <p v-if="activeTab === 'audit' && requestId" class="request-id">请求 ID：{{ requestId }}</p>
-  <p v-if="activeTab === 'behavior' && behaviorRequestId" class="request-id">
-    请求 ID：{{ behaviorRequestId }}
+  <p v-if="activeTab === 'audit' && requestId" class="request-id">
+    {{ t('common.requestId') }}：{{ requestId }}
   </p>
-  <ModalDialog v-if="auditSelected && activeTab === 'audit'" title="审计详情" @close="closeAudit"
+  <p v-if="activeTab === 'behavior' && behaviorRequestId" class="request-id">
+    {{ t('common.requestId') }}：{{ behaviorRequestId }}
+  </p>
+  <ModalDialog
+    v-if="auditSelected && activeTab === 'audit'"
+    :title="t('audit.detailTitle')"
+    @close="closeAudit"
     ><dl class="details-grid">
       <div>
-        <dt>事件</dt>
+        <dt>{{ t('common.event') }}</dt>
         <dd>
           {{ auditSelected.eventLabel
           }}<small class="identity"
-            >事件代码：<span class="mono">{{ auditSelected.event_name }}</span></small
+            >{{ t('audit.eventCode') }}：<span class="mono">{{
+              auditSelected.event_name
+            }}</span></small
           >
         </dd>
       </div>
       <div>
-        <dt>事件 ID</dt>
+        <dt>{{ t('common.eventId') }}</dt>
         <dd class="mono">{{ auditSelected.id }}</dd>
       </div>
       <div>
-        <dt>时间</dt>
+        <dt>{{ t('common.time') }}</dt>
         <dd>{{ formatTime(auditSelected.created_at) }}</dd>
       </div>
       <div>
-        <dt>登录标识</dt>
+        <dt>{{ t('common.loginIdentifier') }}</dt>
         <dd>{{ auditSelected.actorUsername }}</dd>
       </div>
       <div>
-        <dt>目标用户</dt>
+        <dt>{{ t('common.targetUser') }}</dt>
         <dd class="mono">{{ auditSelected.target_user_id || '—' }}</dd>
       </div>
       <div>
-        <dt>请求 ID</dt>
+        <dt>{{ t('common.requestId') }}</dt>
         <dd class="mono">{{ auditSelected.request_id }}</dd>
       </div>
     </dl>
-    <h3>事件详情</h3>
+    <h3>{{ t('audit.details') }}</h3>
     <pre class="json-details">{{ JSON.stringify(auditSelected.details, null, 2) }}</pre>
-    <div class="modal-actions"><button @click="closeAudit">关闭</button></div></ModalDialog
+    <div class="modal-actions">
+      <button @click="closeAudit">{{ t('common.close') }}</button>
+    </div></ModalDialog
   >
   <ModalDialog
     v-if="behaviorSelected && activeTab === 'behavior'"
-    title="用户行为详情"
+    :title="t('audit.behaviorDetailTitle')"
     @close="closeBehavior"
     ><dl class="details-grid">
       <div>
-        <dt>事件</dt>
+        <dt>{{ t('common.event') }}</dt>
         <dd class="mono">{{ behaviorSelected.event_name }}</dd>
       </div>
       <div>
-        <dt>事件 ID</dt>
+        <dt>{{ t('common.eventId') }}</dt>
         <dd class="mono">{{ behaviorSelected.id }}</dd>
       </div>
       <div>
-        <dt>时间</dt>
+        <dt>{{ t('common.time') }}</dt>
         <dd>{{ formatTime(behaviorSelected.created_at) }}</dd>
       </div>
       <div>
-        <dt>登录标识</dt>
-        <dd>{{ behaviorSelected.login_identifier || '未知用户' }}</dd>
+        <dt>{{ t('common.loginIdentifier') }}</dt>
+        <dd>{{ behaviorSelected.login_identifier || t('common.unknownUser') }}</dd>
       </div>
       <div>
-        <dt>用户 ID</dt>
+        <dt>{{ t('common.userId') }}</dt>
         <dd class="mono">{{ behaviorSelected.user_id }}</dd>
       </div>
       <div>
-        <dt>请求 ID</dt>
+        <dt>{{ t('common.requestId') }}</dt>
         <dd class="mono">{{ behaviorSelected.request_id }}</dd>
       </div>
     </dl>
-    <h3>事件详情</h3>
+    <h3>{{ t('audit.details') }}</h3>
     <pre class="json-details">{{ JSON.stringify(behaviorSelected.details, null, 2) }}</pre>
-    <div class="modal-actions"><button @click="closeBehavior">关闭</button></div></ModalDialog
+    <div class="modal-actions">
+      <button @click="closeBehavior">{{ t('common.close') }}</button>
+    </div></ModalDialog
   >
 </template>

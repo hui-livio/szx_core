@@ -149,6 +149,48 @@
   font-size: 12px;
 }
 
+.language-switcher {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #315d7e;
+  background: #f5f8fb;
+  border: 1px solid #d8e2eb;
+  border-radius: 6px;
+  padding: 0 7px;
+}
+
+.language-switcher select {
+  min-width: 120px;
+  padding: 7px 18px 7px 0;
+  color: #315d7e;
+  background: transparent;
+  border: 0;
+  font-size: 11px;
+}
+
+.language-switcher:focus-within,
+.language-switcher:hover {
+  background: #eaf2f8;
+}
+
+.language-icon {
+  font-weight: 700;
+  letter-spacing: -1px;
+}
+
+.login-page {
+  position: relative;
+}
+
+.login-language {
+  position: absolute;
+  z-index: 5;
+  top: 24px;
+  right: 30px;
+}
+
 .account small {
   display: block;
   margin-top: 4px;

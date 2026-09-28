@@ -3,10 +3,12 @@ import { adminApi } from '../api/admin'
 import type { AuditLog } from '../api/types'
 import { auditEventLabel, auditEventOptions, redactDetails, toUtcSeconds } from '../domain'
 import { usePagedQuery } from './usePagedQuery'
+import { useI18n } from 'vue-i18n'
 
 export type AuditLogView = AuditLog & { eventLabel: string; actorUsername: string }
 
 export function useLogsViewModel() {
+  const { t } = useI18n()
   const filters = reactive({ event_search: '', result: '', actor_search: '', from: '', to: '' })
   let applied = { ...filters }
   const validationError = shallowRef('')
@@ -28,13 +30,13 @@ export function useLogsViewModel() {
     query.items.value.map((log) => ({
       ...log,
       eventLabel: auditEventLabel(log.event_name),
-      actorUsername: log.actor_login_identifier || '未知用户',
+      actorUsername: log.actor_login_identifier || t('common.unknownUser'),
     })),
   )
   function search() {
     validationError.value = ''
     if (filters.from && filters.to && new Date(filters.from) > new Date(filters.to)) {
-      validationError.value = '开始时间不能晚于结束时间。'
+      validationError.value = t('audit.validationOrder')
       return
     }
     applied = {
@@ -48,7 +50,7 @@ export function useLogsViewModel() {
     selected.value = {
       ...log,
       eventLabel: auditEventLabel(log.event_name),
-      actorUsername: log.actor_login_identifier || '未知用户',
+      actorUsername: log.actor_login_identifier || t('common.unknownUser'),
       details: redactDetails(log.details) as Record<string, unknown>,
     }
   }
@@ -64,7 +66,7 @@ export function useLogsViewModel() {
     filters,
     query,
     logs,
-    eventOptions: auditEventOptions,
+    eventOptions: computed(() => auditEventOptions()),
     validationError,
     selected,
     search,

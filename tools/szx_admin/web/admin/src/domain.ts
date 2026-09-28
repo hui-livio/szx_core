@@ -1,43 +1,58 @@
 import type { Role } from './api/types'
+import { translate, i18n } from './i18n'
 
 export const roleLabels: Record<Role, string> = {
-  operator: '操作员',
-  engineer: '工程师',
-  admin: '管理员',
-  super_admin: '超级管理员',
+  operator: 'roles.operator',
+  engineer: 'roles.engineer',
+  admin: 'roles.admin',
+  super_admin: 'roles.super_admin',
 }
 
-export const statusLabels = { active: '已启用', disabled: '已禁用', locked: '已锁定' }
+export const statusLabels = {
+  active: 'status.active',
+  disabled: 'status.disabled',
+  locked: 'status.locked',
+}
 
-export const resultLabels = { success: '成功', failure: '失败', denied: '拒绝' }
+export const resultLabels = {
+  success: 'result.success',
+  failure: 'result.failure',
+  denied: 'result.denied',
+}
 
 const auditEventLabels: Readonly<Record<string, string>> = {
-  'auth.login': '用户登录',
-  'auth.login.success': '登录成功',
-  'auth.login.failure': '登录失败',
-  'auth.login.rate_limited': '登录请求被限流',
-  'auth.account.locked': '账号被锁定',
-  'auth.logout': '退出登录',
-  'auth.refresh.success': '会话刷新成功',
-  'auth.refresh.failure': '会话刷新失败',
-  'auth.refresh.replayed': '检测到刷新令牌重放',
-  'auth.password.changed': '修改密码成功',
-  'auth.password.change_failed': '修改密码失败',
-  'user.created': '创建用户',
-  'user.updated': '修改用户信息',
-  'user.status.changed': '变更用户状态',
-  'user.unlocked': '解锁用户',
-  'user.role.changed': '变更用户角色',
-  'user.password.reset': '重置用户密码',
+  'auth.login': 'events.auth_login',
+  'auth.login.success': 'events.auth_login_success',
+  'auth.login.failure': 'events.auth_login_failure',
+  'auth.login.rate_limited': 'events.auth_login_rate_limited',
+  'auth.account.locked': 'events.auth_account_locked',
+  'auth.logout': 'events.auth_logout',
+  'auth.refresh.success': 'events.auth_refresh_success',
+  'auth.refresh.failure': 'events.auth_refresh_failure',
+  'auth.refresh.replayed': 'events.auth_refresh_replayed',
+  'auth.password.changed': 'events.auth_password_changed',
+  'auth.password.change_failed': 'events.auth_password_change_failed',
+  'user.created': 'events.user_created',
+  'user.updated': 'events.user_updated',
+  'user.status.changed': 'events.user_status_changed',
+  'user.unlocked': 'events.user_unlocked',
+  'user.role.changed': 'events.user_role_changed',
+  'user.password.reset': 'events.user_password_reset',
 }
 
-export const auditEventLabel = (eventName: string): string =>
-  Object.hasOwn(auditEventLabels, eventName) ? auditEventLabels[eventName]! : '未配置中文名称的事件'
+export const roleLabel = (role: Role): string => translate(roleLabels[role])
+export const statusLabel = (status: keyof typeof statusLabels): string =>
+  translate(statusLabels[status])
+export const resultLabel = (result: keyof typeof resultLabels): string =>
+  translate(resultLabels[result])
 
-export const auditEventOptions = Object.entries(auditEventLabels).map(([code, label]) => ({
-  code,
-  label,
-}))
+export const auditEventLabel = (eventName: string): string =>
+  Object.hasOwn(auditEventLabels, eventName)
+    ? translate(auditEventLabels[eventName]!)
+    : translate('events.unknown')
+
+export const auditEventOptions = () =>
+  Object.entries(auditEventLabels).map(([code, key]) => ({ code, label: translate(key) }))
 
 export const isAdmin = (role?: Role) => role === 'admin' || role === 'super_admin'
 
@@ -49,14 +64,19 @@ export const manageableRoles = (role?: Role): Role[] =>
       : []
 
 export const formatTime = (value: number | null) =>
-  value == null ? '—' : new Date(value).toLocaleString('zh-CN', { hour12: false })
+  value == null
+    ? '—'
+    : new Intl.DateTimeFormat(i18n.global.locale.value, {
+        dateStyle: 'medium',
+        timeStyle: 'medium',
+        hour12: false,
+      }).format(new Date(value))
 
 export const toUtcSeconds = (value: string) =>
   value ? new Date(value).toISOString().replace(/\.\d{3}Z$/, 'Z') : ''
 
 export async function hashPassword(password: string): Promise<string> {
-  if (!globalThis.crypto?.subtle)
-    throw new Error('当前环境不支持安全登录，请使用 HTTPS 或 localhost 访问。')
+  if (!globalThis.crypto?.subtle) throw new Error(translate('errors.secureLogin'))
   const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(password))
   return Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, '0')).join('')
 }
@@ -66,9 +86,7 @@ export function passwordPolicy(role?: Role) {
   return {
     minLength: simple ? 6 : 8,
     requireLettersAndNumbers: !simple,
-    hint: simple
-      ? '至少 6 个字符，可使用纯数字或纯字母'
-      : '至少 8 个字符，包含字母和数字，不强制特殊字符',
+    hint: translate(simple ? 'password.policySimple' : 'password.policyStrong'),
   }
 }
 
@@ -78,14 +96,14 @@ export function passwordProblem(
   confirmation: string,
   role?: Role,
 ): string {
-  if (password !== confirmation) return '两次输入的新密码不一致。'
-  if (password === oldPassword) return '新密码不能与当前密码相同。'
+  if (password !== confirmation) return translate('errors.passwordMismatch')
+  if (password === oldPassword) return translate('errors.passwordSame')
   const policy = passwordPolicy(role)
   if (
     [...password].length < policy.minLength ||
     (policy.requireLettersAndNumbers && (!/\p{L}/u.test(password) || !/\p{N}/u.test(password)))
   )
-    return `新密码${policy.hint}。`
+    return translate('errors.passwordPolicy', { hint: policy.hint })
   return ''
 }
 

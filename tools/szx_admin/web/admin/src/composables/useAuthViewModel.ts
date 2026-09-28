@@ -3,6 +3,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { isAdmin, passwordPolicy, passwordProblem, roleLabels } from '../domain'
 import { useTask } from './useTask'
+import { useI18n } from 'vue-i18n'
 
 export function useLoginViewModel() {
   const auth = useAuthStore()
@@ -70,15 +71,16 @@ export function useShellViewModel() {
   const router = useRouter()
   const route = useRoute()
   const task = useTask()
+  const { t } = useI18n()
   const links = computed(() =>
     auth.needsPassword
       ? []
       : [
-          { to: '/home', label: '工作台', symbol: '⌂' },
+          { to: '/home', label: t('shell.dashboard'), symbol: '⌂' },
           ...(isAdmin(auth.user?.role)
             ? [
-                { to: '/users', label: '用户管理', symbol: '◎' },
-                { to: '/logs', label: '审计日志', symbol: '≡' },
+                { to: '/users', label: t('shell.users'), symbol: '◎' },
+                { to: '/logs', label: t('shell.auditLogs'), symbol: '≡' },
               ]
             : []),
         ],
@@ -93,8 +95,8 @@ export function useShellViewModel() {
     links,
     logout,
     user: computed(() => auth.user),
-    title: computed(() => String(route.meta.title ?? 'Admin')),
-    role: computed(() => (auth.user ? roleLabels[auth.user.role] : '')),
+    title: computed(() => (route.meta.titleKey ? t(String(route.meta.titleKey)) : 'Admin')),
+    role: computed(() => (auth.user ? t(roleLabels[auth.user.role]) : '')),
     passwordLink: computed(() => !auth.needsPassword),
   }
 }
@@ -117,32 +119,33 @@ export function useSessionNavigation() {
 export function useHomeViewModel() {
   const auth = useAuthStore()
   const task = useTask()
+  const { t } = useI18n()
   const load = () => task.run(auth.loadPermissions)
   const capabilityLabels: Record<string, string> = {
-    'business.read': '查看业务数据',
-    'business.operate': '执行业务操作',
-    'engineering.configure': '工程配置',
-    'user.read': '查看用户',
-    'user.create': '创建用户',
-    'user.update': '编辑用户',
-    'user.status': '启用与禁用用户',
-    'user.unlock': '解锁用户',
-    'user.password.reset': '重置用户密码',
-    'audit.read': '查看审计日志',
-    'user.role.assign': '分配角色',
+    'business.read': 'permissions.business_read',
+    'business.operate': 'permissions.business_operate',
+    'engineering.configure': 'permissions.engineering_configure',
+    'user.read': 'permissions.user_read',
+    'user.create': 'permissions.user_create',
+    'user.update': 'permissions.user_update',
+    'user.status': 'permissions.user_status',
+    'user.unlock': 'permissions.user_unlock',
+    'user.password.reset': 'permissions.user_password_reset',
+    'audit.read': 'permissions.audit_read',
+    'user.role.assign': 'permissions.user_role_assign',
   }
   onMounted(load)
   return {
     ...task,
     load,
     user: computed(() => auth.user),
-    role: computed(() => (auth.user ? roleLabels[auth.user.role] : '')),
+    role: computed(() => (auth.user ? t(roleLabels[auth.user.role]) : '')),
     canManage: computed(() => auth.can('user.read')),
     canAudit: computed(() => auth.can('audit.read')),
     capabilities: computed(() =>
       (auth.permissions?.capabilities ?? []).map((code) => ({
         code,
-        label: capabilityLabels[code] ?? code,
+        label: capabilityLabels[code] ? t(capabilityLabels[code]) : code,
       })),
     ),
   }
