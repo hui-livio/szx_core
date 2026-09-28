@@ -219,4 +219,15 @@ auto MySqlPermissionRepository::listActiveCodes(std::string_view roleCode)
         return failed<std::vector<std::string>>();
     }
 }
+
+auto MySqlPermissionRepository::bumpRoleAuthzVersions(std::string_view permissionId) -> SZX::COMMON::Result<void>
+{
+    try
+    {
+        return connection_.execute("UPDATE roles r JOIN role_permissions rp ON rp.role_id = r.id SET r.version = r.version + 1, r.authz_version = r.authz_version + 1 WHERE rp.permission_id = '" + std::string{permissionId} + "'")
+                   ? SZX::COMMON::Result<void>::Success()
+                   : failed<void>();
+    }
+    catch (...) { return failed<void>(); }
+}
 } // namespace SZX::ADMIN::INFRA::DETAIL

@@ -32,12 +32,12 @@ struct BehaviorPageRecord final
     std::string event_name;
     std::string result;
     std::string request_id;
-    std::uint64_t details_size{};
+    std::string details_json;
     std::string created_at;
     std::string persisted_at;
-    std::string username;
+    std::string login_identifier;
 };
-YLT_REFL(BehaviorPageRecord, id, user_id, event_name, result, request_id, details_size, created_at, persisted_at, username);
+YLT_REFL(BehaviorPageRecord, id, user_id, event_name, result, request_id, details_json, created_at, persisted_at, login_identifier);
 
 template <typename T>
 auto failed(ErrorCode code) -> Result<T>
@@ -172,7 +172,7 @@ auto MySqlBehaviorEventRepository::query(const TELEMETRY::BehaviorEventFilter &f
         const std::string predicate{"(? = '' OR e.created_at >= ?) AND (? = '' OR e.created_at <= ?) AND "
                                     "(? = '' OR e.event_name = ?) AND (? = '' OR e.result = ?) AND "
                                     "(? = '' OR e.user_id = ?) AND "
-                                    "(? = '' OR u.display_name LIKE ? OR u.username LIKE ? OR u.uid LIKE ?) AND "
+                                    "(? = '' OR u.display_name LIKE ? OR u.login_identifier LIKE ?) AND "
                                     "(? = '' OR e.event_name LIKE ?)"};
         const auto totals = connection_.query_s<std::tuple<std::uint64_t>>(
             "SELECT COUNT(*)" + source + predicate, filter.from, filter.from, filter.to, filter.to, filter.eventName,
@@ -185,8 +185,8 @@ auto MySqlBehaviorEventRepository::query(const TELEMETRY::BehaviorEventFilter &f
         if (page.total <= filter.offset)
             return Result<TELEMETRY::BehaviorEventPage>::Success(std::move(page));
         auto rows = connection_.query_s<BehaviorPageRecord>(
-            "SELECT e.id, e.user_id, e.event_name, e.result, e.request_id, OCTET_LENGTH(e.details_json), "
-            "e.created_at, e.persisted_at, COALESCE(u.username, u.uid, '')" +
+            "SELECT e.id, e.user_id, e.event_name, e.result, e.request_id, CAST(e.details_json AS CHAR), "
+            "e.created_at, e.persisted_at, COALESCE(u.login_identifier, '')" +
                 source + predicate + " ORDER BY e.created_at DESC, e.id ASC LIMIT ? OFFSET ?",
             filter.from, filter.from, filter.to, filter.to, filter.eventName, filter.eventName, filter.result, filter.result,
             filter.userId, filter.userId, filter.userSearch, userPattern, userPattern, userPattern, filter.eventSearch,
@@ -197,28 +197,15 @@ auto MySqlBehaviorEventRepository::query(const TELEMETRY::BehaviorEventFilter &f
         page.items.reserve(rows.size());
         for (auto &row : rows)
         {
-            constexpr std::uint64_t chunkBytes = 16384;
-            std::string details;
-            for (std::uint64_t byteOffset = 0; byteOffset < row.details_size; byteOffset += chunkBytes)
-            {
-                const auto chunks = connection_.query_s<std::tuple<std::string>>(
-                    "SELECT CAST(SUBSTRING(CAST(details_json AS BINARY), ?, 16384) "
-                    "AS CHAR(16384) CHARACTER SET binary) FROM client_behavior_events WHERE id = ?",
-                    byteOffset + 1, row.id);
-                if (connection_.has_error() || chunks.size() != 1 ||
-                    std::get<0>(chunks.front()).size() != (std::min)(chunkBytes, row.details_size - byteOffset))
-                    return failed<TELEMETRY::BehaviorEventPage>(ErrorCode::DatabaseQueryFailed);
-                details += std::get<0>(chunks.front());
-            }
             page.items.push_back({.id           = std::move(row.id),
                                   .user_id      = std::move(row.user_id),
                                   .event_name   = std::move(row.event_name),
                                   .result       = std::move(row.result),
                                   .request_id   = std::move(row.request_id),
-                                  .details_json = std::move(details),
+                                  .details_json = std::move(row.details_json),
                                   .created_at   = std::move(row.created_at),
                                   .persisted_at = std::move(row.persisted_at),
-                                  .username     = std::move(row.username)});
+                                  .login_identifier     = std::move(row.login_identifier)});
         }
         return Result<TELEMETRY::BehaviorEventPage>::Success(std::move(page));
     } catch (...)

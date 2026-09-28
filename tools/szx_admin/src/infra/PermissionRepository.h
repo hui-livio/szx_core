@@ -24,6 +24,7 @@ public:
         -> SZX::COMMON::Result<void> override;
     auto listActiveCodes(std::string_view roleCode)
         -> SZX::COMMON::Result<std::vector<std::string>> override;
+    auto bumpRoleAuthzVersions(std::string_view permissionId) -> SZX::COMMON::Result<void> override;
 
 private:
     OrmConnection &connection_;

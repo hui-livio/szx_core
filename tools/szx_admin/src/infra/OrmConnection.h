@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <chrono>
 #include <optional>
+#include <mutex>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -25,7 +26,7 @@ class OrmConnection final
     template <typename Callback>
     auto invoke(Callback &&callback)
     {
-        std::lock_guard lock(ormMutex());
+        std::lock_guard lock(mutex_);
         if (deadline_ && std::chrono::steady_clock::now() >= *deadline_)
             throw std::runtime_error("database operation deadline exceeded");
         const OrmDiagnosticsScope diagnostics;
@@ -129,6 +130,7 @@ public:
 
 private:
     ormpp::mysql connection_;
+    std::recursive_mutex mutex_;
     bool hasError_{};
     std::string lastError_;
     std::optional<std::chrono::steady_clock::time_point> deadline_;

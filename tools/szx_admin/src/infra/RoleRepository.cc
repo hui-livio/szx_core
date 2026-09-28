@@ -386,4 +386,26 @@ auto MySqlRoleRepository::manageableRoles(std::string_view managerCode)
         return failed<std::vector<std::string>>();
     }
 }
+
+auto MySqlRoleRepository::removeTargetScopes(std::string_view roleId) -> SZX::COMMON::Result<void>
+{
+    try
+    {
+        return connection_.execute("DELETE FROM role_manage_scopes WHERE target_role_id = '" + std::string{roleId} + "'")
+                   ? SZX::COMMON::Result<void>::Success()
+                   : failed<void>();
+    }
+    catch (...) { return failed<void>(); }
+}
+
+auto MySqlRoleRepository::bumpManagerAuthzVersions(std::string_view roleId) -> SZX::COMMON::Result<void>
+{
+    try
+    {
+        return connection_.execute("UPDATE roles r JOIN role_manage_scopes s ON s.manager_role_id = r.id SET r.version = r.version + 1, r.authz_version = r.authz_version + 1 WHERE s.target_role_id = '" + std::string{roleId} + "'")
+                   ? SZX::COMMON::Result<void>::Success()
+                   : failed<void>();
+    }
+    catch (...) { return failed<void>(); }
+}
 } // namespace SZX::ADMIN::INFRA::DETAIL

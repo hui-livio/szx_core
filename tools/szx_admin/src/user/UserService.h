@@ -30,17 +30,14 @@ struct ListQuery final
     std::uint32_t pageSize{20};
 };
 
-/** 创建请求必须且只能提供 uid 或 username。 */
+/** 创建请求使用统一登录标识模型。 */
 struct CreateUserInput final
 {
-    std::optional<std::string> uid;
-    std::optional<std::string> username;
     std::string displayName;
     std::string role;
     std::optional<std::string> passwordHash; ///< 可选的客户端 SHA-256 摘要；省略时生成临时密码。
-    /** V1.2 formal identifier; old uid/username fields are an HTTP-only compatibility input. */
-    std::optional<std::string> loginIdentifier;
-    std::optional<std::string> identifierType;
+    std::string loginIdentifier;
+    std::string identifierType;
 };
 
 /** 创建和重置密码的结果；临时凭据明文只在本次响应中出现，不落库。 */
@@ -78,7 +75,7 @@ public:
     [[nodiscard]] auto list(const ActorContext &actor, const ListQuery &query) -> SZX::COMMON::Result<UserPage>;
     [[nodiscard]] auto get(const ActorContext &actor, const std::string &id) -> SZX::COMMON::Result<UserRow>;
     [[nodiscard]] auto create(const ActorContext &actor, const CreateUserInput &input) -> SZX::COMMON::Result<CredentialIssue>;
-    /** 只更新 display_name；uid、username 和 role 创建后不可改。 */
+    /** 只更新 display_name；login_identifier、identifier_type 和 role 创建后不可改。 */
     [[nodiscard]] auto updateProfile(const ActorContext &actor, const std::string &id, const std::string &displayName,
                                      std::uint32_t version) -> SZX::COMMON::Result<UserRow>;
     /** active/disabled 切换；禁用会撤销目标的全部 refresh 会话。 */

@@ -56,7 +56,7 @@ public:
                                              RoleRepository *roles = nullptr)
         -> SZX::COMMON::Result<AuthorizedMutation>;
 
-    /** Runtime RBAC projection; the fixed Policy adapter remains the compatibility fallback. */
+    /** Runtime RBAC projection loaded from the current repositories. */
     [[nodiscard]] auto manageableRoles(RoleRepository &roles, std::string_view actorRole) const
         -> SZX::COMMON::Result<std::vector<std::string>>;
 

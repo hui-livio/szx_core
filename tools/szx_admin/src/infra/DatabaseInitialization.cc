@@ -279,7 +279,7 @@ INSERT IGNORE INTO role_manage_scopes (manager_role_id, target_role_id)
 )SZXSQL";
 
 // Identity migration is additive: old columns remain available while the
-// application dual-writes and verifies the formal RBAC/user model.
+// one-time migration into the formal RBAC and identity model.
 constexpr std::string_view kMigration7 = R"SZXSQL(ALTER TABLE users
   ADD COLUMN role_id CHAR(36) NULL AFTER role,
   ADD COLUMN login_identifier VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NULL AFTER username,
@@ -307,6 +307,21 @@ constexpr std::string_view kMigration8 = R"SZXSQL(ALTER TABLE users
   ADD UNIQUE KEY uk_users_login_identifier_canonical (login_identifier_canonical);
 )SZXSQL";
 
+// V1.2 is the only supported runtime schema. Remove the pre-V1.2 identity
+// columns after the formal projection has been validated and indexed.
+constexpr std::string_view kMigration9 = R"SZXSQL(ALTER TABLE users
+  DROP INDEX uid_canonical,
+  DROP INDEX username_canonical,
+  DROP INDEX uk_users_login_identifier_canonical,
+  DROP COLUMN uid,
+  DROP COLUMN uid_canonical,
+  DROP COLUMN username,
+  DROP COLUMN username_canonical,
+  MODIFY login_identifier VARCHAR(64) NOT NULL,
+  MODIFY login_identifier_canonical VARCHAR(128) NOT NULL,
+  MODIFY identifier_type VARCHAR(16) NOT NULL;
+)SZXSQL";
+
 constexpr MigrationDefinition kMigrations[] = {
     {1, kMigration1, "86a4ac820cc8457a2131d0400d4968268576b17113f38fe86b6beceea48c2047"},
     {2, kMigration2, "f4223aadebf005f145941d06b89d2d41e964f4c059d2f765a8e1b3678d389d2d"},
@@ -316,6 +331,7 @@ constexpr MigrationDefinition kMigrations[] = {
     {6, kMigration6, "ce30e1ba660394557f1ad3ae3eaeb043d265f685a3cfec6c00ef785b024c6e3e"},
     {7, kMigration7, "870047693dce68a887ef633fd3b08dc164e7ddd64d9da3ffab1131465b32b6be"},
     {8, kMigration8, "3ff6dc5983213744cceb8879b5af8f2522147cd42768843272178526b643cc72"},
+    {9, kMigration9, "54fd8a5eb7048d97a65e421e5965d01739829bffde4196a5b7f32f4c1cd923e8"},
 };
 
 constexpr DETAIL::InitialAdministratorDefinition kInitialAdministrator{

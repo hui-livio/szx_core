@@ -3,6 +3,7 @@
 #include "../auth/LoginService.h"
 #include "../infra/DatabaseUnitOfWork.h"
 #include "../user/UserValidation.h"
+#include "../audit/AuditRepository.h"
 #include "PermissionCodes.h"
 
 #include "SzxAdmin/Infra/ErrorCode.h"
@@ -57,7 +58,8 @@ auto PermissionService::list(const USER::ActorContext &context, bool includeArch
     {
         INFRA::DatabaseUnitOfWork unit(connection);
         auto *repository = unit.permissions();
-        if (!repository)
+        auto *audit = unit.audit();
+        if (!repository || !audit)
             return failed<void>(ErrorCode::DatabaseQueryFailed);
         const auto actor = authorize(authorization_, context, unit, PERMISSIONS::PermissionRead);
         if (!actor.ok)
@@ -79,7 +81,8 @@ auto PermissionService::get(const USER::ActorContext &context, std::string_view 
     {
         INFRA::DatabaseUnitOfWork unit(connection);
         auto *repository = unit.permissions();
-        if (!repository)
+        auto *audit = unit.audit();
+        if (!repository || !audit)
             return failed<void>(ErrorCode::DatabaseQueryFailed);
         const auto actor = authorize(authorization_, context, unit, PERMISSIONS::PermissionRead);
         if (!actor.ok)
@@ -109,7 +112,8 @@ auto PermissionService::create(const USER::ActorContext &context, const NewPermi
     {
         INFRA::DatabaseUnitOfWork unit(connection);
         auto *repository = unit.permissions();
-        if (!repository)
+        auto *audit = unit.audit();
+        if (!repository || !audit)
             return failed<void>(ErrorCode::DatabaseQueryFailed);
         const auto begun = unit.begin();
         if (!begun.ok)
@@ -123,6 +127,15 @@ auto PermissionService::create(const USER::ActorContext &context, const NewPermi
                                                                 row.enforcement, row.source, row.status, false});
         if (!inserted.ok)
             return inserted;
+        const auto audited = audit->append({.id = SZX::COMMON::Uuid::v4().toString(),
+                                             .actor_user_id = actor.value.user.id,
+                                             .target_user_id = std::optional<std::string>{row.id},
+                                             .event_name = "rbac.permission.changed",
+                                             .result = "success",
+                                             .request_id = context.requestId,
+                                             .ip = context.peerAddress});
+        if (!audited.ok)
+            return audited;
         const auto committed = unit.commit();
         if (!committed.ok)
             return committed;
@@ -142,7 +155,8 @@ auto PermissionService::updateProfile(const USER::ActorContext &context, std::st
     {
         INFRA::DatabaseUnitOfWork unit(connection);
         auto *repository = unit.permissions();
-        if (!repository)
+        auto *audit = unit.audit();
+        if (!repository || !audit)
             return failed<void>(ErrorCode::DatabaseQueryFailed);
         const auto begun = unit.begin();
         if (!begun.ok)
@@ -163,6 +177,15 @@ auto PermissionService::updateProfile(const USER::ActorContext &context, std::st
         const auto saved = repository->updateProfile(row.id, row.name, description, row.version, actor.value.user.id);
         if (!saved.ok)
             return saved;
+        const auto audited = audit->append({.id = SZX::COMMON::Uuid::v4().toString(),
+                                             .actor_user_id = actor.value.user.id,
+                                             .target_user_id = std::optional<std::string>{row.id},
+                                             .event_name = "rbac.permission.changed",
+                                             .result = "success",
+                                             .request_id = context.requestId,
+                                             .ip = context.peerAddress});
+        if (!audited.ok)
+            return audited;
         const auto committed = unit.commit();
         if (!committed.ok)
             return committed;
@@ -182,7 +205,8 @@ auto PermissionService::changeStatus(const USER::ActorContext &context, std::str
     {
         INFRA::DatabaseUnitOfWork unit(connection);
         auto *repository = unit.permissions();
-        if (!repository)
+        auto *audit = unit.audit();
+        if (!repository || !audit)
             return failed<void>(ErrorCode::DatabaseQueryFailed);
         const auto begun = unit.begin();
         if (!begun.ok)
@@ -208,6 +232,18 @@ auto PermissionService::changeStatus(const USER::ActorContext &context, std::str
         const auto saved = repository->updateStatus(row.id, row.status, row.version, actor.value.user.id, archivedAt);
         if (!saved.ok)
             return saved;
+        const auto bumped = repository->bumpRoleAuthzVersions(row.id);
+        if (!bumped.ok)
+            return bumped;
+        const auto audited = audit->append({.id = SZX::COMMON::Uuid::v4().toString(),
+                                             .actor_user_id = actor.value.user.id,
+                                             .target_user_id = std::optional<std::string>{row.id},
+                                             .event_name = "rbac.permission.changed",
+                                             .result = "success",
+                                             .request_id = context.requestId,
+                                             .ip = context.peerAddress});
+        if (!audited.ok)
+            return audited;
         const auto committed = unit.commit();
         if (!committed.ok)
             return committed;

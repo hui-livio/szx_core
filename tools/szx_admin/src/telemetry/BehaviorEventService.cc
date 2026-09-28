@@ -130,18 +130,15 @@ auto BehaviorEventService::list(const USER::ActorContext &context, const Behavio
                 if (!users || !repository)
                     return failed<void>(ErrorCode::DatabaseQueryFailed);
                 auto *roles      = connection.roleRepository();
+                if (!roles)
+                    return failed<void>(ErrorCode::DatabaseQueryFailed);
                 const auto actor = authorization_.resolve(context, *users, false, roles);
                 if (!actor.ok)
                     return Result<void>::Failure(actor.error, {});
-                if (roles)
-                {
-                    const auto allowed = authorization_.allows(*roles, actor.value.user.role, RBAC::PERMISSIONS::BehaviorRead);
-                    if (!allowed.ok)
-                        return Result<void>::Failure(allowed.error, {});
-                    if (!allowed.value)
-                        return failed<void>(ErrorCode::Forbidden);
-                }
-                else if (!authorization_.allows(actor.value.user.role, RBAC::PERMISSIONS::BehaviorRead))
+                const auto allowed = authorization_.allows(*roles, actor.value.user.role, RBAC::PERMISSIONS::BehaviorRead);
+                if (!allowed.ok)
+                    return Result<void>::Failure(allowed.error, {});
+                if (!allowed.value)
                     return failed<void>(ErrorCode::Forbidden);
                 const auto queried = repository->query({.from        = *from,
                                                         .to          = *to,

@@ -1,7 +1,6 @@
 #include "LoginService.h"
 #include "../HttpSupport.h"
 #include "../audit/AuditRepository.h"
-#include "../infra/DatabaseInitialization.h"
 #include "PasswordHash.h"
 
 #include "Defer.hpp"
@@ -90,7 +89,8 @@ auto LoginService::initialize() -> Result<void>
             return failed<void>(ErrorCode::InvalidConfiguration);
         }
         JwtSigningKey key{id.value, std::move(privateKey.value), std::move(publicKey.value)};
-        const auto probe = jwt_.issue({.subject = "startup", .jti = SZX::COMMON::Uuid::v4().toString(), .authzVersion = 1}, key);
+        const auto probe = jwt_.issue({.subject = "startup", .jti = SZX::COMMON::Uuid::v4().toString(), .authzVersion = 1,
+                                       .roleId = "startup-role", .roleAuthzVersion = 1}, key);
         if (!probe.ok || !jwt_.verify(probe.value, key).ok)
         {
             LOGM_ERROR("szx_admin.auth", "event=jwt_probe_failed");
@@ -139,7 +139,10 @@ auto LoginService::verifyAccess(std::string_view accessToken) -> Result<AccessCl
         const auto claims = jwt_.verify(accessToken);
         if (!claims.ok || claims.value.subject.empty())
             return failed<AccessClaims>(ErrorCode::AuthRequired);
-        return Result<AccessClaims>::Success({.subject = claims.value.subject, .authzVersion = claims.value.authzVersion});
+        return Result<AccessClaims>::Success({.subject = claims.value.subject,
+                                              .authzVersion = claims.value.authzVersion,
+                                              .roleId = claims.value.roleId,
+                                              .roleAuthzVersion = claims.value.roleAuthzVersion});
     } catch (...)
     {
         return failed<AccessClaims>(ErrorCode::InternalFailure);
@@ -199,27 +202,13 @@ auto LoginService::login(const LoginInput &input) -> Result<LoginSession>
                 });
             return audited.ok ? failed<LoginSession>(ErrorCode::RateLimited) : Result<LoginSession>::Failure(audited.error, {});
         }
-        std::string uid;
-        std::string username;
-        if (input.identifierType)
-        {
-            const auto normalized = normalizeLoginIdentifier(input.identifier, *input.identifierType);
-            if (!normalized.ok)
-                return Result<LoginSession>::Failure(normalized.error, {});
-            if (*input.identifierType == IdentifierType::Uid)
-                uid = normalized.value.displayValue; // legacy adapter; migration 9 switches this to canonicalValue.
-            else
-                username = normalized.value.canonicalValue;
-        }
-        else
-        {
-            const auto uidValue      = canonicalIdentifier(input.identifier, false);
-            const auto usernameValue = canonicalIdentifier(input.identifier, true);
-            if (!uidValue.ok || !usernameValue.ok)
-                return Result<LoginSession>::Failure(!uidValue.ok ? uidValue.error : usernameValue.error, {});
-            uid      = uidValue.value;
-            username = usernameValue.value;
-        }
+        if (!input.identifierType)
+            return failed<LoginSession>(ErrorCode::ValidationError);
+        const auto normalized = normalizeLoginIdentifier(input.identifier, *input.identifierType);
+        if (!normalized.ok)
+            return Result<LoginSession>::Failure(normalized.error, {});
+        const auto canonicalValue = normalized.value.canonicalValue;
+        const auto identifierType = normalized.value.type == IdentifierType::Uid ? std::string{"uid"} : std::string{"username"};
         LoginSession session;
         bool authenticated{};
         const auto operation = database_.withConnection(
@@ -245,27 +234,13 @@ auto LoginService::login(const LoginInput &input) -> Result<LoginSession>
                         }
                     }
                 };
-                const auto found = repository->find(uid, username);
+                const auto found = repository->find(canonicalValue, identifierType);
                 if (!found.ok)
                     return Result<void>::Failure(found.error, {});
                 auto user                = found.value;
-                const auto &initial      = INFRA::DETAIL::initialAdministrator();
-                const bool legacyInitial = user && user->username == initial.username && user->role == initial.role &&
-                    user->force_password_change && user->password_hash.starts_with("$argon2id$");
                 auto checked = Result<bool>::Success(false);
                 if (user && user->password_hash.starts_with(kPasswordHashPrefix))
                     checked = verifyClientPasswordHash(crypto_, input.passwordHash, user->password_hash);
-                else if (legacyInitial)
-                {
-                    // Only upgrade an unchanged initial credential after verifying its old Argon2id hash.
-                    // Never interpret the transmitted digest as a legacy plaintext password.
-                    checked             = crypto_.verifyPassword(bytes(initial.password), user->password_hash);
-                    const auto expected = SZX::CRYPTO::digestHex(SZX::CRYPTO::HashAlgorithm::Sha256, initial.password);
-                    if (!expected.ok)
-                        return failed<void>(ErrorCode::InternalFailure);
-                    if (checked.ok)
-                        checked.value = checked.value && input.passwordHash == expected.value;
-                }
                 else
                 {
                     checked       = crypto_.verifyPassword(bytes(input.passwordHash), dummyPasswordHash_);
@@ -293,14 +268,6 @@ auto LoginService::login(const LoginInput &input) -> Result<LoginSession>
                 {
                     if (authenticated)
                     {
-                        if (legacyInitial)
-                        {
-                            const auto upgraded = storeClientPasswordHash(crypto_, input.passwordHash);
-                            if (!upgraded.ok)
-                                return Result<void>::Failure(upgraded.error, {});
-                            user->password_hash = upgraded.value;
-                            event.details_json  = R"({"credential_upgraded":true})";
-                        }
                         user->failed_login_count = 0;
                         user->locked_until.reset();
                         user->last_login_at = TimeHelper::TimestampToString(now);

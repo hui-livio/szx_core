@@ -53,9 +53,14 @@ auto LoginService::issueSession(LoginRepository &repository, LoginUser user, con
     const auto expiry = TimeHelper::StringToTimestamp(refreshExpiry.substr(0, 19));
     if (!expiry || user.authz_version <= 0)
         return failed<LoginSession>(ErrorCode::InternalFailure);
-    const auto issued = jwt_.issue({.subject      = user.id,
-                                    .jti          = SZX::COMMON::Uuid::v4().toString(),
-                                    .authzVersion = static_cast<std::uint64_t>(user.authz_version)});
+    const auto roleVersion = repository.roleAuthzVersion(user.role_id.value_or(std::string{}));
+    if (!roleVersion.ok || !user.role_id)
+        return failed<LoginSession>(ErrorCode::AuthRequired);
+    const auto issued = jwt_.issue({.subject          = user.id,
+                                    .jti              = SZX::COMMON::Uuid::v4().toString(),
+                                    .authzVersion     = static_cast<std::uint64_t>(user.authz_version),
+                                    .roleId           = *user.role_id,
+                                    .roleAuthzVersion = roleVersion.value});
     if (!issued.ok)
         return failed<LoginSession>(ErrorCode::InternalFailure);
     const auto claims = jwt_.verify(issued.value);

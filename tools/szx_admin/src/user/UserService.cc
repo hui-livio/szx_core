@@ -51,26 +51,15 @@ auto UserService::permissions(const ActorContext &context) -> Result<Permissions
                     return failed<void>(ErrorCode::DatabaseQueryFailed);
                 auto *roles       = connection.roleRepository();
                 auto *permissions = connection.permissionRepository();
+                if (!roles || !permissions)
+                    return failed<void>(ErrorCode::DatabaseQueryFailed);
                 const auto actor  = resolve(context, *repository, false, roles);
                 if (!actor.ok)
                     return Result<void>::Failure(actor.error, {});
-                std::vector<std::string> capabilityCodes;
-                if (permissions)
-                {
-                    const auto capabilities = authorization_.capabilities(*permissions, actor.value.user.role);
-                    if (!capabilities.ok)
-                        return Result<void>::Failure(capabilities.error, {});
-                    capabilityCodes = std::move(capabilities.value);
-                }
-                else
-                {
-                    const auto capabilities = authorization_.capabilities(actor.value.user.role);
-                    if (!capabilities.ok)
-                        return Result<void>::Failure(capabilities.error, {});
-                    capabilityCodes.reserve(capabilities.value.size());
-                    for (const auto capability : capabilities.value)
-                        capabilityCodes.emplace_back(capability);
-                }
+                const auto capabilities = authorization_.capabilities(*permissions, actor.value.user.role);
+                if (!capabilities.ok)
+                    return Result<void>::Failure(capabilities.error, {});
+                auto capabilityCodes = std::move(capabilities.value);
                 output = {.userId              = actor.value.user.id,
                           .role                = actor.value.user.role,
                           .status              = actor.value.user.status,
@@ -106,32 +95,22 @@ auto UserService::list(const ActorContext &context, const ListQuery &query) -> R
                 const auto actor = resolve(context, *repository, false, roles);
                 if (!actor.ok)
                     return Result<void>::Failure(actor.error, {});
-                if (roles)
-                {
-                    const auto allowed = authorization_.allows(*roles, actor.value.user.role, RBAC::PERMISSIONS::UserRead);
-                    if (!allowed.ok)
-                        return Result<void>::Failure(allowed.error, {});
-                    if (!allowed.value)
-                        return failed<void>(ErrorCode::Forbidden);
-                }
-                else if (!authorization_.allows(actor.value.user.role, RBAC::PERMISSIONS::UserRead))
+                if (!roles)
+                    return failed<void>(ErrorCode::DatabaseQueryFailed);
+                const auto allowed = authorization_.allows(*roles, actor.value.user.role, RBAC::PERMISSIONS::UserRead);
+                if (!allowed.ok)
+                    return Result<void>::Failure(allowed.error, {});
+                if (!allowed.value)
                     return failed<void>(ErrorCode::Forbidden);
                 // Restrict the result set to the roles this actor may manage, then intersect
                 // with the requested role so administrators cannot enumerate super admins.
                 UserFilter filter{.status = query.status, .search = query.search, .sort = *sort, .limit = query.pageSize};
-                if (roles)
-                {
-                    const auto manageable = authorization_.manageableRoles(*roles, actor.value.user.role);
-                    if (!manageable.ok)
-                        return Result<void>::Failure(manageable.error, {});
-                    for (const auto &role : manageable.value)
-                        if (query.role.empty() || query.role == role)
-                            filter.roles.emplace_back(role);
-                }
-                else
-                    for (const auto role : authorization_.manageableRoles(actor.value.user.role))
-                        if (query.role.empty() || query.role == role)
-                            filter.roles.emplace_back(role);
+                const auto manageable = authorization_.manageableRoles(*roles, actor.value.user.role);
+                if (!manageable.ok)
+                    return Result<void>::Failure(manageable.error, {});
+                for (const auto &role : manageable.value)
+                    if (query.role.empty() || query.role == role)
+                        filter.roles.emplace_back(role);
                 if (filter.roles.empty())
                     return failed<void>(ErrorCode::Forbidden);
                 filter.offset     = static_cast<std::uint64_t>(query.page - 1) * query.pageSize;
@@ -165,30 +144,24 @@ auto UserService::get(const ActorContext &context, const std::string &id) -> Res
                 const auto actor = resolve(context, *repository, false, roles);
                 if (!actor.ok)
                     return Result<void>::Failure(actor.error, {});
-                if (roles)
-                {
-                    const auto allowed = authorization_.allows(*roles, actor.value.user.role, RBAC::PERMISSIONS::UserRead);
-                    if (!allowed.ok)
-                        return Result<void>::Failure(allowed.error, {});
-                    if (!allowed.value)
-                        return failed<void>(ErrorCode::Forbidden);
-                }
-                else if (!authorization_.allows(actor.value.user.role, RBAC::PERMISSIONS::UserRead))
+                if (!roles)
+                    return failed<void>(ErrorCode::DatabaseQueryFailed);
+                const auto allowed = authorization_.allows(*roles, actor.value.user.role, RBAC::PERMISSIONS::UserRead);
+                if (!allowed.ok)
+                    return Result<void>::Failure(allowed.error, {});
+                if (!allowed.value)
                     return failed<void>(ErrorCode::Forbidden);
                 const auto found = repository->findById(id);
                 if (!found.ok)
                     return Result<void>::Failure(found.error, {});
                 if (!found.value)
                     return failed<void>(ErrorCode::ResourceNotFound);
-                if (roles)
-                {
-                    const auto manageable = roles->canManageRole(actor.value.user.role, found.value->role);
-                    if (!manageable.ok)
-                        return Result<void>::Failure(manageable.error, {});
-                    if (!manageable.value)
-                        return failed<void>(ErrorCode::Forbidden);
-                }
-                else if (!authorization_.mayTarget(actor.value.user.role, found.value->role))
+                if (!roles)
+                    return failed<void>(ErrorCode::DatabaseQueryFailed);
+                const auto manageable = roles->canManageRole(actor.value.user.role, found.value->role);
+                if (!manageable.ok)
+                    return Result<void>::Failure(manageable.error, {});
+                if (!manageable.value)
                     return failed<void>(ErrorCode::Forbidden);
                 output = *found.value;
                 return Result<void>::Success();

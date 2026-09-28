@@ -46,8 +46,6 @@ YLT_REFL(admin_bootstrap, id, user_id);
 struct users final
 {
     std::string id;
-    std::string username;
-    std::string username_canonical;
     std::string login_identifier;
     std::string login_identifier_canonical;
     std::string identifier_type;
@@ -60,7 +58,7 @@ struct users final
 };
 // Deliberately project only initialized columns. Nullable identities and timestamps
 // are supplied by MySQL defaults, rather than empty strings.
-YLT_REFL(users, id, username, username_canonical, login_identifier, login_identifier_canonical, identifier_type, role_id,
+YLT_REFL(users, id, login_identifier, login_identifier_canonical, identifier_type, role_id,
          display_name, password_hash, role, status, force_password_change);
 
 auto failure(ErrorCode code, const std::string &message) -> SZX::COMMON::Result<void>
@@ -270,7 +268,7 @@ public:
     {
         const auto &initial = DETAIL::initialAdministrator();
         const auto rows =
-            connection_.query_s<users>("(username_canonical = ? OR role = ?) ORDER BY (role = ?) DESC, id LIMIT 1 FOR UPDATE",
+            connection_.query_s<users>("(login_identifier_canonical = ? OR role = ?) ORDER BY (role = ?) DESC, id LIMIT 1 FOR UPDATE",
                                        std::string{initial.username}, std::string{initial.role}, std::string{initial.role});
         if (connection_.has_error())
             return SZX::COMMON::Result<std::optional<BootstrapAdministrator>>::Failure(
@@ -279,7 +277,7 @@ public:
             return SZX::COMMON::Result<std::optional<BootstrapAdministrator>>::Success(std::nullopt);
         const auto &row = rows.front();
         return SZX::COMMON::Result<std::optional<BootstrapAdministrator>>::Success(
-            BootstrapAdministrator{row.id, row.username, row.password_hash, row.role, row.status, row.force_password_change});
+            BootstrapAdministrator{row.id, row.login_identifier, row.password_hash, row.role, row.status, row.force_password_change});
     }
 
     auto insertBootstrapAdministrator(const BootstrapAdministrator &administrator) -> SZX::COMMON::Result<void> override
@@ -294,8 +292,6 @@ public:
         if (connection_.has_error() || roles.size() != 1)
             return databaseFailure(ErrorCode::DatabaseQueryFailed, "Failed to resolve bootstrap role", {});
         const users row{administrator.id,
-                        administrator.username,
-                        administrator.username,
                         administrator.username,
                         administrator.username,
                         "username",
@@ -368,11 +364,7 @@ public:
                 "SELECT COUNT(*) FROM users u LEFT JOIN roles r ON r.id = u.role_id "
                 "WHERE u.role_id IS NULL OR r.id IS NULL OR r.code <> u.role "
                 "OR u.login_identifier IS NULL OR u.login_identifier_canonical IS NULL "
-                "OR u.identifier_type NOT IN ('uid', 'username') "
-                "OR (u.identifier_type = 'uid' AND (u.uid IS NULL OR BINARY u.login_identifier <> BINARY u.uid "
-                "OR BINARY u.login_identifier_canonical <> BINARY u.uid_canonical)) "
-                "OR (u.identifier_type = 'username' AND (u.username IS NULL OR BINARY u.login_identifier <> BINARY u.username "
-                "OR BINARY u.login_identifier_canonical <> BINARY u.username_canonical))");
+                "OR u.identifier_type NOT IN ('uid', 'username')");
             if (connection_.has_error() || identityRows.size() != 1)
                 return SZX::COMMON::Result<bool>::Failure(static_cast<int>(ErrorCode::DatabaseQueryFailed), {});
             if (std::get<0>(identityRows.front()) != 0)
@@ -588,22 +580,6 @@ auto DatabasePool::withConnectionImpl(const ConnectionCallback &callback,
         return failure(ErrorCode::DatabaseUnavailable, "Database pool has not been started.");
     if (!callback)
         return failure(ErrorCode::InvalidConfiguration, "Database connection callback is empty.");
-
-    std::unique_lock<std::recursive_timed_mutex> ormLock;
-    try
-    {
-        const auto slotWaitStarted = std::chrono::steady_clock::now();
-        ormLock = std::unique_lock<std::recursive_timed_mutex>(DETAIL::ormMutex(), std::defer_lock);
-        if (!ormLock.try_lock_until(acquisitionDeadline))
-            return failure(ErrorCode::DatabaseUnavailable, "Unable to acquire database execution slot.");
-        const auto slotWait = std::chrono::duration_cast<std::chrono::microseconds>(
-            std::chrono::steady_clock::now() - slotWaitStarted);
-        if (slotWait >= std::chrono::microseconds{50})
-            LOGM_DEBUG("szx_admin.database", "event=orm_execution_slot_wait wait_microseconds={}", slotWait.count());
-    } catch (...)
-    {
-        return failure(ErrorCode::DatabaseUnavailable, "Unable to acquire database execution slot.");
-    }
 
     std::unique_ptr<DETAIL::OrmConnection> connection;
     {

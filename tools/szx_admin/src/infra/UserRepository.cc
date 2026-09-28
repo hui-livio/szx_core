@@ -2,10 +2,10 @@
 #include "../auth/LoginService.h"
 #include "OrmConnection.h"
 #include "SzxAdmin/Infra/ErrorCode.h"
+#include "JsonHelper.hpp"
 #include "UUID.hpp"
 
 #include <algorithm>
-#include <array>
 #include <climits>
 #include <string>
 #include <tuple>
@@ -21,11 +21,11 @@ inline constexpr auto get_alias_struct_name(NewUser *)
 {
     return std::string_view{"users"};
 }
-YLT_REFL(UserRow, id, uid, username, login_identifier, login_identifier_canonical, identifier_type, display_name, role_id, role, status, version, force_password_change, temporary_credential_expires_at,
+YLT_REFL(UserRow, id, login_identifier, login_identifier_canonical, identifier_type, display_name, role_id, role, status, version, force_password_change, temporary_credential_expires_at,
          failed_login_count, locked_until, password_changed_at, disabled_at, created_by, authz_version, last_login_at, created_at,
          updated_at);
 REGISTER_CONFLICT_KEY(UserRow, id)
-YLT_REFL(NewUser, id, uid, uid_canonical, username, username_canonical, login_identifier, login_identifier_canonical, identifier_type,
+YLT_REFL(NewUser, id, login_identifier, login_identifier_canonical, identifier_type,
          display_name, password_hash, role_id, role, status,
          force_password_change, temporary_credential_expires_at, created_by);
 } // namespace SZX::ADMIN::USER
@@ -49,8 +49,6 @@ namespace
 {
 constexpr std::string_view kSuperAdmin = "super_admin";
 constexpr std::string_view kActive     = "active";
-// Fixed placeholder count for the role allowlist; ormpp binds a compile-time number of parameters.
-constexpr std::size_t kRoleSlots = 4;
 
 template <typename T>
 auto queryFailed() -> Result<T>
@@ -102,14 +100,6 @@ auto orderBy(USER::UserSort sort) noexcept -> std::string_view
     return " ORDER BY created_at DESC, id ASC";
 }
 
-/** Pad the caller's role allowlist to a fixed width by repeating an entry. */
-auto roleSlots(const std::vector<std::string> &roles) -> std::array<std::string, kRoleSlots>
-{
-    std::array<std::string, kRoleSlots> slots;
-    for (std::size_t index = 0; index < kRoleSlots; ++index)
-        slots[index] = roles[index < roles.size() ? index : 0];
-    return slots;
-}
 } // namespace
 
 auto MySqlUserRepository::lockForMutation(const std::string &actorId, const std::string &targetId) -> Result<USER::MutationLock>
@@ -162,39 +152,16 @@ auto MySqlUserRepository::findById(const std::string &id, bool lock) -> Result<s
     }
 }
 
-auto MySqlUserRepository::findByCanonical(const std::string &uid, const std::string &username)
+auto MySqlUserRepository::findByCanonical(const std::string &canonicalValue)
     -> Result<std::optional<USER::UserRow>>
 {
     try
     {
-        const auto loginName = AUTH::canonicalIdentifier(uid.empty() ? username : uid, true);
-        if (!loginName.ok)
-            return Result<std::optional<USER::UserRow>>::Failure(loginName.error, {});
-        // The caller holds the bootstrap singleton row lock until commit. These
-        // READ COMMITTED reads see preceding creates without locking other actors.
-        auto rows = connection_.query_s<USER::UserRow>("(uid_canonical = ? OR username_canonical = ?) ORDER BY id LIMIT 1", uid,
-                                                       loginName.value);
+        auto rows = connection_.query_s<USER::UserRow>("login_identifier_canonical = ? ORDER BY id LIMIT 1", canonicalValue);
         if (connection_.has_error())
             return queryFailed<std::optional<USER::UserRow>>();
         if (!rows.empty())
             return Result<std::optional<USER::UserRow>>::Success(std::move(rows.front()));
-        if (uid.empty())
-        {
-            // A username claims every case variant of a UID. Use the login
-            // normalizer, not MySQL LOWER(), whose Unicode mapping may differ.
-            const auto identities = connection_.query_s<std::tuple<std::string, std::string>>(
-                "SELECT id, uid_canonical FROM users WHERE uid_canonical IS NOT NULL");
-            if (connection_.has_error())
-                return queryFailed<std::optional<USER::UserRow>>();
-            for (const auto &[id, identity] : identities)
-            {
-                const auto normalized = AUTH::canonicalIdentifier(identity, true);
-                if (!normalized.ok)
-                    return queryFailed<std::optional<USER::UserRow>>();
-                if (normalized.value == loginName.value)
-                    return findById(id);
-            }
-        }
         return Result<std::optional<USER::UserRow>>::Success(std::nullopt);
     } catch (...)
     {
@@ -208,28 +175,31 @@ auto MySqlUserRepository::list(const USER::UserFilter &filter) -> Result<USER::U
     {
         if (filter.roles.empty() || filter.limit == 0)
             return Result<USER::UserPage>::Failure(static_cast<int>(ErrorCode::InternalFailure), {});
-        const auto roles = roleSlots(filter.roles);
-        // Empty filters are neutralized by their own placeholder so the parameter count stays fixed.
+        // A JSON table keeps the role allowlist parameterized without imposing a
+        // compile-time limit on the number of roles an administrator can manage.
+        const auto roles = SZX::COMMON::Json(filter.roles).dump();
         const auto status = filter.status;
         const auto search = filter.search;
         const auto needle = search.empty() ? std::string{} : "%" + escapeLike(search) + "%";
         const auto limit  = static_cast<std::uint64_t>(filter.limit);
         const auto offset = filter.offset;
-        const std::string predicate{"role IN (?, ?, ?, ?) AND (? = '' OR status = ?) AND "
-                                    "(? = '' OR display_name LIKE ? OR uid LIKE ? OR username LIKE ?)"};
+        const std::string source{" FROM users u JOIN JSON_TABLE(?, '$[*]' COLUMNS (code VARCHAR(64) PATH '$')) "
+                                 "allowed ON allowed.code = u.role WHERE "};
+        const std::string predicate{"(? = '' OR u.status = ?) AND "
+                                    "(? = '' OR u.display_name LIKE ? OR u.login_identifier LIKE ?)"};
 
         const auto totals =
-            connection_.query_s<std::tuple<std::uint64_t>>("SELECT COUNT(*) FROM users WHERE " + predicate, roles[0], roles[1],
-                                                           roles[2], roles[3], status, status, search, needle, needle, needle);
+            connection_.query_s<std::tuple<std::uint64_t>>("SELECT COUNT(*)" + source + predicate, roles, status, status,
+                                                           search, needle, needle);
         if (connection_.has_error() || totals.size() != 1)
             return queryFailed<USER::UserPage>();
 
         USER::UserPage page{.items = {}, .total = std::get<0>(totals.front())};
         if (page.total > offset)
         {
-            auto rows = connection_.query_s<USER::UserRow>(predicate + std::string{orderBy(filter.sort)} + " LIMIT ? OFFSET ?",
-                                                           roles[0], roles[1], roles[2], roles[3], status, status, search, needle,
-                                                           needle, needle, limit, offset);
+            auto rows = connection_.query_s<USER::UserRow>("SELECT u.*" + source + predicate +
+                                                           std::string{orderBy(filter.sort)} + " LIMIT ? OFFSET ?",
+                                                           roles, status, status, search, needle, needle, limit, offset);
             if (connection_.has_error())
                 return queryFailed<USER::UserPage>();
             page.items = std::move(rows);

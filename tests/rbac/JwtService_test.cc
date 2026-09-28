@@ -40,7 +40,7 @@ TEST(JwtServiceTest, IssuesAndVerifiesPs256TokenThroughCryptoService)
 
     SZX::CRYPTO_SERVICE::CryptoService crypto;
     JwtService service(crypto, {.issuer = "szx-admin", .audience = "szx-client"});
-    const auto issue = service.issue({.subject = "user-1", .jti = "token-1", .authzVersion = 7}, makeKey(keys.value));
+    const auto issue = service.issue({.subject = "user-1", .jti = "token-1", .authzVersion = 7, .roleId = "role-1", .roleAuthzVersion = 1}, makeKey(keys.value));
     ASSERT_TRUE(issue.ok) << issue.message;
 
     const auto verified = service.verify(issue.value, makeKey(keys.value));
@@ -60,11 +60,11 @@ TEST(JwtServiceTest, RejectsTamperedToken)
 
     SZX::CRYPTO_SERVICE::CryptoService crypto;
     JwtService service(crypto, {.issuer = "szx-admin", .audience = "szx-client"});
-    const auto issue = service.issue({.subject = "user-1", .jti = "token-1", .authzVersion = 1}, makeKey(keys.value));
+    const auto issue = service.issue({.subject = "user-1", .jti = "token-1", .authzVersion = 1, .roleId = "role-1", .roleAuthzVersion = 1}, makeKey(keys.value));
     ASSERT_TRUE(issue.ok) << issue.message;
 
-    auto tampered                                            = issue.value;
-    tampered[tampered.find('.', tampered.find('.') + 1) + 1] = tampered.back() == 'A' ? 'B' : 'A';
+    auto tampered = issue.value;
+    tampered.back() = tampered.back() == 'A' ? 'B' : 'A';
     const auto verified                                      = service.verify(tampered, makeKey(keys.value));
     ASSERT_FALSE(verified.ok);
     EXPECT_EQ(verified.error, static_cast<int>(JwtError::SignatureInvalid));
@@ -77,7 +77,7 @@ TEST(JwtServiceTest, RejectsWrongKeyId)
 
     SZX::CRYPTO_SERVICE::CryptoService crypto;
     JwtService service(crypto, {.issuer = "szx-admin", .audience = "szx-client"});
-    const auto issue = service.issue({.subject = "user-1", .jti = "token-1", .authzVersion = 1}, makeKey(keys.value));
+    const auto issue = service.issue({.subject = "user-1", .jti = "token-1", .authzVersion = 1, .roleId = "role-1", .roleAuthzVersion = 1}, makeKey(keys.value));
     ASSERT_TRUE(issue.ok) << issue.message;
 
     auto key            = makeKey(keys.value);
@@ -103,11 +103,11 @@ TEST(JwtServiceTest, RotatesSigningKeyAndKeepsPreviousKeyForVerification)
     ASSERT_TRUE(store.addKey(JwtKeyRecord{.key = second}).ok);
 
     JwtService service(crypto, {.issuer = "szx-admin", .audience = "szx-client"}, store);
-    const auto firstToken = service.issue({.subject = "user-1", .jti = "token-1", .authzVersion = 1});
+    const auto firstToken = service.issue({.subject = "user-1", .jti = "token-1", .authzVersion = 1, .roleId = "role-1", .roleAuthzVersion = 1});
     ASSERT_TRUE(firstToken.ok) << firstToken.message;
 
     ASSERT_TRUE(store.activateKey(second.keyId).ok);
-    const auto secondToken = service.issue({.subject = "user-1", .jti = "token-2", .authzVersion = 2});
+    const auto secondToken = service.issue({.subject = "user-1", .jti = "token-2", .authzVersion = 2, .roleId = "role-1", .roleAuthzVersion = 1});
     ASSERT_TRUE(secondToken.ok) << secondToken.message;
 
     const auto firstClaims = service.verify(firstToken.value);
@@ -187,7 +187,7 @@ TEST(JwtServiceTest, RejectsAuthzVersionOverflow)
     SZX::CRYPTO_SERVICE::CryptoService crypto;
     JwtService service(crypto, {.issuer = "szx-admin", .audience = "szx-client"});
     const auto issue =
-        service.issue({.subject = "user-1", .jti = "token-overflow", .authzVersion = (std::numeric_limits<std::uint64_t>::max)()},
+        service.issue({.subject = "user-1", .jti = "token-overflow", .authzVersion = (std::numeric_limits<std::uint64_t>::max)(), .roleId = "role-1", .roleAuthzVersion = 1},
                       makeKey(keys.value));
     ASSERT_FALSE(issue.ok);
     EXPECT_EQ(issue.error, static_cast<int>(JwtError::InvalidArgument));
@@ -195,7 +195,7 @@ TEST(JwtServiceTest, RejectsAuthzVersionOverflow)
     JwtService overflowingService(
         crypto, {.issuer = "szx-admin", .audience = "szx-client", .lifetimeSeconds = (std::numeric_limits<std::int64_t>::max)()});
     const auto overflowingIssue =
-        overflowingService.issue({.subject = "user-1", .jti = "token-overflow-2", .authzVersion = 1}, makeKey(keys.value));
+        overflowingService.issue({.subject = "user-1", .jti = "token-overflow-2", .authzVersion = 1, .roleId = "role-1", .roleAuthzVersion = 1}, makeKey(keys.value));
     ASSERT_FALSE(overflowingIssue.ok);
     EXPECT_EQ(overflowingIssue.error, static_cast<int>(JwtError::InvalidArgument));
 }
@@ -207,7 +207,7 @@ TEST(JwtServiceTest, ReportsCryptoFailureWhenSigningProviderFails)
 
     SZX::CRYPTO_SERVICE::FakeCryptoService crypto;
     JwtService service(crypto, {.issuer = "szx-admin", .audience = "szx-client"});
-    const auto issue = service.issue({.subject = "user-1", .jti = "token-crypto", .authzVersion = 1}, makeKey(keys.value));
+    const auto issue = service.issue({.subject = "user-1", .jti = "token-crypto", .authzVersion = 1, .roleId = "role-1", .roleAuthzVersion = 1}, makeKey(keys.value));
     ASSERT_FALSE(issue.ok);
     EXPECT_EQ(issue.error, static_cast<int>(JwtError::CryptoFailure));
 }
@@ -220,7 +220,7 @@ TEST(JwtServiceTest, ReportsCryptoFailureWhenVerificationProviderFails)
     SZX::CRYPTO_SERVICE::CryptoService signingCrypto;
     JwtService signingService(signingCrypto, {.issuer = "szx-admin", .audience = "szx-client"});
     const auto issue =
-        signingService.issue({.subject = "user-1", .jti = "token-crypto-verify", .authzVersion = 1}, makeKey(keys.value));
+        signingService.issue({.subject = "user-1", .jti = "token-crypto-verify", .authzVersion = 1, .roleId = "role-1", .roleAuthzVersion = 1}, makeKey(keys.value));
     ASSERT_TRUE(issue.ok) << issue.message;
 
     SZX::CRYPTO_SERVICE::FakeCryptoService verificationCrypto;

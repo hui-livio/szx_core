@@ -64,5 +64,9 @@ public:
         -> SZX::COMMON::Result<bool> = 0;
     virtual auto manageableRoles(std::string_view managerCode)
         -> SZX::COMMON::Result<std::vector<std::string>> = 0;
+    virtual auto removeTargetScopes(std::string_view) -> SZX::COMMON::Result<void>
+    { return SZX::COMMON::Result<void>::Success(); }
+    virtual auto bumpManagerAuthzVersions(std::string_view) -> SZX::COMMON::Result<void>
+    { return SZX::COMMON::Result<void>::Success(); }
 };
 } // namespace SZX::ADMIN::RBAC

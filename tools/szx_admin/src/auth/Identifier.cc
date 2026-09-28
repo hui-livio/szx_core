@@ -96,9 +96,7 @@ auto normalizeLoginIdentifier(std::string_view input, IdentifierType type) -> SZ
     if (!display.ok)
         return Result<LoginIdentifier>::Failure(display.error, {});
     // V1.2 gives UID and username one uniqueness domain. Reuse the same
-    // invariant-lowercase/Unicode-normalization path for both types; the
-    // legacy canonicalIdentifier(uid, false) remains available only for the
-    // pre-migration storage adapter.
+    // invariant-lowercase and Unicode-normalization path for both types.
     const auto canonical = canonicalIdentifier(input, true);
     if (!canonical.ok)
         return Result<LoginIdentifier>::Failure(canonical.error, {});

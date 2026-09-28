@@ -21,8 +21,6 @@ struct LoginConfig
     int attemptsPerMinute{30};
     [[nodiscard]] auto validate() const -> SZX::COMMON::Result<void>;
 };
-SZX_REFL(LoginConfig, issuer, audience, privateKeyPath, publicKeyPath, allowedOrigin, refreshLifetimeSeconds,
-         refreshIdleTimeoutSeconds, failedLoginLimit, lockSeconds, attemptsPerMinute);
 
 enum class IdentifierType : unsigned char
 {
@@ -86,11 +84,13 @@ struct AccessClaims
 {
     std::string subject;
     std::uint64_t authzVersion{};
+    std::string roleId;
+    std::uint64_t roleAuthzVersion{};
 };
 
 /** NFC identifier normalization; usernames additionally use invariant lowercase. */
 [[nodiscard]] auto canonicalIdentifier(std::string_view input, bool username) -> SZX::COMMON::Result<std::string>;
-/** Normalize the unified V1.2 identifier model. The legacy helper remains for V1.1 storage compatibility. */
+/** Normalize the unified V1.2 identifier model. */
 [[nodiscard]] auto normalizeLoginIdentifier(std::string_view input, IdentifierType type)
     -> SZX::COMMON::Result<LoginIdentifier>;
 

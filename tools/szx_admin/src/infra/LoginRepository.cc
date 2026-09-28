@@ -1,6 +1,7 @@
 #include "LoginRepository.h"
 #include "OrmConnection.h"
 #include "SzxAdmin/Infra/ErrorCode.h"
+#include <tuple>
 
 namespace SZX::ADMIN::AUTH
 {
@@ -12,7 +13,7 @@ inline constexpr auto get_alias_struct_name(LoginRefresh *)
 {
     return std::string_view{"refresh_tokens"};
 }
-YLT_REFL(LoginUser, id, uid, username, login_identifier, login_identifier_canonical, identifier_type, display_name, role_id, password_hash, role, status, version, force_password_change,
+YLT_REFL(LoginUser, id, login_identifier, login_identifier_canonical, identifier_type, display_name, role_id, password_hash, role, status, version, force_password_change,
          temporary_credential_expires_at, failed_login_count, locked_until, authz_version, last_login_at, password_changed_at,
          created_at, updated_at);
 REGISTER_CONFLICT_KEY(LoginUser, id)
@@ -46,19 +47,13 @@ auto written(bool success, ErrorCode code = ErrorCode::DatabaseQueryFailed) -> R
 
 } // namespace
 
-auto MySqlLoginRepository::find(const std::string &uid, const std::string &username) -> Result<std::optional<AUTH::LoginUser>>
+auto MySqlLoginRepository::find(const std::string &canonicalValue, const std::string &identifierType) -> Result<std::optional<AUTH::LoginUser>>
 {
     try
     {
-        // Migration 7 gives both identifier kinds one indexed lookup. UID remains
-        // byte-sensitive during the dual-read window; usernames are normalized at
-        // the HTTP boundary before reaching this repository.
         auto rows = connection_.query_s<AUTH::LoginUser>(
-            "((identifier_type = 'uid' AND login_identifier_canonical = ? AND "
-            "BINARY login_identifier_canonical = ?) OR "
-            "(identifier_type = 'username' AND login_identifier_canonical = ?)) "
-            "ORDER BY id LIMIT 2 FOR UPDATE",
-            uid, uid, username);
+            "identifier_type = ? AND login_identifier_canonical = ? ORDER BY id LIMIT 2 FOR UPDATE",
+            identifierType, canonicalValue);
         if (connection_.has_error())
             return Result<std::optional<AUTH::LoginUser>>::Failure(static_cast<int>(ErrorCode::DatabaseQueryFailed), {});
         if (rows.size() != 1)
@@ -83,6 +78,21 @@ auto MySqlLoginRepository::findById(const std::string &id) -> Result<std::option
     } catch (...)
     {
         return Result<std::optional<AUTH::LoginUser>>::Failure(static_cast<int>(ErrorCode::DatabaseQueryFailed), {});
+    }
+}
+
+auto MySqlLoginRepository::roleAuthzVersion(const std::string &roleId) -> Result<std::uint32_t>
+{
+    try
+    {
+        const auto rows = connection_.query_s<std::tuple<std::uint32_t>>("SELECT authz_version FROM roles WHERE id = ?", roleId);
+        if (connection_.has_error() || rows.size() != 1)
+            return Result<std::uint32_t>::Failure(static_cast<int>(ErrorCode::DatabaseQueryFailed), {});
+        return Result<std::uint32_t>::Success(std::get<0>(rows.front()));
+    }
+    catch (...)
+    {
+        return Result<std::uint32_t>::Failure(static_cast<int>(ErrorCode::DatabaseQueryFailed), {});
     }
 }
 

@@ -38,19 +38,7 @@ if(NOT TARGET szx::network)
     message(FATAL_ERROR "szx_admin_service requires SZX_COMPONENTS_BUILD_NETWORK=ON")
 endif()
 
-add_library(szx_rbac_infra STATIC
-    src/Routes.cc
-    src/HttpSupport.cc
-    src/auth/ChangePassword.cc
-    src/auth/SessionLifecycle.cc
-    src/auth/Identifier.cc
-    src/auth/LoginService.cc
-    src/auth/PasswordHash.cc
-    src/rbac/AuthorizationService.cc
-    src/rbac/RoleService.cc
-    src/rbac/PermissionService.cc
-    src/rbac/RbacHandler.cc
-    src/audit/AuditService.cc
+add_library(szx_admin_persistence STATIC
     src/infra/ErrorCode.cc
     src/infra/Database.cc
     src/infra/DatabaseUnitOfWork.cc
@@ -63,38 +51,66 @@ add_library(szx_rbac_infra STATIC
     src/infra/LoginRepository.cc
     src/infra/LogMaintenanceRepository.cc
     src/infra/UserRepository.cc
+    src/auth/Identifier.cc
+    src/auth/PasswordHash.cc
+)
+add_library(szx_admin_application STATIC
+    src/auth/ChangePassword.cc
+    src/auth/SessionLifecycle.cc
+    src/auth/LoginService.cc
+    src/rbac/AuthorizationService.cc
+    src/rbac/RoleService.cc
+    src/rbac/PermissionService.cc
+    src/audit/AuditService.cc
+    src/telemetry/BehaviorEventService.cc
+    src/telemetry/BehaviorEventWriter.cc
+    src/maintenance/LogMaintenanceService.cc
+    src/user/UserService.cc
+    src/user/UserLifecycle.cc
+    src/policy/Policy.cc
+)
+add_library(szx_admin_http STATIC
+    src/Routes.cc
+    src/HttpSupport.cc
+    src/rbac/RbacHandler.cc
     src/infra/HttpTransport.cc
     src/infra/RequestContext.cc
     src/infra/RestApi.cc
     src/infra/ServerConfig.cc
-    src/policy/Policy.cc
-    src/telemetry/BehaviorEventService.cc
-    src/telemetry/BehaviorEventWriter.cc
-    src/maintenance/LogMaintenanceService.cc
     src/user/UserHandler.cc
-    src/user/UserService.cc
-    src/user/UserLifecycle.cc
 )
+add_library(szx_rbac_infra INTERFACE)
 add_library(szx::rbac_infra ALIAS szx_rbac_infra)
+add_library(szx::admin_persistence ALIAS szx_admin_persistence)
+add_library(szx::admin_application ALIAS szx_admin_application)
+add_library(szx::admin_http ALIAS szx_admin_http)
 
-target_include_directories(szx_rbac_infra
-    PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
+target_include_directories(szx_admin_persistence PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(szx_admin_application PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(szx_admin_http PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_compile_features(szx_admin_persistence PUBLIC cxx_std_20)
+target_compile_features(szx_admin_application PUBLIC cxx_std_20)
+target_compile_features(szx_admin_http PUBLIC cxx_std_20)
+szx_apply_default_compile_policy(szx_admin_persistence)
+szx_apply_default_compile_policy(szx_admin_application)
+szx_apply_default_compile_policy(szx_admin_http)
 
-target_link_libraries(szx_rbac_infra
-    PUBLIC szx::common szx::network
+target_link_libraries(szx_admin_persistence
+    PUBLIC szx::common
     PRIVATE szx::logger szx_rbac_ormpp szx::crypto szx::crypto_service szx::rbac_auth
 )
+target_link_libraries(szx_admin_application PUBLIC szx::common szx::network szx_admin_persistence
+    PRIVATE szx::logger szx::crypto szx::crypto_service szx::rbac_auth)
+target_link_libraries(szx_admin_http PUBLIC szx::common szx::network szx_admin_application szx_admin_persistence
+    PRIVATE szx::logger szx_rbac_auth)
+target_link_libraries(szx_rbac_infra INTERFACE szx_admin_http szx_admin_application szx_admin_persistence)
 
 if(WIN32)
-    target_link_libraries(szx_rbac_infra PRIVATE Normaliz)
+    target_link_libraries(szx_admin_persistence PRIVATE Normaliz)
 else()
     find_package(ICU REQUIRED COMPONENTS uc)
-    target_link_libraries(szx_rbac_infra PRIVATE ICU::uc)
+    target_link_libraries(szx_admin_persistence PRIVATE ICU::uc)
 endif()
-
-target_compile_features(szx_rbac_infra PUBLIC cxx_std_20)
-szx_apply_default_compile_policy(szx_rbac_infra)
 
 target_include_directories(szx_rbac_auth
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include

@@ -84,10 +84,11 @@ auto AuthorizationService::resolve(const USER::ActorContext &context, USER::User
             return failed<AuthorizedActor>(ErrorCode::Forbidden);
         if (roles)
         {
-            const auto currentRole = roles->findByCode(found.value->role);
+            const auto currentRole = roles->findById(claims.value.roleId);
             if (!currentRole.ok)
                 return Result<AuthorizedActor>::Failure(currentRole.error, {});
-            if (!currentRole.value || currentRole.value->status != "active")
+            if (!currentRole.value || currentRole.value->status != "active" || currentRole.value->code != found.value->role ||
+                currentRole.value->authzVersion != claims.value.roleAuthzVersion)
                 return failed<AuthorizedActor>(ErrorCode::AuthRequired);
         }
         return Result<AuthorizedActor>::Success({.user = *found.value});
@@ -120,10 +121,11 @@ auto AuthorizationService::authorizeUserMutation(const USER::ActorContext &conte
             return failed<AuthorizedMutation>(ErrorCode::Forbidden);
         if (roles)
         {
-            const auto currentRole = roles->findByCode(actor->role);
+            const auto currentRole = roles->findById(claims.value.roleId);
             if (!currentRole.ok)
                 return Result<AuthorizedMutation>::Failure(currentRole.error, {});
-            if (!currentRole.value || currentRole.value->status != "active")
+            if (!currentRole.value || currentRole.value->status != "active" || currentRole.value->code != actor->role ||
+                currentRole.value->authzVersion != claims.value.roleAuthzVersion)
                 return failed<AuthorizedMutation>(ErrorCode::AuthRequired);
             const auto permitted = roles->hasPermission(actor->role, permissionCode);
             if (!permitted.ok)

@@ -35,6 +35,8 @@ public:
         -> SZX::COMMON::Result<bool> override;
     auto manageableRoles(std::string_view managerCode)
         -> SZX::COMMON::Result<std::vector<std::string>> override;
+    auto removeTargetScopes(std::string_view roleId) -> SZX::COMMON::Result<void> override;
+    auto bumpManagerAuthzVersions(std::string_view roleId) -> SZX::COMMON::Result<void> override;
 
 private:
     OrmConnection &connection_;

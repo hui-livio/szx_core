@@ -4,8 +4,8 @@
 
 namespace SZX::ADMIN::INFRA::DETAIL
 {
-// The unmodified MySQL driver owns process-wide mutable state. Hold this gate
-// across a complete connection callback, including rollback and reconnection.
+// Process-wide driver setup is serialized during startup; ordinary operations
+// are serialized only by the mutex owned by each pooled connection.
 auto ormMutex() -> std::recursive_timed_mutex &;
 
 class OrmDiagnosticsScope final

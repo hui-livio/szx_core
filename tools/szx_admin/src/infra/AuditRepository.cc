@@ -36,13 +36,13 @@ struct AuditPageRecord final
     std::string event_name;
     std::string result;
     std::string request_id;
-    std::uint64_t details_size{};
+    std::string details_json;
     std::string created_at;
-    std::string actor_username;
+    std::string actor_login_identifier;
     std::string storage_table;
 };
-YLT_REFL(AuditPageRecord, id, actor_user_id, target_user_id, event_name, result, request_id, details_size, created_at,
-         actor_username, storage_table);
+YLT_REFL(AuditPageRecord, id, actor_user_id, target_user_id, event_name, result, request_id, details_json, created_at,
+         actor_login_identifier, storage_table);
 
 template <typename T>
 auto queryFailed() -> Result<T>
@@ -134,12 +134,12 @@ auto MySqlAuditRepository::queryTable(const AUDIT::AuditFilter &filter, std::str
         const std::string predicate{"(? = '' OR l.created_at >= ?) AND (? = '' OR l.created_at <= ?) AND "
                                     "(? = '' OR l.event_name = ?) AND (? = '' OR l.result = ?) AND "
                                     "(? = '' OR l.actor_user_id = ?) AND "
-                                    "(? = '' OR u.display_name LIKE ? OR u.username LIKE ? OR u.uid LIKE ?) AND "
+                                    "(? = '' OR u.display_name LIKE ? OR u.login_identifier LIKE ?) AND "
                                     "(? = '' OR l.event_name LIKE ? OR JSON_CONTAINS(?, JSON_QUOTE(l.event_name)))"};
 
         const auto totals = connection_.query_s<std::tuple<std::uint64_t>>(
             "SELECT COUNT(*)" + source + predicate, from, from, to, to, event, event, result, result, actor, actor, username,
-            pattern, pattern, pattern, eventSearch, eventPattern, eventNames);
+            pattern, pattern, eventSearch, eventPattern, eventNames);
         if (connection_.has_error() || totals.size() != 1)
             return queryFailed<AUDIT::AuditPage>();
 
@@ -149,39 +149,26 @@ auto MySqlAuditRepository::queryTable(const AUDIT::AuditFilter &filter, std::str
 
         auto rows = connection_.query_s<AuditPageRecord>(
             "SELECT l.id, l.actor_user_id, l.target_user_id, l.event_name, l.result, l.request_id, "
-            "OCTET_LENGTH(l.details_json), l.created_at, COALESCE(u.username, u.uid, ''), " +
+            "CASE WHEN OCTET_LENGTH(l.details_json) <= 1048576 THEN CAST(l.details_json AS CHAR) ELSE '{}' END, "
+            "l.created_at, COALESCE(u.login_identifier, ''), " +
                 std::string{"'"} + std::string{table} + "'" + source + predicate +
                 " ORDER BY l.created_at DESC, l.id ASC LIMIT ? OFFSET ?",
-            from, from, to, to, event, event, result, result, actor, actor, username, pattern, pattern, pattern, eventSearch,
+            from, from, to, to, event, event, result, result, actor, actor, username, pattern, pattern, eventSearch,
             eventPattern, eventNames, limit, offset);
         if (connection_.has_error())
             return queryFailed<AUDIT::AuditPage>();
         page.items.reserve(rows.size());
         for (auto &row : rows)
         {
-            constexpr std::uint64_t chunkBytes = 16384;
-            std::string details;
-            for (std::uint64_t byteOffset = 0; byteOffset < row.details_size; byteOffset += chunkBytes)
-            {
-                const auto chunks =
-                    connection_.query_s<std::tuple<std::string>>("SELECT CAST(SUBSTRING(CAST(details_json AS BINARY), ?, 16384) "
-                                                                 "AS CHAR(16384) CHARACTER SET binary) FROM " +
-                                                                     std::string{table} + " WHERE id = ?",
-                                                                 byteOffset + 1, row.id);
-                if (connection_.has_error() || chunks.size() != 1 ||
-                    std::get<0>(chunks.front()).size() != (std::min)(chunkBytes, row.details_size - byteOffset))
-                    return queryFailed<AUDIT::AuditPage>();
-                details += std::get<0>(chunks.front());
-            }
             page.items.push_back({.id             = std::move(row.id),
                                   .actor_user_id  = std::move(row.actor_user_id),
                                   .target_user_id = std::move(row.target_user_id),
                                   .event_name     = std::move(row.event_name),
                                   .result         = std::move(row.result),
                                   .request_id     = std::move(row.request_id),
-                                  .details_json   = std::move(details),
+                                  .details_json   = std::move(row.details_json),
                                   .created_at     = std::move(row.created_at),
-                                  .actor_username = std::move(row.actor_username)});
+                                  .actor_login_identifier = std::move(row.actor_login_identifier)});
         }
         return Result<AUDIT::AuditPage>::Success(std::move(page));
     } catch (...)

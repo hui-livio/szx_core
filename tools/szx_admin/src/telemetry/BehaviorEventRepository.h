@@ -56,7 +56,7 @@ struct BehaviorEventRow final
     std::string details_json;
     std::string created_at;
     std::string persisted_at;
-    std::string username;
+    std::string login_identifier;
 };
 
 struct BehaviorEventPage final

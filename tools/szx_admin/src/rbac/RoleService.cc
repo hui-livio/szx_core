@@ -3,6 +3,7 @@
 #include "../auth/LoginService.h"
 #include "../infra/DatabaseUnitOfWork.h"
 #include "PermissionRepository.h"
+#include "../audit/AuditRepository.h"
 #include "../user/UserValidation.h"
 #include "PermissionCodes.h"
 
@@ -72,8 +73,9 @@ auto RoleService::list(const USER::ActorContext &context, bool includeArchived) 
     {
         INFRA::DatabaseUnitOfWork unit(connection);
         auto *repository = unit.roles();
+        auto *audit = unit.audit();
         auto *users      = unit.users();
-        if (!repository || !users)
+        if (!repository || !users || !audit)
             return failed<void>(ErrorCode::DatabaseQueryFailed);
         const auto actor = authorize(authorization_, context, unit, PERMISSIONS::RoleRead);
         if (!actor.ok)
@@ -95,7 +97,8 @@ auto RoleService::get(const USER::ActorContext &context, std::string_view id) ->
     {
         INFRA::DatabaseUnitOfWork unit(connection);
         auto *repository = unit.roles();
-        if (!repository)
+        auto *audit = unit.audit();
+        if (!repository || !audit)
             return failed<void>(ErrorCode::DatabaseQueryFailed);
         const auto actor = authorize(authorization_, context, unit, PERMISSIONS::RoleRead);
         if (!actor.ok)
@@ -120,7 +123,8 @@ auto RoleService::create(const USER::ActorContext &context, const NewRoleInput &
     {
         INFRA::DatabaseUnitOfWork unit(connection);
         auto *repository = unit.roles();
-        if (!repository)
+        auto *audit = unit.audit();
+        if (!repository || !audit)
             return failed<void>(ErrorCode::DatabaseQueryFailed);
         const auto begun = unit.begin();
         if (!begun.ok)
@@ -138,6 +142,15 @@ auto RoleService::create(const USER::ActorContext &context, const NewRoleInput &
         const auto inserted = repository->insert(NewRole{row.id, row.code, row.name, row.description, row.status, 1, 1, actor.value.user.id});
         if (!inserted.ok)
             return inserted;
+        const auto audited = audit->append({.id = SZX::COMMON::Uuid::v4().toString(),
+                                             .actor_user_id = actor.value.user.id,
+                                             .target_user_id = std::optional<std::string>{row.id},
+                                             .event_name = "rbac.role.changed",
+                                             .result = "success",
+                                             .request_id = context.requestId,
+                                             .ip = context.peerAddress});
+        if (!audited.ok)
+            return audited;
         const auto committed = unit.commit();
         if (!committed.ok)
             return committed;
@@ -157,7 +170,8 @@ auto RoleService::updateProfile(const USER::ActorContext &context, std::string_v
     {
         INFRA::DatabaseUnitOfWork unit(connection);
         auto *repository = unit.roles();
-        if (!repository)
+        auto *audit = unit.audit();
+        if (!repository || !audit)
             return failed<void>(ErrorCode::DatabaseQueryFailed);
         const auto begun = unit.begin();
         if (!begun.ok)
@@ -184,6 +198,15 @@ auto RoleService::updateProfile(const USER::ActorContext &context, std::string_v
         const auto saved = repository->updateProfile(row.id, row.name, row.description, row.version, actor.value.user.id);
         if (!saved.ok)
             return saved;
+        const auto audited = audit->append({.id = SZX::COMMON::Uuid::v4().toString(),
+                                             .actor_user_id = actor.value.user.id,
+                                             .target_user_id = std::optional<std::string>{row.id},
+                                             .event_name = "rbac.role.changed",
+                                             .result = "success",
+                                             .request_id = context.requestId,
+                                             .ip = context.peerAddress});
+        if (!audited.ok)
+            return audited;
         const auto committed = unit.commit();
         if (!committed.ok)
             return committed;
@@ -203,7 +226,8 @@ auto RoleService::changeStatus(const USER::ActorContext &context, std::string_vi
     {
         INFRA::DatabaseUnitOfWork unit(connection);
         auto *repository = unit.roles();
-        if (!repository)
+        auto *audit = unit.audit();
+        if (!repository || !audit)
             return failed<void>(ErrorCode::DatabaseQueryFailed);
         const auto begun = unit.begin();
         if (!begun.ok)
@@ -236,6 +260,24 @@ auto RoleService::changeStatus(const USER::ActorContext &context, std::string_vi
                                                      archivedAt);
         if (!saved.ok)
             return saved;
+        if (status == "archived")
+        {
+            const auto bumped = repository->bumpManagerAuthzVersions(row.id);
+            if (!bumped.ok)
+                return bumped;
+            const auto removed = repository->removeTargetScopes(row.id);
+            if (!removed.ok)
+                return removed;
+        }
+        const auto audited = audit->append({.id = SZX::COMMON::Uuid::v4().toString(),
+                                             .actor_user_id = actor.value.user.id,
+                                             .target_user_id = std::optional<std::string>{row.id},
+                                             .event_name = "rbac.role.changed",
+                                             .result = "success",
+                                             .request_id = context.requestId,
+                                             .ip = context.peerAddress});
+        if (!audited.ok)
+            return audited;
         const auto committed = unit.commit();
         if (!committed.ok)
             return committed;
@@ -319,8 +361,9 @@ auto RoleService::replacePermissionIds(const USER::ActorContext &context, std::s
     {
         INFRA::DatabaseUnitOfWork unit(connection);
         auto *repository  = unit.roles();
+        auto *audit = unit.audit();
         auto *permissions = unit.permissions();
-        if (!repository || !permissions)
+        if (!repository || !permissions || !audit)
             return failed<void>(ErrorCode::DatabaseQueryFailed);
         const auto begun = unit.begin();
         if (!begun.ok)
@@ -363,6 +406,15 @@ auto RoleService::replacePermissionIds(const USER::ActorContext &context, std::s
             if (!saved.ok)
                 return saved;
         }
+        const auto audited = audit->append({.id = SZX::COMMON::Uuid::v4().toString(),
+                                             .actor_user_id = actor.value.user.id,
+                                             .target_user_id = std::optional<std::string>{row.id},
+                                             .event_name = "rbac.role.changed",
+                                             .result = "success",
+                                             .request_id = context.requestId,
+                                             .ip = context.peerAddress});
+        if (!audited.ok)
+            return audited;
         const auto committed = unit.commit();
         if (!committed.ok)
             return committed;
@@ -386,7 +438,8 @@ auto RoleService::replaceManageScopeIds(const USER::ActorContext &context, std::
     {
         INFRA::DatabaseUnitOfWork unit(connection);
         auto *repository = unit.roles();
-        if (!repository)
+        auto *audit = unit.audit();
+        if (!repository || !audit)
             return failed<void>(ErrorCode::DatabaseQueryFailed);
         const auto begun = unit.begin();
         if (!begun.ok)
@@ -429,6 +482,15 @@ auto RoleService::replaceManageScopeIds(const USER::ActorContext &context, std::
             if (!saved.ok)
                 return saved;
         }
+        const auto audited = audit->append({.id = SZX::COMMON::Uuid::v4().toString(),
+                                             .actor_user_id = actor.value.user.id,
+                                             .target_user_id = std::optional<std::string>{row.id},
+                                             .event_name = "rbac.role.changed",
+                                             .result = "success",
+                                             .request_id = context.requestId,
+                                             .ip = context.peerAddress});
+        if (!audited.ok)
+            return audited;
         const auto committed = unit.commit();
         if (!committed.ok)
             return committed;

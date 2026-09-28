@@ -55,5 +55,7 @@ public:
         -> SZX::COMMON::Result<void> = 0;
     virtual auto listActiveCodes(std::string_view roleCode)
         -> SZX::COMMON::Result<std::vector<std::string>> = 0;
+    virtual auto bumpRoleAuthzVersions(std::string_view) -> SZX::COMMON::Result<void>
+    { return SZX::COMMON::Result<void>::Success(); }
 };
 } // namespace SZX::ADMIN::RBAC

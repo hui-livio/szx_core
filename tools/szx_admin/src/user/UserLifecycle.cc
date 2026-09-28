@@ -125,11 +125,8 @@ auto UserService::create(const ActorContext &context, const CreateUserInput &inp
     {
         if (!validContext(context.requestId, context.peerAddress))
             return failed<CredentialIssue>(ErrorCode::ValidationError);
-        const bool formalIdentifier = input.loginIdentifier.has_value() || input.identifierType.has_value();
-        if (formalIdentifier && (input.uid || input.username || !input.loginIdentifier || !input.identifierType))
+        if (input.loginIdentifier.empty() || (input.identifierType != "uid" && input.identifierType != "username"))
             return failed<CredentialIssue>(ErrorCode::ValidationError);
-        if (!formalIdentifier && input.uid.has_value() == input.username.has_value())
-            return failed<CredentialIssue>(ErrorCode::UserIdentityOneOfRequired);
         if (!validDisplayName(input.displayName) || !validRoleCode(input.role))
             return failed<CredentialIssue>(ErrorCode::ValidationError);
         if (input.passwordHash && !AUTH::validClientPasswordHash(*input.passwordHash))
@@ -137,31 +134,14 @@ auto UserService::create(const ActorContext &context, const CreateUserInput &inp
         bool isUid{};
         std::string displayValue;
         std::string canonicalValue;
-        if (formalIdentifier)
         {
-            if (*input.identifierType != "uid" && *input.identifierType != "username")
-                return failed<CredentialIssue>(ErrorCode::ValidationError);
             const auto normalized = AUTH::normalizeLoginIdentifier(
-                *input.loginIdentifier, *input.identifierType == "uid" ? AUTH::IdentifierType::Uid : AUTH::IdentifierType::Username);
+                input.loginIdentifier, input.identifierType == "uid" ? AUTH::IdentifierType::Uid : AUTH::IdentifierType::Username);
             if (!normalized.ok)
                 return Result<CredentialIssue>::Failure(normalized.error, {});
-            isUid        = *input.identifierType == "uid";
+            isUid        = input.identifierType == "uid";
             displayValue = normalized.value.displayValue;
-            // Keep the old storage adapter's UID case semantics until migration 9
-            // is applied; the formal DTO is already normalized at the boundary.
-            canonicalValue = isUid ? displayValue : normalized.value.canonicalValue;
-        }
-        else
-        {
-            isUid = input.uid.has_value();
-            const auto display = AUTH::canonicalIdentifier(isUid ? *input.uid : *input.username, false);
-            if (!display.ok)
-                return Result<CredentialIssue>::Failure(display.error, {});
-            const auto canonical = isUid ? display : AUTH::canonicalIdentifier(*input.username, true);
-            if (!canonical.ok)
-                return Result<CredentialIssue>::Failure(canonical.error, {});
-            displayValue  = display.value;
-            canonicalValue = canonical.value;
+            canonicalValue = normalized.value.canonicalValue;
         }
         CredentialIssue output;
         const auto operation = database_.withConnection(
@@ -177,7 +157,7 @@ auto UserService::create(const ActorContext &context, const CreateUserInput &inp
                 if (!begun.ok)
                     return begun;
                 // Serialize identity reservations across service instances before
-                // acquiring any user row locks. UID and username share login input.
+                // acquiring any user row locks.
                 const auto namespaceLock = connection.bootstrapCompleted();
                 if (!namespaceLock.ok)
                     return Result<void>::Failure(namespaceLock.error, {});
@@ -187,33 +167,24 @@ auto UserService::create(const ActorContext &context, const CreateUserInput &inp
                 const auto actor = resolve(context, *users, true, roles);
                 if (!actor.ok)
                     return Result<void>::Failure(actor.error, {});
-                if (roles)
-                {
-                    const auto allowed = authorization_.allows(*roles, actor.value.user.role, RBAC::PERMISSIONS::UserCreate);
-                    if (!allowed.ok)
-                        return Result<void>::Failure(allowed.error, {});
-                    const auto manageable = roles->canManageRole(actor.value.user.role, input.role);
-                    if (!manageable.ok)
-                        return Result<void>::Failure(manageable.error, {});
-                    if (!allowed.value || !manageable.value)
-                        return failed<void>(ErrorCode::Forbidden);
-                }
-                else if (!authorization_.allows(actor.value.user.role, RBAC::PERMISSIONS::UserCreate) ||
-                         !authorization_.mayTarget(actor.value.user.role, input.role))
+                if (!roles)
+                    return failed<void>(ErrorCode::DatabaseQueryFailed);
+                const auto allowed = authorization_.allows(*roles, actor.value.user.role, RBAC::PERMISSIONS::UserCreate);
+                if (!allowed.ok)
+                    return Result<void>::Failure(allowed.error, {});
+                const auto manageable = roles->canManageRole(actor.value.user.role, input.role);
+                if (!manageable.ok)
+                    return Result<void>::Failure(manageable.error, {});
+                if (!allowed.value || !manageable.value)
                     return failed<void>(ErrorCode::Forbidden);
-                const auto uid      = isUid ? canonicalValue : std::string{};
-                const auto username = isUid ? std::string{} : canonicalValue;
                 std::optional<std::string> roleId;
-                if (roles)
-                {
-                    const auto targetRole = roles->findByCode(input.role, true);
-                    if (!targetRole.ok)
-                        return Result<void>::Failure(targetRole.error, {});
-                    if (!targetRole.value || targetRole.value->status != "active")
-                        return failed<void>(ErrorCode::ValidationError);
-                    roleId = targetRole.value->id;
-                }
-                const auto existing = users->findByCanonical(uid, username);
+                const auto targetRole = roles->findByCode(input.role, true);
+                if (!targetRole.ok)
+                    return Result<void>::Failure(targetRole.error, {});
+                if (!targetRole.value || targetRole.value->status != "active")
+                    return failed<void>(ErrorCode::ValidationError);
+                roleId = targetRole.value->id;
+                const auto existing = users->findByCanonical(canonicalValue);
                 if (!existing.ok)
                     return Result<void>::Failure(existing.error, {});
                 if (existing.value)
@@ -228,14 +199,9 @@ auto UserService::create(const ActorContext &context, const CreateUserInput &inp
                     input.passwordHash ? std::optional<std::string>{} : std::optional{expiry(kTemporaryCredentialSeconds)};
                 const NewUser row{
                     .id                              = SZX::COMMON::Uuid::v4().toString(),
-                    .uid                             = isUid ? std::optional{displayValue} : std::nullopt,
-                    .uid_canonical                   = isUid ? std::optional{canonicalValue} : std::nullopt,
-                    .username                        = isUid ? std::nullopt : std::optional{displayValue},
-                    .username_canonical              = isUid ? std::nullopt : std::optional{canonicalValue},
                     .login_identifier                = displayValue,
                     .login_identifier_canonical      = canonicalValue,
-                    .identifier_type                 = isUid ? std::optional<std::string>{"uid"} :
-                                                              std::optional<std::string>{"username"},
+                    .identifier_type                 = isUid ? "uid" : "username",
                     .display_name                    = input.displayName,
                     .password_hash                   = credential.value.second,
                     .role_id                         = roleId,
@@ -248,7 +214,7 @@ auto UserService::create(const ActorContext &context, const CreateUserInput &inp
                 if (const auto inserted = users->insert(row); !inserted.ok)
                 {
                     // Also translate uniqueness failures from writers outside this service.
-                    const auto raced = users->findByCanonical(uid, username);
+                    const auto raced = users->findByCanonical(canonicalValue);
                     if (raced.ok && raced.value)
                         return failed<void>(ErrorCode::UserIdentityConflict);
                     return Result<void>::Failure(inserted.error, {});
@@ -490,15 +456,12 @@ auto UserService::assignRole(const ActorContext &context, const std::string &id,
                     return failed<void>(ErrorCode::Forbidden);
                 auto target = authorized.value.target;
                 // The new role must also be inside the actor's manageable set.
-                if (unit.roles())
-                {
-                    const auto manageable = unit.roles()->canManageRole(authorized.value.actor.role, role);
-                    if (!manageable.ok)
-                        return Result<void>::Failure(manageable.error, {});
-                    if (!manageable.value)
-                        return failed<void>(ErrorCode::Forbidden);
-                }
-                else if (!authorization_.mayTarget(authorized.value.actor.role, role))
+                if (!unit.roles())
+                    return failed<void>(ErrorCode::DatabaseQueryFailed);
+                const auto manageable = unit.roles()->canManageRole(authorized.value.actor.role, role);
+                if (!manageable.ok)
+                    return Result<void>::Failure(manageable.error, {});
+                if (!manageable.value)
                     return failed<void>(ErrorCode::Forbidden);
                 if (target.role != role)
                 {
