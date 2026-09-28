@@ -125,7 +125,7 @@ auto UserService::create(const ActorContext &context, const CreateUserInput &inp
     {
         if (!validContext(context.requestId, context.peerAddress))
             return failed<CredentialIssue>(ErrorCode::ValidationError);
-        if (input.loginIdentifier.empty() || (input.identifierType != "uid" && input.identifierType != "username"))
+        if (input.loginIdentifier.empty())
             return failed<CredentialIssue>(ErrorCode::ValidationError);
         if (!validDisplayName(input.displayName) || !validRoleCode(input.role))
             return failed<CredentialIssue>(ErrorCode::ValidationError);
@@ -136,10 +136,10 @@ auto UserService::create(const ActorContext &context, const CreateUserInput &inp
         std::string canonicalValue;
         {
             const auto normalized = AUTH::normalizeLoginIdentifier(
-                input.loginIdentifier, input.identifierType == "uid" ? AUTH::IdentifierType::Uid : AUTH::IdentifierType::Username);
+                input.loginIdentifier, AUTH::IdentifierType::Username);
             if (!normalized.ok)
                 return Result<CredentialIssue>::Failure(normalized.error, {});
-            isUid        = input.identifierType == "uid";
+            isUid        = false;
             displayValue = normalized.value.displayValue;
             canonicalValue = normalized.value.canonicalValue;
         }

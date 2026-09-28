@@ -310,6 +310,9 @@ constexpr std::string_view kMigration8 = R"SZXSQL(ALTER TABLE users
 // V1.2 is the only supported runtime schema. Remove the pre-V1.2 identity
 // columns after the formal projection has been validated and indexed.
 constexpr std::string_view kMigration9 = R"SZXSQL(ALTER TABLE users
+  DROP CHECK chk_users_identity,
+  DROP CHECK chk_users_uid_canonical,
+  DROP CHECK chk_users_username_canonical,
   DROP INDEX uid_canonical,
   DROP INDEX username_canonical,
   DROP INDEX uk_users_login_identifier_canonical,
@@ -322,6 +325,11 @@ constexpr std::string_view kMigration9 = R"SZXSQL(ALTER TABLE users
   MODIFY identifier_type VARCHAR(16) NOT NULL;
 )SZXSQL";
 
+constexpr std::string_view kMigration10 = R"SZXSQL(INSERT IGNORE INTO role_permissions (role_id, permission_id)
+SELECT r.id, p.id FROM roles r JOIN permissions p
+WHERE r.code = 'admin' AND p.code = 'user.role.assign';
+)SZXSQL";
+
 constexpr MigrationDefinition kMigrations[] = {
     {1, kMigration1, "86a4ac820cc8457a2131d0400d4968268576b17113f38fe86b6beceea48c2047"},
     {2, kMigration2, "f4223aadebf005f145941d06b89d2d41e964f4c059d2f765a8e1b3678d389d2d"},
@@ -331,7 +339,8 @@ constexpr MigrationDefinition kMigrations[] = {
     {6, kMigration6, "ce30e1ba660394557f1ad3ae3eaeb043d265f685a3cfec6c00ef785b024c6e3e"},
     {7, kMigration7, "870047693dce68a887ef633fd3b08dc164e7ddd64d9da3ffab1131465b32b6be"},
     {8, kMigration8, "3ff6dc5983213744cceb8879b5af8f2522147cd42768843272178526b643cc72"},
-    {9, kMigration9, "54fd8a5eb7048d97a65e421e5965d01739829bffde4196a5b7f32f4c1cd923e8"},
+    {9, kMigration9, "b410199c9d5e1dd14e0a60017a2134d5826e824e50eede2196b68d11c3f18bc4"},
+    {10, kMigration10, "2cb2059bc9b16ca77652475fe8e7435eecb4793d243c966850b2110bdfe87ccd"},
 };
 
 constexpr DETAIL::InitialAdministratorDefinition kInitialAdministrator{

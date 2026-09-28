@@ -150,7 +150,7 @@ const {
         <dd>{{ formatTime(auditSelected.created_at) }}</dd>
       </div>
       <div>
-        <dt>用户名</dt>
+        <dt>登录标识</dt>
         <dd>{{ auditSelected.actorUsername }}</dd>
       </div>
       <div>
@@ -184,8 +184,8 @@ const {
         <dd>{{ formatTime(behaviorSelected.created_at) }}</dd>
       </div>
       <div>
-        <dt>用户名</dt>
-        <dd>{{ behaviorSelected.username || '未知用户' }}</dd>
+        <dt>登录标识</dt>
+        <dd>{{ behaviorSelected.login_identifier || '未知用户' }}</dd>
       </div>
       <div>
         <dt>用户 ID</dt>

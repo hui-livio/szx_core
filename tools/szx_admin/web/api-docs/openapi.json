@@ -105,7 +105,7 @@
         ],
         "operationId": "login",
         "summary": "登录并签发会话",
-        "description": "**鉴权：** 无 Bearer；提交登录凭据。\n\n| Body 字段 | 类型 | 必填 | 约束 |\n|---|---|---|---|\n| identifier | string | 是 | UID 或用户名；原始 UTF-8 最多 512 字节；规范化后 1–64 个 Unicode 字符 |\n| password_hash | string | 是 | 原始密码 UTF-8 字节的 SHA-256，64 位小写十六进制 |\n\nidentifier 去首尾空白并执行 Unicode NFC，UID 保留大小写，用户名另按不依赖 locale 的规则小写匹配。若 UID 和用户名匹配到不同账号，统一拒绝登录。\n\n请求示例（尖括号内容为占位值）：\n\n```http\nPOST /api/v1/auth/login\nContent-Type: application/json\nX-Request-ID: login-001\n```\n\n```json\n{\"identifier\":\"admin\",\"password_hash\":\"<64位小写SHA-256摘要>\"}\n```\n\n**成功：** 200，data 为 Session，同时设置 refresh Cookie。\n\n```json\n{\n  \"data\": {\n    \"access_token\": \"<access-token>\",\n    \"token_type\": \"Bearer\",\n    \"expires_in\": 900,\n    \"expires_at\": 1789637400000,\n    \"authz_version\": 1,\n    \"csrf_token\": \"<csrf-token>\",\n    \"user\": {\n      \"id\": \"10000000-0000-4000-8000-000000000001\",\n      \"username\": \"admin\",\n      \"display_name\": \"System Administrator\",\n      \"role\": \"super_admin\",\n      \"status\": \"active\",\n      \"force_password_change\": true,\n      \"password_change_recommended\": false,\n      \"version\": 1,\n      \"authz_version\": 1,\n      \"last_login_at\": 1789636500000,\n      \"created_at\": 1789550100510,\n      \"updated_at\": 1789636500000\n    }\n  },\n  \"request_id\": \"login-001\"\n}\n```\n\n| HTTP / code | 条件 |\n|---|---|\n| 401 / 2203 | 用户不存在、密码错误、disabled/locked、临时密码已过期或已消费 |\n| 422 / 2206 | 字段、摘要格式或身份标识非法；不接受明文 password 字段 |\n| 429 / 2211 | 认证预算耗尽 |\n| 500 / 2212 | 安全审计写入失败，登录事务回滚 |\n\n默认连续 5 次错误密码将 active 账号置为 locked。locked_until 默认记录 900 秒后，但到期不会自动解锁，必须调用解锁接口。成功登录清零失败计数。未知用户、禁用、锁定不对外区分原因。",
+        "description": "**鉴权：** 无 Bearer；提交登录凭据。\n\n| Body 字段 | 类型 | 必填 | 约束 |\n|---|---|---|---|\n| login_identifier | string | 是 | 统一登录标识；原始 UTF-8 最多 512 字节；规范化后 1–64 个 Unicode 字符 |\n| password_hash | string | 是 | 原始密码 UTF-8 字节的 SHA-256，64 位小写十六进制 |\n\nlogin_identifier 去首尾空白并执行 Unicode NFC，统一登录标识去首尾空白并执行 Unicode NFC。\n\n请求示例（尖括号内容为占位值）：\n\n```http\nPOST /api/v1/auth/login\nContent-Type: application/json\nX-Request-ID: login-001\n```\n\n```json\n{\"login_identifier\":\"admin\",\"password_hash\":\"<64位小写SHA-256摘要>\"}\n```\n\n**成功：** 200，data 为 Session，同时设置 refresh Cookie。\n\n```json\n{\n  \"data\": {\n    \"access_token\": \"<access-token>\",\n    \"token_type\": \"Bearer\",\n    \"expires_in\": 900,\n    \"expires_at\": 1789637400000,\n    \"authz_version\": 1,\n    \"csrf_token\": \"<csrf-token>\",\n    \"user\": {\n      \"id\": \"10000000-0000-4000-8000-000000000001\",\n      \"login_identifier\": \"admin\",\n      \"display_name\": \"System Administrator\",\n      \"role\": \"super_admin\",\n      \"status\": \"active\",\n      \"force_password_change\": true,\n      \"password_change_recommended\": false,\n      \"version\": 1,\n      \"authz_version\": 1,\n      \"last_login_at\": 1789636500000,\n      \"created_at\": 1789550100510,\n      \"updated_at\": 1789636500000\n    }\n  },\n  \"request_id\": \"login-001\"\n}\n```\n\n| HTTP / code | 条件 |\n|---|---|\n| 401 / 2203 | 用户不存在、密码错误、disabled/locked、临时密码已过期或已消费 |\n| 422 / 2206 | 字段、摘要格式或身份标识非法；不接受明文 password 字段 |\n| 429 / 2211 | 认证预算耗尽 |\n| 500 / 2212 | 安全审计写入失败，登录事务回滚 |\n\n默认连续 5 次错误密码将 active 账号置为 locked。locked_until 默认记录 900 秒后，但到期不会自动解锁，必须调用解锁接口。成功登录清零失败计数。未知用户、禁用、锁定不对外区分原因。",
         "parameters": [
           {
             "$ref": "#/components/parameters/RequestId"
@@ -347,7 +347,7 @@
         ],
         "operationId": "listUsers",
         "summary": "查询用户列表",
-        "description": "**权限：** admin/super_admin。admin 仅能列出 operator/engineer。\n\n| Query 参数 | 类型 | 必填 | 默认／约束 |\n|---|---|---|---|\n| page | integer | 否 | 默认 1；范围 1–4294967295 |\n| page_size | integer | 否 | 默认 20；范围 1–100 |\n| search | string | 否 | 最多 128 个 Unicode 字符，无控制字符；搜索 uid、username、display_name |\n| role | string | 否 | operator / engineer / admin / super_admin |\n| status | string | 否 | active / disabled / locked |\n| sort | string | 否 | 默认 -created_at；白名单见下文 |\n\nsort 仅接受 `-created_at`、`created_at`、`display_name`、`-display_name`、`last_login_at`、`-last_login_at`、`role`、`status`，前缀 - 表示降序。未知 Query 参数返回 `422 / 2206`；admin 显式请求 role=admin/super_admin 返回 `403 / 2204`。\n\n```http\nGET /api/v1/admin/users?page=1&page_size=20&role=operator&sort=-created_at\nAuthorization: Bearer <access-token>\n```\n\n**成功：** 200，data 为 `Page<User>`。无匹配结果示例：\n\n```json\n{\"data\":{\"items\":[],\"total\":0,\"page\":1,\"page_size\":20},\"request_id\":\"users-list-001\"}\n```\n\n安全约束：待强制改密的超管（force_password_change=true）禁止调用此接口，返回 403 / 2204。须先修改密码并重新登录。其他角色的建议改密不受此限制。",
+        "description": "**权限：** admin/super_admin。admin 仅能列出 operator/engineer。\n\n| Query 参数 | 类型 | 必填 | 默认／约束 |\n|---|---|---|---|\n| page | integer | 否 | 默认 1；范围 1–4294967295 |\n| page_size | integer | 否 | 默认 20；范围 1–100 |\n| search | string | 否 | 最多 128 个 Unicode 字符，无控制字符；搜索登录标识和展示名 |\n| role | string | 否 | operator / engineer / admin / super_admin |\n| status | string | 否 | active / disabled / locked |\n| sort | string | 否 | 默认 -created_at；白名单见下文 |\n\nsort 仅接受 `-created_at`、`created_at`、`display_name`、`-display_name`、`last_login_at`、`-last_login_at`、`role`、`status`，前缀 - 表示降序。未知 Query 参数返回 `422 / 2206`；admin 显式请求 role=admin/super_admin 返回 `403 / 2204`。\n\n```http\nGET /api/v1/admin/users?page=1&page_size=20&role=operator&sort=-created_at\nAuthorization: Bearer <access-token>\n```\n\n**成功：** 200，data 为 `Page<User>`。无匹配结果示例：\n\n```json\n{\"data\":{\"items\":[],\"total\":0,\"page\":1,\"page_size\":20},\"request_id\":\"users-list-001\"}\n```\n\n安全约束：待强制改密的超管（force_password_change=true）禁止调用此接口，返回 403 / 2204。须先修改密码并重新登录。其他角色的建议改密不受此限制。",
         "parameters": [
           {
             "$ref": "#/components/parameters/RequestId"
@@ -362,7 +362,7 @@
             "name": "search",
             "in": "query",
             "required": false,
-            "description": "匹配UID、用户名和展示名",
+            "description": "匹配登录标识和展示名",
             "schema": {
               "type": "string",
               "maxLength": 128
@@ -449,7 +449,7 @@
         ],
         "operationId": "createUser",
         "summary": "创建用户，可指定初始密码",
-        "description": "**权限：** admin/super_admin；admin 只能创建 operator/engineer。不要求 If-Match。\n\n| Body 字段 | 类型 | 必填 | 约束 |\n|---|---|---|---|\n| uid | string | 与 username 二选一 | 规范化后 1–64 个 Unicode 字符；保留大小写 |\n| username | string | 与 uid 二选一 | 规范化后 1–64 个 Unicode 字符；按小写 canonical 判重 |\n| display_name | string | 是 | 1–128 个 Unicode 字符，无控制字符，不得全为空格 |\n| role | string | 是 | 四种角色之一，且调用者有权创建 |\n\n可选 Body 字段 `password_hash` 为初始密码 UTF-8 SHA-256 摘要，必须是 64 位小写十六进制字符串；空字符串、null 和其他类型均返回 `422 / 2206`。省略时沿用自动生成临时密码的行为。前端按目标角色校验指定密码：操作员/技术员（engineer）至少 6 个 Unicode 字符，允许纯数字或纯字母；管理员/超级管理员至少 8 个 Unicode 字符且包含字母和数字。两次输入须一致；服务端仅收到摘要，校验摘要格式并加盐存储。\n\n不接受明文密码、状态、id 或版本字段。身份字段的 null 视为未提供；UID 和用户名均去首尾空白、执行 Unicode NFC，原始输入最多 512 字节。用户名保留重音差异，UID 区分大小写；创建后身份不可修改。\n\nUID 与 username 共用登录入口，因此也检查跨字段冲突：已有 username=admin 时，uid=admin 或 uid=ADMIN 均返回 `409 / 2208`；已有 uid=U10086 时，username=u10086 同样冲突。两个 UID 的 U10086 与 u10086 仍可分别存在。并发创建遵循相同规则，冲突请求不会创建用户或签发临时凭据。\n\n```json\n{\"uid\":\"U10086\",\"display_name\":\"Alice\",\"role\":\"operator\"}\n```\n\n**成功：** 201，data 为 CredentialIssue。\n\n```json\n{\n  \"data\": {\n    \"user\": {\n      \"id\": \"10000000-0000-4000-8000-000000000002\",\n      \"uid\": \"U10086\",\n      \"display_name\": \"Alice\",\n      \"role\": \"operator\",\n      \"status\": \"active\",\n      \"force_password_change\": false,\n      \"password_change_recommended\": true,\n      \"version\": 1,\n      \"authz_version\": 1,\n      \"last_login_at\": null,\n      \"created_at\": 1789636500000,\n      \"updated_at\": 1789636500000\n    },\n    \"temporary_credential\": \"<本次生成的临时密码>\",\n    \"temporary_credential_expires_at\": 1789722900000\n  },\n  \"request_id\": \"users-create-001\"\n}\n```\n\n指定 `password_hash` 时，响应中 `temporary_credential` 和 `temporary_credential_expires_at` 均为 null，不回传密码或摘要，也不设置临时密码的 24 小时有效期。首次登录改密策略保持不变：超管强制修改，其他角色建议修改。省略该字段时，响应仍返回一次性的随机临时密码及 24 小时有效期。\n\n额外错误：`422 / 2207`（uid/username 同时提供或同时缺失）、`409 / 2208`（canonical 身份重复）、`429 / 2211`（凭据签发预算耗尽）。仅一个标识但类型错误返回 `422 / 2206`。临时密码仅本次展示，不应持久缓存。\n\n安全约束：待强制改密的超管（force_password_change=true）禁止调用此接口，返回 403 / 2204。须先修改密码并重新登录。其他角色的建议改密不受此限制。",
+        "description": "**权限：** admin/super_admin；admin 只能创建 operator/engineer。不要求 If-Match。\n\n| Body 字段 | 类型 | 必填 | 约束 |\n|---|---|---|---|\n| login_identifier | string | 是 | 规范化后 1–64 个 Unicode 字符；按小写 canonical 判重 |\n| display_name | string | 是 | 1–128 个 Unicode 字符，无控制字符，不得全为空格 |\n| role | string | 是 | 四种角色之一，且调用者有权创建 |\n\n可选 Body 字段 `password_hash` 为初始密码 UTF-8 SHA-256 摘要，必须是 64 位小写十六进制字符串；空字符串、null 和其他类型均返回 `422 / 2206`。省略时沿用自动生成临时密码的行为。前端按目标角色校验指定密码：操作员/技术员（engineer）至少 6 个 Unicode 字符，允许纯数字或纯字母；管理员/超级管理员至少 8 个 Unicode 字符且包含字母和数字。两次输入须一致；服务端仅收到摘要，校验摘要格式并加盐存储。\n\n不接受明文密码、状态、id 或版本字段。身份字段的 null 视为未提供；登录标识去首尾空白并执行 Unicode NFC，原始输入最多 512 字节。登录标识按统一规则规范化；创建后身份不可修改。\n\n登录标识用于登录，因此也检查跨字段冲突：已有 登录标识=admin 时，登录标识=admin 或 登录标识=ADMIN 均返回 `409 / 2208`；已有 登录标识=U10086 时，登录标识=u10086 同样冲突。登录标识按统一规则判重。并发创建遵循相同规则，冲突请求不会创建用户或签发临时凭据。\n\n```json\n{\"login_identifier\":\"U10086\",\"display_name\":\"Alice\",\"role\":\"operator\"}\n```\n\n**成功：** 201，data 为 CredentialIssue。\n\n```json\n{\n  \"data\": {\n    \"user\": {\n      \"id\": \"10000000-0000-4000-8000-000000000002\",\n      \"login_identifier\": \"U10086\",\n      \"display_name\": \"Alice\",\n      \"role\": \"operator\",\n      \"status\": \"active\",\n      \"force_password_change\": false,\n      \"password_change_recommended\": true,\n      \"version\": 1,\n      \"authz_version\": 1,\n      \"last_login_at\": null,\n      \"created_at\": 1789636500000,\n      \"updated_at\": 1789636500000\n    },\n    \"temporary_credential\": \"<本次生成的临时密码>\",\n    \"temporary_credential_expires_at\": 1789722900000\n  },\n  \"request_id\": \"users-create-001\"\n}\n```\n\n指定 `password_hash` 时，响应中 `temporary_credential` 和 `temporary_credential_expires_at` 均为 null，不回传密码或摘要，也不设置临时密码的 24 小时有效期。首次登录改密策略保持不变：超管强制修改，其他角色建议修改。省略该字段时，响应仍返回一次性的随机临时密码及 24 小时有效期。\n\n额外错误：`422 / 2207`（登录标识缺失）、`409 / 2208`（canonical 身份重复）、`429 / 2211`（凭据签发预算耗尽）。登录标识格式非法返回 `422 / 2206`。临时密码仅本次展示，不应持久缓存。\n\n安全约束：待强制改密的超管（force_password_change=true）禁止调用此接口，返回 403 / 2204。须先修改密码并重新登录。其他角色的建议改密不受此限制。",
         "parameters": [
           {
             "$ref": "#/components/parameters/RequestId"
@@ -499,7 +499,7 @@
                 "$ref": "#/components/schemas/CreateUserRequest"
               },
               "example": {
-                "username": "new_operator",
+                "login_identifier": "new_operator",
                 "display_name": "新操作员",
                 "role": "operator"
               }
@@ -558,7 +558,7 @@
         ],
         "operationId": "updateUser",
         "summary": "修改展示名",
-        "description": "**权限：** admin/super_admin；必填 Path id 和 Header If-Match。\n\n| Body 字段 | 类型 | 必填 | 约束 |\n|---|---|---|---|\n| display_name | string | 是 | 1–128 个 Unicode 字符，无控制字符，不得全为空格 |\n\n```http\nPATCH /api/v1/admin/users/10000000-0000-4000-8000-000000000002\nAuthorization: Bearer <access-token>\nIf-Match: 1\nContent-Type: application/json\n```\n\n```json\n{\"display_name\":\"Alice Chen\"}\n```\n\n**成功：** 200，data 为 User。实际名称变化才递增 version；authz_version 不变。拒绝 uid、username、role、status 等额外字段。错误见本节公共错误表。\n\n安全约束：待强制改密的超管（force_password_change=true）禁止调用此接口，返回 403 / 2204。须先修改密码并重新登录。其他角色的建议改密不受此限制。",
+        "description": "**权限：** admin/super_admin；必填 Path id 和 Header If-Match。\n\n| Body 字段 | 类型 | 必填 | 约束 |\n|---|---|---|---|\n| display_name | string | 是 | 1–128 个 Unicode 字符，无控制字符，不得全为空格 |\n\n```http\nPATCH /api/v1/admin/users/10000000-0000-4000-8000-000000000002\nAuthorization: Bearer <access-token>\nIf-Match: 1\nContent-Type: application/json\n```\n\n```json\n{\"display_name\":\"Alice Chen\"}\n```\n\n**成功：** 200，data 为 User。实际名称变化才递增 version；authz_version 不变。拒绝 login_identifier、role、status 等额外字段。错误见本节公共错误表。\n\n安全约束：待强制改密的超管（force_password_change=true）禁止调用此接口，返回 403 / 2204。须先修改密码并重新登录。其他角色的建议改密不受此限制。",
         "parameters": [
           {
             "$ref": "#/components/parameters/RequestId"
@@ -755,7 +755,7 @@
         ],
         "operationId": "assignRole",
         "summary": "分配角色（仅超级管理员）",
-        "description": "**权限：** 仅 super_admin；必填 Path id 和 Header If-Match。\n\n| Body 字段 | 类型 | 必填 | 约束 |\n|---|---|---|---|\n| role | string | 是 | operator / engineer / admin / super_admin |\n\n```json\n{\"role\":\"engineer\"}\n```\n\n**成功：** 200，data 为 User。实际角色变化时递增 version/authz_version 并撤销 refresh 会话；提交原角色不递增版本。最后一个 active 超管不能降级，否则返回 `409 / 2210`；其他错误见本节公共错误表。\n\n禁止给自己分配角色，即使提交原角色也返回 `403 / 2204`；该限制优先于最后一个超管保护。目标和新角色必须在调用者允许管理的范围内。\n\n安全约束：待强制改密的超管（force_password_change=true）禁止调用此接口，返回 403 / 2204。须先修改密码并重新登录。其他角色的建议改密不受此限制。",
+        "description": "**权限：** admin/super_admin；必填 Path id 和 Header If-Match。\n\n| Body 字段 | 类型 | 必填 | 约束 |\n|---|---|---|---|\n| role | string | 是 | operator / engineer / admin / super_admin |\n\n```json\n{\"role\":\"engineer\"}\n```\n\n**成功：** 200，data 为 User。实际角色变化时递增 version/authz_version 并撤销 refresh 会话；提交原角色不递增版本。最后一个 active 超管不能降级，否则返回 `409 / 2210`；其他错误见本节公共错误表。\n\n禁止给自己分配角色，即使提交原角色也返回 `403 / 2204`；该限制优先于最后一个超管保护。目标和新角色必须在调用者允许管理的范围内。\n\n安全约束：待强制改密的超管（force_password_change=true）禁止调用此接口，返回 403 / 2204。须先修改密码并重新登录。其他角色的建议改密不受此限制。",
         "parameters": [
           {
             "$ref": "#/components/parameters/RequestId"
@@ -1025,7 +1025,7 @@
         ],
         "operationId": "getPermissions",
         "summary": "查询当前用户权限",
-        "description": "**鉴权：** Bearer，任意有效角色。无请求参数和请求体。\n\n| data 字段 | 类型 | 说明 |\n|---|---|---|\n| user_id | string(UUID) | 当前用户 ID |\n| role | string | 当前固定角色 |\n| status | string | 当前有效用户为 active |\n| force_password_change | boolean | 当前超管是否必须改密 |\n| authz_version | integer | 当前授权版本 |\n| capabilities | array<string> | 该角色的能力码 |\n\n**成功：** 200。\n\n```json\n{\"data\":{\"user_id\":\"10000000-0000-4000-8000-000000000002\",\"role\":\"engineer\",\"status\":\"active\",\"force_password_change\":false,\"authz_version\":3,\"capabilities\":[\"business.read\",\"business.operate\",\"engineering.configure\"]},\"request_id\":\"permissions-001\"}\n```\n\n| 角色 | 能力 |\n|---|---|\n| operator | business.read、business.operate |\n| engineer | operator 能力，加 engineering.configure |\n| admin | engineer 能力，加 user.read、user.create、user.update、user.status、user.unlock、user.password.reset、audit.read |\n| super_admin | admin 能力，加 user.role.assign |\n\n错误：`401 / 2200`（会话无效）、`403 / 2204`（Origin 不允许）、`500 / 2221`（数据库失败）。菜单可依据此响应显示，实际业务请求仍须服务端鉴权。密码修改建议读取登录／刷新返回的 User；此接口不返回 password_change_recommended。\n\n安全约束：待强制改密的超管（force_password_change=true）禁止调用此接口，返回 403 / 2204。须先修改密码并重新登录。其他角色的建议改密不受此限制。",
+        "description": "**鉴权：** Bearer，任意有效角色。无请求参数和请求体。\n\n| data 字段 | 类型 | 说明 |\n|---|---|---|\n| user_id | string(UUID) | 当前用户 ID |\n| role | string | 当前固定角色 |\n| status | string | 当前有效用户为 active |\n| force_password_change | boolean | 当前超管是否必须改密 |\n| authz_version | integer | 当前授权版本 |\n| capabilities | array<string> | 该角色的能力码 |\n\n**成功：** 200。\n\n```json\n{\"data\":{\"user_id\":\"10000000-0000-4000-8000-000000000002\",\"role\":\"engineer\",\"status\":\"active\",\"force_password_change\":false,\"authz_version\":3,\"capabilities\":[\"business.read\",\"business.operate\",\"engineering.configure\"]},\"request_id\":\"permissions-001\"}\n```\n\n| 角色 | 能力 |\n|---|---|\n| operator | business.read、business.operate |\n| engineer | operator 能力，加 engineering.configure |\n| admin | engineer 能力，加 user.read、user.create、user.update、user.status、user.unlock、user.password.reset、audit.read |\n| super_admin | admin 能力；admin 与 super_admin 均具备 user.role.assign |\n\n错误：`401 / 2200`（会话无效）、`403 / 2204`（Origin 不允许）、`500 / 2221`（数据库失败）。菜单可依据此响应显示，实际业务请求仍须服务端鉴权。密码修改建议读取登录／刷新返回的 User；此接口不返回 password_change_recommended。\n\n安全约束：待强制改密的超管（force_password_change=true）禁止调用此接口，返回 403 / 2204。须先修改密码并重新登录。其他角色的建议改密不受此限制。",
         "parameters": [
           {
             "$ref": "#/components/parameters/RequestId"
@@ -1153,12 +1153,6 @@
             "format": "uuid",
             "example": "10000000-0000-4000-8000-000000000002"
           },
-          "uid": {
-            "type": "string"
-          },
-          "username": {
-            "type": "string"
-          },
           "display_name": {
             "type": "string",
             "minLength": 1,
@@ -1214,6 +1208,10 @@
             "format": "int64",
             "description": "UTC Unix 毫秒",
             "example": 1789636500000
+          },
+          "login_identifier": {
+            "type": "string",
+            "description": "统一登录标识，创建后不可修改"
           }
         },
         "required": [
@@ -1227,7 +1225,8 @@
           "authz_version",
           "last_login_at",
           "created_at",
-          "updated_at"
+          "updated_at",
+          "login_identifier"
         ]
       },
       "Session": {
@@ -1313,10 +1312,6 @@
           "actor_user_id": {
             "type": "string"
           },
-          "actor_username": {
-            "type": "string",
-            "description": "当前用户名，UID账号返回UID，无法关联时为空"
-          },
           "target_user_id": {
             "type": "string"
           },
@@ -1350,12 +1345,16 @@
             "format": "int64",
             "description": "UTC Unix 毫秒",
             "example": 1789636500000
+          },
+          "actor_login_identifier": {
+            "type": "string",
+            "description": "当前登录标识，无法关联时为空"
           }
         },
         "required": [
           "id",
           "actor_user_id",
-          "actor_username",
+          "actor_login_identifier",
           "target_user_id",
           "event_name",
           "result",
@@ -1375,10 +1374,6 @@
           "user_id": {
             "type": "string",
             "format": "uuid"
-          },
-          "username": {
-            "type": "string",
-            "description": "当前用户名或UID，无法关联时为空"
           },
           "event_name": {
             "type": "string"
@@ -1402,12 +1397,16 @@
             "type": "integer",
             "format": "int64",
             "description": "服务端接收时间，UTC Unix 毫秒"
+          },
+          "login_identifier": {
+            "type": "string",
+            "description": "当前登录标识，无法关联时为空"
           }
         },
         "required": [
           "id",
           "user_id",
-          "username",
+          "login_identifier",
           "event_name",
           "result",
           "request_id",
@@ -1492,11 +1491,6 @@
       "LoginRequest": {
         "type": "object",
         "properties": {
-          "identifier": {
-            "type": "string",
-            "description": "UID或用户名，原始UTF-8最多512字节；规范化后1–64个字符",
-            "example": "admin"
-          },
           "password_hash": {
             "type": "string",
             "pattern": "^[0-9a-f]{64}$",
@@ -1504,11 +1498,17 @@
             "maxLength": 64,
             "description": "原始密码 UTF-8 字节的 SHA-256 小写十六进制摘要，不是明文密码。",
             "example": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "login_identifier": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "description": "统一登录标识，去首尾空白并执行 Unicode NFC"
           }
         },
         "required": [
-          "identifier",
-          "password_hash"
+          "password_hash",
+          "login_identifier"
         ],
         "additionalProperties": false
       },
@@ -1541,16 +1541,6 @@
       "CreateUserRequest": {
         "type": "object",
         "properties": {
-          "uid": {
-            "type": "string",
-            "nullable": true,
-            "description": "与username必须且只能提供一个非null字段，原始UTF-8最多512字节，规范化后1–64个字符"
-          },
-          "username": {
-            "type": "string",
-            "nullable": true,
-            "description": "与uid二选一，创建后不可修改"
-          },
           "display_name": {
             "type": "string",
             "minLength": 1,
@@ -1573,50 +1563,21 @@
             "maxLength": 64,
             "description": "原始密码 UTF-8 字节的 SHA-256 小写十六进制摘要，不是明文密码。",
             "example": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "login_identifier": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "description": "统一登录标识，去首尾空白并执行 Unicode NFC"
           }
         },
         "required": [
           "display_name",
-          "role"
+          "role",
+          "login_identifier"
         ],
         "additionalProperties": false,
-        "description": "uid/username 二选一。省略password_hash随机生成临时密码；不能传空字符串或null。",
-        "oneOf": [
-          {
-            "required": [
-              "uid"
-            ],
-            "properties": {
-              "uid": {
-                "type": "string",
-                "nullable": false
-              },
-              "username": {
-                "nullable": true,
-                "enum": [
-                  null
-                ]
-              }
-            }
-          },
-          {
-            "required": [
-              "username"
-            ],
-            "properties": {
-              "username": {
-                "type": "string",
-                "nullable": false
-              },
-              "uid": {
-                "nullable": true,
-                "enum": [
-                  null
-                ]
-              }
-            }
-          }
-        ]
+        "description": "登录标识。省略password_hash随机生成临时密码；不能传空字符串或null。"
       },
       "UpdateUserRequest": {
         "type": "object",

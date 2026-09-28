@@ -9,7 +9,7 @@ const emit = defineEmits<{ close: [] }>()
     <p class="alert warning">临时密码仅展示本次。请通过安全渠道交付给用户，关闭后无法再次查看。</p>
     <dl>
       <dt>登录账号</dt>
-      <dd>{{ issue.user.uid ?? issue.user.username }}</dd>
+      <dd>{{ issue.user.login_identifier }}</dd>
       <dt>临时密码</dt>
       <dd class="credential" data-testid="temporary-credential">
         {{ issue.temporary_credential }}

@@ -130,11 +130,12 @@ auto MySqlAuditRepository::queryTable(const AUDIT::AuditFilter &filter, std::str
         const auto eventNames    = SZX::COMMON::Json(filter.eventNames).dump();
         const auto limit         = static_cast<std::uint64_t>(filter.limit);
         const auto offset        = filter.offset;
-        const std::string source = " FROM " + std::string{table} + " l LEFT JOIN users u ON u.id = l.actor_user_id WHERE ";
+        const std::string source = " FROM " + std::string{table} + " l WHERE ";
         const std::string predicate{"(? = '' OR l.created_at >= ?) AND (? = '' OR l.created_at <= ?) AND "
                                     "(? = '' OR l.event_name = ?) AND (? = '' OR l.result = ?) AND "
                                     "(? = '' OR l.actor_user_id = ?) AND "
-                                    "(? = '' OR u.display_name LIKE ? OR u.login_identifier LIKE ?) AND "
+                                    "(? = '' OR EXISTS (SELECT 1 FROM users u WHERE u.id = l.actor_user_id AND "
+                                    "(u.display_name LIKE ? OR u.login_identifier LIKE ?))) AND "
                                     "(? = '' OR l.event_name LIKE ? OR JSON_CONTAINS(?, JSON_QUOTE(l.event_name)))"};
 
         const auto totals = connection_.query_s<std::tuple<std::uint64_t>>(
@@ -150,7 +151,7 @@ auto MySqlAuditRepository::queryTable(const AUDIT::AuditFilter &filter, std::str
         auto rows = connection_.query_s<AuditPageRecord>(
             "SELECT l.id, l.actor_user_id, l.target_user_id, l.event_name, l.result, l.request_id, "
             "CASE WHEN OCTET_LENGTH(l.details_json) <= 1048576 THEN CAST(l.details_json AS CHAR) ELSE '{}' END, "
-            "l.created_at, COALESCE(u.login_identifier, ''), " +
+            "l.created_at, COALESCE((SELECT u.login_identifier FROM users u WHERE u.id = l.actor_user_id), ''), " +
                 std::string{"'"} + std::string{table} + "'" + source + predicate +
                 " ORDER BY l.created_at DESC, l.id ASC LIMIT ? OFFSET ?",
             from, from, to, to, event, event, result, result, actor, actor, username, pattern, pattern, eventSearch,

@@ -22,7 +22,7 @@ const emit = defineEmits<{ action: [action: UserAction, user: User] }>()
           <td>
             <button class="user-link" @click="emit('action', 'details', user)">
               {{ user.display_name }}</button
-            ><small class="identity">{{ user.uid ?? user.username }}</small>
+            ><small class="identity">{{ user.login_identifier }}</small>
           </td>
           <td>
             <span class="role-badge">{{ roleLabels[user.role] }}</span>

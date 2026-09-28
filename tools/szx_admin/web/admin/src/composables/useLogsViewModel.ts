@@ -28,7 +28,7 @@ export function useLogsViewModel() {
     query.items.value.map((log) => ({
       ...log,
       eventLabel: auditEventLabel(log.event_name),
-      actorUsername: log.actor_username || '未知用户',
+      actorUsername: log.actor_login_identifier || '未知用户',
     })),
   )
   function search() {
@@ -48,7 +48,7 @@ export function useLogsViewModel() {
     selected.value = {
       ...log,
       eventLabel: auditEventLabel(log.event_name),
-      actorUsername: log.actor_username || '未知用户',
+      actorUsername: log.actor_login_identifier || '未知用户',
       details: redactDetails(log.details) as Record<string, unknown>,
     }
   }

@@ -26,23 +26,15 @@ const emit = defineEmits<{ submit: []; close: []; reload: [] }>()
     >
       重新加载用户
     </button>
-    <template v-if="action === 'create'"
-      ><label
-        >登录标识类型<select v-model="draft.identityType" :disabled="busy">
-          <option value="username">用户名</option>
-          <option value="uid">UID</option>
-        </select></label
-      ><label
-        >{{ draft.identityType === 'uid' ? 'UID' : '用户名'
-        }}<input
-          v-model="draft.identity"
-          required
-          maxlength="64"
-          autocomplete="off"
-          :disabled="busy"
-      /></label>
-      <p class="hint">登录标识创建后不可修改。</p></template
-    >
+    <label v-if="action === 'create'"
+      >登录标识<input
+        v-model="draft.identity"
+        required
+        maxlength="64"
+        autocomplete="off"
+        :disabled="busy"
+    /></label>
+    <p v-if="action === 'create'" class="hint">登录标识创建后不可修改。</p>
     <label v-if="action === 'create' || action === 'name'"
       >展示名<input v-model="draft.displayName" required maxlength="128" :disabled="busy"
     /></label>
@@ -77,7 +69,7 @@ const emit = defineEmits<{ submit: []; close: []; reload: [] }>()
     </template>
     <template v-if="user"
       ><p v-if="action !== 'details'" class="hint">
-        目标用户：{{ user.display_name }}（{{ user.uid ?? user.username }}）
+        目标用户：{{ user.display_name }}（{{ user.login_identifier }}）
       </p>
       <dl v-if="action === 'details'" class="details-grid">
         <div>
@@ -86,7 +78,7 @@ const emit = defineEmits<{ submit: []; close: []; reload: [] }>()
         </div>
         <div>
           <dt>登录标识</dt>
-          <dd>{{ user.uid ?? user.username }}</dd>
+          <dd>{{ user.login_identifier }}</dd>
         </div>
         <div>
           <dt>展示名</dt>

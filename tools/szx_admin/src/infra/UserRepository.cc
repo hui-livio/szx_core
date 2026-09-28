@@ -175,31 +175,51 @@ auto MySqlUserRepository::list(const USER::UserFilter &filter) -> Result<USER::U
     {
         if (filter.roles.empty() || filter.limit == 0)
             return Result<USER::UserPage>::Failure(static_cast<int>(ErrorCode::InternalFailure), {});
-        // A JSON table keeps the role allowlist parameterized without imposing a
-        // compile-time limit on the number of roles an administrator can manage.
-        const auto roles = SZX::COMMON::Json(filter.roles).dump();
+        // Roles come from the authorization policy. Emit the small, fixed allowlist
+        // directly so MySQL can evaluate it without parsing JSON for every row.
+        const auto roleLiteral = [](std::string_view role) -> std::string {
+            if (role != "operator" && role != "engineer" && role != "admin" && role != "super_admin")
+                return {};
+            return "'" + std::string{role} + "'";
+        };
+        std::string rolePredicate{"u.role IN ("};
+        for (std::size_t index = 0; index < filter.roles.size(); ++index)
+        {
+            const auto literal = roleLiteral(filter.roles[index]);
+            if (literal.empty())
+                return Result<USER::UserPage>::Failure(static_cast<int>(ErrorCode::ValidationError), {});
+            if (index != 0)
+                rolePredicate += ",";
+            rolePredicate += literal;
+        }
+        rolePredicate += ")";
         const auto status = filter.status;
         const auto search = filter.search;
         const auto needle = search.empty() ? std::string{} : "%" + escapeLike(search) + "%";
         const auto limit  = static_cast<std::uint64_t>(filter.limit);
         const auto offset = filter.offset;
-        const std::string source{" FROM users u JOIN JSON_TABLE(?, '$[*]' COLUMNS (code VARCHAR(64) PATH '$')) "
-                                 "allowed ON allowed.code = u.role WHERE "};
-        const std::string predicate{"(? = '' OR u.status = ?) AND "
+        const std::string source{" FROM users u WHERE "};
+        const std::string predicate{rolePredicate + " AND (? = '' OR u.status = ?) AND "
                                     "(? = '' OR u.display_name LIKE ? OR u.login_identifier LIKE ?)"};
 
         const auto totals =
-            connection_.query_s<std::tuple<std::uint64_t>>("SELECT COUNT(*)" + source + predicate, roles, status, status,
-                                                           search, needle, needle);
+            connection_.query_s<std::tuple<std::uint64_t>>("SELECT COUNT(*)" + source + predicate, status, status, search,
+                                                           needle, needle);
         if (connection_.has_error() || totals.size() != 1)
             return queryFailed<USER::UserPage>();
 
         USER::UserPage page{.items = {}, .total = std::get<0>(totals.front())};
         if (page.total > offset)
         {
-            auto rows = connection_.query_s<USER::UserRow>("SELECT u.*" + source + predicate +
+            auto rows = connection_.query_s<USER::UserRow>(
+                                                           "SELECT u.id, u.login_identifier, u.login_identifier_canonical, "
+                                                           "u.identifier_type, u.display_name, u.role_id, u.role, u.status, "
+                                                           "u.version, u.force_password_change, u.temporary_credential_expires_at, "
+                                                           "u.failed_login_count, u.locked_until, u.password_changed_at, "
+                                                           "u.disabled_at, u.created_by, u.authz_version, u.last_login_at, "
+                                                           "u.created_at, u.updated_at" + source + predicate +
                                                            std::string{orderBy(filter.sort)} + " LIMIT ? OFFSET ?",
-                                                           roles, status, status, search, needle, needle, limit, offset);
+                                                           status, status, search, needle, needle, limit, offset);
             if (connection_.has_error())
                 return queryFailed<USER::UserPage>();
             page.items = std::move(rows);

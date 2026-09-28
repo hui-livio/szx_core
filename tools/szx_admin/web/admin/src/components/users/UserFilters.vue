@@ -15,7 +15,7 @@ const emit = defineEmits<{ search: [] }>()
     <label class="search-field"
       >搜索用户<input
         v-model="filters.search"
-        placeholder="搜索用户名、UID 或展示名"
+        placeholder="搜索登录标识或展示名"
         maxlength="128"
         type="search" /></label
     ><label

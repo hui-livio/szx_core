@@ -14,7 +14,6 @@ export type UserRowView = User & {
   canChangeStatus: boolean
 }
 export interface UserDraft {
-  identityType: 'username' | 'uid'
   identity: string
   displayName: string
   role: Role
@@ -55,7 +54,6 @@ export function useUsersViewModel() {
   const success = shallowRef('')
   const conflict = shallowRef(false)
   const draft = reactive<UserDraft>({
-    identityType: 'username',
     identity: '',
     displayName: '',
     role: 'operator',
@@ -66,7 +64,9 @@ export function useUsersViewModel() {
   const passwordHint = computed(
     () => passwordPolicy(action.value === 'reset' ? selected.value?.role : draft.role).hint,
   )
-  const canAssignRole = computed(() => auth.user?.role === 'super_admin')
+  const canAssignRole = computed(
+    () => auth.user?.role === 'admin' || auth.user?.role === 'super_admin',
+  )
   const users = computed<UserRowView[]>(() =>
     query.items.value.map((user) => {
       const canManage = roles.value.includes(user.role)
@@ -104,7 +104,6 @@ export function useUsersViewModel() {
     selected.value = user ?? null
     mutation.error.value = ''
     conflict.value = false
-    draft.identityType = 'username'
     draft.identity = ''
     draft.displayName = user?.display_name ?? ''
     draft.role = user?.role ?? 'operator'
@@ -152,7 +151,7 @@ export function useUsersViewModel() {
           if (!roles.value.includes(draft.role)) throw new Error('不能创建此角色的用户。')
           const passwordHash = await draftPasswordHash(draft.role)
           const response = await adminApi.create({
-            ...(draft.identityType === 'uid' ? { uid: identity } : { username: identity }),
+            login_identifier: identity,
             display_name: draft.displayName,
             role: draft.role,
             ...(passwordHash ? { password_hash: passwordHash } : {}),

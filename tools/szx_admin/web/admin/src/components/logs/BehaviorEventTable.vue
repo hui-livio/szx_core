@@ -27,7 +27,7 @@ const emit = defineEmits<{ details: [event: BehaviorEventRecord] }>()
           <td>
             <span class="status-badge" :class="event.result">{{ resultLabels[event.result] }}</span>
           </td>
-          <td>{{ event.username || '未知用户' }}</td>
+          <td>{{ event.login_identifier || '未知用户' }}</td>
           <td class="time-cell">{{ formatTime(event.created_at) }}</td>
           <td><button class="text-button" @click="emit('details', event)">查看详情</button></td>
         </tr>

@@ -44,7 +44,17 @@ function(szx_target_compile_settings _target)
 endfunction()
 
 function(szx_apply_default_compile_policy _target)
-    szx_target_compile_settings(${_target} WIN32_LEAN
-        DISABLE_WARNINGS C4100 C4127 C4189 C4701 C4702 C4714)
+    if(MSVC)
+        szx_target_compile_settings(${_target} WIN32_LEAN
+            DISABLE_WARNINGS C4100 C4127 C4189 C4701 C4702 C4714)
+    else()
+        # MSVC warning numbers have no GCC/Clang equivalent. Suppress the
+        # corresponding diagnostics by their native names where available.
+        szx_target_compile_settings(${_target} WIN32_LEAN
+            DISABLE_WARNINGS unused-parameter unused-variable
+            comment dangling-else sign-compare uninitialized
+            unreachable-code pedantic unused-local-typedefs
+            missing-field-initializers
+        )
+    endif()
 endfunction()
-

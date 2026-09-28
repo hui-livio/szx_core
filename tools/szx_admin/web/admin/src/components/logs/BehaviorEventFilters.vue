@@ -30,7 +30,7 @@ const emit = defineEmits<{ search: []; reset: [] }>()
         v-model="filters.user_search"
         type="search"
         maxlength="128"
-        placeholder="搜索展示名、用户名或 UID"
+        placeholder="搜索展示名或登录标识"
     /></label>
     <label>开始时间（本地）<input v-model="filters.from" type="datetime-local" step="1" /></label>
     <label>结束时间（本地）<input v-model="filters.to" type="datetime-local" step="1" /></label>

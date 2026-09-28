@@ -17,7 +17,7 @@ const { user, role, capabilities, canManage, canAudit, busy, error, load } = use
     <dl class="details-grid">
       <div>
         <dt>登录账号</dt>
-        <dd>{{ user?.uid ?? user?.username }}</dd>
+        <dd>{{ user?.login_identifier }}</dd>
       </div>
       <div>
         <dt>最近登录</dt>

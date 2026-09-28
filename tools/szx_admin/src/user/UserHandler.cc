@@ -39,7 +39,7 @@ auto permissionsResponse(UserService &service, const INFRA::HttpRequest &request
         if (!result.ok)
             return RestApi::error(static_cast<ErrorCode>(result.error), request.requestId);
         Json capabilities = Json::array();
-        for (const auto capability : result.value.capabilities)
+        for (const auto &capability : result.value.capabilities)
             capabilities.push_back(std::string{capability});
         return RestApi::success(Json{{"user_id", result.value.userId},
                                      {"role", result.value.role},
@@ -68,7 +68,6 @@ auto userRowJson(const UserRow &row) -> Json
                  {"created_at", utcTimestampJson(row.created_at)},
                  {"updated_at", utcTimestampJson(row.updated_at)}};
     profile["login_identifier"] = row.login_identifier;
-    profile["identifier_type"] = row.identifier_type;
     return profile;
 }
 
@@ -126,18 +125,17 @@ auto createResponse(UserService &service, const INFRA::HttpRequest &request) -> 
         const auto body = RestApi::jsonObject(request);
         if (!body.ok)
             return RestApi::error(static_cast<ErrorCode>(body.error), request.requestId);
-        constexpr std::array<std::string_view, 5> fields{"login_identifier", "identifier_type",
-                                                         "display_name", "role", "password_hash"};
+        constexpr std::array<std::string_view, 4> fields{"login_identifier", "display_name", "role",
+                                                         "password_hash"};
         if (!RestApi::allowedFields(body.value, fields).ok || !body.value.contains("display_name") ||
             !body.value.at("display_name").is_string() || !body.value.contains("role") || !body.value.at("role").is_string())
             return RestApi::error(ErrorCode::ValidationError, request.requestId);
-        if (!body.value.contains("login_identifier") || !body.value.contains("identifier_type") ||
-            !body.value.at("login_identifier").is_string() || !body.value.at("identifier_type").is_string())
+        if (!body.value.contains("login_identifier") || !body.value.at("login_identifier").is_string())
             return RestApi::error(ErrorCode::UserIdentityOneOfRequired, request.requestId);
-        CreateUserInput input{.displayName = body.value.at("display_name").get<std::string>(),
-                              .role        = body.value.at("role").get<std::string>(),
+        CreateUserInput input{.displayName     = body.value.at("display_name").get<std::string>(),
+                              .role            = body.value.at("role").get<std::string>(),
                               .loginIdentifier = body.value.at("login_identifier").get<std::string>(),
-                              .identifierType = body.value.at("identifier_type").get<std::string>()};
+                              };
         if (body.value.contains("password_hash"))
         {
             if (!body.value.at("password_hash").is_string())

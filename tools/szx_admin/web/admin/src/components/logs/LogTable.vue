@@ -12,7 +12,7 @@ const emit = defineEmits<{ details: [log: AuditLog] }>()
         <tr>
           <th>事件 / 请求 ID</th>
           <th>结果</th>
-          <th>用户名</th>
+          <th>登录标识</th>
           <th>发生时间</th>
           <th>详情</th>
         </tr>

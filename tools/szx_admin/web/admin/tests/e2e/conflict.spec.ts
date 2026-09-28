@@ -5,7 +5,7 @@ test('version conflict blocks resubmission until the user reloads', async ({ pag
   let attempts = 0
   const user = {
     id: '10000000-0000-4000-8000-000000000001',
-    username: 'admin',
+    login_identifier: 'admin',
     display_name: '管理员',
     role: 'super_admin',
     status: 'active',

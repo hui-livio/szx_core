@@ -7,7 +7,10 @@ import { useTask } from './useTask'
 export function useLoginViewModel() {
   const auth = useAuthStore()
   const router = useRouter()
-  const form = reactive({ identifier: '', password: '' })
+  const form = reactive({
+    identifier: '',
+    password: '',
+  })
   const task = useTask()
   const submit = () =>
     task.run(async () => {

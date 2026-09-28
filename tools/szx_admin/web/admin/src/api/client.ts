@@ -149,7 +149,10 @@ export function createApiClient(
       const response = await raw<Session>({
         url: '/auth/login',
         method: 'POST',
-        data: { identifier, password_hash: passwordHash },
+        data: {
+          login_identifier: identifier,
+          password_hash: passwordHash,
+        },
       })
       setSession(response.data)
     },

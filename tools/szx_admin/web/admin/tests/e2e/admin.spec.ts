@@ -4,7 +4,7 @@ import type { Role, User } from '../../src/api/types'
 
 const baseUser: User = {
   id: '10000000-0000-4000-8000-000000000002',
-  username: 'alice',
+  login_identifier: 'alice',
   display_name: 'Alice',
   role: 'operator',
   status: 'active',
@@ -26,7 +26,7 @@ async function mockApi(
   const actor = {
     ...baseUser,
     id: '10000000-0000-4000-8000-000000000001',
-    username: 'admin',
+    login_identifier: 'admin',
     display_name: '系统管理员',
     role,
     force_password_change: force,
@@ -89,7 +89,7 @@ async function mockApi(
             event_name: 'auth.login',
             result: 'success',
             actor_user_id: actor.id,
-            actor_username: actor.username,
+            actor_login_identifier: actor.login_identifier,
             target_user_id: actor.id,
             request_id: 'audit-id',
             details: { password_hash: 'should-not-appear', source: 'web' },
@@ -106,7 +106,7 @@ async function mockApi(
           {
             id: 'behavior-log',
             user_id: actor.id,
-            username: actor.username,
+            login_identifier: actor.login_identifier,
             event_name: 'report.view',
             result: 'success',
             request_id: 'behavior-id',
@@ -135,7 +135,7 @@ test('admin creates a user, clears one-time credentials and submits versioned ed
   await login(page)
   await expect(page).toHaveURL('/users')
   expect(writes[0]?.body).toMatchObject({
-    identifier: 'admin',
+    login_identifier: 'admin',
     password_hash: expect.stringMatching(/^[a-f0-9]{64}$/),
   })
   await page.getByRole('button', { name: '创建用户' }).click()
@@ -184,7 +184,7 @@ test('creation validates a chosen password, submits only its digest and clears i
   await page.getByRole('button', { name: '确认', exact: true }).click()
   await expect(page.getByRole('dialog')).toHaveCount(0)
   expect(writes.find((write) => write.path === '/admin/users')?.body).toEqual({
-    username: 'chosen',
+    login_identifier: 'chosen',
     display_name: '指定密码',
     role: 'operator',
     password_hash: createHash('sha256').update(secret).digest('hex'),
@@ -342,7 +342,9 @@ test('behavior tab uses the split endpoint and keeps independent filters', async
   await login(page)
   await page.getByRole('link', { name: '审计日志' }).click()
   await page.getByRole('tab', { name: '用户行为' }).click()
-  await expect(page.getByRole('cell', { name: /report\.view/ }).getByText('report.view')).toBeVisible()
+  await expect(
+    page.getByRole('cell', { name: /report\.view/ }).getByText('report.view'),
+  ).toBeVisible()
   await page.getByRole('searchbox', { name: '搜索用户', exact: true }).fill(' alice ')
   const request = page.waitForRequest((candidate) =>
     new URL(candidate.url()).pathname.endsWith('/admin/behavior-events'),

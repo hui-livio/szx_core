@@ -2,8 +2,7 @@ export type Role = 'operator' | 'engineer' | 'admin' | 'super_admin'
 export type UserStatus = 'active' | 'disabled' | 'locked'
 export interface User {
   id: string
-  uid?: string | null
-  username?: string | null
+  login_identifier: string
   display_name: string
   role: Role
   status: UserStatus
@@ -50,7 +49,7 @@ export interface Permissions {
 export interface AuditLog {
   id: string
   actor_user_id: string
-  actor_username: string
+  actor_login_identifier: string
   target_user_id: string
   event_name: string
   result: 'success' | 'failure' | 'denied'
@@ -62,13 +61,16 @@ export interface AuditLog {
 export interface BehaviorEventRecord {
   id: string
   user_id: string
-  username: string
+  login_identifier: string
   event_name: string
   result: 'success' | 'failure'
   request_id: string
   details: Record<string, unknown>
   created_at: number
 }
-export type CreateUser = { display_name: string; role: Role; password_hash?: string } & (
-  { username: string; uid?: never } | { uid: string; username?: never }
-)
+export type CreateUser = {
+  display_name: string
+  role: Role
+  login_identifier: string
+  password_hash?: string
+}

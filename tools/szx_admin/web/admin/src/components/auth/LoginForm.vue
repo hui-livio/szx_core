@@ -1,5 +1,8 @@
 <script setup lang="ts">
-const form = defineModel<{ identifier: string; password: string }>({ required: true })
+const form = defineModel<{
+  identifier: string
+  password: string
+}>({ required: true })
 defineProps<{ busy: boolean; error: string; notice: string }>()
 const emit = defineEmits<{ submit: [] }>()
 </script>
@@ -8,11 +11,11 @@ const emit = defineEmits<{ submit: [] }>()
     <p v-if="notice" class="alert success" role="status">{{ notice }}</p>
     <p v-if="error" class="alert error" role="alert">{{ error }}</p>
     <label
-      >登录账号<input
+      >登录标识<input
         v-model="form.identifier"
-        name="username"
+        name="identifier"
         autocomplete="username"
-        placeholder="用户名或 UID"
+        placeholder="请输入登录标识"
         maxlength="128"
         required
         autofocus
