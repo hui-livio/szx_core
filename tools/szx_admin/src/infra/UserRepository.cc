@@ -198,6 +198,7 @@ auto MySqlUserRepository::list(const USER::UserFilter &filter) -> Result<USER::U
         const auto needle = search.empty() ? std::string{} : "%" + escapeLike(search) + "%";
         const auto limit  = static_cast<std::uint64_t>(filter.limit);
         const auto offset = filter.offset;
+        const auto pageClause = " LIMIT " + std::to_string(limit) + " OFFSET " + std::to_string(offset);
         const std::string source{" FROM users u WHERE "};
         const std::string predicate{rolePredicate + " AND (? = '' OR u.status = ?) AND "
                                     "(? = '' OR u.display_name LIKE ? OR u.login_identifier LIKE ?)"};
@@ -218,8 +219,8 @@ auto MySqlUserRepository::list(const USER::UserFilter &filter) -> Result<USER::U
                                                            "u.failed_login_count, u.locked_until, u.password_changed_at, "
                                                            "u.disabled_at, u.created_by, u.authz_version, u.last_login_at, "
                                                            "u.created_at, u.updated_at" + source + predicate +
-                                                           std::string{orderBy(filter.sort)} + " LIMIT ? OFFSET ?",
-                                                           status, status, search, needle, needle, limit, offset);
+                                                           std::string{orderBy(filter.sort)} + pageClause,
+                                                           status, status, search, needle, needle);
             if (connection_.has_error())
                 return queryFailed<USER::UserPage>();
             page.items = std::move(rows);

@@ -9,6 +9,9 @@
 #include "../rbac/RoleRepository.h"
 
 #include "SzxAdmin/Infra/ErrorCode.h"
+#include "Logger.h"
+
+#include <chrono>
 
 namespace SZX::ADMIN::AUDIT
 {
@@ -39,6 +42,9 @@ auto AuditService::query(const USER::ActorContext &context, const AuditQuery &qu
 {
     try
     {
+        const auto started = std::chrono::steady_clock::now();
+        LOGM_DEBUG("szx_admin.audit", "event=query_begin request_id={} page={} page_size={} actor_search={} event_search={}",
+                   context.requestId, query.page, query.pageSize, !query.actorSearch.empty(), !query.eventSearch.empty());
         const auto from = query.from.empty() ? std::optional<std::string>{std::string{}} : USER::databaseTimestamp(query.from);
         const auto to   = query.to.empty() ? std::optional<std::string>{std::string{}} : USER::databaseTimestamp(query.to);
         if (!from || !to || query.page == 0 || query.pageSize == 0 ||
@@ -87,6 +93,9 @@ auto AuditService::query(const USER::ActorContext &context, const AuditQuery &qu
                 output = queried.value;
                 return Result<void>::Success();
             });
+        const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - started);
+        LOGM_DEBUG("szx_admin.audit", "event=query_complete request_id={} duration_microseconds={} ok={} total={} items={} error={}",
+                   context.requestId, elapsed.count(), operation.ok, output.total, output.items.size(), operation.error);
         return operation.ok ? Result<AuditPage>::Success(std::move(output)) : Result<AuditPage>::Failure(operation.error, {});
     } catch (...)
     {

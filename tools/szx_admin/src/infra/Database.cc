@@ -582,6 +582,7 @@ auto DatabasePool::withConnectionImpl(const ConnectionCallback &callback,
         return failure(ErrorCode::InvalidConfiguration, "Database connection callback is empty.");
 
     std::unique_ptr<DETAIL::OrmConnection> connection;
+    const auto acquireStarted = std::chrono::steady_clock::now();
     {
         std::unique_lock lock(impl_->mutex);
         if (!impl_->started)
@@ -594,6 +595,9 @@ auto DatabasePool::withConnectionImpl(const ConnectionCallback &callback,
         connection = std::move(impl_->connections.front());
         impl_->connections.pop_front();
     }
+    const auto acquireElapsed = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - acquireStarted);
+    if (acquireElapsed >= std::chrono::milliseconds{100})
+        LOGM_DEBUG("szx_admin.database", "event=pool_acquire_slow duration_microseconds={}", acquireElapsed.count());
     if (connection)
         connection->setDeadline(operationDeadline);
 
@@ -652,10 +656,15 @@ auto DatabasePool::withConnectionImpl(const ConnectionCallback &callback,
 
     try
     {
+        const auto callbackStarted = std::chrono::steady_clock::now();
         MySqlConnection wrapper(*connection, impl_->logs);
         try
         {
             const auto result = callback(wrapper);
+            const auto callbackElapsed =
+                std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - callbackStarted);
+            if (callbackElapsed >= std::chrono::milliseconds{100})
+                LOGM_DEBUG("szx_admin.database", "event=database_callback_slow duration_microseconds={}", callbackElapsed.count());
             if (!wrapper.reusable())
             {
                 returnConnection(false);

@@ -54,7 +54,7 @@ function(szx_apply_default_compile_policy _target)
             DISABLE_WARNINGS unused-parameter unused-variable
             comment dangling-else sign-compare uninitialized
             unreachable-code pedantic unused-local-typedefs
-            missing-field-initializers
+            missing-field-initializers unused-function
         )
     endif()
 endfunction()

@@ -185,7 +185,10 @@ auto MySqlBehaviorEventRepository::query(const TELEMETRY::BehaviorEventFilter &f
         if (page.total <= filter.offset)
             return Result<TELEMETRY::BehaviorEventPage>::Success(std::move(page));
         auto rows = connection_.query_s<BehaviorPageRecord>(
-            "SELECT e.id, e.user_id, e.event_name, e.result, e.request_id, CAST(e.details_json AS CHAR), "
+            // Keep the JSON projection bounded.  Without an explicit CHAR
+            // length MySQL advertises a 4 GiB result and ormpp allocates that
+            // size for every page fetch.
+            "SELECT e.id, e.user_id, e.event_name, e.result, e.request_id, CAST(e.details_json AS CHAR(1048576)), "
             "e.created_at, e.persisted_at, COALESCE(u.login_identifier, '')" +
                 source + predicate + " ORDER BY e.created_at DESC, e.id ASC LIMIT ? OFFSET ?",
             filter.from, filter.from, filter.to, filter.to, filter.eventName, filter.eventName, filter.result, filter.result,
