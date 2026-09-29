@@ -166,8 +166,9 @@ public:
             return;
         try
         {
-            const auto duration =
+            const auto durationMicroseconds =
                 std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - started).count();
+            const auto durationMilliseconds = static_cast<double>(durationMicroseconds) / 1000.0;
             const auto path =
                 SZX::COMMON::Json(request.path.substr(0, 512)).dump(-1, ' ', false, SZX::COMMON::Json::error_handler_t::replace);
             if (response.statusCode >= 400)
@@ -176,15 +177,14 @@ public:
                 if (body && body->contains("code") && body->at("code").is_number_integer())
                 {
                     LOGM_INFO("szx_admin.http",
-                              "request_id={} request_started_at={} duration_microseconds={} method={} path={} status={} code={}",
-                              id, requestStartedAt, duration, request.method, path, response.statusCode,
+                              "request_id={} request_started_at={} duration={:.2f} ms method={} path={} status={} code={}", id,
+                              requestStartedAt, durationMilliseconds, request.method, path, response.statusCode,
                               body->at("code").get<int>());
                     return;
                 }
             }
-            LOGM_INFO("szx_admin.http",
-                      "request_id={} request_started_at={} duration_microseconds={} method={} path={} status={}", id,
-                      requestStartedAt, duration, request.method, path, response.statusCode);
+            LOGM_INFO("szx_admin.http", "request_id={} request_started_at={} duration={:.2f} ms method={} path={} status={}", id,
+                      requestStartedAt, durationMilliseconds, request.method, path, response.statusCode);
         } catch (...)
         {
         }
@@ -350,12 +350,12 @@ public:
                 return ready;
             const auto registeredMethod = method;
             const auto registeredPath   = path;
-            const auto result            = networkResult(server_->route(std::move(method), std::move(path),
-                                                [handler = std::move(handler)](const auto &request)
-                                                {
-                                                    const auto converted = convertRequest(request);
-                                                    return prepareResponse(handler(converted), converted.requestId);
-                                                }));
+            const auto result           = networkResult(server_->route(std::move(method), std::move(path),
+                                                                       [handler = std::move(handler)](const auto &request)
+                                                                       {
+                                                                 const auto converted = convertRequest(request);
+                                                                 return prepareResponse(handler(converted), converted.requestId);
+                                                                       }));
             if (result.ok)
                 LOGM_DEBUG("szx_admin.http", "event=route_registered method={} path={}", registeredMethod, registeredPath);
             return result;
