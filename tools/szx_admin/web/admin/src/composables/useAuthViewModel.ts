@@ -133,6 +133,19 @@ export function useHomeViewModel() {
     'user.password.reset': 'permissions.user_password_reset',
     'audit.read': 'permissions.audit_read',
     'user.role.assign': 'permissions.user_role_assign',
+    'behavior.read': 'permissions.behavior_read',
+    'role.read': 'permissions.role_read',
+    'role.create': 'permissions.role_create',
+    'role.update': 'permissions.role_update',
+    'role.status': 'permissions.role_status',
+    'role.archive': 'permissions.role_archive',
+    'role.permission.assign': 'permissions.role_permission_assign',
+    'role.scope.assign': 'permissions.role_scope_assign',
+    'permission.read': 'permissions.permission_read',
+    'permission.create': 'permissions.permission_create',
+    'permission.update': 'permissions.permission_update',
+    'permission.status': 'permissions.permission_status',
+    'permission.archive': 'permissions.permission_archive',
   }
   onMounted(load)
   return {
