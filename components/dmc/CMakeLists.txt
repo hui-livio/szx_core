@@ -111,7 +111,7 @@ endif()
 
 find_package(pybind11 CONFIG QUIET)
 if(pybind11_FOUND)
-    pybind11_add_module(szx_dmc_py MODULE src/python_bindings.cc)
+    pybind11_add_module(szx_dmc_py MODULE python/python_bindings.cc)
     target_link_libraries(szx_dmc_py PRIVATE szx::dmc_static)
     target_compile_features(szx_dmc_py PRIVATE cxx_std_20)
 

@@ -295,6 +295,7 @@ struct LTDMCE3032Controller::Impl
             *event = DmcButtonEvent{DmcButton::Reset, input, inputs.timestampNanoseconds};
         else if (event && pressed(config.startButton))
             *event = DmcButtonEvent{DmcButton::Start, input, inputs.timestampNanoseconds};
+
         if (!valid)
             return Result<void>::Success();
         const auto armed = captureArmed && status.state == DmcState::WaitingForStart &&
@@ -1102,8 +1103,8 @@ auto LTDMCE3032Controller::cancelCapture(OperationId operationId, StopMode mode)
             impl_->captureArmed = false;
             impl_->status.state =
                 !stop.ok ? DmcState::Failed : (mode == StopMode::Emergency ? DmcState::SafetyLatched : DmcState::Cancelled);
-            impl_->status.lastError     = !stop.ok ? static_cast<DmcError>(stop.error) :
-                                                     (mode == StopMode::Emergency ? DmcError::SafetyLatched : DmcError::Cancelled);
+            impl_->status.lastError = !stop.ok ? static_cast<DmcError>(stop.error) :
+                                                 (mode == StopMode::Emergency ? DmcError::SafetyLatched : DmcError::Cancelled);
             impl_->status.safetyLatched = mode == StopMode::Emergency;
             return stop;
         });
