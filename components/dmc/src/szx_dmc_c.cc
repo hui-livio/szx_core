@@ -12,6 +12,7 @@
 
 using SZX::DMC::DmcConfig;
 using SZX::DMC::DmcController;
+using SZX::DMC::DmcControllerFactory;
 using SZX::DMC::DmcError;
 using SZX::DMC::DmcModel;
 using SZX::DMC::DmcStatus;
@@ -33,8 +34,14 @@ std::unordered_set<szx_dmc_handle *> liveHandles;
 
 auto isLive(szx_dmc_handle *handle) noexcept -> bool
 {
-    std::scoped_lock lock(liveHandlesMutex);
-    return handle != nullptr && liveHandles.contains(handle);
+    try
+    {
+        std::scoped_lock lock(liveHandlesMutex);
+        return handle != nullptr && liveHandles.contains(handle);
+    } catch (...)
+    {
+        return false;
+    }
 }
 
 class HandleGuard
@@ -43,13 +50,19 @@ public:
     explicit HandleGuard(szx_dmc_handle *value) noexcept :
         handle_(value)
     {
-        std::scoped_lock registryLock(liveHandlesMutex);
-        if (handle_ == nullptr || !liveHandles.contains(handle_))
+        try
+        {
+            std::scoped_lock registryLock(liveHandlesMutex);
+            if (handle_ == nullptr || !liveHandles.contains(handle_))
+            {
+                handle_ = nullptr;
+                return;
+            }
+            lock_ = std::unique_lock(handle_->mutex);
+        } catch (...)
         {
             handle_ = nullptr;
-            return;
         }
-        lock_ = std::unique_lock(handle_->mutex);
     }
 
     explicit operator bool() const noexcept
@@ -86,11 +99,44 @@ auto boundedString(const char *value, std::size_t capacity) -> std::string
     return std::string(value, length);
 }
 
+auto invalidArgumentLocked(szx_dmc_handle *handle, const char *message) noexcept -> int32_t
+{
+    try
+    {
+        if (handle != nullptr)
+            handle->lastError = message == nullptr ? "Invalid argument." : message;
+    } catch (...)
+    {
+    }
+    return errorCode(DmcError::InvalidArgument);
+}
+
+auto clearLastErrorLocked(szx_dmc_handle *handle) noexcept -> void
+{
+    try
+    {
+        if (handle != nullptr)
+            handle->lastError.clear();
+    } catch (...)
+    {
+    }
+}
+
+auto setLastErrorLocked(szx_dmc_handle *handle, const std::string &message) noexcept -> void
+{
+    try
+    {
+        if (handle != nullptr)
+            handle->lastError = message;
+    } catch (...)
+    {
+    }
+}
+
 auto invalidArgument(szx_dmc_handle *handle, const char *message) noexcept -> int32_t
 {
-    if (handle != nullptr && isLive(handle))
-        handle->lastError = message == nullptr ? "Invalid argument." : message;
-    return errorCode(DmcError::InvalidArgument);
+    HandleGuard guard(handle);
+    return guard ? invalidArgumentLocked(handle, message) : errorCode(DmcError::InvalidArgument);
 }
 
 template <typename Result>
@@ -98,12 +144,10 @@ auto consume(szx_dmc_handle *handle, const Result &result) noexcept -> int32_t
 {
     if (result.ok)
     {
-        if (handle != nullptr)
-            handle->lastError.clear();
+        clearLastErrorLocked(handle);
         return static_cast<int32_t>(DmcError::Success);
     }
-    if (handle != nullptr)
-        handle->lastError = result.message;
+    setLastErrorLocked(handle, result.message);
     return resultCode(result.error);
 }
 
@@ -121,8 +165,7 @@ auto invoke(szx_dmc_handle *handle, Function &&function) noexcept -> int32_t
         return errorCode(DmcError::ResourceExhausted);
     } catch (const std::exception &error)
     {
-        if (handle != nullptr)
-            handle->lastError = error.what();
+        setLastErrorLocked(handle, error.what());
         return errorCode(DmcError::UnexpectedFailure);
     } catch (...)
     {
@@ -157,8 +200,8 @@ auto fillState(const DmcStatus &status, szx_dmc_state_v1 *output) noexcept -> vo
     output->compared_triggers                     = status.comparedTriggers;
     output->received_frames                       = status.receivedFrames;
     output->expected_frames                       = status.expectedFrames;
-    output->start_edge_sequence                   = status.startEdgeSequence;
-    output->last_start_edge_timestamp_nanoseconds = status.lastStartEdgeTimestampNanoseconds;
+    output->start_edge_sequence                   = 0;
+    output->last_start_edge_timestamp_nanoseconds = 0;
     output->compare_queue_remaining               = status.compareQueueRemaining;
     output->safety_latched                        = status.safetyLatched ? 1 : 0;
     output->compare_enabled                       = status.compareEnabled ? 1 : 0;
@@ -173,7 +216,7 @@ auto fillState(const DmcStatus &status, szx_dmc_state_v1 *output) noexcept -> vo
 auto requiredSize(std::size_t expected, std::uint32_t actual, szx_dmc_handle *handle) noexcept -> int32_t
 {
     if (actual < expected)
-        return invalidArgument(handle, "ABI structure is smaller than the v1 contract.");
+        return invalidArgumentLocked(handle, "ABI structure is smaller than the v1 contract.");
     return errorCode(DmcError::Success);
 }
 
@@ -220,7 +263,7 @@ auto szx_dmc_create_v1(const szx_dmc_config_v1 *config, szx_dmc_handle **outHand
                 callback(static_cast<uint8_t>(level), message.c_str(), userData);
             };
         }
-        auto result = DmcController::create(cppConfig);
+        auto result = DmcControllerFactory::create(cppConfig);
         if (!result.ok)
             return resultCode(result.error);
 
@@ -278,10 +321,12 @@ auto szx_dmc_disconnect_v1(szx_dmc_handle *handle) noexcept -> int32_t
 auto szx_dmc_poll_state_v1(szx_dmc_handle *handle, szx_dmc_state_v1 *state) noexcept -> int32_t
 {
     HandleGuard guard(handle);
-    if (!guard || state == nullptr)
+    if (!guard)
         return invalidArgument(handle, "Handle and state output are required.");
+    if (state == nullptr)
+        return invalidArgumentLocked(handle, "Handle and state output are required.");
     if (requiredSize(sizeof(szx_dmc_state_v1), state->struct_size, handle) != 0 || state->abi_version != SZX_DMC_ABI_VERSION_V1)
-        return invalidArgument(handle, "State ABI version or size is invalid.");
+        return invalidArgumentLocked(handle, "State ABI version or size is invalid.");
     SZX::COMMON::Result<DmcStatus> result;
     try
     {
@@ -293,7 +338,7 @@ auto szx_dmc_poll_state_v1(szx_dmc_handle *handle, szx_dmc_state_v1 *state) noex
     if (!result.ok)
         return consume(handle, result);
     fillState(result.value, state);
-    handle->lastError.clear();
+    clearLastErrorLocked(handle);
     return errorCode(DmcError::Success);
 }
 
@@ -335,8 +380,6 @@ auto szx_dmc_arm_capture_v1(szx_dmc_handle *handle, const szx_dmc_capture_v1 *ca
     SZX::DMC::CaptureRequest request;
     request.operationId                = capture->operation_id;
     request.startSource                = static_cast<StartSource>(capture->start_source);
-    request.startInput                 = capture->start_input;
-    request.startInputActiveLevel      = capture->start_input_active_level != 0;
     request.triggerSource              = static_cast<FrameTriggerSource>(capture->trigger_source);
     request.compareOutput              = capture->compare_output;
     request.compareOutputActiveLevel   = capture->compare_output_active_level != 0;
@@ -403,12 +446,22 @@ auto szx_dmc_cancel_capture_v1(szx_dmc_handle *handle, uint8_t emergency) noexce
     }
     if (!state.ok)
         return consume(handle, state);
-    return invoke(handle,
-                  [&]
-                  {
-                      return handle->controller->cancelCapture(state.value.operationId,
-                                                               emergency != 0 ? StopMode::Emergency : StopMode::Decelerated);
-                  });
+    try
+    {
+        return consume(handle,
+                       handle->controller->cancelCapture(state.value.operationId,
+                                                         emergency != 0 ? StopMode::Emergency : StopMode::Decelerated));
+    } catch (const std::bad_alloc &)
+    {
+        return errorCode(DmcError::ResourceExhausted);
+    } catch (const std::exception &error)
+    {
+        setLastErrorLocked(handle, error.what());
+        return errorCode(DmcError::UnexpectedFailure);
+    } catch (...)
+    {
+        return errorCode(DmcError::UnexpectedFailure);
+    }
 }
 
 auto szx_dmc_last_error_v1(szx_dmc_handle *handle, char *buffer, size_t capacity, size_t *required) noexcept -> int32_t

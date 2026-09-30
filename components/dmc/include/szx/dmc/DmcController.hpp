@@ -32,13 +32,6 @@ inline namespace v1
 class SZX_DMC_API DmcController
 {
 public:
-    /**
-     * @brief 通过工厂创建控制器。
-     * @param[in] config 控制器和型号配置。
-     * @return 返回多态控制器或稳定的 DmcError 错误码。
-     */
-    static SZX::COMMON::Result<std::unique_ptr<DmcController>> create(DmcConfig config = {});
-
     /** @brief 销毁控制器并释放资源。 */
     virtual ~DmcController() noexcept = default;
 
@@ -83,7 +76,7 @@ public:
     /**
      * @brief 设置原始数字输入事件回调。
      * @param[in] sink 输入电平变化接收函数；为空时停止通知。
-     * @note DMC 只转发输入编号和电平，不判断其对应的按钮或业务动作。
+     * @note DMC 只转发原始输入位图，不判断其对应的按钮或业务动作。
      */
     virtual void setInputEventSink(InputEventSink sink) = 0;
 

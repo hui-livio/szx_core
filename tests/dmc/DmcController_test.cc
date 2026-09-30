@@ -18,7 +18,7 @@ using SZX::DMC::StartSource;
 
 auto makeController() -> std::unique_ptr<DmcController>
 {
-    auto result = DmcController::create(DmcConfig{.compareQueueCapacity = 8});
+    auto result = DmcControllerFactory::create(DmcConfig{.compareQueueCapacity = 8});
     EXPECT_TRUE(result.ok);
     return std::move(result.value);
 }
@@ -28,7 +28,6 @@ auto makeCapture(StartSource source = StartSource::SoftwareCommand) -> CaptureRe
     CaptureRequest request;
     request.operationId                = 42;
     request.startSource                = source;
-    request.startInput                 = 1;
     request.expectedFrames             = 4;
     request.triggerSource              = FrameTriggerSource::PositionCompareOutput;
     request.compareQueueCapacity       = 8;
@@ -76,7 +75,7 @@ TEST(DmcControllerTest, InjectedLogSinkReceivesLifecycleMessages)
     {
         ++logs;
     };
-    auto result = DmcController::create(std::move(config));
+    auto result = DmcControllerFactory::create(std::move(config));
     ASSERT_TRUE(result.ok);
     ASSERT_TRUE(result.value->connect().ok);
     EXPECT_GT(logs, 0);
@@ -101,20 +100,30 @@ TEST(DmcControllerTest, DigitalInputDoesNotStartCapture)
 {
     auto controller = makeController();
     ASSERT_TRUE(controller->connect().ok);
-    auto request = makeCapture(StartSource::DigitalInput);
+    auto request = makeCapture(StartSource::HardwareTrigger);
     ASSERT_TRUE(controller->armCapture(request).ok);
 
-    ASSERT_TRUE(controller->signalDigitalInput(request.startInput, false).ok);
-    ASSERT_TRUE(controller->signalDigitalInput(request.startInput, true).ok);
+    EXPECT_EQ(controller->startCapture(request.operationId, StartSource::None).error,
+              static_cast<int>(DmcError::InvalidArgument));
+    ASSERT_TRUE(controller->signalDigitalInput(1, false).ok);
+    ASSERT_TRUE(controller->signalDigitalInput(1, true).ok);
     const auto armed = controller->status();
     ASSERT_TRUE(armed.ok);
     EXPECT_EQ(armed.value.state, DmcState::Armed);
-    EXPECT_EQ(armed.value.startEdgeSequence, 0U);
 
-    ASSERT_TRUE(controller->signalDigitalInput(request.startInput, true).ok);
+    ASSERT_TRUE(controller->signalDigitalInput(1, true).ok);
     EXPECT_EQ(controller->status().value.state, DmcState::Armed);
     ASSERT_TRUE(controller->startCapture(request.operationId, StartSource::HardwareTrigger).ok);
     EXPECT_EQ(controller->status().value.state, DmcState::Scanning);
+}
+
+TEST(DmcControllerTest, RejectsInvalidCaptureStartSourceMask)
+{
+    auto controller = makeController();
+    ASSERT_TRUE(controller->connect().ok);
+    auto request        = makeCapture();
+    request.startSource = static_cast<StartSource>(4);
+    EXPECT_EQ(controller->armCapture(request).error, static_cast<int>(DmcError::InvalidArgument));
 }
 
 TEST(DmcControllerTest, InputSnapshotCallbackReceivesRawInputState)
@@ -125,12 +134,13 @@ TEST(DmcControllerTest, InputSnapshotCallbackReceivesRawInputState)
     {
         snapshots.push_back(snapshot);
     };
-    auto result = DmcController::create(config);
+    auto result = DmcControllerFactory::create(config);
     ASSERT_TRUE(result.ok);
     auto controller = std::move(result.value);
     ASSERT_TRUE(controller->connect().ok);
 
     ASSERT_TRUE(controller->signalDigitalInput(1, false).ok);
+    ASSERT_TRUE(controller->signalDigitalInput(1, true).ok);
     ASSERT_TRUE(controller->signalDigitalInput(1, true).ok);
     ASSERT_EQ(snapshots.size(), 2U);
     EXPECT_EQ(snapshots[0].sampledBits, 0U);
@@ -180,4 +190,30 @@ TEST(DmcCAbiTest, CreatesPollsAndRejectsInvalidAbi)
     EXPECT_EQ(szx_dmc_poll_state_v1(handle, &state), SZX_DMC_INVALID_ARGUMENT);
     EXPECT_EQ(szx_dmc_destroy_v1(handle), SZX_DMC_SUCCESS);
     EXPECT_EQ(szx_dmc_destroy_v1(handle), SZX_DMC_INVALID_ARGUMENT);
+}
+
+TEST(DmcCAbiTest, CancelsArmedCaptureWithoutLockReentry)
+{
+    szx_dmc_config_v1 config{};
+    config.struct_size            = sizeof(config);
+    config.abi_version            = SZX_DMC_ABI_VERSION_V1;
+    config.simulation             = 1;
+    config.compare_queue_capacity = 8;
+    config.input_count            = 8;
+    config.output_count           = 8;
+    szx_dmc_handle *handle        = nullptr;
+    ASSERT_EQ(szx_dmc_create_v1(&config, &handle), SZX_DMC_SUCCESS);
+    ASSERT_EQ(szx_dmc_connect_v1(handle), SZX_DMC_SUCCESS);
+
+    szx_dmc_capture_v1 capture{};
+    capture.struct_size            = sizeof(capture);
+    capture.abi_version            = SZX_DMC_ABI_VERSION_V1;
+    capture.operation_id           = 7;
+    capture.start_source           = SZX_DMC_START_SOURCE_SOFTWARE_COMMAND_V1;
+    capture.trigger_source         = 0;
+    capture.expected_frames        = 1;
+    capture.compare_queue_capacity = 8;
+    ASSERT_EQ(szx_dmc_arm_capture_v1(handle, &capture), SZX_DMC_SUCCESS);
+    ASSERT_EQ(szx_dmc_cancel_capture_v1(handle, 0), SZX_DMC_SUCCESS);
+    EXPECT_EQ(szx_dmc_destroy_v1(handle), SZX_DMC_SUCCESS);
 }

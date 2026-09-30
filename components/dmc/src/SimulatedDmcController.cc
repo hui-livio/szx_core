@@ -253,6 +253,8 @@ public:
             return fail<void>(DmcError::SafetyLatched, "The safety stop is latched.");
         if (armed_)
             return fail<void>(DmcError::Busy, "A capture operation is already active.");
+        if (!isValidStartSourceMask(request.startSource))
+            return fail<void>(DmcError::InvalidArgument, "The capture start source mask is invalid.");
         const auto capacity = request.compareQueueCapacity == 0 ? config_.compareQueueCapacity : request.compareQueueCapacity;
         if (request.operationId == 0 || request.expectedFrames == 0)
             return fail<void>(DmcError::InvalidArgument, "The capture ID and frame count must be non-zero.");
@@ -399,7 +401,9 @@ public:
             return check;
         if (input >= config_.inputCount || input >= 64)
             return fail<void>(DmcError::IoUnavailable, "The input index is out of range.");
-        const auto mask = std::uint64_t{1} << input;
+        const auto mask            = std::uint64_t{1} << input;
+        const bool previouslyValid = (validInputBits_ & mask) != 0;
+        const bool previousActive  = (inputs_.sampledBits & mask) != 0;
         if (active)
             inputs_.sampledBits |= mask;
         else
@@ -408,7 +412,8 @@ public:
         inputs_.timestampNanoseconds  = timestamp();
         inputs_.valid                 = true;
         validInputBits_              |= mask;
-        auto sink                     = inputSink_;
+        const bool changed            = !previouslyValid || previousActive != active;
+        auto sink                     = changed ? inputSink_ : InputEventSink{};
         auto snapshot                 = inputs_;
         lock.unlock();
         if (sink)

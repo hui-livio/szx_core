@@ -13,11 +13,6 @@
 namespace SZX::DMC::v1
 {
 
-auto DmcController::create(DmcConfig config) -> SZX::COMMON::Result<std::unique_ptr<DmcController>>
-{
-    return DmcControllerFactory::create(std::move(config));
-}
-
 auto DmcControllerFactory::create(DmcConfig config) -> SZX::COMMON::Result<std::unique_ptr<DmcController>>
 {
     try

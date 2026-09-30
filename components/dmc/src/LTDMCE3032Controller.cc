@@ -257,11 +257,13 @@ struct LTDMCE3032Controller::Impl
         return Result<void>::Success();
     }
 
-    auto processInputSampleLocked(InputId input, bool active) -> Result<void>
+    auto processInputSampleLocked(InputId input, bool active) -> Result<bool>
     {
         if (input >= config.inputCount || input >= 64)
-            return failure<void>(DmcError::IoUnavailable, "Input is outside the configured IO range.");
-        const auto mask = std::uint64_t{1} << input;
+            return failure<bool>(DmcError::IoUnavailable, "Input is outside the configured IO range.");
+        const auto mask            = std::uint64_t{1} << input;
+        const bool previouslyValid = (inputSampleValidBits & mask) != 0;
+        const bool previousActive  = (inputs.sampledBits & mask) != 0;
         if (active)
             inputs.sampledBits |= mask;
         else
@@ -270,78 +272,107 @@ struct LTDMCE3032Controller::Impl
         inputs.valid                 = true;
         inputs.timestampNanoseconds  = nowNanoseconds();
         inputSampleValidBits        |= mask;
-        return Result<void>::Success();
+        return Result<bool>::Success(!previouslyValid || previousActive != active);
     }
 
     auto inputLoop(std::stop_token stopToken) noexcept -> void
     {
-        while (!stopToken.stop_requested())
+        try
         {
-            bool inputFailure = false;
-            InputEventSink sink;
-            InputSnapshot snapshot;
+            while (!stopToken.stop_requested())
             {
-                std::scoped_lock lock(mutex);
-                if (!connected() || config.simulation)
-                    break;
-                for (InputId input = 0; input < config.inputCount; ++input)
+                bool inputFailure = false;
+                bool inputChanged = false;
+                InputEventSink sink;
+                InputSnapshot snapshot;
                 {
-                    const auto value = dmc_read_inbit(static_cast<WORD>(config.cardIndex), static_cast<WORD>(input));
-                    if (value < 0)
-                    {
-                        status.inputValid = false;
-                        status.state      = DmcState::Failed;
-                        status.lastError  = DmcError::IoUnavailable;
-                        inputFailure      = true;
+                    std::scoped_lock lock(mutex);
+                    if (!connected() || config.simulation)
                         break;
-                    }
-                    const auto result = processInputSampleLocked(input, value != 0);
-                    if (!result.ok)
+                    for (InputId input = 0; input < config.inputCount; ++input)
                     {
-                        inputFailure = true;
-                        break;
-                    }
-                }
-                if (!inputFailure)
-                    for (AxisId axis = 0; axis < axes.size(); ++axis)
-                    {
-                        double position = 0.0;
-                        const auto positionResult =
-                            dmc_get_position_unit(static_cast<WORD>(config.cardIndex), static_cast<WORD>(axis), &position);
-                        const auto done = dmc_check_done(static_cast<WORD>(config.cardIndex), static_cast<WORD>(axis));
-                        if (positionResult != 0 || done < 0)
+                        const auto value = dmc_read_inbit(static_cast<WORD>(config.cardIndex), static_cast<WORD>(input));
+                        if (value < 0)
                         {
-                            status.state     = DmcState::Failed;
-                            status.lastError = DmcError::AxisNotReady;
-                            inputFailure     = true;
+                            status.inputValid = false;
+                            status.state      = DmcState::Failed;
+                            status.lastError  = DmcError::IoUnavailable;
+                            inputFailure      = true;
                             break;
                         }
-                        axes[axis].position = position;
-                        axes[axis].moving   = done == 0;
+                        const auto result = processInputSampleLocked(input, value != 0);
+                        if (!result.ok)
+                        {
+                            inputFailure = true;
+                            break;
+                        }
+                        inputChanged = inputChanged || result.value;
                     }
-                if (!inputFailure)
-                {
-                    snapshot = inputs;
-                    sink     = inputSink;
+                    if (!inputFailure)
+                        for (AxisId axis = 0; axis < axes.size(); ++axis)
+                        {
+                            double position = 0.0;
+                            const auto positionResult =
+                                dmc_get_position_unit(static_cast<WORD>(config.cardIndex), static_cast<WORD>(axis), &position);
+                            const auto done = dmc_check_done(static_cast<WORD>(config.cardIndex), static_cast<WORD>(axis));
+                            if (positionResult != 0 || done < 0)
+                            {
+                                status.state     = DmcState::Failed;
+                                status.lastError = DmcError::AxisNotReady;
+                                inputFailure     = true;
+                                break;
+                            }
+                            axes[axis].position = position;
+                            axes[axis].moving   = done == 0;
+                        }
+                    if (!inputFailure && inputChanged)
+                    {
+                        snapshot = inputs;
+                        sink     = inputSink;
+                    }
                 }
+                if (sink)
+                    try
+                    {
+                        sink(snapshot);
+                    } catch (...)
+                    {
+                        // Host callbacks must not terminate the polling worker.
+                    }
+                if (inputFailure)
+                    log(DmcLogLevel::Error, "LTDMC input polling failed.");
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
             }
-            if (!inputFailure && sink)
-                try
-                {
-                    sink(snapshot);
-                } catch (...)
-                {
-                    // Host callbacks must not terminate the polling worker.
-                }
-            if (inputFailure)
-                log(DmcLogLevel::Error, "LTDMC input polling failed.");
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        } catch (...)
+        {
+            markInputWorkerFailure();
+        }
+    }
+
+    auto markInputWorkerFailure() noexcept -> void
+    {
+        try
+        {
+            std::scoped_lock lock(mutex);
+            status.inputValid = false;
+            status.state      = DmcState::Failed;
+            status.lastError  = DmcError::UnexpectedFailure;
+        } catch (...)
+        {
         }
     }
 
     auto log(DmcLogLevel level, const std::string &message) noexcept -> void
     {
-        auto sink = logSink;
+        LogSink sink;
+        try
+        {
+            std::scoped_lock lock(mutex);
+            sink = logSink;
+        } catch (...)
+        {
+            return;
+        }
         if (!sink)
             return;
         try
@@ -396,6 +427,8 @@ struct LTDMCE3032Controller::Impl
             return failure<void>(DmcError::NotConnected, "DMC controller is not connected.");
         if (capture.operationId == 0 || capture.expectedFrames == 0)
             return failure<void>(DmcError::InvalidArgument, "Capture operation and expected frame count are required.");
+        if (!isValidStartSourceMask(capture.startSource))
+            return failure<void>(DmcError::InvalidArgument, "Capture start source mask is invalid.");
         const auto capacity = capture.compareQueueCapacity == 0 ? config.compareQueueCapacity : capture.compareQueueCapacity;
         if (capacity == 0 || capture.expectedFrames > capacity)
             return failure<void>(DmcError::CompareQueueFull, "Capture compare queue capacity is insufficient.");
@@ -1087,11 +1120,13 @@ auto LTDMCE3032Controller::signalDigitalInput(InputId input, bool active) -> SZX
             std::unique_lock lock(impl_->mutex);
             if (!impl_->connected())
                 return failure<void>(DmcError::NotConnected, "DMC controller is not connected.");
-            auto result   = impl_->processInputSampleLocked(input, active);
-            auto sink     = impl_->inputSink;
+            auto result = impl_->processInputSampleLocked(input, active);
+            if (!result.ok)
+                return failure<void>(static_cast<DmcError>(result.error), result.message);
+            auto sink     = result.value ? impl_->inputSink : InputEventSink{};
             auto snapshot = impl_->inputs;
             lock.unlock();
-            if (result.ok && sink)
+            if (sink)
                 try
                 {
                     sink(snapshot);
@@ -1099,7 +1134,7 @@ auto LTDMCE3032Controller::signalDigitalInput(InputId input, bool active) -> SZX
                 {
                     // Host callbacks must not cross the controller boundary.
                 }
-            return result;
+            return Result<void>::Success();
         });
 }
 

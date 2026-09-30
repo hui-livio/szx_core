@@ -43,6 +43,7 @@ PYBIND11_MODULE(szx_dmc_py, module)
         .value("Cancelled", DmcError::Cancelled)
         .value("ResourceExhausted", DmcError::ResourceExhausted)
         .value("UnexpectedFailure", DmcError::UnexpectedFailure)
+        .value("BufferTooSmall", DmcError::BufferTooSmall)
         .export_values();
     py::enum_<DmcState>(module, "DmcState")
         .value("Disconnected", DmcState::Disconnected)
@@ -60,7 +61,6 @@ PYBIND11_MODULE(szx_dmc_py, module)
         .value("None", StartSource::None)
         .value("SoftwareCommand", StartSource::SoftwareCommand)
         .value("HardwareTrigger", StartSource::HardwareTrigger)
-        .value("DigitalInput", StartSource::DigitalInput)
         .value("Any", StartSource::Any);
     py::enum_<FrameTriggerSource>(module, "FrameTriggerSource")
         .value("Software", FrameTriggerSource::Software)
@@ -101,7 +101,6 @@ PYBIND11_MODULE(szx_dmc_py, module)
         .def_readonly("compared_triggers", &DmcStatus::comparedTriggers)
         .def_readonly("received_frames", &DmcStatus::receivedFrames)
         .def_readonly("expected_frames", &DmcStatus::expectedFrames)
-        .def_readonly("start_edge_sequence", &DmcStatus::startEdgeSequence)
         .def_readonly("compare_queue_remaining", &DmcStatus::compareQueueRemaining)
         .def_readonly("safety_latched", &DmcStatus::safetyLatched)
         .def_readonly("compare_enabled", &DmcStatus::compareEnabled)
@@ -128,8 +127,6 @@ PYBIND11_MODULE(szx_dmc_py, module)
         .def(py::init<>())
         .def_readwrite("operation_id", &CaptureRequest::operationId)
         .def_readwrite("start_source", &CaptureRequest::startSource)
-        .def_readwrite("start_input", &CaptureRequest::startInput)
-        .def_readwrite("start_input_active_level", &CaptureRequest::startInputActiveLevel)
         .def_readwrite("trigger_source", &CaptureRequest::triggerSource)
         .def_readwrite("expected_frames", &CaptureRequest::expectedFrames)
         .def_readwrite("compare_output", &CaptureRequest::compareOutput)
@@ -138,16 +135,17 @@ PYBIND11_MODULE(szx_dmc_py, module)
         .def_readwrite("compare_queue_capacity", &CaptureRequest::compareQueueCapacity)
         .def_readwrite("compare_points", &CaptureRequest::comparePoints)
         .def_readwrite("scan_plan", &CaptureRequest::scanPlan);
-    py::class_<DmcController, std::unique_ptr<DmcController>>(module, "DmcController")
+    py::class_<DmcControllerFactory>(module, "DmcControllerFactory")
         .def_static(
             "create",
             [](const DmcConfig &config)
             {
-                auto result = DmcController::create(config);
+                auto result = DmcControllerFactory::create(config);
                 requireOk(result);
                 return std::move(result.value);
             },
-            py::arg("config") = DmcConfig{})
+            py::arg("config") = DmcConfig{});
+    py::class_<DmcController, std::unique_ptr<DmcController>>(module, "DmcController")
         .def("connect", [](DmcController &controller) { requireOk(controller.connect()); })
         .def("disconnect", [](DmcController &controller) { requireOk(controller.disconnect()); })
         .def(

@@ -26,6 +26,7 @@ class DmcError(Enum):
     Cancelled: DmcError
     ResourceExhausted: DmcError
     UnexpectedFailure: DmcError
+    BufferTooSmall: DmcError
 
 
 class DmcState(Enum):
@@ -46,7 +47,6 @@ class StartSource(Enum):
     None: StartSource
     SoftwareCommand: StartSource
     HardwareTrigger: StartSource
-    DigitalInput: StartSource
     Any: StartSource
 
 
@@ -108,7 +108,6 @@ class DmcStatus:
     compared_triggers: int
     received_frames: int
     expected_frames: int
-    start_edge_sequence: int
     compare_queue_remaining: int
     safety_latched: bool
     compare_enabled: bool
@@ -142,8 +141,6 @@ class ScanPlan:
 class CaptureRequest:
     operation_id: int
     start_source: StartSource
-    start_input: int
-    start_input_active_level: bool
     trigger_source: FrameTriggerSource
     expected_frames: int
     compare_output: int
@@ -156,10 +153,12 @@ class CaptureRequest:
     def __init__(self) -> None: ...
 
 
-class DmcController:
+class DmcControllerFactory:
     @staticmethod
     def create(config: DmcConfig = ...) -> DmcController: ...
 
+
+class DmcController:
     def connect(self) -> None: ...
     def disconnect(self) -> None: ...
     def status(self) -> DmcStatus: ...

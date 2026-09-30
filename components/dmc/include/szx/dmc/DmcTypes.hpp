@@ -56,7 +56,7 @@ enum class DmcState : std::uint8_t
     Disconnected = 0, ///< 未连接。
     Ready,            ///< 已连接且空闲。
     Armed,            ///< 采集已装载。
-    WaitingForStart,  ///< 等待启动输入。
+    WaitingForStart,  ///< 兼容保留；当前由业务层显式调用 startCapture。
     Preparing,        ///< 准备扫描。
     Scanning,         ///< 正在扫描。
     WaitingForFrames, ///< 等待相机帧。
@@ -77,7 +77,6 @@ enum class StartSource : std::uint8_t
     None            = 0,                                 ///< 不允许启动。
     SoftwareCommand = 1u << 0,                           ///< 软件命令启动。
     HardwareTrigger = 1u << 1,                           ///< 外部硬件触发启动。
-    DigitalInput    = HardwareTrigger,                   ///< 兼容旧名称；不表示具体输入接线。
     Any             = SoftwareCommand | HardwareTrigger, ///< 允许两种启动来源。
 };
 
@@ -88,7 +87,14 @@ constexpr auto operator|(StartSource left, StartSource right) noexcept -> StartS
 
 constexpr auto hasStartSource(StartSource value, StartSource source) noexcept -> bool
 {
-    return (static_cast<std::uint8_t>(value) & static_cast<std::uint8_t>(source)) == static_cast<std::uint8_t>(source);
+    const auto requested = static_cast<std::uint8_t>(source);
+    return requested != 0 && requested != static_cast<std::uint8_t>(StartSource::Any) &&
+        (static_cast<std::uint8_t>(value) & requested) == requested;
+}
+
+constexpr auto isValidStartSourceMask(StartSource value) noexcept -> bool
+{
+    return (static_cast<std::uint8_t>(value) & ~static_cast<std::uint8_t>(StartSource::Any)) == 0;
 }
 
 /** @brief 相机帧触发来源。 */
@@ -230,8 +236,6 @@ struct CaptureRequest
 {
     OperationId operationId            = 0;                                         ///< 采集任务编号。
     StartSource startSource            = StartSource::Any;                          ///< 允许的启动来源位标志。
-    InputId startInput                 = 0;                                         ///< 启动输入。
-    bool startInputActiveLevel         = true;                                      ///< 启动有效电平。
     FrameTriggerSource triggerSource   = FrameTriggerSource::PositionCompareOutput; ///< 帧触发来源。
     std::uint32_t expectedFrames       = 0;                                         ///< 计划帧数。
     std::uint16_t compareOutput        = 0;                                         ///< 比较输出。
@@ -269,25 +273,23 @@ struct InputSnapshot
 /** @brief 控制器和采集任务状态快照。 */
 struct DmcStatus
 {
-    DmcState state                                 = DmcState::Disconnected; ///< 生命周期状态。
-    DmcError lastError                             = DmcError::Success;      ///< 最近错误。
-    OperationId operationId                        = 0;                      ///< 采集任务编号。
-    std::uint32_t currentRow                       = 0;                      ///< 当前行。
-    std::uint32_t totalRows                        = 0;                      ///< 总行数。
-    std::uint32_t comparedTriggers                 = 0;                      ///< 已确认触发数。
-    std::uint32_t receivedFrames                   = 0;                      ///< 已保存帧数。
-    std::uint32_t expectedFrames                   = 0;                      ///< 计划帧数。
-    std::uint64_t startEdgeSequence                = 0;                      ///< 启动边沿序号。
-    std::int64_t lastStartEdgeTimestampNanoseconds = 0;                      ///< 启动边沿时间戳。
-    std::uint32_t compareQueueRemaining            = 0;                      ///< 剩余比较点数。
-    bool safetyLatched                             = false;                  ///< 安全停止是否锁存。
-    bool compareEnabled                            = false;                  ///< 比较输出是否启用。
-    bool inputValid                                = false;                  ///< 输入采样是否有效。
-    bool hardware                                  = false;                  ///< 是否使用硬件。
-    DmcModel model                                 = DmcModel::GenericLTDMC; ///< 驱动系列。
-    std::string profileId;                                                   ///< 型号配置标识。
-    std::string diagnostic;                                                  ///< 诊断信息。
-    std::vector<AxisStatus> axes;                                            ///< 轴状态列表。
+    DmcState state                      = DmcState::Disconnected; ///< 生命周期状态。
+    DmcError lastError                  = DmcError::Success;      ///< 最近错误。
+    OperationId operationId             = 0;                      ///< 采集任务编号。
+    std::uint32_t currentRow            = 0;                      ///< 当前行。
+    std::uint32_t totalRows             = 0;                      ///< 总行数。
+    std::uint32_t comparedTriggers      = 0;                      ///< 已确认触发数。
+    std::uint32_t receivedFrames        = 0;                      ///< 已保存帧数。
+    std::uint32_t expectedFrames        = 0;                      ///< 计划帧数。
+    std::uint32_t compareQueueRemaining = 0;                      ///< 剩余比较点数。
+    bool safetyLatched                  = false;                  ///< 安全停止是否锁存。
+    bool compareEnabled                 = false;                  ///< 比较输出是否启用。
+    bool inputValid                     = false;                  ///< 输入采样是否有效。
+    bool hardware                       = false;                  ///< 是否使用硬件。
+    DmcModel model                      = DmcModel::GenericLTDMC; ///< 驱动系列。
+    std::string profileId;                                        ///< 型号配置标识。
+    std::string diagnostic;                                       ///< 诊断信息。
+    std::vector<AxisStatus> axes;                                 ///< 轴状态列表。
 };
 
 } // namespace v1

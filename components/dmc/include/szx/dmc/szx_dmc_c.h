@@ -57,6 +57,14 @@ enum
     SZX_DMC_DIAGNOSTIC_CAPACITY_V1 = 128, /**< 状态诊断文本缓冲区容量。 */
 };
 
+/** @brief 采集启动来源位标志。 */
+enum
+{
+    SZX_DMC_START_SOURCE_SOFTWARE_COMMAND_V1 = 1u, /**< 软件命令启动。 */
+    SZX_DMC_START_SOURCE_HARDWARE_TRIGGER_V1 = 2u, /**< 外部硬件触发。 */
+    SZX_DMC_START_SOURCE_ANY_V1              = 3u, /**< 允许软件和外部硬件触发。 */
+};
+
 /** @brief C ABI 返回的稳定错误码。 */
 typedef enum szx_dmc_error_v1
 {
@@ -131,8 +139,8 @@ typedef struct szx_dmc_state_v1
     uint32_t compared_triggers;                      /**< 已确认触发数。 */
     uint32_t received_frames;                        /**< 已保存帧数。 */
     uint32_t expected_frames;                        /**< 计划帧数。 */
-    uint64_t start_edge_sequence;                    /**< 启动边沿序号。 */
-    int64_t last_start_edge_timestamp_nanoseconds;   /**< 启动边沿时间戳。 */
+    uint64_t start_edge_sequence;                    /**< 已废弃，始终为 0。 */
+    int64_t last_start_edge_timestamp_nanoseconds;   /**< 已废弃，始终为 0。 */
     uint32_t compare_queue_remaining;                /**< 剩余比较点数。 */
     uint8_t safety_latched;                          /**< 是否锁存安全停止。 */
     uint8_t compare_enabled;                         /**< 是否启用位置比较。 */
@@ -163,8 +171,8 @@ typedef struct szx_dmc_capture_v1
     uint32_t abi_version;                           /**< ABI 版本。 */
     uint64_t operation_id;                          /**< 采集任务编号。 */
     uint16_t start_source;                          /**< 启动来源位标志：1 软件命令，2 外部硬件触发。 */
-    uint16_t start_input;                           /**< 启动输入。 */
-    uint8_t start_input_active_level;               /**< 启动输入有效电平。 */
+    uint16_t start_input;                           /**< 已废弃；由业务层处理硬件输入事件。 */
+    uint8_t start_input_active_level;               /**< 已废弃；由业务层处理硬件输入事件。 */
     uint16_t trigger_source;                        /**< 帧触发来源。 */
     uint16_t scan_axis;                             /**< 扫描轴。 */
     uint16_t row_axis;                              /**< 换行轴。 */
@@ -257,7 +265,8 @@ int32_t SZX_DMC_CALL szx_dmc_start_capture_v1(szx_dmc_handle *handle, uint64_t o
  * @brief 按指定来源启动采集任务。
  * @param[in] handle 已创建的控制器句柄。
  * @param[in] operation_id 已通过 arm_capture 装载的任务编号。
- * @param[in] source 启动来源位标志：1 软件命令，2 外部硬件触发。
+ * @param[in] source 本次启动来源：SZX_DMC_START_SOURCE_SOFTWARE_COMMAND_V1 或
+ *                   SZX_DMC_START_SOURCE_HARDWARE_TRIGGER_V1；不能传入 ANY。
  * @return SZX_DMC_SUCCESS 或具体错误码。
  */
 SZX_DMC_C_API
