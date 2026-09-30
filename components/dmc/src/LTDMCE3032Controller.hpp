@@ -23,6 +23,7 @@ public:
     SZX::COMMON::Result<DmcStatus> status() const override;
     SZX::COMMON::Result<DmcProfile> profile() const override;
     void setLogSink(LogSink sink) override;
+    void setButtonEventSink(ButtonEventSink sink) override;
     SZX::COMMON::Result<void> enableAxis(AxisId axis) override;
     SZX::COMMON::Result<void> disableAxis(AxisId axis) override;
     SZX::COMMON::Result<void> homeAxis(AxisId axis, const HomeProfile &profile = {}) override;

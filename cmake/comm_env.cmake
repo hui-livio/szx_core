@@ -14,22 +14,20 @@ function(szx_find_python)
         # Prefer the virtual environment owned by the current top-level CMake
         # project.  This keeps configure-time scripts on the same Python
         # installation as the repository's dependencies.
-        if(NOT SZX_PYTHON)
-            if(WIN32)
-                set(_szx_venv_python_names python.exe python)
-                set(_szx_venv_python_path "${CMAKE_SOURCE_DIR}/.venv/Scripts")
-            else()
-                set(_szx_venv_python_names python3 python)
-                set(_szx_venv_python_path "${CMAKE_SOURCE_DIR}/.venv/bin")
-            endif()
+        if(WIN32)
+            set(_szx_venv_python_names python.exe python)
+            set(_szx_venv_python_path "${CMAKE_SOURCE_DIR}/.venv/Scripts")
+        else()
+            set(_szx_venv_python_names python3 python)
+            set(_szx_venv_python_path "${CMAKE_SOURCE_DIR}/.venv/bin")
+        endif()
 
-            find_program(_szx_venv_python
-                NAMES ${_szx_venv_python_names}
-                PATHS "${_szx_venv_python_path}"
-                NO_DEFAULT_PATH)
-            if(_szx_venv_python)
-                set(SZX_PYTHON "${_szx_venv_python}" CACHE FILEPATH "Python interpreter" FORCE)
-            endif()
+        find_program(_szx_venv_python
+            NAMES ${_szx_venv_python_names}
+            PATHS "${_szx_venv_python_path}"
+            NO_DEFAULT_PATH)
+        if(_szx_venv_python)
+            set(SZX_PYTHON "${_szx_venv_python}" CACHE FILEPATH "Python interpreter" FORCE)
         endif()
 
         if(NOT SZX_PYTHON)

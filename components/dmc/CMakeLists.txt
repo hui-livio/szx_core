@@ -86,12 +86,56 @@ if(SZX_DMC_HAS_LTDMC AND EXISTS "${SZX_DMC_RUNTIME}")
     endif()
 endif()
 
+if(COMMAND szx_find_python)
+    # Use the Python interpreter selected by the top-level project.  The
+    # helper prefers <top-level>/.venv and keeps pybind11 and the extension
+    # on the same Python installation.
+    szx_find_python()
+endif()
+
+if(SZX_PYTHON)
+    set(Python_EXECUTABLE "${SZX_PYTHON}" CACHE FILEPATH "Python interpreter used by DMC pybind11" FORCE)
+    set(Python3_EXECUTABLE "${SZX_PYTHON}" CACHE FILEPATH "Python 3 interpreter used by DMC pybind11" FORCE)
+    set(PYTHON_EXECUTABLE "${SZX_PYTHON}" CACHE FILEPATH "Python interpreter used by DMC pybind11" FORCE)
+    execute_process(
+        COMMAND "${SZX_PYTHON}" -c "import pybind11; print(pybind11.get_cmake_dir())"
+        RESULT_VARIABLE _szx_pybind11_result
+        OUTPUT_VARIABLE _szx_pybind11_cmake_dir
+        ERROR_QUIET
+        OUTPUT_STRIP_TRAILING_WHITESPACE)
+    if(_szx_pybind11_result EQUAL 0 AND EXISTS "${_szx_pybind11_cmake_dir}")
+        list(PREPEND CMAKE_PREFIX_PATH "${_szx_pybind11_cmake_dir}")
+        message(STATUS "DMC pybind11: ${_szx_pybind11_cmake_dir}")
+    endif()
+endif()
+
 find_package(pybind11 CONFIG QUIET)
 if(pybind11_FOUND)
     pybind11_add_module(szx_dmc_py MODULE src/python_bindings.cc)
-    target_link_libraries(szx_dmc_py PRIVATE szx::dmc)
+    target_link_libraries(szx_dmc_py PRIVATE szx::dmc_static)
     target_compile_features(szx_dmc_py PRIVATE cxx_std_20)
+
+    set(SZX_DMC_PYI_TEMPLATE "${CMAKE_CURRENT_SOURCE_DIR}/python/szx_dmc_py.pyi.in")
+    set(SZX_DMC_PYI_BUILD "${CMAKE_CURRENT_BINARY_DIR}/szx_dmc_py.pyi")
+    add_custom_command(
+        OUTPUT "${SZX_DMC_PYI_BUILD}"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${SZX_DMC_PYI_TEMPLATE}" "${SZX_DMC_PYI_BUILD}"
+        DEPENDS "${SZX_DMC_PYI_TEMPLATE}"
+        COMMENT "Generating szx_dmc_py.pyi")
+    add_custom_target(szx_dmc_pyi DEPENDS "${SZX_DMC_PYI_BUILD}")
+    add_dependencies(szx_dmc_py szx_dmc_pyi)
+    add_custom_command(TARGET szx_dmc_py POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${SZX_DMC_PYI_BUILD}"
+                "$<TARGET_FILE_DIR:szx_dmc_py>/szx_dmc_py.pyi")
+
     if(COMMAND szx_copy_runtime_dlls)
         szx_copy_runtime_dlls(szx_dmc_py)
+    endif()
+    if(SZX_DMC_HAS_LTDMC AND EXISTS "${SZX_DMC_RUNTIME}")
+        add_custom_command(TARGET szx_dmc_py POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different "${SZX_DMC_RUNTIME}" "$<TARGET_FILE_DIR:szx_dmc_py>")
+    endif()
+    if(SZX_COMPONENTS_INSTALL)
+        install(FILES "${SZX_DMC_PYI_BUILD}" DESTINATION "${CMAKE_INSTALL_LIBDIR}")
     endif()
 endif()

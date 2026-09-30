@@ -73,6 +73,18 @@ PYBIND11_MODULE(szx_dmc_py, module)
         .value("Info", DmcLogLevel::Info)
         .value("Warning", DmcLogLevel::Warning)
         .value("Error", DmcLogLevel::Error);
+    py::enum_<DmcButton>(module, "DmcButton")
+        .value("Start", DmcButton::Start)
+        .value("Reset", DmcButton::Reset)
+        .value("EmergencyStop", DmcButton::EmergencyStop);
+    py::class_<DmcButtonInput>(module, "DmcButtonInput")
+        .def(py::init<>())
+        .def_readwrite("input", &DmcButtonInput::input)
+        .def_readwrite("active_level", &DmcButtonInput::activeLevel);
+    py::class_<DmcButtonEvent>(module, "DmcButtonEvent")
+        .def_readonly("button", &DmcButtonEvent::button)
+        .def_readonly("input", &DmcButtonEvent::input)
+        .def_readonly("timestamp_nanoseconds", &DmcButtonEvent::timestampNanoseconds);
 
     py::class_<DmcConfig>(module, "DmcConfig")
         .def(py::init<>())
@@ -84,7 +96,10 @@ PYBIND11_MODULE(szx_dmc_py, module)
         .def_readwrite("compare_queue_capacity", &DmcConfig::compareQueueCapacity)
         .def_readwrite("input_count", &DmcConfig::inputCount)
         .def_readwrite("output_count", &DmcConfig::outputCount)
-        .def_readwrite("log_sink", &DmcConfig::logSink);
+        .def_readwrite("log_sink", &DmcConfig::logSink)
+        .def_readwrite("start_button", &DmcConfig::startButton)
+        .def_readwrite("reset_button", &DmcConfig::resetButton)
+        .def_readwrite("emergency_stop_button", &DmcConfig::emergencyStopButton);
     py::class_<DmcStatus>(module, "DmcStatus")
         .def_readonly("state", &DmcStatus::state)
         .def_readonly("last_error", &DmcStatus::lastError)
@@ -143,6 +158,30 @@ PYBIND11_MODULE(szx_dmc_py, module)
             py::arg("config") = DmcConfig{})
         .def("connect", [](DmcController &controller) { requireOk(controller.connect()); })
         .def("disconnect", [](DmcController &controller) { requireOk(controller.disconnect()); })
+        .def(
+            "set_button_event_sink",
+            [](DmcController &controller, py::object sink)
+            {
+                if (sink.is_none())
+                {
+                    controller.setButtonEventSink({});
+                    return;
+                }
+                auto callback = sink.cast<py::function>();
+                controller.setButtonEventSink(
+                    [callback = std::move(callback)](const DmcButtonEvent &event)
+                    {
+                        py::gil_scoped_acquire gil;
+                        try
+                        {
+                            callback(event);
+                        } catch (...)
+                        {
+                            // Python callback failures must not terminate the input worker.
+                        }
+                    });
+            },
+            py::arg("sink") = py::none())
         .def("status",
              [](DmcController &controller)
              {

@@ -36,7 +36,8 @@ public:
         for (AxisId i = 0; i < axes_.size(); ++i)
             axes_[i].axis = i;
         outputs_.resize(config_.outputCount);
-        sink_ = config_.logSink;
+        sink_       = config_.logSink;
+        buttonSink_ = config_.buttonEventSink;
         sync();
     }
 
@@ -85,6 +86,12 @@ public:
     {
         std::scoped_lock lock(mutex_);
         sink_ = std::move(sink);
+    }
+
+    void setButtonEventSink(ButtonEventSink sink) override
+    {
+        std::scoped_lock lock(mutex_);
+        buttonSink_ = std::move(sink);
     }
 
     auto enableAxis(AxisId axis) -> Result<void> override
@@ -388,7 +395,7 @@ public:
 
     auto signalDigitalInput(InputId input, bool active) -> Result<void> override
     {
-        std::scoped_lock lock(mutex_);
+        std::unique_lock lock(mutex_);
         if (auto check = checkConnected(); !check.ok)
             return check;
         if (input >= config_.inputCount || input >= 64)
@@ -404,14 +411,52 @@ public:
         inputs_.timestampNanoseconds  = timestamp();
         inputs_.valid                 = true;
         validInputBits_              |= mask;
-        if (valid && previous != active && armed_ && status_.state == DmcState::WaitingForStart && request_.startInput == input &&
-            active == request_.startInputActiveLevel)
+        const auto pressed            = [input, active, previous, valid](const std::optional<DmcButtonInput> &button)
+        {
+            return button && button->input == input && valid && previous != active && active == button->activeLevel;
+        };
+        const bool emergencyPressed = config_.emergencyStopButton && config_.emergencyStopButton->input == input &&
+            active == config_.emergencyStopButton->activeLevel && (!valid || previous != active);
+        std::optional<DmcButtonEvent> event;
+        if (emergencyPressed)
+        {
+            for (auto &axis : axes_)
+            {
+                axis.moving   = false;
+                axis.velocity = 0.0;
+            }
+            latchSafety();
+            event = DmcButtonEvent{DmcButton::EmergencyStop, input, inputs_.timestampNanoseconds};
+        }
+        else if (pressed(config_.resetButton))
+            event = DmcButtonEvent{DmcButton::Reset, input, inputs_.timestampNanoseconds};
+        else if (pressed(config_.startButton))
+            event = DmcButtonEvent{DmcButton::Start, input, inputs_.timestampNanoseconds};
+        const bool captureStart = valid && previous != active && armed_ && status_.state == DmcState::WaitingForStart &&
+            request_.startSource == StartSource::DigitalInput && request_.startInput == input &&
+            active == request_.startInputActiveLevel;
+        Result<void> result = Result<void>::Success();
+        if (captureStart && !emergencyPressed)
         {
             ++status_.startEdgeSequence;
             status_.lastStartEdgeTimestampNanoseconds = inputs_.timestampNanoseconds;
-            return startLocked();
+            result                                    = startLocked();
+            if (!config_.startButton)
+                event = DmcButtonEvent{DmcButton::Start, input, inputs_.timestampNanoseconds};
         }
-        return Result<void>::Success();
+        auto sink = buttonSink_;
+        lock.unlock();
+        if (event && sink)
+        {
+            try
+            {
+                sink(*event);
+            } catch (...)
+            {
+                // A host callback must not interrupt input processing.
+            }
+        }
+        return result;
     }
 
 private:
@@ -509,6 +554,7 @@ private:
     CompareConfig compare_;
     CaptureRequest request_;
     LogSink sink_;
+    ButtonEventSink buttonSink_;
     bool armed_ = false;
 };
 } // namespace

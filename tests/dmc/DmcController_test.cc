@@ -8,6 +8,9 @@
 namespace
 {
 using SZX::DMC::CaptureRequest;
+using SZX::DMC::DmcButton;
+using SZX::DMC::DmcButtonEvent;
+using SZX::DMC::DmcButtonInput;
 using SZX::DMC::DmcConfig;
 using SZX::DMC::DmcController;
 using SZX::DMC::DmcControllerFactory;
@@ -26,15 +29,15 @@ auto makeController() -> std::unique_ptr<DmcController>
 auto makeCapture(StartSource source = StartSource::SoftwareCommand) -> CaptureRequest
 {
     CaptureRequest request;
-    request.operationId            = 42;
-    request.startSource            = source;
-    request.startInput             = 1;
-    request.expectedFrames         = 4;
-    request.triggerSource          = FrameTriggerSource::PositionCompareOutput;
-    request.compareQueueCapacity   = 8;
-    request.scanPlan.scanPositions = {10.0, 20.0};
-    request.scanPlan.rowPositions  = {1.0, 2.0};
-    request.comparePoints           = {{10.0, 0, 0, 0}, {20.0, 1, 0, 1}, {10.0, 2, 1, 0}, {20.0, 3, 1, 1}};
+    request.operationId                = 42;
+    request.startSource                = source;
+    request.startInput                 = 1;
+    request.expectedFrames             = 4;
+    request.triggerSource              = FrameTriggerSource::PositionCompareOutput;
+    request.compareQueueCapacity       = 8;
+    request.scanPlan.scanPositions     = {10.0, 20.0};
+    request.scanPlan.rowPositions      = {1.0, 2.0};
+    request.comparePoints              = {{10.0, 0, 0, 0}, {20.0, 1, 0, 1}, {10.0, 2, 1, 0}, {20.0, 3, 1, 1}};
     request.scanPlan.scanStartPosition = 10.0;
     request.scanPlan.scanEndPosition   = 20.0;
     return request;
@@ -84,9 +87,9 @@ TEST(DmcControllerTest, InjectedLogSinkReceivesLifecycleMessages)
 
 TEST(DmcControllerTest, FactoryRoutesLeiSaiProfileByProfileId)
 {
-    auto config = DmcConfig{.compareQueueCapacity = 8};
+    auto config      = DmcConfig{.compareQueueCapacity = 8};
     config.profileId = "E3032";
-    auto result = DmcControllerFactory::create(config);
+    auto result      = DmcControllerFactory::create(config);
     ASSERT_TRUE(result.ok);
     ASSERT_TRUE(result.value->profile().ok);
     EXPECT_EQ(result.value->profile().value.id, "E3032");
@@ -113,6 +116,37 @@ TEST(DmcControllerTest, DigitalInputStartUsesOneActiveEdge)
 
     ASSERT_TRUE(controller->signalDigitalInput(request.startInput, true).ok);
     EXPECT_EQ(controller->status().value.startEdgeSequence, 1U);
+}
+
+TEST(DmcControllerTest, ButtonPollingReportsStartResetAndEmergencyStop)
+{
+    auto events                = std::vector<DmcButton>{};
+    auto config                = DmcConfig{.compareQueueCapacity = 8};
+    config.startButton         = DmcButtonInput{1, true};
+    config.resetButton         = DmcButtonInput{2, true};
+    config.emergencyStopButton = DmcButtonInput{3, true};
+    config.buttonEventSink     = [&events](const DmcButtonEvent &event)
+    {
+        events.push_back(event.button);
+    };
+    auto result = DmcController::create(config);
+    ASSERT_TRUE(result.ok);
+    auto controller = std::move(result.value);
+    ASSERT_TRUE(controller->connect().ok);
+
+    ASSERT_TRUE(controller->signalDigitalInput(1, false).ok);
+    ASSERT_TRUE(controller->signalDigitalInput(1, true).ok);
+    ASSERT_TRUE(controller->signalDigitalInput(2, false).ok);
+    ASSERT_TRUE(controller->signalDigitalInput(2, true).ok);
+    ASSERT_TRUE(controller->signalDigitalInput(3, false).ok);
+    ASSERT_TRUE(controller->signalDigitalInput(3, true).ok);
+
+    ASSERT_EQ(events.size(), 3U);
+    EXPECT_EQ(events[0], DmcButton::Start);
+    EXPECT_EQ(events[1], DmcButton::Reset);
+    EXPECT_EQ(events[2], DmcButton::EmergencyStop);
+    ASSERT_TRUE(controller->status().ok);
+    EXPECT_EQ(controller->status().value.state, DmcState::SafetyLatched);
 }
 
 TEST(DmcControllerTest, CancellationClearsCompareQueueAndPreservesSafetyState)

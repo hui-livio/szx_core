@@ -81,6 +81,13 @@ public:
     virtual void setLogSink(LogSink sink) = 0;
 
     /**
+     * @brief 设置硬件按钮事件回调。
+     * @param[in] sink 按钮按下事件接收函数；为空时停止通知。
+     * @note 回调可能在输入轮询线程运行；实现会在释放控制器锁后调用。
+     */
+    virtual void setButtonEventSink(ButtonEventSink sink) = 0;
+
+    /**
      * @brief 使能指定轴。
      * @param[in] axis 要使能的轴编号。
      * @return 操作成功返回空结果；失败时返回 DmcError。
