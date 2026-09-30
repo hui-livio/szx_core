@@ -45,6 +45,6 @@ endfunction()
 
 function(szx_apply_default_compile_policy _target)
     szx_target_compile_settings(${_target} WIN32_LEAN
-        DISABLE_WARNINGS C4100 C4127 C4189 C4701 C4702 C4714)
+        DISABLE_WARNINGS C4100 C4127 C4189 C4701 C4702 C4714 C4458)
 endfunction()
 
