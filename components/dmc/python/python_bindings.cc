@@ -57,8 +57,11 @@ PYBIND11_MODULE(szx_dmc_py, module)
         .value("Failed", DmcState::Failed)
         .value("SafetyLatched", DmcState::SafetyLatched);
     py::enum_<StartSource>(module, "StartSource")
+        .value("None", StartSource::None)
         .value("SoftwareCommand", StartSource::SoftwareCommand)
-        .value("DigitalInput", StartSource::DigitalInput);
+        .value("HardwareTrigger", StartSource::HardwareTrigger)
+        .value("DigitalInput", StartSource::DigitalInput)
+        .value("Any", StartSource::Any);
     py::enum_<FrameTriggerSource>(module, "FrameTriggerSource")
         .value("Software", FrameTriggerSource::Software)
         .value("PositionCompareOutput", FrameTriggerSource::PositionCompareOutput);
@@ -73,19 +76,6 @@ PYBIND11_MODULE(szx_dmc_py, module)
         .value("Info", DmcLogLevel::Info)
         .value("Warning", DmcLogLevel::Warning)
         .value("Error", DmcLogLevel::Error);
-    py::enum_<DmcButton>(module, "DmcButton")
-        .value("Start", DmcButton::Start)
-        .value("Reset", DmcButton::Reset)
-        .value("EmergencyStop", DmcButton::EmergencyStop);
-    py::class_<DmcButtonInput>(module, "DmcButtonInput")
-        .def(py::init<>())
-        .def_readwrite("input", &DmcButtonInput::input)
-        .def_readwrite("active_level", &DmcButtonInput::activeLevel);
-    py::class_<DmcButtonEvent>(module, "DmcButtonEvent")
-        .def_readonly("button", &DmcButtonEvent::button)
-        .def_readonly("input", &DmcButtonEvent::input)
-        .def_readonly("timestamp_nanoseconds", &DmcButtonEvent::timestampNanoseconds);
-
     py::class_<DmcConfig>(module, "DmcConfig")
         .def(py::init<>())
         .def_readwrite("model", &DmcConfig::model)
@@ -96,10 +86,12 @@ PYBIND11_MODULE(szx_dmc_py, module)
         .def_readwrite("compare_queue_capacity", &DmcConfig::compareQueueCapacity)
         .def_readwrite("input_count", &DmcConfig::inputCount)
         .def_readwrite("output_count", &DmcConfig::outputCount)
-        .def_readwrite("log_sink", &DmcConfig::logSink)
-        .def_readwrite("start_button", &DmcConfig::startButton)
-        .def_readwrite("reset_button", &DmcConfig::resetButton)
-        .def_readwrite("emergency_stop_button", &DmcConfig::emergencyStopButton);
+        .def_readwrite("log_sink", &DmcConfig::logSink);
+    py::class_<InputSnapshot>(module, "InputSnapshot")
+        .def_readonly("active_bits", &InputSnapshot::activeBits)
+        .def_readonly("sampled_bits", &InputSnapshot::sampledBits)
+        .def_readonly("timestamp_nanoseconds", &InputSnapshot::timestampNanoseconds)
+        .def_readonly("valid", &InputSnapshot::valid);
     py::class_<DmcStatus>(module, "DmcStatus")
         .def_readonly("state", &DmcStatus::state)
         .def_readonly("last_error", &DmcStatus::lastError)
@@ -159,25 +151,25 @@ PYBIND11_MODULE(szx_dmc_py, module)
         .def("connect", [](DmcController &controller) { requireOk(controller.connect()); })
         .def("disconnect", [](DmcController &controller) { requireOk(controller.disconnect()); })
         .def(
-            "set_button_event_sink",
+            "set_input_event_sink",
             [](DmcController &controller, py::object sink)
             {
                 if (sink.is_none())
                 {
-                    controller.setButtonEventSink({});
+                    controller.setInputEventSink({});
                     return;
                 }
                 auto callback = sink.cast<py::function>();
-                controller.setButtonEventSink(
-                    [callback = std::move(callback)](const DmcButtonEvent &event)
+                controller.setInputEventSink(
+                    [callback = std::move(callback)](const InputSnapshot &snapshot)
                     {
                         py::gil_scoped_acquire gil;
                         try
                         {
-                            callback(event);
+                            callback(snapshot);
                         } catch (...)
                         {
-                            // Python callback failures must not terminate the input worker.
+                            // Python callback failures must not terminate input processing.
                         }
                     });
             },
@@ -191,8 +183,10 @@ PYBIND11_MODULE(szx_dmc_py, module)
              })
         .def("arm_capture",
              [](DmcController &controller, const CaptureRequest &request) { requireOk(controller.armCapture(request)); })
-        .def("start_capture",
-             [](DmcController &controller, OperationId operationId) { requireOk(controller.startCapture(operationId)); })
+        .def(
+            "start_capture", [](DmcController &controller, OperationId operationId, StartSource source)
+            { requireOk(controller.startCapture(operationId, source)); }, py::arg("operation_id"),
+            py::arg("source") = StartSource::SoftwareCommand)
         .def("acknowledge_compare_trigger", [](DmcController &controller, OperationId operationId, std::uint32_t count)
              { requireOk(controller.acknowledgeCompareTrigger(operationId, count)); })
         .def("acknowledge_frame_progress", [](DmcController &controller, OperationId operationId, FrameOrdinal frames)

@@ -43,8 +43,11 @@ class DmcState(Enum):
 
 
 class StartSource(Enum):
+    None: StartSource
     SoftwareCommand: StartSource
+    HardwareTrigger: StartSource
     DigitalInput: StartSource
+    Any: StartSource
 
 
 class FrameTriggerSource(Enum):
@@ -71,27 +74,15 @@ class DmcLogLevel(Enum):
     Error: DmcLogLevel
 
 
-class DmcButton(Enum):
-    Start: DmcButton
-    Reset: DmcButton
-    EmergencyStop: DmcButton
-
-
-class DmcButtonInput:
-    input: int
-    active_level: bool
-
-    def __init__(self) -> None: ...
-
-
-class DmcButtonEvent:
-    button: DmcButton
-    input: int
-    timestamp_nanoseconds: int
-
-
 LogSink = Callable[[DmcLogLevel, str], None]
-ButtonEventSink = Callable[[DmcButtonEvent], None]
+class InputSnapshot:
+    active_bits: int
+    sampled_bits: int
+    timestamp_nanoseconds: int
+    valid: bool
+
+
+InputEventSink = Callable[[InputSnapshot], None]
 
 
 class DmcConfig:
@@ -104,9 +95,6 @@ class DmcConfig:
     input_count: int
     output_count: int
     log_sink: Optional[LogSink]
-    start_button: Optional[DmcButtonInput]
-    reset_button: Optional[DmcButtonInput]
-    emergency_stop_button: Optional[DmcButtonInput]
 
     def __init__(self) -> None: ...
 
@@ -176,10 +164,10 @@ class DmcController:
     def disconnect(self) -> None: ...
     def status(self) -> DmcStatus: ...
     def arm_capture(self, request: CaptureRequest) -> None: ...
-    def start_capture(self, operation_id: int) -> None: ...
+    def start_capture(self, operation_id: int, source: StartSource = ...) -> None: ...
     def acknowledge_compare_trigger(self, operation_id: int, count: int) -> None: ...
     def acknowledge_frame_progress(self, operation_id: int, frames: int) -> None: ...
     def complete_camera(self, operation_id: int, frames: int) -> None: ...
     def cancel_capture(self, operation_id: int, mode: StopMode = ...) -> None: ...
-    def set_button_event_sink(self, sink: Optional[ButtonEventSink] = ...) -> None: ...
+    def set_input_event_sink(self, sink: Optional[InputEventSink] = ...) -> None: ...
     def signal_digital_input(self, input: int, active: bool) -> None: ...

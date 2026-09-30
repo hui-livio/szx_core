@@ -81,11 +81,11 @@ public:
     virtual void setLogSink(LogSink sink) = 0;
 
     /**
-     * @brief 设置硬件按钮事件回调。
-     * @param[in] sink 按钮按下事件接收函数；为空时停止通知。
-     * @note 回调可能在输入轮询线程运行；实现会在释放控制器锁后调用。
+     * @brief 设置原始数字输入事件回调。
+     * @param[in] sink 输入电平变化接收函数；为空时停止通知。
+     * @note DMC 只转发输入编号和电平，不判断其对应的按钮或业务动作。
      */
-    virtual void setButtonEventSink(ButtonEventSink sink) = 0;
+    virtual void setInputEventSink(InputEventSink sink) = 0;
 
     /**
      * @brief 使能指定轴。
@@ -178,11 +178,13 @@ public:
      */
     virtual SZX::COMMON::Result<void> armCapture(const CaptureRequest &request) = 0;
     /**
-     * @brief 启动软件触发采集。
+     * @brief 按指定来源启动采集。
      * @param[in] operationId 已通过 armCapture 装载的任务编号。
+     * @param[in] source 本次启动来源；可选择软件命令或外部硬件触发。
      * @return 操作成功返回空结果；失败时返回 DmcError。
      */
-    virtual SZX::COMMON::Result<void> startCapture(OperationId operationId) = 0;
+    virtual SZX::COMMON::Result<void> startCapture(OperationId operationId,
+                                                   StartSource source = StartSource::SoftwareCommand) = 0;
     /**
      * @brief 确认已观察到的位置比较触发数。
      * @param[in] operationId 采集任务编号。
@@ -225,14 +227,13 @@ public:
      */
     virtual SZX::COMMON::Result<DmcStatus> pollCapture(OperationId operationId) const = 0;
 
-    // 仿真和测试输入注入接口。硬件输入边沿由
-    // SDK 适配器采样后进入同一状态机。
+    // 仿真和测试输入注入接口；该接口只更新原始数字输入快照。
     /**
      * @brief 注入一次数字输入采样。
      * @param[in] input 数字输入编号。
      * @param[in] active true 表示输入有效，false 表示输入无效。
      * @return 操作成功返回空结果；失败时返回 DmcError。
-     * @note 该接口主要供仿真和测试使用；硬件输入由适配器采样。
+     * @note 该接口不会识别按钮，也不会自动启动采集。
      */
     virtual SZX::COMMON::Result<void> signalDigitalInput(InputId input, bool active) = 0;
 };

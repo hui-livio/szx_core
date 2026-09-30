@@ -28,19 +28,6 @@ auto DmcControllerFactory::create(DmcConfig config) -> SZX::COMMON::Result<std::
         if (config.profileId.empty())
             return SZX::COMMON::Result<std::unique_ptr<DmcController>>::Failure(static_cast<int>(DmcError::InvalidArgument),
                                                                                 "DMC profileId is required.");
-        const auto validButton = [&config](const std::optional<DmcButtonInput> &button)
-        {
-            return !button || (button->input < config.inputCount && button->input < 64);
-        };
-        if (!validButton(config.startButton) || !validButton(config.resetButton) || !validButton(config.emergencyStopButton))
-            return SZX::COMMON::Result<std::unique_ptr<DmcController>>::Failure(
-                static_cast<int>(DmcError::InvalidArgument), "DMC button input is outside the configured IO range.");
-        if ((config.startButton && config.resetButton && config.startButton->input == config.resetButton->input) ||
-            (config.startButton && config.emergencyStopButton &&
-             config.startButton->input == config.emergencyStopButton->input) ||
-            (config.resetButton && config.emergencyStopButton && config.resetButton->input == config.emergencyStopButton->input))
-            return SZX::COMMON::Result<std::unique_ptr<DmcController>>::Failure(static_cast<int>(DmcError::InvalidArgument),
-                                                                                "DMC button inputs must be distinct.");
         switch (config.model)
         {
         case DmcModel::LeiSaiLTDMC:

@@ -3,12 +3,10 @@
 #include "LTDMCE3032Controller.hpp"
 
 #include <algorithm>
-#include <array>
 #include <chrono>
 #include <cmath>
 #include <exception>
 #include <iostream>
-#include <limits>
 #include <mutex>
 #include <new>
 #include <thread>
@@ -80,11 +78,6 @@ auto isFinite(double value) noexcept -> bool
     return std::isfinite(value) != 0;
 }
 
-auto isActive(bool level, bool activeLevel) noexcept -> bool
-{
-    return level == activeLevel;
-}
-
 std::mutex connectedCardsMutex;
 std::unordered_set<std::uint16_t> connectedCards;
 
@@ -105,8 +98,8 @@ struct LTDMCE3032Controller::Impl
                 stream << "[szx::dmc] " << message << std::endl;
             };
         }
-        logSink    = config.logSink;
-        buttonSink = config.buttonEventSink;
+        logSink   = config.logSink;
+        inputSink = config.inputEventSink;
         axes.resize(2);
         for (AxisId axis = 0; axis < axes.size(); ++axis)
             axes[axis].axis = axis;
@@ -125,7 +118,7 @@ struct LTDMCE3032Controller::Impl
     std::vector<AxisStatus> axes;
     std::vector<bool> outputs;
     LogSink logSink;
-    ButtonEventSink buttonSink;
+    InputEventSink inputSink;
     CompareConfig compare;
     CaptureRequest request;
     std::jthread inputWorker;
@@ -264,13 +257,11 @@ struct LTDMCE3032Controller::Impl
         return Result<void>::Success();
     }
 
-    auto processInputSampleLocked(InputId input, bool active, std::optional<DmcButtonEvent> *event = nullptr) -> Result<void>
+    auto processInputSampleLocked(InputId input, bool active) -> Result<void>
     {
         if (input >= config.inputCount || input >= 64)
             return failure<void>(DmcError::IoUnavailable, "Input is outside the configured IO range.");
-        const auto mask   = std::uint64_t{1} << input;
-        const auto valid  = (inputSampleValidBits & mask) != 0;
-        const auto before = (inputs.sampledBits & mask) != 0;
+        const auto mask = std::uint64_t{1} << input;
         if (active)
             inputs.sampledBits |= mask;
         else
@@ -279,36 +270,6 @@ struct LTDMCE3032Controller::Impl
         inputs.valid                 = true;
         inputs.timestampNanoseconds  = nowNanoseconds();
         inputSampleValidBits        |= mask;
-        const auto pressed           = [input, active, before, valid](const std::optional<DmcButtonInput> &button)
-        {
-            return button && button->input == input && valid && before != active && isActive(active, button->activeLevel);
-        };
-        const bool emergencyPressed = config.emergencyStopButton && config.emergencyStopButton->input == input &&
-            isActive(active, config.emergencyStopButton->activeLevel) && (!valid || before != active);
-        if (emergencyPressed)
-        {
-            if (event)
-                *event = DmcButtonEvent{DmcButton::EmergencyStop, input, inputs.timestampNanoseconds};
-            return emergencyStopLocked();
-        }
-        if (event && pressed(config.resetButton))
-            *event = DmcButtonEvent{DmcButton::Reset, input, inputs.timestampNanoseconds};
-        else if (event && pressed(config.startButton))
-            *event = DmcButtonEvent{DmcButton::Start, input, inputs.timestampNanoseconds};
-
-        if (!valid)
-            return Result<void>::Success();
-        const auto armed = captureArmed && status.state == DmcState::WaitingForStart &&
-            request.startSource == StartSource::DigitalInput && request.startInput == input;
-        const auto edge = before != active && isActive(active, request.startInputActiveLevel);
-        if (armed && edge)
-        {
-            ++status.startEdgeSequence;
-            status.lastStartEdgeTimestampNanoseconds = inputs.timestampNanoseconds;
-            if (event && !config.startButton)
-                *event = DmcButtonEvent{DmcButton::Start, input, inputs.timestampNanoseconds};
-            return startCaptureLocked();
-        }
         return Result<void>::Success();
     }
 
@@ -317,11 +278,8 @@ struct LTDMCE3032Controller::Impl
         while (!stopToken.stop_requested())
         {
             bool inputFailure = false;
-            // At most one rising-edge event is generated for each configured
-            // button, and the factory requires the three button inputs to be distinct.
-            std::array<DmcButtonEvent, 3> events{};
-            std::size_t eventCount = 0;
-            ButtonEventSink sink;
+            InputEventSink sink;
+            InputSnapshot snapshot;
             {
                 std::scoped_lock lock(mutex);
                 if (!connected() || config.simulation)
@@ -337,17 +295,13 @@ struct LTDMCE3032Controller::Impl
                         inputFailure      = true;
                         break;
                     }
-                    std::optional<DmcButtonEvent> event;
-                    const auto result = processInputSampleLocked(input, value != 0, &event);
-                    if (event)
-                        events[eventCount++] = *event;
+                    const auto result = processInputSampleLocked(input, value != 0);
                     if (!result.ok)
                     {
                         inputFailure = true;
                         break;
                     }
                 }
-                sink = buttonSink;
                 if (!inputFailure)
                     for (AxisId axis = 0; axis < axes.size(); ++axis)
                     {
@@ -365,16 +319,20 @@ struct LTDMCE3032Controller::Impl
                         axes[axis].position = position;
                         axes[axis].moving   = done == 0;
                     }
+                if (!inputFailure)
+                {
+                    snapshot = inputs;
+                    sink     = inputSink;
+                }
             }
-            if (sink)
-                for (std::size_t index = 0; index < eventCount; ++index)
-                    try
-                    {
-                        sink(events[index]);
-                    } catch (...)
-                    {
-                        // Host callbacks must not terminate the polling worker.
-                    }
+            if (!inputFailure && sink)
+                try
+                {
+                    sink(snapshot);
+                } catch (...)
+                {
+                    // Host callbacks must not terminate the polling worker.
+                }
             if (inputFailure)
                 log(DmcLogLevel::Error, "LTDMC input polling failed.");
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -451,8 +409,6 @@ struct LTDMCE3032Controller::Impl
             return failure<void>(DmcError::InvalidArgument, "Scan plan dimensions do not match expected frame count.");
         if (capture.compareOutput >= config.outputCount)
             return failure<void>(DmcError::IoUnavailable, "Capture compare output is outside the configured IO range.");
-        if (capture.startSource == StartSource::DigitalInput && capture.startInput >= config.inputCount)
-            return failure<void>(DmcError::IoUnavailable, "Capture start input is outside the configured IO range.");
         return Result<void>::Success();
     }
 
@@ -587,10 +543,10 @@ void LTDMCE3032Controller::setLogSink(LogSink sink)
     impl_->logSink = std::move(sink);
 }
 
-void LTDMCE3032Controller::setButtonEventSink(ButtonEventSink sink)
+void LTDMCE3032Controller::setInputEventSink(InputEventSink sink)
 {
     std::scoped_lock lock(impl_->mutex);
-    impl_->buttonSink = std::move(sink);
+    impl_->inputSink = std::move(sink);
 }
 
 auto LTDMCE3032Controller::status() const -> SZX::COMMON::Result<DmcStatus>
@@ -936,7 +892,7 @@ auto LTDMCE3032Controller::armCapture(const CaptureRequest &request) -> SZX::COM
             impl_->status.currentRow            = 0;
             impl_->status.lastError             = DmcError::Success;
             impl_->status.compareQueueRemaining = request.expectedFrames;
-            impl_->status.state = request.startSource == StartSource::DigitalInput ? DmcState::WaitingForStart : DmcState::Armed;
+            impl_->status.state                 = DmcState::Armed;
             if (request.triggerSource == FrameTriggerSource::PositionCompareOutput)
             {
                 if (!impl_->config.simulation)
@@ -981,16 +937,16 @@ auto LTDMCE3032Controller::armCapture(const CaptureRequest &request) -> SZX::COM
         });
 }
 
-auto LTDMCE3032Controller::startCapture(OperationId operationId) -> SZX::COMMON::Result<void>
+auto LTDMCE3032Controller::startCapture(OperationId operationId, StartSource source) -> SZX::COMMON::Result<void>
 {
     return boundary(
-        [this, operationId]() -> Result<void>
+        [this, operationId, source]() -> Result<void>
         {
             std::scoped_lock lock(impl_->mutex);
             if (!impl_->captureArmed || impl_->status.operationId != operationId)
                 return failure<void>(DmcError::InvalidArgument, "Capture operation is stale or unknown.");
-            if (impl_->request.startSource != StartSource::SoftwareCommand)
-                return failure<void>(DmcError::InvalidArgument, "This capture waits for a digital input start edge.");
+            if (!hasStartSource(impl_->request.startSource, source))
+                return failure<void>(DmcError::InvalidArgument, "The requested capture start source is not enabled.");
             return impl_->startCaptureLocked();
         });
 }
@@ -1103,8 +1059,8 @@ auto LTDMCE3032Controller::cancelCapture(OperationId operationId, StopMode mode)
             impl_->captureArmed = false;
             impl_->status.state =
                 !stop.ok ? DmcState::Failed : (mode == StopMode::Emergency ? DmcState::SafetyLatched : DmcState::Cancelled);
-            impl_->status.lastError = !stop.ok ? static_cast<DmcError>(stop.error) :
-                                                 (mode == StopMode::Emergency ? DmcError::SafetyLatched : DmcError::Cancelled);
+            impl_->status.lastError     = !stop.ok ? static_cast<DmcError>(stop.error) :
+                                                     (mode == StopMode::Emergency ? DmcError::SafetyLatched : DmcError::Cancelled);
             impl_->status.safetyLatched = mode == StopMode::Emergency;
             return stop;
         });
@@ -1131,14 +1087,14 @@ auto LTDMCE3032Controller::signalDigitalInput(InputId input, bool active) -> SZX
             std::unique_lock lock(impl_->mutex);
             if (!impl_->connected())
                 return failure<void>(DmcError::NotConnected, "DMC controller is not connected.");
-            std::optional<DmcButtonEvent> event;
-            auto result = impl_->processInputSampleLocked(input, active, &event);
-            auto sink   = impl_->buttonSink;
+            auto result   = impl_->processInputSampleLocked(input, active);
+            auto sink     = impl_->inputSink;
+            auto snapshot = impl_->inputs;
             lock.unlock();
-            if (event && sink)
+            if (result.ok && sink)
                 try
                 {
-                    sink(*event);
+                    sink(snapshot);
                 } catch (...)
                 {
                     // Host callbacks must not cross the controller boundary.

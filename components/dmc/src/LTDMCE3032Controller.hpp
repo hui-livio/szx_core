@@ -23,7 +23,7 @@ public:
     SZX::COMMON::Result<DmcStatus> status() const override;
     SZX::COMMON::Result<DmcProfile> profile() const override;
     void setLogSink(LogSink sink) override;
-    void setButtonEventSink(ButtonEventSink sink) override;
+    void setInputEventSink(InputEventSink sink) override;
     SZX::COMMON::Result<void> enableAxis(AxisId axis) override;
     SZX::COMMON::Result<void> disableAxis(AxisId axis) override;
     SZX::COMMON::Result<void> homeAxis(AxisId axis, const HomeProfile &profile = {}) override;
@@ -38,7 +38,7 @@ public:
     SZX::COMMON::Result<void> clearCompare() override;
     SZX::COMMON::Result<std::uint32_t> compareTriggerCount() const override;
     SZX::COMMON::Result<void> armCapture(const CaptureRequest &request) override;
-    SZX::COMMON::Result<void> startCapture(OperationId operationId) override;
+    SZX::COMMON::Result<void> startCapture(OperationId operationId, StartSource source = StartSource::SoftwareCommand) override;
     SZX::COMMON::Result<void> acknowledgeCompareTrigger(OperationId operationId, std::uint32_t count) override;
     SZX::COMMON::Result<void> acknowledgeFrameProgress(OperationId operationId, FrameOrdinal savedFrames) override;
     SZX::COMMON::Result<void> completeCamera(OperationId operationId, FrameOrdinal savedFrames) override;

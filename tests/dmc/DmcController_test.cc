@@ -8,9 +8,6 @@
 namespace
 {
 using SZX::DMC::CaptureRequest;
-using SZX::DMC::DmcButton;
-using SZX::DMC::DmcButtonEvent;
-using SZX::DMC::DmcButtonInput;
 using SZX::DMC::DmcConfig;
 using SZX::DMC::DmcController;
 using SZX::DMC::DmcControllerFactory;
@@ -100,7 +97,7 @@ TEST(DmcControllerTest, FactoryRoutesLeiSaiProfileByProfileId)
     EXPECT_EQ(unsupported.error, static_cast<int>(DmcError::InvalidArgument));
 }
 
-TEST(DmcControllerTest, DigitalInputStartUsesOneActiveEdge)
+TEST(DmcControllerTest, DigitalInputDoesNotStartCapture)
 {
     auto controller = makeController();
     ASSERT_TRUE(controller->connect().ok);
@@ -109,25 +106,24 @@ TEST(DmcControllerTest, DigitalInputStartUsesOneActiveEdge)
 
     ASSERT_TRUE(controller->signalDigitalInput(request.startInput, false).ok);
     ASSERT_TRUE(controller->signalDigitalInput(request.startInput, true).ok);
-    const auto started = controller->status();
-    ASSERT_TRUE(started.ok);
-    EXPECT_EQ(started.value.state, DmcState::Scanning);
-    EXPECT_EQ(started.value.startEdgeSequence, 1U);
+    const auto armed = controller->status();
+    ASSERT_TRUE(armed.ok);
+    EXPECT_EQ(armed.value.state, DmcState::Armed);
+    EXPECT_EQ(armed.value.startEdgeSequence, 0U);
 
     ASSERT_TRUE(controller->signalDigitalInput(request.startInput, true).ok);
-    EXPECT_EQ(controller->status().value.startEdgeSequence, 1U);
+    EXPECT_EQ(controller->status().value.state, DmcState::Armed);
+    ASSERT_TRUE(controller->startCapture(request.operationId, StartSource::HardwareTrigger).ok);
+    EXPECT_EQ(controller->status().value.state, DmcState::Scanning);
 }
 
-TEST(DmcControllerTest, ButtonPollingReportsStartResetAndEmergencyStop)
+TEST(DmcControllerTest, InputSnapshotCallbackReceivesRawInputState)
 {
-    auto events                = std::vector<DmcButton>{};
-    auto config                = DmcConfig{.compareQueueCapacity = 8};
-    config.startButton         = DmcButtonInput{1, true};
-    config.resetButton         = DmcButtonInput{2, true};
-    config.emergencyStopButton = DmcButtonInput{3, true};
-    config.buttonEventSink     = [&events](const DmcButtonEvent &event)
+    auto snapshots        = std::vector<SZX::DMC::InputSnapshot>{};
+    auto config           = DmcConfig{.compareQueueCapacity = 8};
+    config.inputEventSink = [&snapshots](const SZX::DMC::InputSnapshot &snapshot)
     {
-        events.push_back(event.button);
+        snapshots.push_back(snapshot);
     };
     auto result = DmcController::create(config);
     ASSERT_TRUE(result.ok);
@@ -136,17 +132,10 @@ TEST(DmcControllerTest, ButtonPollingReportsStartResetAndEmergencyStop)
 
     ASSERT_TRUE(controller->signalDigitalInput(1, false).ok);
     ASSERT_TRUE(controller->signalDigitalInput(1, true).ok);
-    ASSERT_TRUE(controller->signalDigitalInput(2, false).ok);
-    ASSERT_TRUE(controller->signalDigitalInput(2, true).ok);
-    ASSERT_TRUE(controller->signalDigitalInput(3, false).ok);
-    ASSERT_TRUE(controller->signalDigitalInput(3, true).ok);
-
-    ASSERT_EQ(events.size(), 3U);
-    EXPECT_EQ(events[0], DmcButton::Start);
-    EXPECT_EQ(events[1], DmcButton::Reset);
-    EXPECT_EQ(events[2], DmcButton::EmergencyStop);
-    ASSERT_TRUE(controller->status().ok);
-    EXPECT_EQ(controller->status().value.state, DmcState::SafetyLatched);
+    ASSERT_EQ(snapshots.size(), 2U);
+    EXPECT_EQ(snapshots[0].sampledBits, 0U);
+    EXPECT_EQ(snapshots[1].sampledBits, 2U);
+    EXPECT_TRUE(snapshots[1].valid);
 }
 
 TEST(DmcControllerTest, CancellationClearsCompareQueueAndPreservesSafetyState)

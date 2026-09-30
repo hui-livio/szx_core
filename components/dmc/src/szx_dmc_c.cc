@@ -381,6 +381,13 @@ auto szx_dmc_start_capture_v1(szx_dmc_handle *handle, uint64_t operationId) noex
     return invoke(handle, [&] { return handle->controller->startCapture(operationId); });
 }
 
+auto szx_dmc_start_capture_source_v1(szx_dmc_handle *handle, uint64_t operationId, uint16_t source) noexcept -> int32_t
+{
+    if (!isLive(handle))
+        return errorCode(DmcError::InvalidArgument);
+    return invoke(handle, [&] { return handle->controller->startCapture(operationId, static_cast<StartSource>(source)); });
+}
+
 auto szx_dmc_cancel_capture_v1(szx_dmc_handle *handle, uint8_t emergency) noexcept -> int32_t
 {
     HandleGuard guard(handle);

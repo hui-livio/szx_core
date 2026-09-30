@@ -10,7 +10,6 @@
 
 #include <cstdint>
 #include <functional>
-#include <optional>
 #include <string>
 #include <vector>
 
@@ -67,12 +66,30 @@ enum class DmcState : std::uint8_t
     SafetyLatched,    ///< 安全停止已锁存。
 };
 
-/** @brief 采集任务的启动来源。 */
+/**
+ * @brief 采集任务允许的启动来源。
+ *
+ * 该类型是位标志，可同时允许软件命令和外部硬件触发；DMC 不解析硬件
+ * 触发来自哪个按钮，调用方负责把业务事件转换为启动调用。
+ */
 enum class StartSource : std::uint8_t
 {
-    SoftwareCommand = 0, ///< 软件命令启动。
-    DigitalInput,        ///< 数字输入启动。
+    None            = 0,                                 ///< 不允许启动。
+    SoftwareCommand = 1u << 0,                           ///< 软件命令启动。
+    HardwareTrigger = 1u << 1,                           ///< 外部硬件触发启动。
+    DigitalInput    = HardwareTrigger,                   ///< 兼容旧名称；不表示具体输入接线。
+    Any             = SoftwareCommand | HardwareTrigger, ///< 允许两种启动来源。
 };
+
+constexpr auto operator|(StartSource left, StartSource right) noexcept -> StartSource
+{
+    return static_cast<StartSource>(static_cast<std::uint8_t>(left) | static_cast<std::uint8_t>(right));
+}
+
+constexpr auto hasStartSource(StartSource value, StartSource source) noexcept -> bool
+{
+    return (static_cast<std::uint8_t>(value) & static_cast<std::uint8_t>(source)) == static_cast<std::uint8_t>(source);
+}
 
 /** @brief 相机帧触发来源。 */
 enum class FrameTriggerSource : std::uint8_t
@@ -119,31 +136,10 @@ using OutputId     = std::uint16_t; ///< 数字输出编号，从零开始计数
 using OperationId  = std::uint64_t; ///< 采集任务的唯一编号。
 using FrameOrdinal = std::uint32_t; ///< 采集帧序号，从零开始计数。
 
-/** @brief 硬件按钮的用途。 */
-enum class DmcButton : std::uint8_t
-{
-    Start         = 0, ///< 启动采集。
-    Reset         = 1, ///< 请求上层执行复位流程。
-    EmergencyStop = 2, ///< 执行急停并锁存安全状态。
-};
+struct InputSnapshot;
 
-/** @brief 按钮接入的数字输入和有效电平。 */
-struct DmcButtonInput
-{
-    InputId input    = 0;    ///< 数字输入编号。
-    bool activeLevel = true; ///< 按下时的输入电平。
-};
-
-/** @brief 一次按钮按下事件。 */
-struct DmcButtonEvent
-{
-    DmcButton button                  = DmcButton::Start; ///< 按钮用途。
-    InputId input                     = 0;                ///< 产生事件的输入编号。
-    std::int64_t timestampNanoseconds = 0;                ///< 输入采样时间戳。
-};
-
-/** @brief 按钮事件回调，可能从硬件输入轮询线程调用。 */
-using ButtonEventSink = std::function<void(const DmcButtonEvent &event)>;
+/** @brief 原始数字输入快照回调；DMC 不解析输入的业务含义。 */
+using InputEventSink = std::function<void(const InputSnapshot &snapshot)>;
 
 /** @brief 控制器创建配置。 */
 struct DmcConfig
@@ -157,10 +153,7 @@ struct DmcConfig
     std::uint32_t inputCount           = 32;                    ///< 数字输入数量。
     std::uint32_t outputCount          = 32;                    ///< 数字输出数量。
     LogSink logSink{};                                          ///< 日志回调；为空时输出到控制台。
-    std::optional<DmcButtonInput> startButton;                  ///< 可选的启动按钮输入。
-    std::optional<DmcButtonInput> resetButton;                  ///< 可选的复位按钮输入。
-    std::optional<DmcButtonInput> emergencyStopButton;          ///< 可选的急停按钮输入。
-    ButtonEventSink buttonEventSink{};                          ///< 按钮按下时通知上层的回调。
+    InputEventSink inputEventSink{};                            ///< 原始输入电平变化回调。
 };
 
 /** @brief 控制器解析后的型号配置。 */
@@ -236,7 +229,7 @@ struct ScanPlan
 struct CaptureRequest
 {
     OperationId operationId            = 0;                                         ///< 采集任务编号。
-    StartSource startSource            = StartSource::SoftwareCommand;              ///< 启动来源。
+    StartSource startSource            = StartSource::Any;                          ///< 允许的启动来源位标志。
     InputId startInput                 = 0;                                         ///< 启动输入。
     bool startInputActiveLevel         = true;                                      ///< 启动有效电平。
     FrameTriggerSource triggerSource   = FrameTriggerSource::PositionCompareOutput; ///< 帧触发来源。

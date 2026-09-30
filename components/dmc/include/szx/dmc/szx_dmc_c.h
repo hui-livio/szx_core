@@ -162,7 +162,7 @@ typedef struct szx_dmc_capture_v1
     uint32_t struct_size;                           /**< 结构体大小。 */
     uint32_t abi_version;                           /**< ABI 版本。 */
     uint64_t operation_id;                          /**< 采集任务编号。 */
-    uint16_t start_source;                          /**< 启动来源。 */
+    uint16_t start_source;                          /**< 启动来源位标志：1 软件命令，2 外部硬件触发。 */
     uint16_t start_input;                           /**< 启动输入。 */
     uint8_t start_input_active_level;               /**< 启动输入有效电平。 */
     uint16_t trigger_source;                        /**< 帧触发来源。 */
@@ -253,6 +253,16 @@ int32_t SZX_DMC_CALL szx_dmc_arm_capture_v1(szx_dmc_handle *handle, const szx_dm
  */
 SZX_DMC_C_API
 int32_t SZX_DMC_CALL szx_dmc_start_capture_v1(szx_dmc_handle *handle, uint64_t operation_id) SZX_DMC_NOEXCEPT;
+/**
+ * @brief 按指定来源启动采集任务。
+ * @param[in] handle 已创建的控制器句柄。
+ * @param[in] operation_id 已通过 arm_capture 装载的任务编号。
+ * @param[in] source 启动来源位标志：1 软件命令，2 外部硬件触发。
+ * @return SZX_DMC_SUCCESS 或具体错误码。
+ */
+SZX_DMC_C_API
+int32_t SZX_DMC_CALL szx_dmc_start_capture_source_v1(szx_dmc_handle *handle, uint64_t operation_id,
+                                                     uint16_t source) SZX_DMC_NOEXCEPT;
 /**
  * @brief 取消当前采集任务，可选执行急停。
  * @param[in] handle 已创建的控制器句柄。

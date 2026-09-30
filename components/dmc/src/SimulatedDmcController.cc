@@ -36,8 +36,8 @@ public:
         for (AxisId i = 0; i < axes_.size(); ++i)
             axes_[i].axis = i;
         outputs_.resize(config_.outputCount);
-        sink_       = config_.logSink;
-        buttonSink_ = config_.buttonEventSink;
+        sink_      = config_.logSink;
+        inputSink_ = config_.inputEventSink;
         sync();
     }
 
@@ -88,10 +88,10 @@ public:
         sink_ = std::move(sink);
     }
 
-    void setButtonEventSink(ButtonEventSink sink) override
+    void setInputEventSink(InputEventSink sink) override
     {
         std::scoped_lock lock(mutex_);
-        buttonSink_ = std::move(sink);
+        inputSink_ = std::move(sink);
     }
 
     auto enableAxis(AxisId axis) -> Result<void> override
@@ -262,8 +262,7 @@ public:
             request.comparePoints.size() != request.expectedFrames)
             return fail<void>(DmcError::InvalidArgument, "The compare point count does not match the frame count.");
         if (request.scanPlan.scanAxis >= axes_.size() || request.scanPlan.rowAxis >= axes_.size() ||
-            request.compareOutput >= outputs_.size() ||
-            (request.startSource == StartSource::DigitalInput && request.startInput >= config_.inputCount))
+            request.compareOutput >= outputs_.size())
             return fail<void>(DmcError::InvalidArgument, "A capture axis or IO index is out of range.");
         const auto columns = request.scanPlan.scanPositions.size();
         const auto rows    = request.scanPlan.rowPositions.size();
@@ -279,17 +278,17 @@ public:
         status_.totalRows             = static_cast<std::uint32_t>(rows);
         status_.compareQueueRemaining = request.expectedFrames;
         status_.lastError             = DmcError::Success;
-        status_.state = request.startSource == StartSource::DigitalInput ? DmcState::WaitingForStart : DmcState::Armed;
+        status_.state                 = DmcState::Armed;
         return Result<void>::Success();
     }
 
-    auto startCapture(OperationId operationId) -> Result<void> override
+    auto startCapture(OperationId operationId, StartSource source) -> Result<void> override
     {
         std::scoped_lock lock(mutex_);
         if (auto check = checkOperation(operationId); !check.ok)
             return check;
-        if (request_.startSource != StartSource::SoftwareCommand)
-            return fail<void>(DmcError::InvalidArgument, "The capture is waiting for a digital input start.");
+        if (!hasStartSource(request_.startSource, source))
+            return fail<void>(DmcError::InvalidArgument, "The requested capture start source is not enabled.");
         return startLocked();
     }
 
@@ -400,9 +399,7 @@ public:
             return check;
         if (input >= config_.inputCount || input >= 64)
             return fail<void>(DmcError::IoUnavailable, "The input index is out of range.");
-        const auto mask     = std::uint64_t{1} << input;
-        const bool valid    = (validInputBits_ & mask) != 0;
-        const bool previous = (inputs_.sampledBits & mask) != 0;
+        const auto mask = std::uint64_t{1} << input;
         if (active)
             inputs_.sampledBits |= mask;
         else
@@ -411,52 +408,20 @@ public:
         inputs_.timestampNanoseconds  = timestamp();
         inputs_.valid                 = true;
         validInputBits_              |= mask;
-        const auto pressed            = [input, active, previous, valid](const std::optional<DmcButtonInput> &button)
-        {
-            return button && button->input == input && valid && previous != active && active == button->activeLevel;
-        };
-        const bool emergencyPressed = config_.emergencyStopButton && config_.emergencyStopButton->input == input &&
-            active == config_.emergencyStopButton->activeLevel && (!valid || previous != active);
-        std::optional<DmcButtonEvent> event;
-        if (emergencyPressed)
-        {
-            for (auto &axis : axes_)
-            {
-                axis.moving   = false;
-                axis.velocity = 0.0;
-            }
-            latchSafety();
-            event = DmcButtonEvent{DmcButton::EmergencyStop, input, inputs_.timestampNanoseconds};
-        }
-        else if (pressed(config_.resetButton))
-            event = DmcButtonEvent{DmcButton::Reset, input, inputs_.timestampNanoseconds};
-        else if (pressed(config_.startButton))
-            event = DmcButtonEvent{DmcButton::Start, input, inputs_.timestampNanoseconds};
-        const bool captureStart = valid && previous != active && armed_ && status_.state == DmcState::WaitingForStart &&
-            request_.startSource == StartSource::DigitalInput && request_.startInput == input &&
-            active == request_.startInputActiveLevel;
-        Result<void> result = Result<void>::Success();
-        if (captureStart && !emergencyPressed)
-        {
-            ++status_.startEdgeSequence;
-            status_.lastStartEdgeTimestampNanoseconds = inputs_.timestampNanoseconds;
-            result                                    = startLocked();
-            if (!config_.startButton)
-                event = DmcButtonEvent{DmcButton::Start, input, inputs_.timestampNanoseconds};
-        }
-        auto sink = buttonSink_;
+        auto sink                     = inputSink_;
+        auto snapshot                 = inputs_;
         lock.unlock();
-        if (event && sink)
+        if (sink)
         {
             try
             {
-                sink(*event);
+                sink(snapshot);
             } catch (...)
             {
-                // A host callback must not interrupt input processing.
+                // Host callbacks must not interrupt input processing.
             }
         }
-        return result;
+        return Result<void>::Success();
     }
 
 private:
@@ -554,7 +519,7 @@ private:
     CompareConfig compare_;
     CaptureRequest request_;
     LogSink sink_;
-    ButtonEventSink buttonSink_;
+    InputEventSink inputSink_;
     bool armed_ = false;
 };
 } // namespace
