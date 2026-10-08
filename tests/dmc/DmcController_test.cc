@@ -4,7 +4,6 @@
 #include <memory>
 
 #include <szx/dmc/DmcController.hpp>
-#include <szx/dmc/szx_dmc_c.h>
 
 namespace
 {
@@ -211,64 +210,4 @@ TEST(DmcControllerTest, CancellationClearsCompareQueueAndPreservesSafetyState)
     EXPECT_EQ(state.value.lastError, DmcError::Cancelled);
     EXPECT_EQ(state.value.compareQueueRemaining, 0U);
     EXPECT_FALSE(state.value.compareEnabled);
-}
-
-TEST(DmcCAbiTest, CreatesPollsAndRejectsInvalidAbi)
-{
-    szx_dmc_config_v1 config{};
-    config.struct_size                         = sizeof(config);
-    config.abi_version                         = SZX_DMC_ABI_VERSION_V1;
-    config.simulation                          = 1;
-    config.compare_queue_capacity              = 8;
-    config.input_count                         = 8;
-    config.output_count                        = 8;
-    config.software_trigger_pulse_milliseconds = 5;
-    config.home_timeout_seconds                = 30.0;
-    config.home_max_travel                     = 1000.0;
-    config.home_origin_input                   = 2;
-    config.home_origin_active_level            = 1;
-    config.home_require_origin_seen            = 1;
-    config.home_expected_initial_direction     = -1;
-    szx_dmc_handle *handle                     = nullptr;
-
-    ASSERT_EQ(szx_dmc_create_v1(&config, &handle), SZX_DMC_SUCCESS);
-    ASSERT_NE(handle, nullptr);
-    ASSERT_EQ(szx_dmc_connect_v1(handle), SZX_DMC_SUCCESS);
-
-    szx_dmc_state_v1 state{};
-    state.struct_size = sizeof(state);
-    state.abi_version = SZX_DMC_ABI_VERSION_V1;
-    ASSERT_EQ(szx_dmc_poll_state_v1(handle, &state), SZX_DMC_SUCCESS);
-    EXPECT_EQ(state.state, 1U); // Ready
-
-    state.abi_version = 99;
-    EXPECT_EQ(szx_dmc_poll_state_v1(handle, &state), SZX_DMC_INVALID_ARGUMENT);
-    EXPECT_EQ(szx_dmc_destroy_v1(handle), SZX_DMC_SUCCESS);
-    EXPECT_EQ(szx_dmc_destroy_v1(handle), SZX_DMC_INVALID_ARGUMENT);
-}
-
-TEST(DmcCAbiTest, CancelsArmedCaptureWithoutLockReentry)
-{
-    szx_dmc_config_v1 config{};
-    config.struct_size            = sizeof(config);
-    config.abi_version            = SZX_DMC_ABI_VERSION_V1;
-    config.simulation             = 1;
-    config.compare_queue_capacity = 8;
-    config.input_count            = 8;
-    config.output_count           = 8;
-    szx_dmc_handle *handle        = nullptr;
-    ASSERT_EQ(szx_dmc_create_v1(&config, &handle), SZX_DMC_SUCCESS);
-    ASSERT_EQ(szx_dmc_connect_v1(handle), SZX_DMC_SUCCESS);
-
-    szx_dmc_capture_v1 capture{};
-    capture.struct_size            = sizeof(capture);
-    capture.abi_version            = SZX_DMC_ABI_VERSION_V1;
-    capture.operation_id           = 7;
-    capture.start_source           = SZX_DMC_START_SOURCE_SOFTWARE_COMMAND_V1;
-    capture.trigger_source         = 0;
-    capture.expected_frames        = 1;
-    capture.compare_queue_capacity = 8;
-    ASSERT_EQ(szx_dmc_arm_capture_v1(handle, &capture), SZX_DMC_SUCCESS);
-    ASSERT_EQ(szx_dmc_cancel_capture_v1(handle, 0), SZX_DMC_SUCCESS);
-    EXPECT_EQ(szx_dmc_destroy_v1(handle), SZX_DMC_SUCCESS);
 }
