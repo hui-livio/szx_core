@@ -24,6 +24,21 @@ auto timestamp() -> std::int64_t
     return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 }
 
+auto validMotionProfile(const MotionProfile &profile) -> bool
+{
+    return std::isfinite(profile.minVelocity) && std::isfinite(profile.maxVelocity) && std::isfinite(profile.acceleration) &&
+        std::isfinite(profile.deceleration) && std::isfinite(profile.stopVelocity) && profile.minVelocity >= 0.0 &&
+        profile.maxVelocity >= profile.minVelocity && profile.acceleration >= 0.0 && profile.deceleration >= 0.0 &&
+        profile.stopVelocity >= 0.0;
+}
+
+auto validHomeProfile(const HomeProfile &profile) -> bool
+{
+    return std::isfinite(profile.lowVelocity) && std::isfinite(profile.highVelocity) && std::isfinite(profile.acceleration) &&
+        std::isfinite(profile.deceleration) && std::isfinite(profile.offset) && profile.lowVelocity >= 0.0 &&
+        profile.highVelocity >= profile.lowVelocity && profile.acceleration >= 0.0 && profile.deceleration >= 0.0;
+}
+
 class SimulatedDmcController final : public DmcController
 {
 public:
@@ -65,6 +80,13 @@ public:
         request_ = {};
         armed_   = false;
         status_  = {};
+        for (auto &axis : axes_)
+        {
+            axis.enabled = false;
+            axis.homed   = false;
+            axis.homing  = false;
+            axis.moving  = false;
+        }
         sync();
         return Result<void>::Success();
     }
@@ -120,7 +142,7 @@ public:
             return check;
         if (!axes_[axis].enabled)
             return fail<void>(DmcError::AxisNotReady, "The axis is not enabled.");
-        if (!std::isfinite(profile.offset))
+        if (!validHomeProfile(profile))
             return fail<void>(DmcError::InvalidArgument, "The homing offset is invalid.");
         axes_[axis].position       = profile.offset;
         axes_[axis].targetPosition = profile.offset;
@@ -128,25 +150,25 @@ public:
         return Result<void>::Success();
     }
 
-    auto moveAbsolute(AxisId axis, double position, const MotionProfile &) -> Result<void> override
+    auto moveAbsolute(AxisId axis, double position, const MotionProfile &profile) -> Result<void> override
     {
         std::scoped_lock lock(mutex_);
         if (auto check = checkAxis(axis); !check.ok)
             return check;
         if (!axes_[axis].enabled || !axes_[axis].homed)
             return fail<void>(DmcError::AxisNotReady, "The axis is not enabled or homed.");
-        if (!std::isfinite(position))
+        if (!std::isfinite(position) || !validMotionProfile(profile))
             return fail<void>(DmcError::InvalidArgument, "The target position is invalid.");
         axes_[axis].position = axes_[axis].targetPosition = position;
         return Result<void>::Success();
     }
 
-    auto moveRelative(AxisId axis, double distance, const MotionProfile &) -> Result<void> override
+    auto moveRelative(AxisId axis, double distance, const MotionProfile &profile) -> Result<void> override
     {
         std::scoped_lock lock(mutex_);
         if (auto check = checkAxis(axis); !check.ok)
             return check;
-        if (!axes_[axis].enabled || !std::isfinite(distance))
+        if (!axes_[axis].enabled || !axes_[axis].homed || !std::isfinite(distance) || !validMotionProfile(profile))
             return fail<void>(DmcError::AxisNotReady, "The axis is not enabled or the distance is invalid.");
         axes_[axis].position       += distance;
         axes_[axis].targetPosition  = axes_[axis].position;
@@ -206,10 +228,13 @@ public:
         if (armed_)
             return fail<void>(DmcError::Busy, "Position compare cannot be configured during capture.");
         const auto capacity = config.queueCapacity == 0 ? config_.compareQueueCapacity : config.queueCapacity;
-        if (config.points.size() > capacity)
+        if (capacity == 0 || config.points.size() > capacity)
             return fail<void>(DmcError::CompareQueueFull, "The position compare queue has insufficient capacity.");
         if (config.axis >= axes_.size() || config.output >= outputs_.size())
             return fail<void>(DmcError::InvalidArgument, "The position compare axis or output is out of range.");
+        for (const auto &point : config.points)
+            if (!std::isfinite(point.position))
+                return fail<void>(DmcError::InvalidArgument, "The compare point position is invalid.");
         compare_                      = config;
         compare_.queueCapacity        = capacity;
         status_.compareQueueRemaining = static_cast<std::uint32_t>(config.points.size());
@@ -260,12 +285,20 @@ public:
             return fail<void>(DmcError::InvalidArgument, "The capture ID and frame count must be non-zero.");
         if (request.expectedFrames > capacity)
             return fail<void>(DmcError::CompareQueueFull, "The position compare queue has insufficient capacity.");
+        if (request.triggerSource != FrameTriggerSource::Software &&
+            request.triggerSource != FrameTriggerSource::PositionCompareOutput)
+            return fail<void>(DmcError::InvalidArgument, "The capture trigger source is invalid.");
+        if (!validMotionProfile(request.scanPlan.scanProfile) || !validMotionProfile(request.scanPlan.rowProfile))
+            return fail<void>(DmcError::InvalidArgument, "The capture motion profile is invalid.");
         if (request.triggerSource == FrameTriggerSource::PositionCompareOutput &&
             request.comparePoints.size() != request.expectedFrames)
             return fail<void>(DmcError::InvalidArgument, "The compare point count does not match the frame count.");
         if (request.scanPlan.scanAxis >= axes_.size() || request.scanPlan.rowAxis >= axes_.size() ||
             request.compareOutput >= outputs_.size())
             return fail<void>(DmcError::InvalidArgument, "A capture axis or IO index is out of range.");
+        for (const auto &point : request.comparePoints)
+            if (!std::isfinite(point.position))
+                return fail<void>(DmcError::InvalidArgument, "The capture compare point position is invalid.");
         const auto columns = request.scanPlan.scanPositions.size();
         const auto rows    = request.scanPlan.rowPositions.size();
         if (columns && rows && columns * rows != request.expectedFrames)
@@ -315,6 +348,8 @@ public:
         std::scoped_lock lock(mutex_);
         if (auto check = checkOperation(operationId); !check.ok)
             return check;
+        if (status_.state != DmcState::Scanning && status_.state != DmcState::WaitingForFrames)
+            return fail<void>(DmcError::Busy, "The capture is not running.");
         if (savedFrames < status_.receivedFrames || savedFrames > status_.expectedFrames ||
             (request_.triggerSource == FrameTriggerSource::PositionCompareOutput && savedFrames > status_.comparedTriggers))
             return fail<void>(DmcError::FrameProgressInvalid, "The camera frame progress is invalid.");
@@ -328,7 +363,8 @@ public:
             if (savedFrames && savedFrames % columns == 0 && savedFrames < status_.expectedFrames)
                 issueRowLocked(savedFrames / columns);
         }
-        if (savedFrames == status_.expectedFrames && status_.comparedTriggers >= savedFrames)
+        if (savedFrames == status_.expectedFrames &&
+            (request_.triggerSource == FrameTriggerSource::Software || status_.comparedTriggers >= savedFrames))
             status_.state = DmcState::WaitingForFrames;
         return Result<void>::Success();
     }
@@ -338,7 +374,10 @@ public:
         std::scoped_lock lock(mutex_);
         if (auto check = checkOperation(operationId); !check.ok)
             return check;
-        if (savedFrames != status_.expectedFrames || status_.comparedTriggers < savedFrames)
+        if (status_.state != DmcState::Scanning && status_.state != DmcState::WaitingForFrames)
+            return fail<void>(DmcError::Busy, "The capture is not running.");
+        if (savedFrames != status_.expectedFrames ||
+            (request_.triggerSource == FrameTriggerSource::PositionCompareOutput && status_.comparedTriggers < savedFrames))
             return fail<void>(DmcError::FrameProgressInvalid, "The camera frame count does not match the capture plan.");
         status_.receivedFrames = savedFrames;
         clearCompareLocked();
@@ -356,9 +395,10 @@ public:
         if (reason == DmcError::Success)
             return fail<void>(DmcError::InvalidArgument, "A capture failure requires a non-success reason.");
         clearCompareLocked();
-        armed_            = false;
-        status_.state     = reason == DmcError::SafetyLatched ? DmcState::SafetyLatched : DmcState::Failed;
-        status_.lastError = reason;
+        armed_                = false;
+        status_.state         = reason == DmcError::SafetyLatched ? DmcState::SafetyLatched : DmcState::Failed;
+        status_.lastError     = reason;
+        status_.safetyLatched = reason == DmcError::SafetyLatched;
         return Result<void>::Success();
     }
 
@@ -507,6 +547,9 @@ private:
     {
         if (status_.state != DmcState::Armed && status_.state != DmcState::WaitingForStart)
             return fail<void>(DmcError::Busy, "The capture is not armed.");
+        if (!axes_[request_.scanPlan.scanAxis].enabled || !axes_[request_.scanPlan.scanAxis].homed ||
+            !axes_[request_.scanPlan.rowAxis].enabled || !axes_[request_.scanPlan.rowAxis].homed)
+            return fail<void>(DmcError::AxisNotReady, "Capture axes must be enabled and homed.");
         status_.state          = DmcState::Scanning;
         status_.compareEnabled = request_.triggerSource == FrameTriggerSource::PositionCompareOutput;
         issueRowLocked(0);

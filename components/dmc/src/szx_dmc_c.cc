@@ -3,6 +3,7 @@
 #include <szx/dmc/DmcController.hpp>
 
 #include <algorithm>
+#include <condition_variable>
 #include <cstring>
 #include <memory>
 #include <mutex>
@@ -25,24 +26,16 @@ struct szx_dmc_handle
     std::unique_ptr<DmcController> controller;
     std::string lastError;
     std::mutex mutex;
+    std::condition_variable callsChanged;
+    std::size_t activeCalls = 0;
+    bool closing            = false;
+    std::mutex errorMutex;
 };
 
 namespace
 {
 std::mutex liveHandlesMutex;
 std::unordered_set<szx_dmc_handle *> liveHandles;
-
-auto isLive(szx_dmc_handle *handle) noexcept -> bool
-{
-    try
-    {
-        std::scoped_lock lock(liveHandlesMutex);
-        return handle != nullptr && liveHandles.contains(handle);
-    } catch (...)
-    {
-        return false;
-    }
-}
 
 class HandleGuard
 {
@@ -58,7 +51,13 @@ public:
                 handle_ = nullptr;
                 return;
             }
-            lock_ = std::unique_lock(handle_->mutex);
+            std::unique_lock lock(handle_->mutex);
+            if (handle_->closing)
+            {
+                handle_ = nullptr;
+                return;
+            }
+            ++handle_->activeCalls;
         } catch (...)
         {
             handle_ = nullptr;
@@ -74,9 +73,18 @@ public:
         return handle_;
     }
 
+    ~HandleGuard() noexcept
+    {
+        if (handle_ == nullptr)
+            return;
+        std::scoped_lock lock(handle_->mutex);
+        if (handle_->activeCalls > 0)
+            --handle_->activeCalls;
+        handle_->callsChanged.notify_all();
+    }
+
 private:
     szx_dmc_handle *handle_ = nullptr;
-    std::unique_lock<std::mutex> lock_;
 };
 
 auto resultCode(int code) noexcept -> int32_t
@@ -104,7 +112,10 @@ auto invalidArgumentLocked(szx_dmc_handle *handle, const char *message) noexcept
     try
     {
         if (handle != nullptr)
+        {
+            std::scoped_lock lock(handle->errorMutex);
             handle->lastError = message == nullptr ? "Invalid argument." : message;
+        }
     } catch (...)
     {
     }
@@ -116,7 +127,10 @@ auto clearLastErrorLocked(szx_dmc_handle *handle) noexcept -> void
     try
     {
         if (handle != nullptr)
+        {
+            std::scoped_lock lock(handle->errorMutex);
             handle->lastError.clear();
+        }
     } catch (...)
     {
     }
@@ -127,7 +141,10 @@ auto setLastErrorLocked(szx_dmc_handle *handle, const std::string &message) noex
     try
     {
         if (handle != nullptr)
+        {
+            std::scoped_lock lock(handle->errorMutex);
             handle->lastError = message;
+        }
     } catch (...)
     {
     }
@@ -159,7 +176,8 @@ auto invoke(szx_dmc_handle *handle, Function &&function) noexcept -> int32_t
         return errorCode(DmcError::InvalidArgument);
     try
     {
-        return consume(handle, function());
+        const auto result = function();
+        return consume(handle, result);
     } catch (const std::bad_alloc &)
     {
         return errorCode(DmcError::ResourceExhausted);
@@ -267,13 +285,14 @@ auto szx_dmc_create_v1(const szx_dmc_config_v1 *config, szx_dmc_handle **outHand
         if (!result.ok)
             return resultCode(result.error);
 
-        auto *handle       = new szx_dmc_handle;
+        auto handle        = std::make_unique<szx_dmc_handle>();
         handle->controller = std::move(result.value);
+        auto *rawHandle    = handle.get();
         {
             std::scoped_lock lock(liveHandlesMutex);
-            liveHandles.insert(handle);
+            liveHandles.insert(rawHandle);
         }
-        *outHandle = handle;
+        *outHandle = handle.release();
         return errorCode(DmcError::Success);
     } catch (const std::bad_alloc &)
     {
@@ -289,13 +308,15 @@ auto szx_dmc_destroy_v1(szx_dmc_handle *handle) noexcept -> int32_t
     try
     {
         {
-            std::scoped_lock lock(liveHandlesMutex);
+            std::scoped_lock registryLock(liveHandlesMutex);
             if (handle == nullptr || !liveHandles.contains(handle))
                 return errorCode(DmcError::InvalidArgument);
+            std::unique_lock operationLock(handle->mutex);
+            if (handle->activeCalls != 0)
+                return errorCode(DmcError::Busy);
+            handle->closing = true;
             liveHandles.erase(handle);
         }
-        std::unique_lock operationLock(handle->mutex);
-        operationLock.unlock();
         delete handle;
         return errorCode(DmcError::Success);
     } catch (...)
@@ -306,15 +327,11 @@ auto szx_dmc_destroy_v1(szx_dmc_handle *handle) noexcept -> int32_t
 
 auto szx_dmc_connect_v1(szx_dmc_handle *handle) noexcept -> int32_t
 {
-    if (!isLive(handle))
-        return errorCode(DmcError::InvalidArgument);
     return invoke(handle, [&] { return handle->controller->connect(); });
 }
 
 auto szx_dmc_disconnect_v1(szx_dmc_handle *handle) noexcept -> int32_t
 {
-    if (!isLive(handle))
-        return errorCode(DmcError::InvalidArgument);
     return invoke(handle, [&] { return handle->controller->disconnect(); });
 }
 
@@ -344,7 +361,7 @@ auto szx_dmc_poll_state_v1(szx_dmc_handle *handle, szx_dmc_state_v1 *state) noex
 
 auto szx_dmc_execute_v1(szx_dmc_handle *handle, const szx_dmc_command_v1 *command) noexcept -> int32_t
 {
-    if (!isLive(handle) || command == nullptr)
+    if (command == nullptr)
         return invalidArgument(handle, "Handle and command are required.");
     if (command->struct_size < sizeof(szx_dmc_command_v1) || command->abi_version != SZX_DMC_ABI_VERSION_V1)
         return invalidArgument(handle, "Command ABI version or size is invalid.");
@@ -373,25 +390,35 @@ auto szx_dmc_execute_v1(szx_dmc_handle *handle, const szx_dmc_command_v1 *comman
 
 auto szx_dmc_arm_capture_v1(szx_dmc_handle *handle, const szx_dmc_capture_v1 *capture) noexcept -> int32_t
 {
-    if (!isLive(handle) || capture == nullptr)
+    if (capture == nullptr)
         return invalidArgument(handle, "Handle and capture request are required.");
     if (capture->struct_size < sizeof(szx_dmc_capture_v1) || capture->abi_version != SZX_DMC_ABI_VERSION_V1)
         return invalidArgument(handle, "Capture ABI version or size is invalid.");
     SZX::DMC::CaptureRequest request;
-    request.operationId                = capture->operation_id;
-    request.startSource                = static_cast<StartSource>(capture->start_source);
-    request.triggerSource              = static_cast<FrameTriggerSource>(capture->trigger_source);
-    request.compareOutput              = capture->compare_output;
-    request.compareOutputActiveLevel   = capture->compare_output_active_level != 0;
-    request.expectedFrames             = capture->expected_frames;
-    request.comparePulseCycles         = capture->compare_pulse_cycles;
-    request.compareQueueCapacity       = capture->compare_queue_capacity;
-    request.scanPlan.scanAxis          = capture->scan_axis;
-    request.scanPlan.rowAxis           = capture->row_axis;
-    request.scanPlan.scanStartPosition = capture->scan_start_position;
-    request.scanPlan.scanEndPosition   = capture->scan_end_position;
-    request.scanPlan.scanSpeed         = capture->scan_speed;
-    request.scanPlan.rowSpeed          = capture->row_speed;
+    request.operationId = capture->operation_id;
+    request.startSource = static_cast<StartSource>(capture->start_source);
+    if (capture->trigger_source > SZX_DMC_FRAME_TRIGGER_POSITION_COMPARE_OUTPUT_V1)
+        return invalidArgument(handle, "Capture trigger source is invalid.");
+    request.triggerSource                      = static_cast<FrameTriggerSource>(capture->trigger_source);
+    request.compareOutput                      = capture->compare_output;
+    request.compareOutputActiveLevel           = capture->compare_output_active_level != 0;
+    request.expectedFrames                     = capture->expected_frames;
+    request.comparePulseCycles                 = capture->compare_pulse_cycles;
+    request.compareQueueCapacity               = capture->compare_queue_capacity;
+    request.scanPlan.scanAxis                  = capture->scan_axis;
+    request.scanPlan.rowAxis                   = capture->row_axis;
+    request.scanPlan.scanStartPosition         = capture->scan_start_position;
+    request.scanPlan.scanEndPosition           = capture->scan_end_position;
+    request.scanPlan.scanSpeed                 = capture->scan_speed;
+    request.scanPlan.rowSpeed                  = capture->row_speed;
+    constexpr std::uint32_t maxCaptureElements = 1U << 20;
+    if (capture->compare_point_count > maxCaptureElements || capture->scan_position_count > maxCaptureElements ||
+        capture->row_position_count > maxCaptureElements)
+        return invalidArgument(handle, "Capture array is too large.");
+    if (capture->compare_point_count > capture->expected_frames ||
+        capture->scan_position_count != 0 && capture->row_position_count != 0 &&
+            capture->scan_position_count > capture->expected_frames / capture->row_position_count)
+        return invalidArgument(handle, "Capture array dimensions are invalid.");
     if (capture->compare_point_count > 0 && capture->compare_points == nullptr)
         return invalidArgument(handle, "Compare point buffer is required.");
     if (capture->scan_position_count > 0 && capture->scan_positions == nullptr)
@@ -419,15 +446,11 @@ auto szx_dmc_arm_capture_v1(szx_dmc_handle *handle, const szx_dmc_capture_v1 *ca
 
 auto szx_dmc_start_capture_v1(szx_dmc_handle *handle, uint64_t operationId) noexcept -> int32_t
 {
-    if (!isLive(handle))
-        return errorCode(DmcError::InvalidArgument);
     return invoke(handle, [&] { return handle->controller->startCapture(operationId); });
 }
 
 auto szx_dmc_start_capture_source_v1(szx_dmc_handle *handle, uint64_t operationId, uint16_t source) noexcept -> int32_t
 {
-    if (!isLive(handle))
-        return errorCode(DmcError::InvalidArgument);
     return invoke(handle, [&] { return handle->controller->startCapture(operationId, static_cast<StartSource>(source)); });
 }
 
@@ -469,6 +492,7 @@ auto szx_dmc_last_error_v1(szx_dmc_handle *handle, char *buffer, size_t capacity
     HandleGuard guard(handle);
     if (!guard)
         return errorCode(DmcError::InvalidArgument);
+    std::scoped_lock lock(handle->errorMutex);
     return copyDiagnostic(handle->lastError, buffer, capacity, required);
 }
 

@@ -65,6 +65,13 @@ enum
     SZX_DMC_START_SOURCE_ANY_V1              = 3u, /**< 允许软件和外部硬件触发。 */
 };
 
+/** @brief 相机帧触发来源。 */
+enum
+{
+    SZX_DMC_FRAME_TRIGGER_SOFTWARE_V1                = 0u, /**< 软件触发。 */
+    SZX_DMC_FRAME_TRIGGER_POSITION_COMPARE_OUTPUT_V1 = 1u, /**< 位置比较输出触发。 */
+};
+
 /** @brief C ABI 返回的稳定错误码。 */
 typedef enum szx_dmc_error_v1
 {

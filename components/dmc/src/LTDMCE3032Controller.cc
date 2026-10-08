@@ -51,13 +51,12 @@ auto boundary(Function &&function) noexcept -> decltype(function())
             return Return::Failure(static_cast<int>(DmcError::ResourceExhausted), "DMC operation exhausted memory.");
         else
             return failure<Value>(DmcError::ResourceExhausted, "DMC operation exhausted memory.");
-    } catch (const std::exception &error)
+    } catch (const std::exception &)
     {
         if constexpr (std::is_void_v<Value>)
-            return Return::Failure(static_cast<int>(DmcError::UnexpectedFailure),
-                                   std::string("DMC operation failed: ") + error.what());
+            return Return::Failure(static_cast<int>(DmcError::UnexpectedFailure), "DMC operation failed.");
         else
-            return failure<Value>(DmcError::UnexpectedFailure, std::string("DMC operation failed: ") + error.what());
+            return failure<Value>(DmcError::UnexpectedFailure, "DMC operation failed.");
     } catch (...)
     {
         if constexpr (std::is_void_v<Value>)
@@ -73,9 +72,24 @@ auto nowNanoseconds() noexcept -> std::int64_t
     return now.time_since_epoch().count();
 }
 
-auto isFinite(double value) noexcept -> bool
+inline auto isFinite(double value) noexcept -> bool
 {
     return std::isfinite(value) != 0;
+}
+
+auto validMotionProfile(const MotionProfile &profile) noexcept -> bool
+{
+    return isFinite(profile.minVelocity) && isFinite(profile.maxVelocity) && isFinite(profile.acceleration) &&
+        isFinite(profile.deceleration) && isFinite(profile.stopVelocity) && profile.minVelocity >= 0.0 &&
+        profile.maxVelocity >= profile.minVelocity && profile.acceleration >= 0.0 && profile.deceleration >= 0.0 &&
+        profile.stopVelocity >= 0.0;
+}
+
+auto validHomeProfile(const HomeProfile &profile) noexcept -> bool
+{
+    return isFinite(profile.lowVelocity) && isFinite(profile.highVelocity) && isFinite(profile.acceleration) &&
+        isFinite(profile.deceleration) && isFinite(profile.offset) && profile.lowVelocity >= 0.0 &&
+        profile.highVelocity >= profile.lowVelocity && profile.acceleration >= 0.0 && profile.deceleration >= 0.0;
 }
 
 std::mutex connectedCardsMutex;
@@ -154,18 +168,23 @@ struct LTDMCE3032Controller::Impl
              status.state == DmcState::WaitingForFrames);
     }
 
-    auto clearCompareLocked() noexcept -> void
+    auto clearCompareLocked() -> Result<void>
     {
+        bool failed = false;
         if (!config.simulation)
         {
-            dmc_compare_set_config(static_cast<WORD>(config.cardIndex), static_cast<WORD>(compare.axis), 0,
-                                   static_cast<WORD>(compare.source));
-            dmc_compare_clear_points(static_cast<WORD>(config.cardIndex), static_cast<WORD>(compare.axis));
+            failed = dmc_compare_set_config(static_cast<WORD>(config.cardIndex), static_cast<WORD>(compare.axis), 0,
+                                            static_cast<WORD>(compare.source)) != 0;
+            failed =
+                dmc_compare_clear_points(static_cast<WORD>(config.cardIndex), static_cast<WORD>(compare.axis)) != 0 || failed;
         }
         compare.points.clear();
         compare.queueCapacity        = 0;
         status.compareQueueRemaining = 0;
         status.compareEnabled        = false;
+        if (failed)
+            return failure<void>(DmcError::CompareUnavailable, "LTDMC compare cleanup failed.");
+        return Result<void>::Success();
     }
 
     auto releaseCardLocked() noexcept -> void
@@ -180,8 +199,10 @@ struct LTDMCE3032Controller::Impl
     auto issueAxisMoveLocked(AxisId axis, double position, const MotionProfile &profile, bool absolute) -> Result<void>
     {
         (void)profile;
-        if (axis >= axes.size() || !isFinite(position))
+        if (axis >= axes.size() || !isFinite(position) || !validMotionProfile(profile))
             return failure<void>(DmcError::InvalidArgument, "Scan axis or position is invalid.");
+        if (!axes[axis].enabled || !axes[axis].homed)
+            return failure<void>(DmcError::AxisNotReady, "Scan axes must be enabled and homed.");
         if (!config.simulation)
         {
             if (dmc_set_profile_unit(static_cast<WORD>(config.cardIndex), static_cast<WORD>(axis), profile.minVelocity,
@@ -236,7 +257,7 @@ struct LTDMCE3032Controller::Impl
 
     auto emergencyStopLocked() -> Result<void>
     {
-        clearCompareLocked();
+        const auto clear     = clearCompareLocked();
         captureArmed         = false;
         status.safetyLatched = true;
         status.state         = DmcState::SafetyLatched;
@@ -254,6 +275,8 @@ struct LTDMCE3032Controller::Impl
             status.lastError = DmcError::MotionTimeout;
             return failure<void>(DmcError::MotionTimeout, "LTDMC emergency stop failed.");
         }
+        if (!clear.ok)
+            return clear;
         return Result<void>::Success();
     }
 
@@ -317,6 +340,9 @@ struct LTDMCE3032Controller::Impl
                             const auto done = dmc_check_done(static_cast<WORD>(config.cardIndex), static_cast<WORD>(axis));
                             if (positionResult != 0 || done < 0)
                             {
+                                (void)stopAxesLocked(StopMode::Emergency);
+                                (void)clearCompareLocked();
+                                captureArmed     = false;
                                 status.state     = DmcState::Failed;
                                 status.lastError = DmcError::AxisNotReady;
                                 inputFailure     = true;
@@ -402,7 +428,7 @@ struct LTDMCE3032Controller::Impl
             if (dmc_compare_set_config(static_cast<WORD>(config.cardIndex), static_cast<WORD>(request.scanPlan.scanAxis), 1,
                                        static_cast<WORD>(request.compareSource)) != 0)
             {
-                clearCompareLocked();
+                (void)clearCompareLocked();
                 status.state     = DmcState::Failed;
                 status.lastError = DmcError::CompareUnavailable;
                 return failure<void>(DmcError::CompareUnavailable, "LTDMC compare enable failed.");
@@ -411,7 +437,8 @@ struct LTDMCE3032Controller::Impl
         const auto scan = issueScanRowLocked(0);
         if (!scan.ok)
         {
-            clearCompareLocked();
+            (void)stopAxesLocked(StopMode::Decelerated);
+            (void)clearCompareLocked();
             captureArmed     = false;
             status.state     = DmcState::Failed;
             status.lastError = static_cast<DmcError>(scan.error);
@@ -432,6 +459,11 @@ struct LTDMCE3032Controller::Impl
         const auto capacity = capture.compareQueueCapacity == 0 ? config.compareQueueCapacity : capture.compareQueueCapacity;
         if (capacity == 0 || capture.expectedFrames > capacity)
             return failure<void>(DmcError::CompareQueueFull, "Capture compare queue capacity is insufficient.");
+        if (capture.triggerSource != FrameTriggerSource::Software &&
+            capture.triggerSource != FrameTriggerSource::PositionCompareOutput)
+            return failure<void>(DmcError::InvalidArgument, "Capture trigger source is invalid.");
+        if (!validMotionProfile(capture.scanPlan.scanProfile) || !validMotionProfile(capture.scanPlan.rowProfile))
+            return failure<void>(DmcError::InvalidArgument, "Capture motion profile is invalid.");
         if (capture.triggerSource == FrameTriggerSource::PositionCompareOutput &&
             capture.comparePoints.size() != capture.expectedFrames)
             return failure<void>(DmcError::InvalidArgument, "Compare point count does not match expected frame count.");
@@ -442,6 +474,9 @@ struct LTDMCE3032Controller::Impl
             return failure<void>(DmcError::InvalidArgument, "Scan plan dimensions do not match expected frame count.");
         if (capture.compareOutput >= config.outputCount)
             return failure<void>(DmcError::IoUnavailable, "Capture compare output is outside the configured IO range.");
+        for (const auto &point : capture.comparePoints)
+            if (!isFinite(point.position))
+                return failure<void>(DmcError::InvalidArgument, "Capture compare point position is invalid.");
         return Result<void>::Success();
     }
 
@@ -538,15 +573,24 @@ auto LTDMCE3032Controller::disconnect() -> SZX::COMMON::Result<void>
         {
             std::jthread worker;
             bool closeHardware = false;
+            auto stopResult    = Result<void>::Success();
+            auto clearResult   = Result<void>::Success();
+            auto closeResult   = Result<void>::Success();
             {
                 std::scoped_lock lock(impl_->mutex);
                 if (!impl_->connected())
                     return Result<void>::Success();
+                if (impl_->inputWorker.joinable() && impl_->inputWorker.get_id() == std::this_thread::get_id())
+                    return failure<void>(DmcError::Busy, "DMC disconnect cannot join its input worker thread.");
+                stopResult = impl_->stopAxesLocked(StopMode::Decelerated);
                 impl_->inputWorker.request_stop();
-                worker = std::move(impl_->inputWorker);
-                impl_->clearCompareLocked();
+                worker      = std::move(impl_->inputWorker);
+                clearResult = impl_->clearCompareLocked();
                 for (auto &axis : impl_->axes)
                 {
+                    axis.enabled  = false;
+                    axis.homed    = false;
+                    axis.homing   = false;
                     axis.moving   = false;
                     axis.velocity = 0.0;
                 }
@@ -560,12 +604,18 @@ auto LTDMCE3032Controller::disconnect() -> SZX::COMMON::Result<void>
             }
             if (worker.joinable())
                 worker.join();
-            if (closeHardware)
-                dmc_board_close_onecard(static_cast<WORD>(impl_->config.cardIndex));
+            if (closeHardware && dmc_board_close_onecard(static_cast<WORD>(impl_->config.cardIndex)) != 0)
+                closeResult = failure<void>(DmcError::DriverUnavailable, "LTDMC board close failed.");
             {
                 std::scoped_lock lock(impl_->mutex);
                 impl_->releaseCardLocked();
             }
+            if (!stopResult.ok)
+                return stopResult;
+            if (!clearResult.ok)
+                return clearResult;
+            if (!closeResult.ok)
+                return closeResult;
             return Result<void>::Success();
         });
 }
@@ -647,8 +697,7 @@ auto LTDMCE3032Controller::homeAxis(AxisId axis, const HomeProfile &profile) -> 
                 return result;
             if (!impl_->axes[axis].enabled)
                 return failure<void>(DmcError::AxisNotReady, "Axis must be enabled before homing.");
-            if (!isFinite(profile.lowVelocity) || !isFinite(profile.highVelocity) || !isFinite(profile.offset) ||
-                profile.lowVelocity < 0.0 || profile.highVelocity < profile.lowVelocity)
+            if (!validHomeProfile(profile))
                 return failure<void>(DmcError::InvalidArgument, "Home profile is invalid.");
             if (!impl_->config.simulation)
             {
@@ -680,7 +729,7 @@ auto LTDMCE3032Controller::moveAbsolute(AxisId axis, double position, const Moti
                 return result;
             if (!impl_->axes[axis].enabled || !impl_->axes[axis].homed)
                 return failure<void>(DmcError::AxisNotReady, "Axis must be enabled and homed before absolute motion.");
-            if (!isFinite(position) || !isFinite(profile.maxVelocity) || profile.maxVelocity < 0.0)
+            if (!isFinite(position) || !validMotionProfile(profile))
                 return failure<void>(DmcError::InvalidArgument, "Motion target or profile is invalid.");
             if (!impl_->config.simulation)
             {
@@ -710,7 +759,7 @@ auto LTDMCE3032Controller::moveRelative(AxisId axis, double distance, const Moti
                 return failure<void>(DmcError::AxisNotReady, "Axis must be enabled before relative motion.");
             if (!isFinite(distance))
                 return failure<void>(DmcError::InvalidArgument, "Relative motion distance is invalid.");
-            if (!isFinite(profile.maxVelocity) || profile.maxVelocity < 0.0)
+            if (!validMotionProfile(profile))
                 return failure<void>(DmcError::InvalidArgument, "Motion profile is invalid.");
             const auto target = impl_->axes[axis].position + distance;
             if (!impl_->config.simulation &&
@@ -739,13 +788,23 @@ auto LTDMCE3032Controller::stop(AxisId axis, StopMode mode) -> SZX::COMMON::Resu
                          mode == StopMode::Emergency ? 1 : 0) != 0)
                 return failure<void>(DmcError::MotionTimeout, "LTDMC axis stop failed.");
             if (mode == StopMode::Emergency)
+            {
                 impl_->status.safetyLatched = true;
+                impl_->status.state         = DmcState::SafetyLatched;
+                impl_->status.lastError     = DmcError::SafetyLatched;
+            }
             if (impl_->activeCapture())
             {
-                impl_->clearCompareLocked();
+                const auto clear        = impl_->clearCompareLocked();
                 impl_->captureArmed     = false;
                 impl_->status.state     = mode == StopMode::Emergency ? DmcState::SafetyLatched : DmcState::Cancelled;
                 impl_->status.lastError = mode == StopMode::Emergency ? DmcError::SafetyLatched : DmcError::Cancelled;
+                if (!clear.ok)
+                {
+                    impl_->status.state     = DmcState::Failed;
+                    impl_->status.lastError = static_cast<DmcError>(clear.error);
+                    return clear;
+                }
             }
             return Result<void>::Success();
         });
@@ -841,7 +900,13 @@ auto LTDMCE3032Controller::configureCompare(const CompareConfig &config) -> SZX:
                                                          static_cast<WORD>(config.axis), point.position, 0,
                                                          static_cast<DWORD>(config.output),
                                                          static_cast<DWORD>(config.pulseCycles), config.activeLevel ? 1 : 0) != 0)
+                    {
+                        (void)dmc_compare_set_config(static_cast<WORD>(impl_->config.cardIndex), static_cast<WORD>(config.axis),
+                                                     0, static_cast<WORD>(config.source));
+                        (void)dmc_compare_clear_points(static_cast<WORD>(impl_->config.cardIndex),
+                                                       static_cast<WORD>(config.axis));
                         return failure<void>(DmcError::CompareQueueFull, "LTDMC compare point insertion failed.");
+                    }
             }
             impl_->compare                      = config;
             impl_->compare.queueCapacity        = capacity;
@@ -877,8 +942,7 @@ auto LTDMCE3032Controller::clearCompare() -> SZX::COMMON::Result<void>
             std::scoped_lock lock(impl_->mutex);
             if (!impl_->connected())
                 return failure<void>(DmcError::NotConnected, "DMC controller is not connected.");
-            impl_->clearCompareLocked();
-            return Result<void>::Success();
+            return impl_->clearCompareLocked();
         });
 }
 
@@ -937,7 +1001,11 @@ auto LTDMCE3032Controller::armCapture(const CaptureRequest &request) -> SZX::COM
                                                  static_cast<WORD>(request.scanPlan.scanAxis)) != 0)
                     {
                         impl_->captureArmed = false;
-                        impl_->clearCompareLocked();
+                        (void)dmc_compare_set_config(static_cast<WORD>(impl_->config.cardIndex),
+                                                     static_cast<WORD>(request.scanPlan.scanAxis), 0,
+                                                     static_cast<WORD>(request.compareSource));
+                        (void)dmc_compare_clear_points(static_cast<WORD>(impl_->config.cardIndex),
+                                                       static_cast<WORD>(request.scanPlan.scanAxis));
                         impl_->status.state     = DmcState::Failed;
                         impl_->status.lastError = DmcError::CompareUnavailable;
                         return failure<void>(DmcError::CompareUnavailable, "LTDMC compare queue setup failed.");
@@ -949,7 +1017,11 @@ auto LTDMCE3032Controller::armCapture(const CaptureRequest &request) -> SZX::COM
                                 static_cast<DWORD>(request.comparePulseCycles), request.compareOutputActiveLevel ? 1 : 0) != 0)
                         {
                             impl_->captureArmed = false;
-                            impl_->clearCompareLocked();
+                            (void)dmc_compare_set_config(static_cast<WORD>(impl_->config.cardIndex),
+                                                         static_cast<WORD>(request.scanPlan.scanAxis), 0,
+                                                         static_cast<WORD>(request.compareSource));
+                            (void)dmc_compare_clear_points(static_cast<WORD>(impl_->config.cardIndex),
+                                                           static_cast<WORD>(request.scanPlan.scanAxis));
                             impl_->status.state     = DmcState::Failed;
                             impl_->status.lastError = DmcError::CompareQueueFull;
                             return failure<void>(DmcError::CompareQueueFull, "LTDMC compare point insertion failed.");
@@ -1013,6 +1085,8 @@ auto LTDMCE3032Controller::acknowledgeFrameProgress(OperationId operationId, Fra
             std::scoped_lock lock(impl_->mutex);
             if (!impl_->captureArmed || impl_->status.operationId != operationId)
                 return failure<void>(DmcError::InvalidArgument, "Capture operation is stale or unknown.");
+            if (impl_->status.state != DmcState::Scanning && impl_->status.state != DmcState::WaitingForFrames)
+                return failure<void>(DmcError::Busy, "Capture is not running.");
             if (savedFrames < impl_->status.receivedFrames || savedFrames > impl_->status.expectedFrames)
                 return failure<void>(DmcError::FrameProgressInvalid, "Saved frame progress is outside the capture range.");
             if (impl_->request.triggerSource == FrameTriggerSource::PositionCompareOutput &&
@@ -1036,7 +1110,8 @@ auto LTDMCE3032Controller::acknowledgeFrameProgress(OperationId operationId, Fra
                     return motion;
                 }
             }
-            if (savedFrames == impl_->status.expectedFrames && impl_->status.comparedTriggers >= savedFrames)
+            if (savedFrames == impl_->status.expectedFrames &&
+                (impl_->request.triggerSource == FrameTriggerSource::Software || impl_->status.comparedTriggers >= savedFrames))
                 impl_->status.state = DmcState::WaitingForFrames;
             return Result<void>::Success();
         });
@@ -1050,14 +1125,18 @@ auto LTDMCE3032Controller::completeCamera(OperationId operationId, FrameOrdinal 
             std::scoped_lock lock(impl_->mutex);
             if (!impl_->captureArmed || impl_->status.operationId != operationId)
                 return failure<void>(DmcError::InvalidArgument, "Capture operation is stale or unknown.");
-            if (savedFrames != impl_->status.expectedFrames || impl_->status.comparedTriggers < savedFrames)
+            if (impl_->status.state != DmcState::Scanning && impl_->status.state != DmcState::WaitingForFrames)
+                return failure<void>(DmcError::Busy, "Capture is not running.");
+            if (savedFrames != impl_->status.expectedFrames ||
+                (impl_->request.triggerSource == FrameTriggerSource::PositionCompareOutput &&
+                 impl_->status.comparedTriggers < savedFrames))
                 return failure<void>(DmcError::FrameProgressInvalid, "Camera completion does not match the capture plan.");
             impl_->status.receivedFrames = savedFrames;
-            impl_->clearCompareLocked();
-            impl_->captureArmed     = false;
-            impl_->status.state     = DmcState::Completed;
-            impl_->status.lastError = DmcError::Success;
-            return Result<void>::Success();
+            const auto clear             = impl_->clearCompareLocked();
+            impl_->captureArmed          = false;
+            impl_->status.state          = DmcState::Completed;
+            impl_->status.lastError      = DmcError::Success;
+            return clear;
         });
 }
 
@@ -1071,11 +1150,12 @@ auto LTDMCE3032Controller::failCapture(OperationId operationId, DmcError reason)
                 return failure<void>(DmcError::InvalidArgument, "Capture operation is stale or unknown.");
             if (reason == DmcError::Success)
                 return failure<void>(DmcError::InvalidArgument, "Capture failure requires a non-success error.");
-            impl_->clearCompareLocked();
-            impl_->captureArmed     = false;
-            impl_->status.state     = reason == DmcError::SafetyLatched ? DmcState::SafetyLatched : DmcState::Failed;
-            impl_->status.lastError = reason;
-            return Result<void>::Success();
+            const auto clear            = impl_->clearCompareLocked();
+            impl_->captureArmed         = false;
+            impl_->status.state         = reason == DmcError::SafetyLatched ? DmcState::SafetyLatched : DmcState::Failed;
+            impl_->status.lastError     = reason;
+            impl_->status.safetyLatched = reason == DmcError::SafetyLatched;
+            return clear;
         });
 }
 
@@ -1087,15 +1167,17 @@ auto LTDMCE3032Controller::cancelCapture(OperationId operationId, StopMode mode)
             std::scoped_lock lock(impl_->mutex);
             if (!impl_->captureArmed || impl_->status.operationId != operationId)
                 return failure<void>(DmcError::InvalidArgument, "Capture operation is stale or unknown.");
-            const auto stop = impl_->stopAxesLocked(mode);
-            impl_->clearCompareLocked();
-            impl_->captureArmed = false;
-            impl_->status.state =
-                !stop.ok ? DmcState::Failed : (mode == StopMode::Emergency ? DmcState::SafetyLatched : DmcState::Cancelled);
+            const auto stop             = impl_->stopAxesLocked(mode);
+            const auto clear            = impl_->clearCompareLocked();
+            impl_->captureArmed         = false;
+            impl_->status.state         = !stop.ok || !clear.ok ?
+                        DmcState::Failed :
+                        (mode == StopMode::Emergency ? DmcState::SafetyLatched : DmcState::Cancelled);
             impl_->status.lastError     = !stop.ok ? static_cast<DmcError>(stop.error) :
+                    !clear.ok                      ? static_cast<DmcError>(clear.error) :
                                                      (mode == StopMode::Emergency ? DmcError::SafetyLatched : DmcError::Cancelled);
             impl_->status.safetyLatched = mode == StopMode::Emergency;
-            return stop;
+            return !stop.ok ? stop : clear;
         });
 }
 

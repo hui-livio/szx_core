@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <limits>
 #include <memory>
 
 #include <szx/dmc/DmcController.hpp>
@@ -47,6 +48,8 @@ TEST(DmcControllerTest, SimulationCaptureCompletesOnlyAfterCompareAndFrameProgre
 
     ASSERT_TRUE(controller->enableAxis(0).ok);
     ASSERT_TRUE(controller->homeAxis(0).ok);
+    ASSERT_TRUE(controller->enableAxis(1).ok);
+    ASSERT_TRUE(controller->homeAxis(1).ok);
     ASSERT_TRUE(controller->moveAbsolute(0, 100.0).ok);
 
     const auto request = makeCapture();
@@ -81,6 +84,39 @@ TEST(DmcControllerTest, InjectedLogSinkReceivesLifecycleMessages)
     EXPECT_GT(logs, 0);
 }
 
+TEST(DmcControllerTest, SoftwareTriggerCaptureCompletesWithoutCompareAcknowledgement)
+{
+    auto controller = makeController();
+    ASSERT_TRUE(controller->connect().ok);
+    ASSERT_TRUE(controller->enableAxis(0).ok);
+    ASSERT_TRUE(controller->homeAxis(0).ok);
+    ASSERT_TRUE(controller->enableAxis(1).ok);
+    ASSERT_TRUE(controller->homeAxis(1).ok);
+
+    auto request          = makeCapture();
+    request.triggerSource = FrameTriggerSource::Software;
+    request.comparePoints.clear();
+    ASSERT_TRUE(controller->armCapture(request).ok);
+    ASSERT_TRUE(controller->startCapture(request.operationId).ok);
+    ASSERT_TRUE(controller->acknowledgeFrameProgress(request.operationId, request.expectedFrames).ok);
+    ASSERT_TRUE(controller->completeCamera(request.operationId, request.expectedFrames).ok);
+    EXPECT_EQ(controller->status().value.state, DmcState::Completed);
+}
+
+TEST(DmcControllerTest, RejectsInvalidMotionProfile)
+{
+    auto controller = makeController();
+    ASSERT_TRUE(controller->connect().ok);
+    ASSERT_TRUE(controller->enableAxis(0).ok);
+    ASSERT_TRUE(controller->homeAxis(0).ok);
+    SZX::DMC::MotionProfile profile;
+    profile.maxVelocity = -1.0;
+    EXPECT_EQ(controller->moveAbsolute(0, 1.0, profile).error, static_cast<int>(DmcError::InvalidArgument));
+
+    profile.maxVelocity = std::numeric_limits<double>::quiet_NaN();
+    EXPECT_EQ(controller->moveAbsolute(0, 1.0, profile).error, static_cast<int>(DmcError::InvalidArgument));
+}
+
 TEST(DmcControllerTest, FactoryRoutesLeiSaiProfileByProfileId)
 {
     auto config      = DmcConfig{.compareQueueCapacity = 8};
@@ -100,6 +136,10 @@ TEST(DmcControllerTest, DigitalInputDoesNotStartCapture)
 {
     auto controller = makeController();
     ASSERT_TRUE(controller->connect().ok);
+    ASSERT_TRUE(controller->enableAxis(0).ok);
+    ASSERT_TRUE(controller->homeAxis(0).ok);
+    ASSERT_TRUE(controller->enableAxis(1).ok);
+    ASSERT_TRUE(controller->homeAxis(1).ok);
     auto request = makeCapture(StartSource::HardwareTrigger);
     ASSERT_TRUE(controller->armCapture(request).ok);
 
@@ -121,6 +161,10 @@ TEST(DmcControllerTest, RejectsInvalidCaptureStartSourceMask)
 {
     auto controller = makeController();
     ASSERT_TRUE(controller->connect().ok);
+    ASSERT_TRUE(controller->enableAxis(0).ok);
+    ASSERT_TRUE(controller->homeAxis(0).ok);
+    ASSERT_TRUE(controller->enableAxis(1).ok);
+    ASSERT_TRUE(controller->homeAxis(1).ok);
     auto request        = makeCapture();
     request.startSource = static_cast<StartSource>(4);
     EXPECT_EQ(controller->armCapture(request).error, static_cast<int>(DmcError::InvalidArgument));
@@ -152,6 +196,10 @@ TEST(DmcControllerTest, CancellationClearsCompareQueueAndPreservesSafetyState)
 {
     auto controller = makeController();
     ASSERT_TRUE(controller->connect().ok);
+    ASSERT_TRUE(controller->enableAxis(0).ok);
+    ASSERT_TRUE(controller->homeAxis(0).ok);
+    ASSERT_TRUE(controller->enableAxis(1).ok);
+    ASSERT_TRUE(controller->homeAxis(1).ok);
     const auto request = makeCapture();
     ASSERT_TRUE(controller->armCapture(request).ok);
     ASSERT_TRUE(controller->startCapture(request.operationId).ok);
