@@ -150,16 +150,23 @@ using InputEventSink = std::function<void(const InputSnapshot &snapshot)>;
 /** @brief 控制器创建配置。 */
 struct DmcConfig
 {
-    DmcModel model                     = DmcModel::LeiSaiLTDMC; ///< 驱动系列。
-    std::string profileId              = "E3032";               ///< 型号配置标识。
-    std::uint16_t cardIndex            = 0;                     ///< 板卡编号。
-    bool simulation                    = true;                  ///< 是否仿真。
-    bool allowSimulationFallback       = false;                 ///< 是否允许回退仿真。
-    std::uint32_t compareQueueCapacity = 256;                   ///< 位置比较队列容量。
-    std::uint32_t inputCount           = 32;                    ///< 数字输入数量。
-    std::uint32_t outputCount          = 32;                    ///< 数字输出数量。
-    LogSink logSink{};                                          ///< 日志回调；为空时输出到控制台。
-    InputEventSink inputEventSink{};                            ///< 原始输入电平变化回调。
+    DmcModel model                                 = DmcModel::LeiSaiLTDMC; ///< 驱动系列。
+    std::string profileId                          = "E3032";               ///< 型号配置标识。
+    std::uint16_t cardIndex                        = 0;                     ///< 板卡编号。
+    bool simulation                                = true;                  ///< 是否仿真。
+    bool allowSimulationFallback                   = false;                 ///< 是否允许回退仿真。
+    std::uint32_t compareQueueCapacity             = 256;                   ///< 位置比较队列容量。
+    std::uint32_t inputCount                       = 32;                    ///< 数字输入数量。
+    std::uint32_t outputCount                      = 32;                    ///< 数字输出数量。
+    std::uint32_t softwareTriggerPulseMilliseconds = 1;                     ///< 软件触发脉宽，单位毫秒。
+    double homeTimeoutSeconds                      = 60.0;                  ///< 回零超时时间。
+    double homeMaxTravel                           = 0.0;                   ///< 回零最大行程，零表示不限制。
+    InputId homeOriginInput                        = 0;                     ///< 回零原点输入编号。
+    bool homeOriginActiveLevel                     = true;                  ///< 回零原点输入有效电平。
+    bool homeRequireOriginSeen                     = false;                 ///< 是否要求回零过程中检测到原点。
+    std::int8_t homeExpectedInitialDirection       = 0;                     ///< 初始回零方向，-1/0/1。
+    LogSink logSink{};                                                      ///< 日志回调；为空时输出到控制台。
+    InputEventSink inputEventSink{};                                        ///< 原始输入电平变化回调。
 };
 
 /** @brief 控制器解析后的型号配置。 */

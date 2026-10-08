@@ -30,6 +30,8 @@ auto controllerResult = SZX::DMC::DmcControllerFactory::create(config);
 
 `ComparePoint::position`、扫描起止位置和行位置均使用 LTDMC 的控制器单位，适配器调用对应的 `_unit` SDK 接口。输入事件只提供原始电平，急停、光栅等业务安全含义由上层流程解释。
 
+硬件回零安全参数通过 `DmcConfig` 配置：`homeTimeoutSeconds` 控制超时，`homeMaxTravel` 限制最大行程，`homeRequireOriginSeen` 要求回零期间检测到 `homeOriginInput`，`homeExpectedInitialDirection` 可限制初始运动方向。未配置最大行程或原点要求时，对应检查关闭。
+
 ## 位置比较采集时序
 
 ```mermaid
@@ -64,7 +66,7 @@ sequenceDiagram
 
 ## 软件触发采集
 
-`FrameTriggerSource::Software` 不启用位置比较队列。每次帧进度增加时，适配器输出一次有效电平并保持约 1 ms 后恢复无效电平；相机保存进度仍需由业务层通过 `acknowledgeFrameProgress()` 提交。
+`FrameTriggerSource::Software` 不启用位置比较队列。每次帧进度增加时，适配器输出一次有效电平并按 `DmcConfig::softwareTriggerPulseMilliseconds` 保持后恢复无效电平；相机保存进度仍需由业务层通过 `acknowledgeFrameProgress()` 提交。
 
 ## 失败和清理
 

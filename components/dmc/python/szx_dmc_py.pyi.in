@@ -94,6 +94,13 @@ class DmcConfig:
     compare_queue_capacity: int
     input_count: int
     output_count: int
+    software_trigger_pulse_milliseconds: int
+    home_timeout_seconds: float
+    home_max_travel: float
+    home_origin_input: int
+    home_origin_active_level: bool
+    home_require_origin_seen: bool
+    home_expected_initial_direction: int
     log_sink: Optional[LogSink]
 
     def __init__(self) -> None: ...

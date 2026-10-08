@@ -176,6 +176,10 @@ struct LTDMCE3032Controller::Impl
     std::uint32_t compareExpectedTriggers = 0;
     std::uint32_t manualTriggerFrames     = 0;
     std::array<std::chrono::steady_clock::time_point, 2> homeDeadlines{};
+    std::array<double, 2> homeStartPositions{};
+    std::array<double, 2> homeLastPositions{};
+    std::array<bool, 2> homeOriginSeen{};
+    std::array<bool, 2> homeDirectionVerified{};
 
     auto syncStatus() -> void
     {
@@ -342,14 +346,15 @@ struct LTDMCE3032Controller::Impl
         const auto inactive = static_cast<WORD>(activeLevel ? 0 : 1);
         if (dmc_write_outbit(sdkCard(), static_cast<WORD>(output), active) != 0)
             return failure<void>(DmcError::IoUnavailable, "LTDMC software trigger output failed.");
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        std::this_thread::sleep_for(std::chrono::milliseconds(config.softwareTriggerPulseMilliseconds));
         if (dmc_write_outbit(sdkCard(), static_cast<WORD>(output), inactive) != 0)
             return failure<void>(DmcError::IoUnavailable, "LTDMC software trigger release failed.");
         outputs[output] = false;
         return Result<void>::Success();
     }
 
-    auto validateCompareQueueLocked(AxisId axis, std::uint16_t source, bool enabled) -> Result<void>
+    auto validateCompareQueueLocked(AxisId axis, std::uint16_t source, bool enabled, long expectedPoints = -1,
+                                    long availableBefore = -1) -> Result<void>
     {
         WORD actualEnabled  = 0;
         WORD actualSource   = 0;
@@ -361,7 +366,10 @@ struct LTDMCE3032Controller::Impl
             dmc_compare_get_points_runned(sdkCard(), static_cast<WORD>(axis), &runned) != 0 ||
             dmc_compare_get_points_remained(sdkCard(), static_cast<WORD>(axis), &remained) != 0 ||
             actualEnabled != static_cast<WORD>(enabled ? 1 : 0) || actualSource != static_cast<WORD>(source) ||
-            !isFinite(currentPoint) || runned < 0 || remained < 0)
+            !isFinite(currentPoint) || runned < 0 || remained < 0 || (expectedPoints >= 0 && runned != 0) ||
+            (availableBefore >= 0 &&
+             (availableBefore < remained ||
+              (availableBefore - remained != expectedPoints && availableBefore - remained != expectedPoints - 1))))
             return failure<void>(DmcError::CompareUnavailable, "LTDMC compare queue readback failed.");
         return Result<void>::Success();
     }
@@ -474,6 +482,37 @@ struct LTDMCE3032Controller::Impl
                             axes[axis].errorCode = axisError != 0 ? axisError : busError;
                             if (axes[axis].homing)
                             {
+                                const bool originActive =
+                                    (((inputs.sampledBits >> config.homeOriginInput) & 1U) != 0U) == config.homeOriginActiveLevel;
+                                homeOriginSeen[axis] = homeOriginSeen[axis] || originActive;
+                                const auto delta     = position - homeLastPositions[axis];
+                                if (!homeDirectionVerified[axis] && std::abs(delta) > 1e-9)
+                                {
+                                    const auto direction = delta > 0.0 ? 1 : -1;
+                                    if (direction != config.homeExpectedInitialDirection)
+                                    {
+                                        (void)dmc_emg_stop(sdkCard());
+                                        axes[axis].homing = false;
+                                        axes[axis].homed  = false;
+                                        status.state      = DmcState::Failed;
+                                        status.lastError  = DmcError::AxisNotReady;
+                                        inputFailure      = true;
+                                        break;
+                                    }
+                                    homeDirectionVerified[axis] = true;
+                                }
+                                homeLastPositions[axis] = position;
+                                if (config.homeMaxTravel > 0.0 &&
+                                    std::abs(position - homeStartPositions[axis]) > config.homeMaxTravel)
+                                {
+                                    (void)dmc_emg_stop(sdkCard());
+                                    axes[axis].homing = false;
+                                    axes[axis].homed  = false;
+                                    status.state      = DmcState::Failed;
+                                    status.lastError  = DmcError::MotionTimeout;
+                                    inputFailure      = true;
+                                    break;
+                                }
                                 if (std::chrono::steady_clock::now() > homeDeadlines[axis])
                                 {
                                     (void)dmc_emg_stop(sdkCard());
@@ -492,7 +531,7 @@ struct LTDMCE3032Controller::Impl
                                     inputFailure     = true;
                                     break;
                                 }
-                                if (homeResult == 1 && done == 1)
+                                if (homeResult == 1 && done == 1 && (!config.homeRequireOriginSeen || homeOriginSeen[axis]))
                                 {
                                     if (dmc_set_position_unit(sdkCard(), static_cast<WORD>(axis), 0.0) != 0 ||
                                         dmc_set_encoder_unit(sdkCard(), static_cast<WORD>(axis), 0.0) != 0)
@@ -502,21 +541,35 @@ struct LTDMCE3032Controller::Impl
                                         inputFailure     = true;
                                         break;
                                     }
-                                    axes[axis].position       = 0.0;
-                                    axes[axis].targetPosition = 0.0;
-                                    axes[axis].homing         = false;
-                                    axes[axis].homed          = true;
-                                    axes[axis].moving         = false;
-                                    homeDeadlines[axis]       = {};
+                                    axes[axis].position         = 0.0;
+                                    axes[axis].targetPosition   = 0.0;
+                                    axes[axis].homing           = false;
+                                    axes[axis].homed            = true;
+                                    axes[axis].moving           = false;
+                                    homeDeadlines[axis]         = {};
+                                    homeOriginSeen[axis]        = false;
+                                    homeDirectionVerified[axis] = false;
+                                }
+                                else if (homeResult == 1 && done == 1)
+                                {
+                                    (void)dmc_emg_stop(sdkCard());
+                                    axes[axis].homing = false;
+                                    axes[axis].homed  = false;
+                                    status.state      = DmcState::Failed;
+                                    status.lastError  = DmcError::AxisNotReady;
+                                    inputFailure      = true;
+                                    break;
                                 }
                                 else if (homeResult == 2)
                                 {
-                                    axes[axis].homing   = false;
-                                    axes[axis].homed    = false;
-                                    homeDeadlines[axis] = {};
-                                    status.state        = DmcState::Failed;
-                                    status.lastError    = DmcError::AxisNotReady;
-                                    inputFailure        = true;
+                                    axes[axis].homing           = false;
+                                    axes[axis].homed            = false;
+                                    homeDeadlines[axis]         = {};
+                                    homeOriginSeen[axis]        = false;
+                                    homeDirectionVerified[axis] = false;
+                                    status.state                = DmcState::Failed;
+                                    status.lastError            = DmcError::AxisNotReady;
+                                    inputFailure                = true;
                                     break;
                                 }
                             }
@@ -802,6 +855,8 @@ auto LTDMCE3032Controller::disconnect() -> SZX::COMMON::Result<void>
                     axis.velocity = 0.0;
                 }
                 impl_->homeDeadlines         = {};
+                impl_->homeOriginSeen        = {};
+                impl_->homeDirectionVerified = {};
                 impl_->captureArmed          = false;
                 impl_->status.state          = DmcState::Disconnected;
                 impl_->status.operationId    = 0;
@@ -932,7 +987,12 @@ auto LTDMCE3032Controller::homeAxis(AxisId axis, const HomeProfile &profile) -> 
             impl_->axes[axis].homing   = true;
             impl_->axes[axis].moving   = true;
             impl_->axes[axis].homed    = false;
-            impl_->homeDeadlines[axis] = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+            impl_->homeDeadlines[axis] = std::chrono::steady_clock::now() +
+                std::chrono::milliseconds(static_cast<long long>(impl_->config.homeTimeoutSeconds * 1000.0));
+            impl_->homeStartPositions[axis]    = impl_->axes[axis].position;
+            impl_->homeLastPositions[axis]     = impl_->axes[axis].position;
+            impl_->homeOriginSeen[axis]        = false;
+            impl_->homeDirectionVerified[axis] = impl_->config.homeExpectedInitialDirection == 0;
             return Result<void>::Success();
         });
 }
@@ -1114,6 +1174,9 @@ auto LTDMCE3032Controller::configureCompare(const CompareConfig &config) -> SZX:
                 return failure<void>(DmcError::CompareUnavailable, "LTDMC compare configuration failed.");
             if (dmc_compare_clear_points(impl_->sdkCard(), static_cast<WORD>(config.axis)) != 0)
                 return failure<void>(DmcError::CompareUnavailable, "LTDMC compare queue clear failed.");
+            long availableBefore = 0;
+            if (dmc_compare_get_points_remained(impl_->sdkCard(), static_cast<WORD>(config.axis), &availableBefore) != 0)
+                return failure<void>(DmcError::CompareUnavailable, "LTDMC compare queue capacity read failed.");
             for (std::size_t index = 0; index < config.points.size(); ++index)
             {
                 const auto &point = config.points[index];
@@ -1127,7 +1190,9 @@ auto LTDMCE3032Controller::configureCompare(const CompareConfig &config) -> SZX:
                     return failure<void>(DmcError::CompareQueueFull, "LTDMC compare point insertion failed.");
                 }
             }
-            if (auto readback = impl_->validateCompareQueueLocked(config.axis, config.source, false); !readback.ok)
+            if (auto readback = impl_->validateCompareQueueLocked(config.axis, config.source, false,
+                                                                  static_cast<long>(config.points.size()), availableBefore);
+                !readback.ok)
             {
                 (void)dmc_compare_set_config(impl_->sdkCard(), static_cast<WORD>(config.axis), 0,
                                              static_cast<WORD>(config.source));
@@ -1231,6 +1296,16 @@ auto LTDMCE3032Controller::armCapture(const CaptureRequest &request) -> SZX::COM
                     impl_->status.lastError = DmcError::CompareUnavailable;
                     return failure<void>(DmcError::CompareUnavailable, "LTDMC compare queue setup failed.");
                 }
+                long availableBefore = 0;
+                if (dmc_compare_get_points_remained(impl_->sdkCard(), static_cast<WORD>(request.scanPlan.scanAxis),
+                                                    &availableBefore) != 0)
+                {
+                    impl_->captureArmed = false;
+                    (void)dmc_compare_clear_points(impl_->sdkCard(), static_cast<WORD>(request.scanPlan.scanAxis));
+                    impl_->status.state     = DmcState::Failed;
+                    impl_->status.lastError = DmcError::CompareUnavailable;
+                    return failure<void>(DmcError::CompareUnavailable, "LTDMC compare queue capacity read failed.");
+                }
                 for (std::size_t index = 0; index < request.comparePoints.size(); ++index)
                 {
                     if (isFirstScanFrame(request.comparePoints, index, columns))
@@ -1251,7 +1326,9 @@ auto LTDMCE3032Controller::armCapture(const CaptureRequest &request) -> SZX::COM
                         return failure<void>(DmcError::CompareQueueFull, "LTDMC compare point insertion failed.");
                     }
                 }
-                if (auto readback = impl_->validateCompareQueueLocked(request.scanPlan.scanAxis, request.compareSource, false);
+                if (auto readback =
+                        impl_->validateCompareQueueLocked(request.scanPlan.scanAxis, request.compareSource, false,
+                                                          static_cast<long>(impl_->compareExpectedTriggers), availableBefore);
                     !readback.ok)
                 {
                     impl_->captureArmed = false;

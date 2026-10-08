@@ -5,6 +5,7 @@
     #include "LTDMC/LTDMCE3032Controller.hpp"
 #endif
 
+#include <cmath>
 #include <exception>
 #include <memory>
 #include <new>
@@ -17,7 +18,11 @@ auto DmcControllerFactory::create(DmcConfig config) -> SZX::COMMON::Result<std::
 {
     try
     {
-        if (config.compareQueueCapacity == 0 || config.inputCount > 64 || config.outputCount > 64)
+        if (config.compareQueueCapacity == 0 || config.inputCount > 64 || config.outputCount > 64 ||
+            config.softwareTriggerPulseMilliseconds == 0 || config.softwareTriggerPulseMilliseconds > 1000 ||
+            !std::isfinite(config.homeTimeoutSeconds) || config.homeTimeoutSeconds <= 0.0 ||
+            !std::isfinite(config.homeMaxTravel) || config.homeMaxTravel < 0.0 || config.homeOriginInput >= config.inputCount ||
+            (config.homeExpectedInitialDirection < -1 || config.homeExpectedInitialDirection > 1))
             return SZX::COMMON::Result<std::unique_ptr<DmcController>>::Failure(static_cast<int>(DmcError::InvalidArgument),
                                                                                 "Invalid DMC configuration.");
         if (config.profileId.empty())
