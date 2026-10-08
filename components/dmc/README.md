@@ -4,6 +4,8 @@
 
 通过 `DmcControllerFactory::create()` 创建控制器。`DmcConfig::simulation` 为 `true` 时由工厂创建 `SimulatedDmcController`；硬件配置由 `LTDMCE3032Controller` 负责。硬件适配器不包含仿真分支。
 
+C ABI 的 `szx_dmc_config_v1` 已提供同样的硬件参数：`software_trigger_pulse_milliseconds`、`home_timeout_seconds`、`home_max_travel`、`home_origin_input`、`home_origin_active_level`、`home_require_origin_seen` 和 `home_expected_initial_direction`。旧版结构体前缀仍可传入，扩展字段缺省时使用库默认值。
+
 ```cpp
 SZX::DMC::DmcConfig config;
 config.model = SZX::DMC::DmcModel::LeiSaiLTDMC;

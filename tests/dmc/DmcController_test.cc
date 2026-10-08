@@ -216,13 +216,20 @@ TEST(DmcControllerTest, CancellationClearsCompareQueueAndPreservesSafetyState)
 TEST(DmcCAbiTest, CreatesPollsAndRejectsInvalidAbi)
 {
     szx_dmc_config_v1 config{};
-    config.struct_size            = sizeof(config);
-    config.abi_version            = SZX_DMC_ABI_VERSION_V1;
-    config.simulation             = 1;
-    config.compare_queue_capacity = 8;
-    config.input_count            = 8;
-    config.output_count           = 8;
-    szx_dmc_handle *handle        = nullptr;
+    config.struct_size                         = sizeof(config);
+    config.abi_version                         = SZX_DMC_ABI_VERSION_V1;
+    config.simulation                          = 1;
+    config.compare_queue_capacity              = 8;
+    config.input_count                         = 8;
+    config.output_count                        = 8;
+    config.software_trigger_pulse_milliseconds = 5;
+    config.home_timeout_seconds                = 30.0;
+    config.home_max_travel                     = 1000.0;
+    config.home_origin_input                   = 2;
+    config.home_origin_active_level            = 1;
+    config.home_require_origin_seen            = 1;
+    config.home_expected_initial_direction     = -1;
+    szx_dmc_handle *handle                     = nullptr;
 
     ASSERT_EQ(szx_dmc_create_v1(&config, &handle), SZX_DMC_SUCCESS);
     ASSERT_NE(handle, nullptr);

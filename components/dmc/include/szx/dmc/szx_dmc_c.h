@@ -110,18 +110,26 @@ typedef enum szx_dmc_model_v1
 /** @brief 创建控制器句柄的配置。 */
 typedef struct szx_dmc_config_v1
 {
-    uint32_t struct_size;                 /**< 结构体大小。 */
-    uint32_t abi_version;                 /**< ABI 版本。 */
-    uint16_t model;                       /**< 驱动系列。 */
-    uint16_t card_index;                  /**< 板卡编号。 */
-    uint8_t simulation;                   /**< 是否启用仿真。 */
-    uint8_t allow_simulation_fallback;    /**< 是否允许回退仿真。 */
-    uint32_t compare_queue_capacity;      /**< 位置比较队列容量。 */
-    uint32_t input_count;                 /**< 数字输入数量。 */
-    uint32_t output_count;                /**< 数字输出数量。 */
-    char profile_id[64];                  /**< 型号配置标识，例如 E3032。 */
-    szx_dmc_log_callback_v1 log_callback; /**< 日志回调；为空时由库输出到控制台。 */
-    void *log_user_data;                  /**< 传递给日志回调的用户数据指针。 */
+    uint32_t struct_size;                         /**< 结构体大小。 */
+    uint32_t abi_version;                         /**< ABI 版本。 */
+    uint16_t model;                               /**< 驱动系列。 */
+    uint16_t card_index;                          /**< 板卡编号。 */
+    uint8_t simulation;                           /**< 是否启用仿真。 */
+    uint8_t allow_simulation_fallback;            /**< 是否允许回退仿真。 */
+    uint32_t compare_queue_capacity;              /**< 位置比较队列容量。 */
+    uint32_t input_count;                         /**< 数字输入数量。 */
+    uint32_t output_count;                        /**< 数字输出数量。 */
+    char profile_id[64];                          /**< 型号配置标识，例如 E3032。 */
+    szx_dmc_log_callback_v1 log_callback;         /**< 日志回调；为空时由库输出到控制台。 */
+    void *log_user_data;                          /**< 传递给日志回调的用户数据指针。 */
+    uint32_t software_trigger_pulse_milliseconds; /**< 软件触发脉宽，单位毫秒。 */
+    double home_timeout_seconds;                  /**< 回零超时时间。 */
+    double home_max_travel;                       /**< 回零最大行程，零表示不限制。 */
+    uint16_t home_origin_input;                   /**< 回零原点输入编号。 */
+    uint8_t home_origin_active_level;             /**< 回零原点输入有效电平。 */
+    uint8_t home_require_origin_seen;             /**< 是否要求回零过程中检测到原点。 */
+    int8_t home_expected_initial_direction;       /**< 初始回零方向，-1/0/1。 */
+    uint8_t reserved[3];                          /**< 保留字段，必须填零。 */
 } szx_dmc_config_v1;
 
 /** @brief 采集请求中的位置比较点。 */

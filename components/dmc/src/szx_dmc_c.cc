@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <condition_variable>
+#include <cstddef>
 #include <cstring>
 #include <memory>
 #include <mutex>
@@ -253,8 +254,9 @@ auto szx_dmc_create_v1(const szx_dmc_config_v1 *config, szx_dmc_handle **outHand
     {
         if (outHandle == nullptr)
             return errorCode(DmcError::InvalidArgument);
-        *outHandle = nullptr;
-        if (config == nullptr || config->abi_version != SZX_DMC_ABI_VERSION_V1 || config->struct_size < sizeof(szx_dmc_config_v1))
+        *outHandle                           = nullptr;
+        constexpr auto configExtensionOffset = offsetof(szx_dmc_config_v1, software_trigger_pulse_milliseconds);
+        if (config == nullptr || config->abi_version != SZX_DMC_ABI_VERSION_V1 || config->struct_size < configExtensionOffset)
             return errorCode(DmcError::InvalidArgument);
         if (config->compare_queue_capacity == 0 || config->input_count > 64 || config->output_count > 64)
             return errorCode(DmcError::InvalidArgument);
@@ -272,6 +274,18 @@ auto szx_dmc_create_v1(const szx_dmc_config_v1 *config, szx_dmc_handle **outHand
         cppConfig.compareQueueCapacity    = config->compare_queue_capacity;
         cppConfig.inputCount              = config->input_count;
         cppConfig.outputCount             = config->output_count;
+        if (config->struct_size >= sizeof(szx_dmc_config_v1))
+        {
+            if (config->software_trigger_pulse_milliseconds != 0)
+                cppConfig.softwareTriggerPulseMilliseconds = config->software_trigger_pulse_milliseconds;
+            if (config->home_timeout_seconds != 0.0)
+                cppConfig.homeTimeoutSeconds = config->home_timeout_seconds;
+            cppConfig.homeMaxTravel                = config->home_max_travel;
+            cppConfig.homeOriginInput              = config->home_origin_input;
+            cppConfig.homeOriginActiveLevel        = config->home_origin_active_level != 0;
+            cppConfig.homeRequireOriginSeen        = config->home_require_origin_seen != 0;
+            cppConfig.homeExpectedInitialDirection = config->home_expected_initial_direction;
+        }
         if (config->log_callback != nullptr)
         {
             const auto callback = config->log_callback;
