@@ -92,6 +92,18 @@ auto validHomeProfile(const HomeProfile &profile) noexcept -> bool
         profile.highVelocity >= profile.lowVelocity && profile.acceleration >= 0.0 && profile.deceleration >= 0.0;
 }
 
+auto compareDirection(const std::vector<ComparePoint> &points, std::size_t index) noexcept -> WORD
+{
+    if (points.size() < 2)
+        return 1;
+    const auto &point = points[index];
+    if (index + 1 < points.size() && points[index + 1].row == point.row)
+        return points[index + 1].position >= point.position ? 1 : 0;
+    if (index > 0 && points[index - 1].row == point.row)
+        return point.position >= points[index - 1].position ? 1 : 0;
+    return 1;
+}
+
 std::mutex connectedCardsMutex;
 std::unordered_set<std::uint16_t> connectedCards;
 
@@ -137,6 +149,11 @@ struct LTDMCE3032Controller::Impl
     CaptureRequest request;
     std::jthread inputWorker;
     std::uint64_t inputSampleValidBits = 0;
+    std::uint16_t cardId               = 0;
+    DWORD axisCount                    = 2;
+    std::uint16_t localInputCount      = 0;
+    std::uint16_t localOutputCount     = 0;
+    bool hardwareInitialized           = false;
     bool cardClaimed                   = false;
     bool captureArmed                  = false;
 
@@ -151,6 +168,11 @@ struct LTDMCE3032Controller::Impl
     auto connected() const noexcept -> bool
     {
         return status.state != DmcState::Disconnected;
+    }
+
+    auto sdkCard() const noexcept -> WORD
+    {
+        return static_cast<WORD>(cardId);
     }
 
     auto validateProfile() const -> Result<void>
@@ -171,13 +193,8 @@ struct LTDMCE3032Controller::Impl
     auto clearCompareLocked() -> Result<void>
     {
         bool failed = false;
-        if (!config.simulation)
-        {
-            failed = dmc_compare_set_config(static_cast<WORD>(config.cardIndex), static_cast<WORD>(compare.axis), 0,
-                                            static_cast<WORD>(compare.source)) != 0;
-            failed =
-                dmc_compare_clear_points(static_cast<WORD>(config.cardIndex), static_cast<WORD>(compare.axis)) != 0 || failed;
-        }
+        failed = dmc_compare_set_config(sdkCard(), static_cast<WORD>(compare.axis), 0, static_cast<WORD>(compare.source)) != 0;
+        failed = dmc_compare_clear_points(sdkCard(), static_cast<WORD>(compare.axis)) != 0 || failed;
         compare.points.clear();
         compare.queueCapacity        = 0;
         status.compareQueueRemaining = 0;
@@ -192,7 +209,7 @@ struct LTDMCE3032Controller::Impl
         if (!cardClaimed)
             return;
         std::scoped_lock cardLock(connectedCardsMutex);
-        connectedCards.erase(config.cardIndex);
+        connectedCards.erase(cardId);
         cardClaimed = false;
     }
 
@@ -203,29 +220,29 @@ struct LTDMCE3032Controller::Impl
             return failure<void>(DmcError::InvalidArgument, "Scan axis or position is invalid.");
         if (!axes[axis].enabled || !axes[axis].homed)
             return failure<void>(DmcError::AxisNotReady, "Scan axes must be enabled and homed.");
-        if (!config.simulation)
-        {
-            if (dmc_set_profile_unit(static_cast<WORD>(config.cardIndex), static_cast<WORD>(axis), profile.minVelocity,
-                                     profile.maxVelocity, profile.acceleration, profile.deceleration,
-                                     profile.stopVelocity) != 0 ||
-                dmc_pmove_unit(static_cast<WORD>(config.cardIndex), static_cast<WORD>(axis), position, absolute ? 1 : 0) != 0)
-                return failure<void>(DmcError::AxisNotReady, "LTDMC scan motion failed.");
-        }
+        if (dmc_set_profile_unit(sdkCard(), static_cast<WORD>(axis), profile.minVelocity, profile.maxVelocity,
+                                 profile.acceleration, profile.deceleration, profile.stopVelocity) != 0 ||
+            dmc_pmove_unit(sdkCard(), static_cast<WORD>(axis), position, absolute ? 1 : 0) != 0)
+            return failure<void>(DmcError::AxisNotReady, "LTDMC scan motion failed.");
         axes[axis].targetPosition = absolute ? position : axes[axis].position + position;
         axes[axis].position       = axes[axis].targetPosition;
         axes[axis].velocity       = 0.0;
-        axes[axis].moving         = !config.simulation;
+        axes[axis].moving         = true;
         return Result<void>::Success();
     }
 
     auto stopAxesLocked(StopMode mode) -> Result<void>
     {
         (void)mode;
-        if (!config.simulation)
+        if (mode == StopMode::Emergency)
+        {
+            if (dmc_emg_stop(sdkCard()) != 0)
+                return failure<void>(DmcError::MotionTimeout, "LTDMC emergency stop failed.");
+        }
+        else
         {
             for (AxisId axis = 0; axis < axes.size(); ++axis)
-                if (dmc_stop(static_cast<WORD>(config.cardIndex), static_cast<WORD>(axis), mode == StopMode::Emergency ? 1 : 0) !=
-                    0)
+                if (dmc_stop(sdkCard(), static_cast<WORD>(axis), 0) != 0)
                     return failure<void>(DmcError::MotionTimeout, "LTDMC capture stop failed.");
         }
         for (auto &axis : axes)
@@ -255,6 +272,36 @@ struct LTDMCE3032Controller::Impl
         return issueAxisMoveLocked(request.scanPlan.scanAxis, end, request.scanPlan.scanProfile, true);
     }
 
+    auto pulseOutputLocked(OutputId output, bool activeLevel) -> Result<void>
+    {
+        if (output >= outputs.size())
+            return failure<void>(DmcError::IoUnavailable, "Capture trigger output is outside the configured IO range.");
+        const auto active   = static_cast<WORD>(activeLevel ? 1 : 0);
+        const auto inactive = static_cast<WORD>(activeLevel ? 0 : 1);
+        if (dmc_write_outbit(sdkCard(), static_cast<WORD>(output), active) != 0 ||
+            dmc_write_outbit(sdkCard(), static_cast<WORD>(output), inactive) != 0)
+            return failure<void>(DmcError::IoUnavailable, "LTDMC software trigger output failed.");
+        outputs[output] = false;
+        return Result<void>::Success();
+    }
+
+    auto validateCompareQueueLocked(AxisId axis, std::uint16_t source, bool enabled) -> Result<void>
+    {
+        WORD actualEnabled  = 0;
+        WORD actualSource   = 0;
+        double currentPoint = 0.0;
+        long runned         = 0;
+        long remained       = 0;
+        if (dmc_compare_get_config(sdkCard(), static_cast<WORD>(axis), &actualEnabled, &actualSource) != 0 ||
+            dmc_compare_get_current_point_unit(sdkCard(), static_cast<WORD>(axis), &currentPoint) != 0 ||
+            dmc_compare_get_points_runned(sdkCard(), static_cast<WORD>(axis), &runned) != 0 ||
+            dmc_compare_get_points_remained(sdkCard(), static_cast<WORD>(axis), &remained) != 0 ||
+            actualEnabled != static_cast<WORD>(enabled ? 1 : 0) || actualSource != static_cast<WORD>(source) ||
+            !isFinite(currentPoint) || runned < 0 || remained < 0)
+            return failure<void>(DmcError::CompareUnavailable, "LTDMC compare queue readback failed.");
+        return Result<void>::Success();
+    }
+
     auto emergencyStopLocked() -> Result<void>
     {
         const auto clear     = clearCompareLocked();
@@ -263,12 +310,12 @@ struct LTDMCE3032Controller::Impl
         status.state         = DmcState::SafetyLatched;
         status.lastError     = DmcError::SafetyLatched;
         bool stopFailed      = false;
+        if (dmc_emg_stop(sdkCard()) != 0)
+            stopFailed = true;
         for (AxisId axis = 0; axis < axes.size(); ++axis)
         {
             axes[axis].moving   = false;
             axes[axis].velocity = 0.0;
-            if (!config.simulation && dmc_stop(static_cast<WORD>(config.cardIndex), static_cast<WORD>(axis), 1) != 0)
-                stopFailed = true;
         }
         if (stopFailed)
         {
@@ -310,13 +357,16 @@ struct LTDMCE3032Controller::Impl
                 InputSnapshot snapshot;
                 {
                     std::scoped_lock lock(mutex);
-                    if (!connected() || config.simulation)
+                    if (!connected())
                         break;
                     for (InputId input = 0; input < config.inputCount; ++input)
                     {
-                        const auto value = dmc_read_inbit(static_cast<WORD>(config.cardIndex), static_cast<WORD>(input));
+                        const auto value = dmc_read_inbit(sdkCard(), static_cast<WORD>(input));
                         if (value < 0)
                         {
+                            (void)stopAxesLocked(StopMode::Emergency);
+                            (void)clearCompareLocked();
+                            captureArmed      = false;
                             status.inputValid = false;
                             status.state      = DmcState::Failed;
                             status.lastError  = DmcError::IoUnavailable;
@@ -334,11 +384,17 @@ struct LTDMCE3032Controller::Impl
                     if (!inputFailure)
                         for (AxisId axis = 0; axis < axes.size(); ++axis)
                         {
-                            double position = 0.0;
-                            const auto positionResult =
-                                dmc_get_position_unit(static_cast<WORD>(config.cardIndex), static_cast<WORD>(axis), &position);
-                            const auto done = dmc_check_done(static_cast<WORD>(config.cardIndex), static_cast<WORD>(axis));
-                            if (positionResult != 0 || done < 0)
+                            double position           = 0.0;
+                            WORD axisState            = 0;
+                            WORD axisError            = 0;
+                            WORD busError             = 0;
+                            const auto positionResult = dmc_get_position_unit(sdkCard(), static_cast<WORD>(axis), &position);
+                            const auto done           = dmc_check_done(sdkCard(), static_cast<WORD>(axis));
+                            if (positionResult != 0 || done < 0 ||
+                                nmc_get_axis_state_machine(sdkCard(), static_cast<WORD>(axis), &axisState) != 0 ||
+                                nmc_get_axis_errcode(sdkCard(), static_cast<WORD>(axis), &axisError) != 0 ||
+                                nmc_get_errcode(sdkCard(), 2, &busError) != 0 || axisError != 0 || busError != 0 ||
+                                !isFinite(position))
                             {
                                 (void)stopAxesLocked(StopMode::Emergency);
                                 (void)clearCompareLocked();
@@ -348,8 +404,46 @@ struct LTDMCE3032Controller::Impl
                                 inputFailure     = true;
                                 break;
                             }
-                            axes[axis].position = position;
-                            axes[axis].moving   = done == 0;
+                            axes[axis].position  = position;
+                            axes[axis].moving    = done == 0;
+                            axes[axis].enabled   = axisState == 4;
+                            axes[axis].errorCode = axisError != 0 ? axisError : busError;
+                            if (axes[axis].homing)
+                            {
+                                WORD homeResult = 0;
+                                if (dmc_get_home_result(sdkCard(), static_cast<WORD>(axis), &homeResult) != 0)
+                                {
+                                    status.state     = DmcState::Failed;
+                                    status.lastError = DmcError::AxisNotReady;
+                                    inputFailure     = true;
+                                    break;
+                                }
+                                if (homeResult == 1 && done == 1)
+                                {
+                                    if (dmc_set_position_unit(sdkCard(), static_cast<WORD>(axis), 0.0) != 0 ||
+                                        dmc_set_encoder_unit(sdkCard(), static_cast<WORD>(axis), 0.0) != 0)
+                                    {
+                                        status.state     = DmcState::Failed;
+                                        status.lastError = DmcError::AxisNotReady;
+                                        inputFailure     = true;
+                                        break;
+                                    }
+                                    axes[axis].position       = 0.0;
+                                    axes[axis].targetPosition = 0.0;
+                                    axes[axis].homing         = false;
+                                    axes[axis].homed          = true;
+                                    axes[axis].moving         = false;
+                                }
+                                else if (homeResult == 2)
+                                {
+                                    axes[axis].homing = false;
+                                    axes[axis].homed  = false;
+                                    status.state      = DmcState::Failed;
+                                    status.lastError  = DmcError::AxisNotReady;
+                                    inputFailure      = true;
+                                    break;
+                                }
+                            }
                         }
                     if (!inputFailure && inputChanged)
                     {
@@ -423,15 +517,34 @@ struct LTDMCE3032Controller::Impl
         status.currentRow            = 0;
         status.compareQueueRemaining = request.expectedFrames;
         status.totalRows             = static_cast<std::uint32_t>(request.scanPlan.rowPositions.size());
-        if (!config.simulation && request.triggerSource == FrameTriggerSource::PositionCompareOutput)
+        if (request.triggerSource == FrameTriggerSource::PositionCompareOutput)
         {
-            if (dmc_compare_set_config(static_cast<WORD>(config.cardIndex), static_cast<WORD>(request.scanPlan.scanAxis), 1,
+            if (dmc_compare_set_config(sdkCard(), static_cast<WORD>(request.scanPlan.scanAxis), 1,
                                        static_cast<WORD>(request.compareSource)) != 0)
             {
                 (void)clearCompareLocked();
                 status.state     = DmcState::Failed;
                 status.lastError = DmcError::CompareUnavailable;
                 return failure<void>(DmcError::CompareUnavailable, "LTDMC compare enable failed.");
+            }
+            if (auto readback = validateCompareQueueLocked(request.scanPlan.scanAxis, request.compareSource, true); !readback.ok)
+            {
+                (void)clearCompareLocked();
+                status.state     = DmcState::Failed;
+                status.lastError = DmcError::CompareUnavailable;
+                captureArmed     = false;
+                return readback;
+            }
+        }
+        if (request.triggerSource == FrameTriggerSource::Software)
+        {
+            if (auto pulse = pulseOutputLocked(request.compareOutput, request.compareOutputActiveLevel); !pulse.ok)
+            {
+                (void)stopAxesLocked(StopMode::Emergency);
+                captureArmed     = false;
+                status.state     = DmcState::Failed;
+                status.lastError = static_cast<DmcError>(pulse.error);
+                return pulse;
             }
         }
         const auto scan = issueScanRowLocked(0);
@@ -508,60 +621,64 @@ auto LTDMCE3032Controller::connect() -> SZX::COMMON::Result<void>
     return boundary(
         [this]() -> Result<void>
         {
-            std::string warning;
-            std::string connectedMessage;
             std::unique_lock lock(impl_->mutex);
             if (impl_->connected())
                 return Result<void>::Success();
             if (auto profile = impl_->validateProfile(); !profile.ok)
                 return profile;
 
+            const auto boardCount = dmc_board_init();
+            if (boardCount <= 0)
+                return failure<void>(DmcError::DriverUnavailable, "LTDMC board initialization failed.");
             {
-                std::scoped_lock cardLock(connectedCardsMutex);
-                if (connectedCards.contains(impl_->config.cardIndex))
-                    return failure<void>(DmcError::Busy, "DMC card is already connected by another controller.");
-                connectedCards.insert(impl_->config.cardIndex);
-                impl_->cardClaimed = true;
-            }
-
-            if (!impl_->config.simulation)
-            {
-                const auto sdkResult = dmc_board_init_onecard(static_cast<WORD>(impl_->config.cardIndex));
-                if (sdkResult != 0)
+                WORD cardCount = 0;
+                DWORD cardTypes[16]{};
+                WORD cardIds[16]{};
+                if (boardCount > 16 || dmc_get_CardInfList(&cardCount, cardTypes, cardIds) != 0 ||
+                    cardCount != static_cast<WORD>(boardCount) || impl_->config.cardIndex >= cardCount)
                 {
-                    if (!impl_->config.allowSimulationFallback)
-                    {
-                        impl_->releaseCardLocked();
-                        return failure<void>(DmcError::DriverUnavailable, "LTDMC board initialization failed.");
-                    }
-                    impl_->config.simulation = true;
-                    warning                  = "LTDMC board initialization failed; using explicit simulation fallback.";
+                    (void)dmc_board_close();
+                    return failure<void>(DmcError::BoardNotFound, "LTDMC card enumeration or index validation failed.");
                 }
+                impl_->cardId = cardIds[impl_->config.cardIndex];
+                if (nmc_get_total_axes(impl_->sdkCard(), &impl_->axisCount) != 0 || impl_->axisCount < 2 ||
+                    dmc_get_total_ionum(impl_->sdkCard(), &impl_->localInputCount, &impl_->localOutputCount) != 0 ||
+                    impl_->config.inputCount > impl_->localInputCount || impl_->config.outputCount > impl_->localOutputCount)
+                {
+                    (void)dmc_board_close();
+                    return failure<void>(DmcError::IoUnavailable, "LTDMC card capabilities do not match the configuration.");
+                }
+                {
+                    std::scoped_lock cardLock(connectedCardsMutex);
+                    if (connectedCards.contains(impl_->cardId))
+                    {
+                        (void)dmc_board_close();
+                        return failure<void>(DmcError::Busy, "DMC card is already connected by another controller.");
+                    }
+                    connectedCards.insert(impl_->cardId);
+                    impl_->cardClaimed = true;
+                }
+                impl_->hardwareInitialized = true;
             }
             impl_->status            = {};
             impl_->status.state      = DmcState::Ready;
-            impl_->status.hardware   = !impl_->config.simulation;
+            impl_->status.hardware   = true;
             impl_->status.inputValid = impl_->config.inputCount <= 64;
             impl_->status.lastError  = DmcError::Success;
             impl_->syncStatus();
-            if (!impl_->config.simulation)
+            try
             {
-                try
-                {
-                    impl_->inputWorker = std::jthread([impl = impl_.get()](std::stop_token token) { impl->inputLoop(token); });
-                } catch (...)
-                {
-                    dmc_board_close_onecard(static_cast<WORD>(impl_->config.cardIndex));
-                    impl_->releaseCardLocked();
-                    impl_->status = {};
-                    throw;
-                }
+                impl_->inputWorker = std::jthread([impl = impl_.get()](std::stop_token token) { impl->inputLoop(token); });
+            } catch (...)
+            {
+                (void)dmc_board_close();
+                impl_->hardwareInitialized = false;
+                impl_->releaseCardLocked();
+                impl_->status = {};
+                throw;
             }
-            connectedMessage = impl_->config.simulation ? "DMC connected in simulation mode." : "DMC board connected.";
             lock.unlock();
-            if (!warning.empty())
-                impl_->log(DmcLogLevel::Warning, warning);
-            impl_->log(DmcLogLevel::Info, connectedMessage);
+            impl_->log(DmcLogLevel::Info, "DMC board connected.");
             return Result<void>::Success();
         });
 }
@@ -572,10 +689,9 @@ auto LTDMCE3032Controller::disconnect() -> SZX::COMMON::Result<void>
         [this]() -> Result<void>
         {
             std::jthread worker;
-            bool closeHardware = false;
-            auto stopResult    = Result<void>::Success();
-            auto clearResult   = Result<void>::Success();
-            auto closeResult   = Result<void>::Success();
+            auto stopResult  = Result<void>::Success();
+            auto clearResult = Result<void>::Success();
+            auto closeResult = Result<void>::Success();
             {
                 std::scoped_lock lock(impl_->mutex);
                 if (!impl_->connected())
@@ -599,14 +715,23 @@ auto LTDMCE3032Controller::disconnect() -> SZX::COMMON::Result<void>
                 impl_->status.operationId    = 0;
                 impl_->status.lastError      = DmcError::Success;
                 impl_->status.compareEnabled = false;
-                closeHardware                = !impl_->config.simulation;
                 impl_->syncStatus();
             }
             if (worker.joinable())
                 worker.join();
-            if (closeHardware && dmc_board_close_onecard(static_cast<WORD>(impl_->config.cardIndex)) != 0)
-                closeResult = failure<void>(DmcError::DriverUnavailable, "LTDMC board close failed.");
+            const bool boardClosed = dmc_board_close() == 0;
+            if (!boardClosed)
             {
+                closeResult = failure<void>(DmcError::DriverUnavailable, "LTDMC board close failed.");
+                std::scoped_lock lock(impl_->mutex);
+                impl_->hardwareInitialized = true;
+                impl_->status.state         = DmcState::Failed;
+                impl_->status.lastError     = DmcError::DriverUnavailable;
+                impl_->syncStatus();
+            }
+            else
+            {
+                impl_->hardwareInitialized = false;
                 std::scoped_lock lock(impl_->mutex);
                 impl_->releaseCardLocked();
             }
@@ -661,8 +786,7 @@ auto LTDMCE3032Controller::enableAxis(AxisId axis) -> SZX::COMMON::Result<void>
             std::scoped_lock lock(impl_->mutex);
             if (auto result = impl_->validateAxis(axis); !result.ok)
                 return result;
-            if (!impl_->config.simulation &&
-                nmc_set_axis_enable(static_cast<WORD>(impl_->config.cardIndex), static_cast<WORD>(axis)) != 0)
+            if (nmc_set_axis_enable(impl_->sdkCard(), static_cast<WORD>(axis)) != 0)
                 return failure<void>(DmcError::AxisNotReady, "LTDMC axis enable failed.");
             impl_->axes[axis].enabled = true;
             impl_->syncStatus();
@@ -678,8 +802,7 @@ auto LTDMCE3032Controller::disableAxis(AxisId axis) -> SZX::COMMON::Result<void>
             std::scoped_lock lock(impl_->mutex);
             if (auto result = impl_->validateAxis(axis); !result.ok)
                 return result;
-            if (!impl_->config.simulation &&
-                nmc_set_axis_disable(static_cast<WORD>(impl_->config.cardIndex), static_cast<WORD>(axis)) != 0)
+            if (nmc_set_axis_disable(impl_->sdkCard(), static_cast<WORD>(axis)) != 0)
                 return failure<void>(DmcError::AxisNotReady, "LTDMC axis disable failed.");
             impl_->axes[axis].enabled = false;
             impl_->axes[axis].moving  = false;
@@ -699,22 +822,16 @@ auto LTDMCE3032Controller::homeAxis(AxisId axis, const HomeProfile &profile) -> 
                 return failure<void>(DmcError::AxisNotReady, "Axis must be enabled before homing.");
             if (!validHomeProfile(profile))
                 return failure<void>(DmcError::InvalidArgument, "Home profile is invalid.");
-            if (!impl_->config.simulation)
-            {
-                const auto sdkResult = nmc_set_home_profile_acc(
-                    static_cast<WORD>(impl_->config.cardIndex), static_cast<WORD>(axis), profile.mode, profile.lowVelocity,
-                    profile.highVelocity, profile.acceleration, profile.deceleration, profile.offset);
-                if (sdkResult != 0)
-                    return failure<void>(DmcError::AxisNotReady, "LTDMC home profile configuration failed.");
-                if (dmc_home_move(static_cast<WORD>(impl_->config.cardIndex), static_cast<WORD>(axis)) != 0)
-                    return failure<void>(DmcError::AxisNotReady, "LTDMC home motion failed.");
-            }
-            impl_->axes[axis].position       = profile.offset;
-            impl_->axes[axis].targetPosition = profile.offset;
-            impl_->axes[axis].velocity       = 0.0;
-            impl_->axes[axis].moving         = false;
-            impl_->axes[axis].homing         = false;
-            impl_->axes[axis].homed          = true;
+            const auto sdkResult =
+                nmc_set_home_profile_acc(impl_->sdkCard(), static_cast<WORD>(axis), profile.mode, profile.lowVelocity,
+                                         profile.highVelocity, profile.acceleration, profile.deceleration, profile.offset);
+            if (sdkResult != 0)
+                return failure<void>(DmcError::AxisNotReady, "LTDMC home profile configuration failed.");
+            if (dmc_home_move(impl_->sdkCard(), static_cast<WORD>(axis)) != 0)
+                return failure<void>(DmcError::AxisNotReady, "LTDMC home motion failed.");
+            impl_->axes[axis].homing = true;
+            impl_->axes[axis].moving = true;
+            impl_->axes[axis].homed  = false;
             return Result<void>::Success();
         });
 }
@@ -731,14 +848,10 @@ auto LTDMCE3032Controller::moveAbsolute(AxisId axis, double position, const Moti
                 return failure<void>(DmcError::AxisNotReady, "Axis must be enabled and homed before absolute motion.");
             if (!isFinite(position) || !validMotionProfile(profile))
                 return failure<void>(DmcError::InvalidArgument, "Motion target or profile is invalid.");
-            if (!impl_->config.simulation)
-            {
-                if (dmc_set_profile_unit(static_cast<WORD>(impl_->config.cardIndex), static_cast<WORD>(axis), profile.minVelocity,
-                                         profile.maxVelocity, profile.acceleration, profile.deceleration,
-                                         profile.stopVelocity) != 0 ||
-                    dmc_pmove_unit(static_cast<WORD>(impl_->config.cardIndex), static_cast<WORD>(axis), position, 1) != 0)
-                    return failure<void>(DmcError::AxisNotReady, "LTDMC absolute motion failed.");
-            }
+            if (dmc_set_profile_unit(impl_->sdkCard(), static_cast<WORD>(axis), profile.minVelocity, profile.maxVelocity,
+                                     profile.acceleration, profile.deceleration, profile.stopVelocity) != 0 ||
+                dmc_pmove_unit(impl_->sdkCard(), static_cast<WORD>(axis), position, 1) != 0)
+                return failure<void>(DmcError::AxisNotReady, "LTDMC absolute motion failed.");
             impl_->axes[axis].targetPosition = position;
             impl_->axes[axis].position       = position;
             impl_->axes[axis].velocity       = 0.0;
@@ -762,8 +875,10 @@ auto LTDMCE3032Controller::moveRelative(AxisId axis, double distance, const Moti
             if (!validMotionProfile(profile))
                 return failure<void>(DmcError::InvalidArgument, "Motion profile is invalid.");
             const auto target = impl_->axes[axis].position + distance;
-            if (!impl_->config.simulation &&
-                dmc_pmove_unit(static_cast<WORD>(impl_->config.cardIndex), static_cast<WORD>(axis), distance, 0) != 0)
+            if (dmc_set_profile_unit(impl_->sdkCard(), static_cast<WORD>(axis), profile.minVelocity,
+                                     profile.maxVelocity, profile.acceleration, profile.deceleration,
+                                     profile.stopVelocity) != 0 ||
+                dmc_pmove_unit(impl_->sdkCard(), static_cast<WORD>(axis), distance, 0) != 0)
                 return failure<void>(DmcError::AxisNotReady, "LTDMC relative motion failed.");
             impl_->axes[axis].targetPosition = target;
             impl_->axes[axis].position       = target;
@@ -783,9 +898,9 @@ auto LTDMCE3032Controller::stop(AxisId axis, StopMode mode) -> SZX::COMMON::Resu
                 return result;
             impl_->axes[axis].moving   = false;
             impl_->axes[axis].velocity = 0.0;
-            if (!impl_->config.simulation &&
-                dmc_stop(static_cast<WORD>(impl_->config.cardIndex), static_cast<WORD>(axis),
-                         mode == StopMode::Emergency ? 1 : 0) != 0)
+            const auto stopResult      = mode == StopMode::Emergency ? dmc_emg_stop(impl_->sdkCard()) :
+                                                                       dmc_stop(impl_->sdkCard(), static_cast<WORD>(axis), 0);
+            if (stopResult != 0)
                 return failure<void>(DmcError::MotionTimeout, "LTDMC axis stop failed.");
             if (mode == StopMode::Emergency)
             {
@@ -832,8 +947,7 @@ auto LTDMCE3032Controller::writeOutput(OutputId output, bool active) -> SZX::COM
                 return failure<void>(DmcError::NotConnected, "DMC controller is not connected.");
             if (output >= impl_->outputs.size())
                 return failure<void>(DmcError::IoUnavailable, "Output is outside the configured IO range.");
-            if (!impl_->config.simulation &&
-                dmc_write_outbit(static_cast<WORD>(impl_->config.cardIndex), static_cast<WORD>(output), active ? 1 : 0) != 0)
+            if (dmc_write_outbit(impl_->sdkCard(), static_cast<WORD>(output), active ? 1 : 0) != 0)
                 return failure<void>(DmcError::IoUnavailable, "LTDMC output write failed.");
             impl_->outputs[output] = active;
             return Result<void>::Success();
@@ -848,22 +962,19 @@ auto LTDMCE3032Controller::readInputs() const -> SZX::COMMON::Result<InputSnapsh
             std::scoped_lock lock(impl_->mutex);
             if (!impl_->connected())
                 return failure<InputSnapshot>(DmcError::NotConnected, "DMC controller is not connected.");
-            auto input = impl_->inputs;
-            if (!impl_->config.simulation)
+            auto input        = impl_->inputs;
+            input.sampledBits = 0;
+            for (InputId bit = 0; bit < impl_->config.inputCount; ++bit)
             {
-                input.sampledBits = 0;
-                for (InputId bit = 0; bit < impl_->config.inputCount; ++bit)
-                {
-                    const auto value = dmc_read_inbit(static_cast<WORD>(impl_->config.cardIndex), static_cast<WORD>(bit));
-                    if (value < 0)
-                        return failure<InputSnapshot>(DmcError::IoUnavailable, "LTDMC input read failed.");
-                    if (value != 0)
-                        input.sampledBits |= std::uint64_t{1} << bit;
-                }
-                input.activeBits           = input.sampledBits;
-                input.valid                = true;
-                input.timestampNanoseconds = nowNanoseconds();
+                const auto value = dmc_read_inbit(impl_->sdkCard(), static_cast<WORD>(bit));
+                if (value < 0)
+                    return failure<InputSnapshot>(DmcError::IoUnavailable, "LTDMC input read failed.");
+                if (value != 0)
+                    input.sampledBits |= std::uint64_t{1} << bit;
             }
+            input.activeBits           = input.sampledBits;
+            input.valid                = true;
+            input.timestampNanoseconds = nowNanoseconds();
             return Result<InputSnapshot>::Success(input);
         });
 }
@@ -888,25 +999,30 @@ auto LTDMCE3032Controller::configureCompare(const CompareConfig &config) -> SZX:
             for (const auto &point : config.points)
                 if (!isFinite(point.position))
                     return failure<void>(DmcError::InvalidArgument, "Compare point position is invalid.");
-            if (!impl_->config.simulation)
+            if (dmc_compare_set_config(impl_->sdkCard(), static_cast<WORD>(config.axis), 0, static_cast<WORD>(config.source)) !=
+                0)
+                return failure<void>(DmcError::CompareUnavailable, "LTDMC compare configuration failed.");
+            if (dmc_compare_clear_points(impl_->sdkCard(), static_cast<WORD>(config.axis)) != 0)
+                return failure<void>(DmcError::CompareUnavailable, "LTDMC compare queue clear failed.");
+            for (std::size_t index = 0; index < config.points.size(); ++index)
             {
-                if (dmc_compare_set_config(static_cast<WORD>(impl_->config.cardIndex), static_cast<WORD>(config.axis), 0,
-                                           static_cast<WORD>(config.source)) != 0)
-                    return failure<void>(DmcError::CompareUnavailable, "LTDMC compare configuration failed.");
-                if (dmc_compare_clear_points(static_cast<WORD>(impl_->config.cardIndex), static_cast<WORD>(config.axis)) != 0)
-                    return failure<void>(DmcError::CompareUnavailable, "LTDMC compare queue clear failed.");
-                for (const auto &point : config.points)
-                    if (dmc_compare_add_point_cycle_unit(static_cast<WORD>(impl_->config.cardIndex),
-                                                         static_cast<WORD>(config.axis), point.position, 0,
-                                                         static_cast<DWORD>(config.output),
-                                                         static_cast<DWORD>(config.pulseCycles), config.activeLevel ? 1 : 0) != 0)
-                    {
-                        (void)dmc_compare_set_config(static_cast<WORD>(impl_->config.cardIndex), static_cast<WORD>(config.axis),
-                                                     0, static_cast<WORD>(config.source));
-                        (void)dmc_compare_clear_points(static_cast<WORD>(impl_->config.cardIndex),
-                                                       static_cast<WORD>(config.axis));
-                        return failure<void>(DmcError::CompareQueueFull, "LTDMC compare point insertion failed.");
-                    }
+                const auto &point = config.points[index];
+                if (dmc_compare_add_point_cycle_unit(impl_->sdkCard(), static_cast<WORD>(config.axis), point.position,
+                                                     compareDirection(config.points, index), static_cast<DWORD>(config.output),
+                                                     static_cast<DWORD>(config.pulseCycles), config.activeLevel ? 1 : 0) != 0)
+                {
+                    (void)dmc_compare_set_config(impl_->sdkCard(), static_cast<WORD>(config.axis), 0,
+                                                 static_cast<WORD>(config.source));
+                    (void)dmc_compare_clear_points(impl_->sdkCard(), static_cast<WORD>(config.axis));
+                    return failure<void>(DmcError::CompareQueueFull, "LTDMC compare point insertion failed.");
+                }
+            }
+            if (auto readback = impl_->validateCompareQueueLocked(config.axis, config.source, false); !readback.ok)
+            {
+                (void)dmc_compare_set_config(impl_->sdkCard(), static_cast<WORD>(config.axis), 0,
+                                             static_cast<WORD>(config.source));
+                (void)dmc_compare_clear_points(impl_->sdkCard(), static_cast<WORD>(config.axis));
+                return readback;
             }
             impl_->compare                      = config;
             impl_->compare.queueCapacity        = capacity;
@@ -925,10 +1041,12 @@ auto LTDMCE3032Controller::enableCompare(bool enabled) -> SZX::COMMON::Result<vo
                 return failure<void>(DmcError::NotConnected, "DMC controller is not connected.");
             if (enabled && impl_->compare.queueCapacity == 0)
                 return failure<void>(DmcError::CompareUnavailable, "Compare output has not been configured.");
-            if (!impl_->config.simulation &&
-                dmc_compare_set_config(static_cast<WORD>(impl_->config.cardIndex), static_cast<WORD>(impl_->compare.axis),
-                                       enabled ? 1 : 0, static_cast<WORD>(impl_->compare.source)) != 0)
+            if (dmc_compare_set_config(impl_->sdkCard(), static_cast<WORD>(impl_->compare.axis), enabled ? 1 : 0,
+                                       static_cast<WORD>(impl_->compare.source)) != 0)
                 return failure<void>(DmcError::CompareUnavailable, "LTDMC compare enable failed.");
+            if (auto readback = impl_->validateCompareQueueLocked(impl_->compare.axis, impl_->compare.source, enabled);
+                !readback.ok)
+                return readback;
             impl_->status.compareEnabled = enabled;
             return Result<void>::Success();
         });
@@ -954,16 +1072,10 @@ auto LTDMCE3032Controller::compareTriggerCount() const -> SZX::COMMON::Result<st
             std::scoped_lock lock(impl_->mutex);
             if (!impl_->connected())
                 return failure<std::uint32_t>(DmcError::NotConnected, "DMC controller is not connected.");
-            if (!impl_->config.simulation)
-            {
-                long count = 0;
-                if (dmc_compare_get_points_runned(static_cast<WORD>(impl_->config.cardIndex),
-                                                  static_cast<WORD>(impl_->compare.axis), &count) != 0 ||
-                    count < 0)
-                    return failure<std::uint32_t>(DmcError::CompareUnavailable, "LTDMC compare count read failed.");
-                return Result<std::uint32_t>::Success(static_cast<std::uint32_t>(count));
-            }
-            return Result<std::uint32_t>::Success(impl_->status.comparedTriggers);
+            long count = 0;
+            if (dmc_compare_get_points_runned(impl_->sdkCard(), static_cast<WORD>(impl_->compare.axis), &count) != 0 || count < 0)
+                return failure<std::uint32_t>(DmcError::CompareUnavailable, "LTDMC compare count read failed.");
+            return Result<std::uint32_t>::Success(static_cast<std::uint32_t>(count));
         });
 }
 
@@ -992,40 +1104,45 @@ auto LTDMCE3032Controller::armCapture(const CaptureRequest &request) -> SZX::COM
             impl_->status.state                 = DmcState::Armed;
             if (request.triggerSource == FrameTriggerSource::PositionCompareOutput)
             {
-                if (!impl_->config.simulation)
+                if (dmc_compare_set_config(impl_->sdkCard(), static_cast<WORD>(request.scanPlan.scanAxis), 0,
+                                           static_cast<WORD>(request.compareSource)) != 0 ||
+                    dmc_compare_clear_points(impl_->sdkCard(), static_cast<WORD>(request.scanPlan.scanAxis)) != 0)
                 {
-                    if (dmc_compare_set_config(static_cast<WORD>(impl_->config.cardIndex),
-                                               static_cast<WORD>(request.scanPlan.scanAxis), 0,
-                                               static_cast<WORD>(request.compareSource)) != 0 ||
-                        dmc_compare_clear_points(static_cast<WORD>(impl_->config.cardIndex),
-                                                 static_cast<WORD>(request.scanPlan.scanAxis)) != 0)
+                    impl_->captureArmed = false;
+                    (void)dmc_compare_set_config(impl_->sdkCard(), static_cast<WORD>(request.scanPlan.scanAxis), 0,
+                                                 static_cast<WORD>(request.compareSource));
+                    (void)dmc_compare_clear_points(impl_->sdkCard(), static_cast<WORD>(request.scanPlan.scanAxis));
+                    impl_->status.state     = DmcState::Failed;
+                    impl_->status.lastError = DmcError::CompareUnavailable;
+                    return failure<void>(DmcError::CompareUnavailable, "LTDMC compare queue setup failed.");
+                }
+                for (std::size_t index = 0; index < request.comparePoints.size(); ++index)
+                {
+                    const auto &point = request.comparePoints[index];
+                    if (dmc_compare_add_point_cycle_unit(
+                            impl_->sdkCard(), static_cast<WORD>(request.scanPlan.scanAxis), point.position,
+                            compareDirection(request.comparePoints, index), static_cast<DWORD>(request.compareOutput),
+                            static_cast<DWORD>(request.comparePulseCycles), request.compareOutputActiveLevel ? 1 : 0) != 0)
                     {
                         impl_->captureArmed = false;
-                        (void)dmc_compare_set_config(static_cast<WORD>(impl_->config.cardIndex),
-                                                     static_cast<WORD>(request.scanPlan.scanAxis), 0,
+                        (void)dmc_compare_set_config(impl_->sdkCard(), static_cast<WORD>(request.scanPlan.scanAxis), 0,
                                                      static_cast<WORD>(request.compareSource));
-                        (void)dmc_compare_clear_points(static_cast<WORD>(impl_->config.cardIndex),
-                                                       static_cast<WORD>(request.scanPlan.scanAxis));
+                        (void)dmc_compare_clear_points(impl_->sdkCard(), static_cast<WORD>(request.scanPlan.scanAxis));
                         impl_->status.state     = DmcState::Failed;
-                        impl_->status.lastError = DmcError::CompareUnavailable;
-                        return failure<void>(DmcError::CompareUnavailable, "LTDMC compare queue setup failed.");
+                        impl_->status.lastError = DmcError::CompareQueueFull;
+                        return failure<void>(DmcError::CompareQueueFull, "LTDMC compare point insertion failed.");
                     }
-                    for (const auto &point : request.comparePoints)
-                        if (dmc_compare_add_point_cycle_unit(
-                                static_cast<WORD>(impl_->config.cardIndex), static_cast<WORD>(request.scanPlan.scanAxis),
-                                point.position, 0, static_cast<DWORD>(request.compareOutput),
-                                static_cast<DWORD>(request.comparePulseCycles), request.compareOutputActiveLevel ? 1 : 0) != 0)
-                        {
-                            impl_->captureArmed = false;
-                            (void)dmc_compare_set_config(static_cast<WORD>(impl_->config.cardIndex),
-                                                         static_cast<WORD>(request.scanPlan.scanAxis), 0,
-                                                         static_cast<WORD>(request.compareSource));
-                            (void)dmc_compare_clear_points(static_cast<WORD>(impl_->config.cardIndex),
-                                                           static_cast<WORD>(request.scanPlan.scanAxis));
-                            impl_->status.state     = DmcState::Failed;
-                            impl_->status.lastError = DmcError::CompareQueueFull;
-                            return failure<void>(DmcError::CompareQueueFull, "LTDMC compare point insertion failed.");
-                        }
+                }
+                if (auto readback = impl_->validateCompareQueueLocked(request.scanPlan.scanAxis, request.compareSource, false);
+                    !readback.ok)
+                {
+                    impl_->captureArmed = false;
+                    (void)dmc_compare_set_config(impl_->sdkCard(), static_cast<WORD>(request.scanPlan.scanAxis), 0,
+                                                 static_cast<WORD>(request.compareSource));
+                    (void)dmc_compare_clear_points(impl_->sdkCard(), static_cast<WORD>(request.scanPlan.scanAxis));
+                    impl_->status.state     = DmcState::Failed;
+                    impl_->status.lastError = DmcError::CompareUnavailable;
+                    return readback;
                 }
                 CompareConfig compare;
                 compare.axis        = request.scanPlan.scanAxis;
