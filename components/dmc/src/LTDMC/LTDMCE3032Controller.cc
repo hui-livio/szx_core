@@ -770,7 +770,20 @@ auto LTDMCE3032Controller::connect() -> SZX::COMMON::Result<void>
             if (auto profile = impl_->validateProfile(); !profile.ok)
                 return profile;
 
-            const auto boardCount = dmc_board_init();
+            short boardCount = 0;
+            {
+                std::scoped_lock cardLock(connectedCardsMutex);
+                if (boardUsers == 0)
+                    boardCount = dmc_board_init();
+                else
+                {
+                    WORD activeCards = 0;
+                    DWORD cardTypes[16]{};
+                    WORD cardIds[16]{};
+                    boardCount =
+                        dmc_get_CardInfList(&activeCards, cardTypes, cardIds) == 0 ? static_cast<short>(activeCards) : -1;
+                }
+            }
             if (boardCount <= 0)
                 return failure<void>(DmcError::DriverUnavailable, "LTDMC board initialization failed.");
             {
