@@ -16,7 +16,9 @@ else()
     message(STATUS "DMC SDK: unavailable; hardware adapter disabled")
 endif()
 if(SZX_DMC_HAS_LTDMC)
-    list(APPEND SZX_DMC_SOURCES src/LTDMCE3032Controller.cc)
+    list(APPEND SZX_DMC_SOURCES
+        src/LTDMC/LTDMCE3032Controller.cc src/LTDMC/LTDMCE3032Controller.hpp
+    )
 endif()
 
 add_library(szx_dmc SHARED ${SZX_DMC_SOURCES})

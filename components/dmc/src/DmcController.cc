@@ -2,7 +2,7 @@
 
 #include "SimulatedDmcController.hpp"
 #if defined(SZX_DMC_HAS_LTDMC)
-    #include "LTDMCE3032Controller.hpp"
+    #include "LTDMC/LTDMCE3032Controller.hpp"
 #endif
 
 #include <exception>
