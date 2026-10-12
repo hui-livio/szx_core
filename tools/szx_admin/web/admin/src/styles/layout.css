@@ -188,12 +188,23 @@
   border: 0;
   font-size: var(--lg-fs-2xs);
   box-shadow: none;
+  outline: none;
 }
 
 .language-switcher:focus-within,
 .language-switcher:hover {
   background: var(--lg-field-focus);
   border-color: var(--lg-brand-300);
+}
+
+.language-switcher:focus-within {
+  box-shadow: var(--lg-ring-focus);
+}
+
+.language-switcher select:focus {
+  border: 0;
+  outline: none;
+  box-shadow: none;
 }
 
 .language-icon {
