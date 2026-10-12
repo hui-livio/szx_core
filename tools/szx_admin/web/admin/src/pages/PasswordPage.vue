@@ -8,7 +8,6 @@ const { t } = useI18n()
 <template>
   <header class="page-heading">
     <div>
-      <p class="eyebrow">{{ t('password.eyebrow') }}</p>
       <h1>{{ t('password.title') }}</h1>
       <p>{{ t('password.subtitle') }}</p>
     </div>

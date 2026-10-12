@@ -251,7 +251,7 @@
   width: 100%;
   max-width: calc(var(--k) * 1600px);
   margin: 0 auto;
-  padding: var(--lg-s12) var(--lg-s11);
+  padding: var(--lg-s5) var(--lg-s11) var(--lg-s3);
   flex: 1;
 }
 
@@ -432,7 +432,7 @@
   }
 
   .main {
-    padding: var(--lg-s11) var(--lg-s7);
+    padding: var(--lg-s5) var(--lg-s7) var(--lg-s3);
   }
 
   .topbar {
@@ -493,7 +493,7 @@
   }
 
   .main {
-    padding: var(--lg-s11) var(--lg-s1);
+    padding: var(--lg-s5) var(--lg-s1) var(--lg-s3);
   }
 
   .page-heading {

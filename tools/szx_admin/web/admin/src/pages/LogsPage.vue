@@ -52,7 +52,6 @@ const {
   <div class="data-page logs-page">
     <header class="page-heading">
       <div>
-        <p class="eyebrow">{{ t('audit.eyebrow') }}</p>
         <h1>{{ activeTab === 'audit' ? t('audit.title') : t('audit.behaviorTitle') }}</h1>
         <p>{{ t('audit.subtitle') }}</p>
       </div>

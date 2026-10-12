@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useSessionNavigation } from './composables/useAuthViewModel'
 import AdminShell from './components/AdminShell.vue'
 const { authenticated } = useSessionNavigation()
+const { t } = useI18n()
 
 // Keep the theme's continuous scaling, without shrinking long admin pages to fit a card.
 function updateThemeScale() {
@@ -25,8 +27,11 @@ onBeforeUnmount(() => window.removeEventListener('resize', updateThemeScale))
     <div class="lg-orb c" />
     <div class="lg-grid" />
   </div>
-  <AdminShell v-if="authenticated">
-    <RouterView />
-  </AdminShell>
-  <RouterView v-else />
+  <RouterView v-slot="{ Component, route }">
+    <AdminShell v-if="authenticated">
+      <component :is="Component" v-if="route.path !== '/login'" />
+      <p v-else class="hint" role="status">{{ t('common.loading') }}</p>
+    </AdminShell>
+    <component :is="Component" v-else-if="route.path === '/login'" />
+  </RouterView>
 </template>

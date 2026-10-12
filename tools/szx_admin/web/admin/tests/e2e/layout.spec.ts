@@ -77,6 +77,14 @@ async function signInWithRows(page: Page) {
 }
 
 async function expectOnlyTableToScroll(page: Page) {
+  await expect(page.locator('.page-heading .eyebrow')).toHaveCount(0)
+  const topGap = await page.locator('.page-heading').evaluate((element) => {
+    return (
+      element.getBoundingClientRect().top -
+      document.querySelector('.topbar')!.getBoundingClientRect().bottom
+    )
+  })
+  expect(topGap).toBeLessThan(24)
   const table = page.locator('.table-scroll')
   await expect(table.locator('tbody tr')).toHaveCount(20)
   await page.evaluate(() => document.fonts.ready)

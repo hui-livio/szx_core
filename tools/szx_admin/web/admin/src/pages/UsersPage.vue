@@ -39,7 +39,6 @@ const { busy: saving, error: saveError } = mutation
   <div class="data-page users-page">
     <header class="page-heading">
       <div>
-        <p class="eyebrow">{{ t('users.eyebrow') }}</p>
         <h1>{{ t('users.title') }}</h1>
         <p>{{ t('users.subtitle') }}</p>
       </div>
