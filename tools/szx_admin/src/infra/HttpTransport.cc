@@ -273,6 +273,7 @@ public:
                 {
                     inTransportCallback = previous;
                 };
+                const SZX::COMMON::Stopwatch timing;
                 const auto requestStartedAt                         = SZX::COMMON::TimeHelper::NowIso8601();
                 const auto started                                  = std::chrono::steady_clock::now();
                 const auto id                                       = requestId(request);
@@ -287,7 +288,15 @@ public:
                 }
                 response.headers[std::string{kRequestIdHeader}] = id;
                 secureResponse(response);
+                const auto appMilliseconds = timing.ElapsedMs();
                 accessLog(request, id, response, requestStartedAt, started);
+                const auto serverMilliseconds = timing.ElapsedMs();
+                // Access logging is synchronous and runs before the response is sent.
+                // Keep it separate so a blocked console/file sink cannot masquerade as SQL latency.
+                if (isApiPath(request.path, config_.apiPrefix))
+                    response.headers["Server-Timing"] = "app;dur=" + std::to_string(appMilliseconds) +
+                        ", access_log;dur=" + std::to_string(serverMilliseconds - appMilliseconds) +
+                        ", server;dur=" + std::to_string(serverMilliseconds);
                 return response;
             });
         if (!configured.ok)
@@ -355,7 +364,7 @@ public:
                                                                        {
                                                                  const auto converted = convertRequest(request);
                                                                  return prepareResponse(handler(converted), converted.requestId);
-                                                                       }));
+                                                             }));
             if (result.ok)
                 LOGM_DEBUG("szx_admin.http", "event=route_registered method={} path={}", registeredMethod, registeredPath);
             return result;

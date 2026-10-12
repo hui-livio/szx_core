@@ -152,3 +152,34 @@ Get-Process -Id <上一步的OwningProcess>
 确认进程身份后退出旧实例，再启动服务；不要同时运行两个监听同一地址和端口的实例。修改端口后同步更新开发代理和访问地址。
 
 自动化验证命令见 [前端 README](../../tools/szx_admin/web/admin/README.md)。后端静态挂载测试位于 `tests/rbac/HttpTransport_test.cc`，可构建 `test_rbac_infra` 后运行 `ctest --test-dir build -R '^test_rbac_infra$' --output-on-failure`。前端浏览器测试使用模拟 API，不能替代真实数据库、HTTPS Cookie 和生产环境验收。
+
+
+## 查询接口偶发等待排查
+
+用户列表、审计日志与权限查询共用 HTTP 传输、同步访问日志和数据库连接池。浏览器“等待服务器响应”包括服务端处理前的等待及响应传输；现有访问日志的 `duration` 在写入该条日志之前计算，因此不能用它单独排除日志输出阻塞。
+
+新版服务为 API 响应补充 `Server-Timing`，可在浏览器 Network → Timing/Headers 查看：
+
+| 指标 | 覆盖范围 |
+|---|---|
+| `app` | HTTP 中间件开始到业务处理、响应准备完成，包含鉴权和数据库操作 |
+| `access_log` | 同步访问日志输出耗时，包含控制台和文件 sink 的写入/刷新 |
+| `server` | 上面两段合计；不包含进入中间件之前的排队和返回响应之后的套接字发送 |
+
+记录慢请求的 `X-Request-ID`，对照访问日志和 `pool_acquire_slow`、`database_callback_slow`、`orm_operation_slow`。若 `app` 很慢，继续沿鉴权/数据库路径定位；若 `access_log` 很慢，检查控制台及日志文件写入；若 `server` 很快但浏览器等待很久，检查 I/O 线程排队、响应发送、代理/端口转发与 TCP。三段统计不能代替客户端和服务器的同一次请求关联。
+
+默认服务配置使用 `logging.console: false`，诊断继续写入轮转文件，避免终端或输出管道背压阻塞 HTTP。该开关在 Release/RelWithDebInfo 生效；Debug 构建的 logger 始终输出控制台。关闭控制台不排除文件 sink 卡顿，仍需对照 `access_log`。
+
+`workerThreads: 0` 当前实际使用一个 HTTP I/O 线程，业务处理和日志输出均同步执行。其他请求或日志 sink 卡顿可能阻塞后续请求，此时后续请求的业务耗时仍可能很短。仅调大线程数不能证明或解决根因。
+
+可用仓库采样工具对比客户端、新连接与长连接：
+
+```powershell
+py -3 scripts/profile_admin_http.py http://127.0.0.1:7364/api/v1/health --count 100
+py -3 scripts/profile_admin_http.py http://127.0.0.1:7364/api/v1/health --count 100 --new-connection
+py -3 scripts/profile_admin_http.py "http://127.0.0.1:7364/api/v1/admin/users?page=1&page_size=20&sort=-created_at" --token-env SZX_ADMIN_PROFILE_TOKEN --count 100
+```
+
+`SZX_ADMIN_PROFILE_TOKEN` 应为现有会话的 access token。工具只发 GET，不执行登录、刷新或业务写入；不输出 token、响应正文或 URL 查询参数，慢样本输出请求 ID、响应头计时、首字节和总耗时。401/403 等响应不代表成功查询，工具会报告状态并返回非零退出码。它直连目标地址，不读取系统 HTTP 代理，因此与浏览器差异本身也是排查线索。
+
+在 Windows 浏览器访问 WSL 服务的场景，分别在 Windows 与 WSL 运行同样的采样；再对比 Windows 的 `localhost`/`127.0.0.1` 转发地址和 WSL 实际 IPv4 地址。以 `Get-NetTCPConnection` 的拥有进程确认是否经过 `wslrelay` 或其他代理。服务需重新启动新版可执行文件，响应才会出现新增计时头；替换磁盘文件不会让正在运行的旧进程自动更新。
