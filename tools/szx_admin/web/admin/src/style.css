@@ -333,6 +333,50 @@ small,
   background: var(--surface);
 }
 
+.data-page {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.data-page .page-heading,
+.data-page .log-tabs,
+.data-page .filters,
+.data-page .table-heading,
+.data-page .pagination,
+.data-page > .alert,
+.data-page .table-panel > .alert,
+.data-page > .request-id {
+  flex-shrink: 0;
+}
+
+.data-page > .request-id {
+  margin: 0;
+}
+
+.data-page .table-panel {
+  margin-bottom: var(--lg-s3);
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.data-page .table-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.data-page .table-scroll th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--lg-n-50);
+}
+
 .log-tabs button {
   border-color: transparent;
   background: transparent;
@@ -609,5 +653,53 @@ dd {
 
   .table-panel {
     padding: 0;
+  }
+}
+
+/* Keep filters reachable without consuming the table on narrow or short screens. */
+@media (max-width: 720px), (max-height: 600px) {
+  .data-shell .main {
+    padding-block: var(--lg-s3);
+  }
+
+  .data-page .page-heading {
+    margin-bottom: var(--lg-s3);
+  }
+
+  .data-page .filters {
+    max-height: min(18dvh, calc(var(--k) * 110px));
+    overflow: auto;
+    overscroll-behavior: contain;
+    gap: var(--lg-s3);
+    padding: var(--lg-s5);
+  }
+
+  .data-page .table-heading,
+  .data-page .pagination {
+    padding: var(--lg-s3) var(--lg-s5);
+  }
+}
+
+@media (min-width: 721px) and (max-height: 800px) {
+  .data-shell .main {
+    padding-block: var(--lg-s6);
+  }
+
+  .data-page .page-heading {
+    margin-bottom: var(--lg-s6);
+  }
+
+  .data-page .filters {
+    gap: var(--lg-s3);
+    padding: var(--lg-s5) var(--lg-s7);
+  }
+
+  .data-page .log-filters label {
+    min-width: calc(var(--k) * 125px);
+  }
+
+  .data-page .table-heading,
+  .data-page .pagination {
+    padding-block: var(--lg-s5);
   }
 }

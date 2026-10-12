@@ -1,8 +1,18 @@
 .app-shell {
   display: flex;
-  min-height: 100dvh;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
   gap: var(--lg-s7);
   padding: var(--lg-s7);
+}
+
+.data-shell .main {
+  padding-bottom: var(--lg-s3);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .sidebar {
@@ -123,11 +133,14 @@
 .workspace {
   flex: 1;
   min-width: 0;
+  min-height: 0;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
 }
 
 .topbar {
+  flex-shrink: 0;
   min-height: calc(var(--k) * 76px);
   background: var(--lg-glass-solid);
   border: 1px solid var(--lg-stroke);
@@ -232,6 +245,9 @@
 }
 
 .main {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
   width: 100%;
   max-width: calc(var(--k) * 1600px);
   margin: 0 auto;
@@ -261,11 +277,12 @@
 }
 
 .app-footer {
+  flex-shrink: 0;
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
   gap: var(--lg-s7);
-  padding: var(--lg-s8) var(--lg-s11);
+  padding: var(--lg-s3) var(--lg-s11);
   color: var(--muted);
   font-size: var(--lg-fs-2xs);
 }
@@ -438,7 +455,8 @@
 
 @media (max-width: 720px) {
   .app-shell {
-    display: block;
+    flex-direction: column;
+    gap: 0;
     padding: var(--lg-s5);
   }
 
@@ -492,7 +510,7 @@
   }
 
   .app-footer {
-    padding: var(--lg-s7) var(--lg-s1);
+    padding: var(--lg-s3) var(--lg-s1);
   }
 
   .app-footer span {

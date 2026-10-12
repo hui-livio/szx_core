@@ -1,12 +1,17 @@
 <script setup lang="ts">
 import { useShellViewModel } from '../composables/useAuthViewModel'
 import { useI18n } from 'vue-i18n'
+import { useRoute } from 'vue-router'
 import LanguageSwitcher from './LanguageSwitcher.vue'
 const { links, logout, user, title, role, passwordLink, busy, error } = useShellViewModel()
 const { t } = useI18n()
+const route = useRoute()
 </script>
 <template>
-  <div class="app-shell">
+  <div
+    class="app-shell"
+    :class="{ 'data-shell': route.path === '/users' || route.path === '/logs' }"
+  >
     <a class="skip-link" href="#main">{{ t('shell.skipToContent') }}</a>
     <aside class="sidebar">
       <div class="brand">
