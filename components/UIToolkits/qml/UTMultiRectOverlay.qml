@@ -967,9 +967,16 @@ Item {
                     }
 
                     function updateEdit(viewPoint) {
-                        if (editHandle.length === 0 || !editStart)
+                        if (!overlayRoot || editHandle.length === 0 || !editStart)
                             return;
-                        const next = overlayRoot.transformRectangle(editStart, editHandle, overlayRoot.imagePoint(viewPoint.x, viewPoint.y));
+                        const point = overlayRoot.imagePoint(viewPoint.x, viewPoint.y);
+                        // Keep the initial grip offset so pressing either half
+                        // of a corner handle does not snap the ROI to the pointer.
+                        if (editHandle !== "move") {
+                            point.x += editStart.x + (editHandle === "tr" || editHandle === "br" ? editStart.width : 0) - editStart.startX;
+                            point.y += editStart.y + (editHandle === "bl" || editHandle === "br" ? editStart.height : 0) - editStart.startY;
+                        }
+                        const next = overlayRoot.transformRectangle(editStart, editHandle, point);
                         if (next.width >= 2 && next.height >= 2)
                             editOverride = next;
                     }
@@ -983,6 +990,10 @@ Item {
                             }
                             UTLogger.debug("Rectangle edited: " + rectKey, "UIToolkits.MultiRectOverlay");
                         }
+                        cancelEdit();
+                    }
+
+                    function cancelEdit() {
                         editOverride = null;
                         editHandle = "";
                         editStart = null;
@@ -1079,6 +1090,10 @@ Item {
                     Loader {
                         active: rectItem.rectangleEditable && rectItem.selected
                         anchors.fill: rectItem
+                        anchors.margins: rectItem.overlayRoot ? -rectItem.overlayRoot.handleSize / 2 : 0
+                        // The Loader owns the handles' stacking context. Its
+                        // children must sit above the full-ROI move MouseArea.
+                        z: 4
                         sourceComponent: handlesComponent
                     }
 
@@ -1089,13 +1104,15 @@ Item {
                             model: ["tl", "tr", "br", "bl"]
 
                         delegate: Rectangle {
+                            id: cornerHandle
+
                             required property string modelData
 
                             readonly property string handleName: modelData
                             width: rectItem.overlayRoot ? rectItem.overlayRoot.handleSize : 0
                             height: rectItem.overlayRoot ? rectItem.overlayRoot.handleSize : 0
-                            x: handleName === "tl" || handleName === "bl" ? -width / 2 : parent.width - width / 2
-                            y: handleName === "tl" || handleName === "tr" ? -height / 2 : parent.height - height / 2
+                            x: handleName === "tl" || handleName === "bl" ? 0 : parent.width - width
+                            y: handleName === "tl" || handleName === "tr" ? 0 : parent.height - height
                             visible: rectItem.rectangleEditable && rectItem.selected
                             color: rectItem.selected ? rectItem.resolvedSelectedColor() : rectItem.rectColor
                             border.color: "#101010"
@@ -1105,19 +1122,25 @@ Item {
                             MouseArea {
                                 anchors.fill: parent
                                 acceptedButtons: Qt.LeftButton
-                                cursorShape: handleName === "tl" || handleName === "br" ? Qt.SizeFDiagCursor : Qt.SizeBDiagCursor
+                                preventStealing: true
+                                cursorShape: cornerHandle.handleName === "tl" || cornerHandle.handleName === "br" ? Qt.SizeFDiagCursor : Qt.SizeBDiagCursor
 
                                 onPressed: function (mouse) {
-                                    const point = parent.mapToItem(rectItem.overlayRoot, mouse.x, mouse.y);
-                                    rectItem.beginEdit(handleName, point);
+                                    const point = cornerHandle.mapToItem(rectItem.overlayRoot, mouse.x, mouse.y);
+                                    rectItem.beginEdit(cornerHandle.handleName, point);
                                 }
                                 onPositionChanged: function (mouse) {
                                     if (pressed) {
-                                        const point = parent.mapToItem(rectItem.overlayRoot, mouse.x, mouse.y);
+                                        const point = cornerHandle.mapToItem(rectItem.overlayRoot, mouse.x, mouse.y);
                                         rectItem.updateEdit(point);
                                     }
                                 }
-                                onReleased: rectItem.finishEdit()
+                                onReleased: function (mouse) {
+                                    const point = cornerHandle.mapToItem(rectItem.overlayRoot, mouse.x, mouse.y);
+                                    rectItem.updateEdit(point);
+                                    rectItem.finishEdit();
+                                }
+                                onCanceled: rectItem.cancelEdit()
                             }
                         }
                         }
