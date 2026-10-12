@@ -327,8 +327,10 @@ small,
   flex-wrap: wrap;
   gap: var(--lg-s1);
   padding: var(--lg-s2);
-  border-bottom: 1px solid var(--line);
-  background: var(--lg-glass-2);
+  border: 1px solid var(--lg-stroke);
+  border-bottom-color: var(--line);
+  border-radius: var(--lg-r-3xl) var(--lg-r-3xl) 0 0;
+  background: var(--surface);
 }
 
 .log-tabs button {
@@ -345,6 +347,11 @@ small,
 .table-panel {
   padding: 0;
   overflow: hidden;
+}
+
+.log-tabs + .table-panel {
+  border-top: 0;
+  border-radius: 0 0 var(--lg-r-3xl) var(--lg-r-3xl);
 }
 
 .table-heading {
