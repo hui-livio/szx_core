@@ -34,7 +34,7 @@ const { t } = useI18n()
       <small>SZX · {{ t('shell.identityManagement') }}</small>
     </section>
     <section class="login-panel">
-      <div class="login-card">
+      <div class="login-card lg-card">
         <p class="eyebrow">{{ t('login.console') }}</p>
         <h2>{{ t('login.welcome') }}</h2>
         <p class="subtitle">{{ t('login.continue') }}</p>

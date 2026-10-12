@@ -1,0 +1,1046 @@
+@charset "UTF-8";
+/* ==========================================================================
+   Lumina Glass · UI 主题  v1.0
+   --------------------------------------------------------------------------
+   设计定位：光晕玻璃（Aurora Glass）—— 柔性渐变光晕 + 低饱和玻璃层 + 克制的高光扫过
+   适用场景：登录/注册、后台入口、SaaS 工作台、设置面板等「少而精」的界面
+
+   使用方式：
+     <link rel="stylesheet" href="theme.css">
+     <html data-theme="light|dark" data-fx="full|lite">
+
+   三条铁律：
+     1. 一切尺寸都用 var(--k) 缩放，禁止写死像素（大屏自适应）
+     2. 装饰动画只允许动 transform / opacity（不触发重排重绘）
+     3. 面积 > 20vw 的图层禁止 filter:blur()，改用多段 alpha 径向渐变
+   ========================================================================== */
+
+/* =========================== 1. 自适应比例 =============================== */
+:root {
+  /* --k 由 JS 按视口连续计算：base = min(w/1440, h/900)；k = 1 + (base-1)*0.7
+     夹在 [0.92, 1.5]，再用 (h-60)/820 做高度硬约束 */
+  --k: 1;
+}
+
+/* =========================== 2. 色彩系统 ================================ */
+:root {
+  /* ---- 2.1 品牌色阶（靛紫 Indigo-Violet，主色） ---- */
+  --lg-brand-50: #eef0ff;
+  --lg-brand-100: #dfe3ff;
+  --lg-brand-200: #c5caff;
+  --lg-brand-300: #a3aaff;
+  --lg-brand-400: #7d8bff;
+  --lg-brand-500: #5b6cff;
+  --lg-brand-600: #4453f0;
+  --lg-brand-700: #3540cc;
+  --lg-brand-800: #2a3299;
+  --lg-brand-900: #232a73;
+
+  /* ---- 2.2 辅色阶（紫 Purple，渐变另一端 / 高光） ---- */
+  --lg-violet-50: #f6ecff;
+  --lg-violet-100: #eed9ff;
+  --lg-violet-200: #dcb2ff;
+  --lg-violet-300: #c98bff;
+  --lg-violet-400: #b76dff;
+  --lg-violet-500: #a855f7;
+  --lg-violet-600: #8e33e8;
+  --lg-violet-700: #7126bd;
+  --lg-violet-800: #571f8f;
+  --lg-violet-900: #3f1a66;
+
+  /* ---- 2.3 强调色阶（青 Cyan，进度 / 成功辅助） ---- */
+  --lg-cyan-50: #e6fbff;
+  --lg-cyan-100: #ccf6ff;
+  --lg-cyan-200: #99edff;
+  --lg-cyan-300: #66e4ff;
+  --lg-cyan-400: #33daff;
+  --lg-cyan-500: #22d3ee;
+  --lg-cyan-600: #0aa8c4;
+  --lg-cyan-700: #08849b;
+  --lg-cyan-800: #066477;
+  --lg-cyan-900: #04454f;
+
+  /* ---- 2.4 中性色阶（0=最亮 → 1000=最暗） ---- */
+  --lg-n-0: #ffffff;
+  --lg-n-25: #fbfbff;
+  --lg-n-50: #f4f6fd;
+  --lg-n-100: #eaeefb;
+  --lg-n-200: #dde1f2;
+  --lg-n-300: #c3c9e4;
+  --lg-n-400: #9aa2c6;
+  --lg-n-500: #737a9c;
+  --lg-n-600: #565d80;
+  --lg-n-700: #3f4560;
+  --lg-n-800: #262b45;
+  --lg-n-900: #141833;
+  --lg-n-1000: #0b0e1d;
+
+  /* ---- 2.5 语义色 ---- */
+  --lg-success: #10b981;
+  --lg-success-soft: rgba(16, 185, 129, 0.18);
+  --lg-warning: #f59e0b;
+  --lg-warning-soft: rgba(245, 158, 11, 0.18);
+  --lg-danger: #ef4444;
+  --lg-danger-soft: rgba(239, 68, 68, 0.13);
+  --lg-info: #38bdf8;
+  --lg-info-soft: rgba(56, 189, 248, 0.18);
+  --lg-pink: #ff7ab8; /* 装饰用，不承担语义 */
+
+  /* ---- 2.6 玻璃层（light / dark 各一套，见下方主题块） ---- */
+  --lg-glass: rgba(255, 255, 255, 0.58);
+  --lg-glass-2: rgba(255, 255, 255, 0.35);
+  --lg-glass-solid: rgba(255, 255, 255, 0.8); /* 替代毛玻璃的降级底 */
+  --lg-glass-solid-2: rgba(255, 255, 255, 0.92);
+  --lg-stroke: rgba(255, 255, 255, 0.85); /* 玻璃高光边 */
+  --lg-line: rgba(20, 24, 51, 0.1); /* 分隔线 / 输入框描边 */
+  --lg-field: rgba(255, 255, 255, 0.55); /* 输入框底 */
+  --lg-field-focus: rgba(255, 255, 255, 0.75);
+
+  /* ---- 2.7 语义化别名（业务代码优先用这一组） ---- */
+  --bg: var(--lg-n-100);
+  --text: var(--lg-n-900);
+  --muted: var(--lg-n-500);
+  --accent: var(--lg-brand-500);
+  --accent-2: var(--lg-violet-500);
+  --accent-3: var(--lg-cyan-500);
+  --danger: var(--lg-danger);
+  --ok: var(--lg-success);
+}
+
+/* ---- 暗色主题 ---- */
+[data-theme='dark'] {
+  --bg: #080b18;
+  --text: #e9ecff;
+  --muted: #8b92b8;
+  --lg-glass: rgba(18, 23, 48, 0.55);
+  --lg-glass-2: rgba(18, 23, 48, 0.3);
+  --lg-glass-solid: rgba(20, 25, 50, 0.8);
+  --lg-glass-solid-2: rgba(14, 18, 38, 0.94);
+  --lg-stroke: rgba(255, 255, 255, 0.1);
+  --lg-line: rgba(255, 255, 255, 0.1);
+  --lg-field: rgba(255, 255, 255, 0.05);
+  --lg-field-focus: rgba(255, 255, 255, 0.09);
+}
+
+/* =========================== 3. 字体排印 ================================ */
+/* ---- 3.1 字体：全部为可商用开源字体 --------------------------------------
+   首选  HarmonyOS Sans（鸿蒙，华为免费商用协议）——系统装了就用系统的
+   次选  Source Han Sans / Noto Sans（思源黑体，SIL OFL 1.1）——系统装了就用系统的
+   兜底  Lumina Sans —— 由思源黑体内嵌子集生成的本地 woff2（见下方 @font-face）
+   最后  通用族 system-ui / sans-serif，不再点名任何专有字体
+   等宽  JetBrains Mono / 更纱黑体 / Noto Sans Mono / Liberation Mono，均 OFL
+-------------------------------------------------------------------------- */
+@font-face {
+  font-family: 'Lumina Sans';
+  src: url('fonts/noto-sc-400.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Lumina Sans';
+  src: url('fonts/noto-sc-500.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Lumina Sans';
+  src: url('fonts/noto-sc-700.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  --lg-font-sans:
+    'HarmonyOS Sans SC', 'HarmonyOS Sans', 'Source Han Sans SC', 'Noto Sans SC', 'Noto Sans CJK SC',
+    'Lumina Sans', system-ui, -apple-system, sans-serif;
+  --lg-font-mono:
+    'JetBrains Mono', 'Sarasa Mono SC', 'Noto Sans Mono', 'Liberation Mono', ui-monospace, monospace;
+
+  /* 字阶：数值 × var(--k)，命名对应使用场景而非绝对大小 */
+  --lg-fs-2xs: calc(var(--k) * 11.5px); /* 错误提示 / 页脚 / 分割线文案 */
+  --lg-fs-xs: calc(var(--k) * 12.5px); /* 协议条款 / 成功副标题 */
+  --lg-fs-sm: calc(var(--k) * 13px); /* 副标题 / 次要正文 / 记住我 */
+  --lg-fs-md: calc(var(--k) * 14px); /* 正文 / 标签默认态 / 选项卡 */
+  --lg-fs-md2: calc(var(--k) * 14.5px); /* 输入值 */
+  --lg-fs-lg: calc(var(--k) * 15px); /* 按钮 */
+  --lg-fs-xl: calc(var(--k) * 16px); /* 品牌名 / 小标题 */
+  --lg-fs-2xl: calc(var(--k) * 17px); /* 成功态标题 */
+  --lg-fs-display: calc(var(--k) * 25px); /* 页面主标题 */
+  --lg-fs-hero: calc(var(--k) * 34px); /* 规范页 / 落地页 Hero */
+
+  /* 中文字重只做 400 / 500 / 700 三档；800 由浏览器映射到 700，
+     避免把 600 落回到 400（CJK 子集化时只保留这三档） */
+  --lg-fw-r: 400;
+  --lg-fw-m: 500;
+  --lg-fw-b: 700;
+  --lg-fw-xb: 800;
+  --lg-lh-tight: 1.25;
+  --lg-lh-body: 1.55;
+  --lg-ls-body: 0.3px;
+  --lg-ls-title: -0.4px;
+  --lg-ls-caps: 1.4px;
+}
+
+/* =========================== 4. 间距标尺（4px 基准） ====================== */
+:root {
+  --lg-s1: calc(var(--k) * 4px);
+  --lg-s2: calc(var(--k) * 6px);
+  --lg-s3: calc(var(--k) * 8px);
+  --lg-s4: calc(var(--k) * 10px);
+  --lg-s5: calc(var(--k) * 12px);
+  --lg-s6: calc(var(--k) * 14px);
+  --lg-s7: calc(var(--k) * 16px);
+  --lg-s8: calc(var(--k) * 18px);
+  --lg-s9: calc(var(--k) * 20px);
+  --lg-s10: calc(var(--k) * 22px);
+  --lg-s11: calc(var(--k) * 24px);
+  --lg-s12: calc(var(--k) * 30px);
+  --lg-s13: calc(var(--k) * 38px);
+
+  /* 语义间距 */
+  --lg-gap-field: var(--lg-s6); /* 表单项之间 14 */
+  --lg-gap-block: var(--lg-s11); /* 区块之间 24 */
+  --lg-pad-card-x: var(--lg-s13); /* 卡片左右内边距 38 */
+  --lg-pad-card-t: var(--lg-s13);
+  --lg-pad-card-b: var(--lg-s12); /* 卡片底部 30 */
+}
+
+/* =========================== 5. 圆角 ===================================== */
+:root {
+  --lg-r-xs: calc(var(--k) * 6px); /* 复选框 */
+  --lg-r-sm: calc(var(--k) * 9px); /* 图标按钮 hover */
+  --lg-r-md: calc(var(--k) * 11px); /* 选项卡 / 指示条 */
+  --lg-r-lg: calc(var(--k) * 12px); /* Logo */
+  --lg-r-xl: calc(var(--k) * 13px); /* 社交按钮 */
+  --lg-r-2xl: calc(var(--k) * 14px); /* 输入框 / 按钮 / 选项卡容器 */
+  --lg-r-3xl: calc(var(--k) * 22px); /* 移动端卡片 */
+  --lg-r-4xl: calc(var(--k) * 26px); /* 桌面卡片 */
+  --lg-r-full: 999px; /* 圆形 / 药丸 */
+}
+
+/* =========================== 6. 控件尺寸 ================================= */
+:root {
+  --lg-h-check: calc(var(--k) * 19px); /* 复选框 */
+  --lg-h-icon: calc(var(--k) * 34px); /* 输入框内图标按钮（眼睛） */
+  --lg-h-ctrl: calc(var(--k) * 42px); /* 悬浮圆形控制按钮 */
+  --lg-h-soc: calc(var(--k) * 46px); /* 第三方按钮 */
+  --lg-h-btn: calc(var(--k) * 52px); /* 主按钮 */
+  --lg-h-input: calc(var(--k) * 58px); /* 输入框（浮动标签需要更高） */
+  --lg-w-card: calc(var(--k) * 432px); /* 卡片基准宽度 */
+  --lg-ico-sm: calc(var(--k) * 12px); /* 复选框内勾 */
+  --lg-ico-md: calc(var(--k) * 18px); /* 输入框图标 */
+  --lg-ico-lg: calc(var(--k) * 20px); /* 社交图标 */
+  --lg-ico-xl: calc(var(--k) * 21px); /* Logo 图标 */
+  --lg-bd: 1px; /* 常规描边 */
+  --lg-bd-2: 1.5px; /* 复选框描边 */
+  --lg-bd-3: calc(var(--k) * 2.5px); /* 加载环 */
+  --lg-ring: calc(var(--k) * 4px); /* 焦点环宽度 */
+}
+
+/* =========================== 7. 阴影 ===================================== */
+:root {
+  --lg-sh-1: 0 4px 12px -4px rgba(91, 108, 255, 0.9); /* 复选框选中 */
+  --lg-sh-2: 0 8px 20px -6px rgba(91, 108, 255, 0.8); /* Logo */
+  --lg-sh-3: 0 8px 24px -8px rgba(40, 50, 110, 0.4); /* 悬浮小按钮 */
+  --lg-sh-4: 0 12px 30px -12px rgba(40, 50, 110, 0.6); /* Toast / hover 抬起 */
+  --lg-sh-5: 0 14px 30px -12px rgba(91, 108, 255, 0.95); /* 主按钮 */
+  --lg-sh-6: 0 18px 38px -12px rgba(91, 108, 255, 1); /* 主按钮 hover */
+  --lg-sh-card: 0 30px 70px -20px rgba(40, 50, 110, 0.35); /* 卡片 */
+  --lg-ring-focus: 0 0 0 var(--lg-ring) rgba(91, 108, 255, 0.14);
+  --lg-ring-error: 0 0 0 var(--lg-ring) var(--lg-danger-soft);
+  --lg-glow-ok: 0 0 calc(var(--k) * 40px) -8px rgba(16, 185, 129, 0.7);
+}
+[data-theme='dark'] {
+  --lg-sh-3: 0 8px 24px -8px rgba(0, 0, 0, 0.6);
+  --lg-sh-4: 0 12px 30px -12px rgba(0, 0, 0, 0.7);
+  --lg-sh-card: 0 30px 80px -20px rgba(0, 0, 0, 0.75);
+  --lg-ring-focus: 0 0 0 var(--lg-ring) rgba(91, 108, 255, 0.22);
+}
+
+/* =========================== 8. 光影元素 ================================= */
+:root {
+  /* 毛玻璃参数：全站最多 1 处，blur ≤ 16px */
+  --lg-blur: 14px;
+  --lg-saturate: 150%;
+
+  /* 背景光球：不用 filter:blur()，靠多段 alpha 渐变自带柔边 */
+  --lg-orb-1: radial-gradient(
+    circle at 35% 35%,
+    rgba(109, 123, 255, 0.92),
+    rgba(109, 123, 255, 0.45) 40%,
+    rgba(109, 123, 255, 0.12) 62%,
+    transparent 74%
+  );
+  --lg-orb-2: radial-gradient(
+    circle at 60% 40%,
+    rgba(192, 107, 255, 0.88),
+    rgba(192, 107, 255, 0.42) 40%,
+    rgba(192, 107, 255, 0.1) 62%,
+    transparent 74%
+  );
+  --lg-orb-3: radial-gradient(
+    circle at 50% 50%,
+    rgba(47, 216, 230, 0.8),
+    rgba(47, 216, 230, 0.36) 40%,
+    rgba(47, 216, 230, 0.1) 62%,
+    transparent 74%
+  );
+  --lg-orb-4: radial-gradient(
+    circle at 50% 50%,
+    rgba(255, 122, 184, 0.72),
+    rgba(255, 122, 184, 0.3) 40%,
+    rgba(255, 122, 184, 0.08) 62%,
+    transparent 74%
+  );
+  --lg-orb-opacity: 0.75;
+
+  /* 鼠标跟随光斑 */
+  --lg-spot: radial-gradient(
+    circle,
+    rgba(120, 140, 255, 0.34),
+    rgba(120, 140, 255, 0.12) 45%,
+    transparent 68%
+  );
+  --lg-spot-size: calc(var(--k) * 340px);
+
+  /* 高光扫过（按钮 / Logo） */
+  --lg-sweep: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.55), transparent);
+  --lg-sweep-wide: linear-gradient(
+    115deg,
+    transparent 30%,
+    rgba(255, 255, 255, 0.75),
+    transparent 70%
+  );
+
+  /* 质感层 */
+  --lg-noise-opacity: 0.035;
+  --lg-grid-size: calc(var(--k) * 56px);
+  --lg-grid-mask: radial-gradient(ellipse 90% 70% at 50% 40%, #000 30%, transparent 78%);
+
+  /* 主渐变（品牌 → 紫） */
+  --lg-gradient-brand: linear-gradient(135deg, var(--lg-brand-500), var(--lg-violet-500));
+  --lg-gradient-flow: linear-gradient(
+    120deg,
+    var(--lg-brand-500),
+    var(--lg-violet-500),
+    var(--lg-brand-500),
+    var(--lg-violet-500)
+  );
+  --lg-gradient-ok: linear-gradient(135deg, var(--lg-cyan-500), var(--lg-success));
+}
+
+/* =========================== 9. 动效 ===================================== */
+:root {
+  /* 时长 */
+  --lg-t-instant: 0.18s; /* 按下反馈 */
+  --lg-t-fast: 0.24s; /* 标签浮动、颜色过渡 */
+  --lg-t-base: 0.28s; /* 输入框描边、社交按钮 */
+  --lg-t-slow: 0.35s; /* 卡片 3D 回位、选项卡指示条 */
+  --lg-t-panel: 0.42s;
+  --lg-t-enter: 0.9s; /* 卡片入场 */
+  --lg-t-theme: 0.6s; /* 主题切换 */
+
+  /* 缓动 */
+  --lg-e-out: cubic-bezier(0.2, 0.8, 0.3, 1); /* 通用减速 */
+  --lg-e-enter: cubic-bezier(0.16, 1, 0.3, 1); /* 入场（强减速） */
+  --lg-e-spring: cubic-bezier(0.34, 1.4, 0.5, 1); /* 选项卡指示条（回弹） */
+  --lg-e-pop: cubic-bezier(0.2, 1.6, 0.4, 1); /* 勾选框（过冲） */
+
+  /* 装饰循环时长 */
+  --lg-loop-sweep: 3.4s;
+  --lg-loop-flow: 7s;
+  --lg-loop-orb: 22s;
+}
+
+/* =========================== 10. 基础重置 ================================ */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+body {
+  font-family: var(--lg-font-sans);
+  font-size: var(--lg-fs-md);
+  line-height: var(--lg-lh-body);
+  letter-spacing: var(--lg-ls-body);
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+button {
+  font-family: inherit;
+}
+a {
+  color: var(--accent);
+}
+
+/* =========================== 11. 背景光影层 ============================== */
+.lg-bg {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  z-index: 0;
+  contain: layout paint;
+  pointer-events: none;
+}
+.lg-orb {
+  position: absolute;
+  border-radius: 50%;
+  opacity: var(--lg-orb-opacity);
+  transform: translateZ(0);
+}
+.lg-orb.a {
+  width: 52vw;
+  height: 52vw;
+  left: -12vw;
+  top: -14vw;
+  background: var(--lg-orb-1);
+  animation: lgFloat1 var(--lg-loop-orb) ease-in-out infinite;
+}
+.lg-orb.b {
+  width: 46vw;
+  height: 46vw;
+  right: -10vw;
+  top: 2vw;
+  background: var(--lg-orb-2);
+  animation: lgFloat2 26s ease-in-out infinite;
+}
+.lg-orb.c {
+  width: 40vw;
+  height: 40vw;
+  left: 22vw;
+  bottom: -16vw;
+  background: var(--lg-orb-3);
+  animation: lgFloat3 30s ease-in-out infinite;
+}
+.lg-orb.d {
+  width: 30vw;
+  height: 30vw;
+  right: 18vw;
+  bottom: -8vw;
+  background: var(--lg-orb-4);
+  animation: lgFloat1 24s ease-in-out infinite reverse;
+}
+@keyframes lgFloat1 {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  33% {
+    transform: translate(6vw, 4vw) scale(1.12);
+  }
+  66% {
+    transform: translate(-3vw, 7vw) scale(0.94);
+  }
+}
+@keyframes lgFloat2 {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  40% {
+    transform: translate(-7vw, 6vw) scale(1.15);
+  }
+  70% {
+    transform: translate(4vw, -4vw) scale(0.92);
+  }
+}
+@keyframes lgFloat3 {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(5vw, -6vw) scale(1.1);
+  }
+}
+
+.lg-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(var(--lg-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--lg-line) 1px, transparent 1px);
+  background-size: var(--lg-grid-size) var(--lg-grid-size);
+  -webkit-mask-image: var(--lg-grid-mask);
+  mask-image: var(--lg-grid-mask);
+  opacity: 0.7;
+}
+.lg-noise {
+  position: absolute;
+  inset: 0;
+  opacity: var(--lg-noise-opacity);
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3'/></filter><rect width='140' height='140' filter='url(%23n)'/></svg>");
+}
+.lg-spark {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 12px 3px rgba(140, 160, 255, 0.9);
+  animation: lgRise linear infinite;
+}
+@keyframes lgRise {
+  0% {
+    transform: translateY(110vh) scale(0.4);
+    opacity: 0;
+  }
+  10% {
+    opacity: 0.9;
+  }
+  90% {
+    opacity: 0.7;
+  }
+  100% {
+    transform: translateY(-10vh) scale(1);
+    opacity: 0;
+  }
+}
+
+/* =========================== 12. 组件 ==================================== */
+
+/* ---- 12.1 玻璃卡片 ---- */
+.lg-card {
+  position: relative;
+  width: 100%;
+  max-width: var(--lg-w-card);
+  padding: var(--lg-pad-card-t) var(--lg-pad-card-x) var(--lg-pad-card-b);
+  border-radius: var(--lg-r-4xl);
+  background: var(--lg-glass);
+  border: var(--lg-bd) solid var(--lg-stroke);
+  backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate));
+  -webkit-backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate));
+  box-shadow: var(--lg-sh-card);
+  overflow: hidden;
+}
+.lg-card::after {
+  /* 顶部高光边 */
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.6), transparent 38%);
+  opacity: 0.5;
+}
+
+/* ---- 12.2 排印 ---- */
+.lg-eyebrow {
+  font-size: var(--lg-fs-2xs);
+  letter-spacing: var(--lg-ls-caps);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.lg-h1 {
+  font-size: var(--lg-fs-display);
+  font-weight: var(--lg-fw-b);
+  letter-spacing: var(--lg-ls-title);
+  line-height: var(--lg-lh-tight);
+}
+.lg-h2 {
+  font-size: var(--lg-fs-xl);
+  font-weight: var(--lg-fw-b);
+  letter-spacing: -0.2px;
+}
+.lg-sub {
+  font-size: var(--lg-fs-sm);
+  color: var(--muted);
+}
+.lg-note {
+  font-size: var(--lg-fs-2xs);
+  color: var(--muted);
+  opacity: 0.8;
+}
+.lg-mono {
+  font-family: var(--lg-font-mono);
+  font-size: var(--lg-fs-2xs);
+}
+
+/* ---- 12.3 主按钮（流动渐变 + 高光扫过，纯 transform） ---- */
+.lg-btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--lg-s3);
+  width: 100%;
+  height: var(--lg-h-btn);
+  border: 0;
+  border-radius: var(--lg-r-2xl);
+  font-size: var(--lg-fs-lg);
+  font-weight: var(--lg-fw-b);
+  color: #fff;
+  cursor: pointer;
+  background: var(--lg-gradient-brand);
+  box-shadow: var(--lg-sh-5);
+  overflow: hidden;
+  transition:
+    box-shadow var(--lg-t-base),
+    transform var(--lg-t-instant);
+}
+.lg-btn::before {
+  /* 流动渐变层：200% 宽，靠 transform 平移 */
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 200%;
+  height: 100%;
+  z-index: 0;
+  background: var(--lg-gradient-flow);
+  animation: lgFlow var(--lg-loop-flow) linear infinite;
+}
+.lg-btn::after {
+  /* 高光扫过 */
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 45%;
+  height: 100%;
+  background: var(--lg-sweep);
+  transform: skewX(-20deg) translateX(-110%);
+  animation: lgSweep var(--lg-loop-sweep) ease-in-out infinite;
+}
+@keyframes lgFlow {
+  to {
+    transform: translateX(-50%);
+  }
+}
+@keyframes lgSweep {
+  0%,
+  60% {
+    transform: skewX(-20deg) translateX(-110%);
+  }
+  85%,
+  100% {
+    transform: skewX(-20deg) translateX(230%);
+  }
+}
+.lg-btn > span {
+  position: relative;
+  z-index: 2;
+}
+.lg-btn:hover {
+  transform: translateY(calc(var(--k) * -2px));
+  box-shadow: var(--lg-sh-6);
+}
+.lg-btn:active {
+  transform: translateY(0) scale(0.985);
+}
+
+/* ---- 12.4 次级 / 幽灵按钮 ---- */
+.lg-btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--lg-s2);
+  height: var(--lg-h-soc);
+  padding: 0 var(--lg-s7);
+  border: var(--lg-bd) solid var(--lg-line);
+  border-radius: var(--lg-r-xl);
+  background: var(--lg-field);
+  color: var(--muted);
+  font-size: var(--lg-fs-sm);
+  font-weight: var(--lg-fw-m);
+  cursor: pointer;
+  transition: 0.28s var(--lg-e-out);
+}
+.lg-btn-ghost:hover {
+  color: var(--text);
+  border-color: var(--accent);
+  transform: translateY(calc(var(--k) * -2px));
+  box-shadow: var(--lg-sh-4);
+}
+
+/* ---- 12.5 输入框（浮动标签） ---- */
+.lg-field {
+  position: relative;
+  margin-bottom: var(--lg-gap-field);
+}
+.lg-field > .lg-ico {
+  position: absolute;
+  left: var(--lg-s7);
+  top: 50%;
+  transform: translateY(-50%);
+  width: var(--lg-ico-md);
+  height: var(--lg-ico-md);
+  color: var(--muted);
+  pointer-events: none;
+  transition: var(--lg-t-fast) var(--lg-e-out);
+  z-index: 2;
+}
+.lg-input {
+  width: 100%;
+  height: var(--lg-h-input);
+  padding: var(--lg-s11) calc(var(--k) * 46px) var(--lg-s3);
+  border: var(--lg-bd) solid var(--lg-line);
+  border-radius: var(--lg-r-2xl);
+  background: var(--lg-field);
+  color: var(--text);
+  font-size: var(--lg-fs-md2);
+  font-family: inherit;
+  outline: none;
+  transition: var(--lg-t-base) var(--lg-e-out);
+}
+.lg-input:focus {
+  border-color: var(--accent);
+  background: var(--lg-field-focus);
+  box-shadow:
+    var(--lg-ring-focus),
+    0 10px 26px -14px rgba(91, 108, 255, 0.9);
+}
+.lg-label {
+  position: absolute;
+  left: calc(var(--k) * 44px);
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: var(--lg-fs-md);
+  color: var(--muted);
+  pointer-events: none;
+  transition: var(--lg-t-fast) var(--lg-e-out);
+}
+.lg-input:focus + .lg-label,
+.lg-input:not(:placeholder-shown) + .lg-label {
+  top: var(--lg-s5);
+  transform: none;
+  font-size: var(--lg-fs-2xs);
+  letter-spacing: 0.4px;
+  color: var(--accent);
+  font-weight: var(--lg-fw-m);
+}
+.lg-input:focus ~ .lg-ico {
+  color: var(--accent);
+}
+.lg-field.is-bad .lg-input {
+  border-color: var(--danger);
+  box-shadow: var(--lg-ring-error);
+}
+.lg-err {
+  font-size: var(--lg-fs-2xs);
+  color: var(--danger);
+  margin: var(--lg-s2) 0 0 var(--lg-s2);
+  height: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition: var(--lg-t-fast);
+}
+.lg-field.is-bad .lg-err {
+  height: var(--lg-s7);
+  opacity: 1;
+  margin-bottom: var(--lg-s3);
+}
+
+/* ---- 12.6 复选框 ---- */
+.lg-check {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--lg-s4);
+  font-size: var(--lg-fs-sm);
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+}
+.lg-check input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.lg-check .lg-box {
+  width: var(--lg-h-check);
+  height: var(--lg-h-check);
+  border-radius: var(--lg-r-xs);
+  border: var(--lg-bd-2) solid var(--lg-line);
+  background: var(--lg-field);
+  display: grid;
+  place-items: center;
+  flex: none;
+  transition: var(--lg-t-fast) var(--lg-e-out);
+}
+.lg-check input:checked + .lg-box {
+  background: var(--lg-gradient-brand);
+  border-color: transparent;
+  box-shadow: var(--lg-sh-1);
+}
+.lg-check .lg-box svg {
+  width: var(--lg-ico-sm);
+  height: var(--lg-ico-sm);
+  color: #fff;
+  opacity: 0;
+  transform: scale(0.4);
+  transition: var(--lg-t-fast) var(--lg-e-pop);
+}
+.lg-check input:checked + .lg-box svg {
+  opacity: 1;
+  transform: scale(1);
+}
+.lg-check:hover {
+  color: var(--text);
+}
+
+/* ---- 12.7 选项卡 ---- */
+.lg-tabs {
+  position: relative;
+  display: flex;
+  gap: var(--lg-s1);
+  padding: var(--lg-s1);
+  border-radius: var(--lg-r-2xl);
+  background: var(--lg-glass-2);
+  border: var(--lg-bd) solid var(--lg-line);
+  margin-bottom: var(--lg-gap-block);
+}
+.lg-tabs button {
+  flex: 1;
+  position: relative;
+  z-index: 2;
+  padding: var(--lg-s4) 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  font-size: var(--lg-fs-md);
+  font-weight: var(--lg-fw-m);
+  color: var(--muted);
+  border-radius: var(--lg-r-md);
+  transition: color var(--lg-t-base);
+}
+.lg-tabs button.on {
+  color: var(--text);
+}
+.lg-tabs .lg-ind {
+  position: absolute;
+  top: var(--lg-s1);
+  left: var(--lg-s1);
+  height: calc(100% - var(--k) * 8px);
+  width: calc(50% - var(--k) * 4px);
+  border-radius: var(--lg-r-md);
+  background: linear-gradient(135deg, rgba(91, 108, 255, 0.22), rgba(168, 85, 247, 0.22));
+  border: var(--lg-bd) solid rgba(255, 255, 255, 0.5);
+  box-shadow: var(--lg-sh-3);
+  transition: transform var(--lg-t-panel) var(--lg-e-spring);
+}
+
+/* ---- 12.8 标签 Chip ---- */
+.lg-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--lg-s2);
+  padding: var(--lg-s2) var(--lg-s5);
+  border-radius: var(--lg-r-full);
+  background: var(--lg-glass-2);
+  border: var(--lg-bd) solid var(--lg-line);
+  font-size: var(--lg-fs-2xs);
+  font-weight: var(--lg-fw-m);
+  color: var(--muted);
+}
+.lg-chip.is-accent {
+  color: var(--accent);
+  border-color: var(--lg-brand-200);
+  background: var(--lg-brand-50);
+}
+.lg-chip.is-ok {
+  color: var(--ok);
+  border-color: rgba(16, 185, 129, 0.35);
+  background: var(--lg-success-soft);
+}
+.lg-chip.is-warn {
+  color: #b45309;
+  border-color: rgba(245, 158, 11, 0.35);
+  background: var(--lg-warning-soft);
+}
+.lg-chip.is-bad {
+  color: var(--danger);
+  border-color: rgba(239, 68, 68, 0.35);
+  background: var(--lg-danger-soft);
+}
+[data-theme='dark'] .lg-chip.is-accent {
+  background: rgba(91, 108, 255, 0.18);
+  border-color: rgba(91, 108, 255, 0.4);
+}
+[data-theme='dark'] .lg-chip.is-warn {
+  color: #fbbf24;
+}
+
+/* ---- 12.9 分割线 ---- */
+.lg-divider {
+  display: flex;
+  align-items: center;
+  gap: var(--lg-s5);
+  margin: var(--lg-gap-block) 0 var(--lg-s7);
+  color: var(--muted);
+  font-size: var(--lg-fs-2xs);
+}
+.lg-divider::before,
+.lg-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--lg-line);
+}
+
+/* ---- 12.10 悬浮控制按钮 ---- */
+.lg-ctrl {
+  position: fixed;
+  top: var(--lg-s10);
+  right: var(--lg-s10);
+  z-index: 9;
+  display: flex;
+  gap: var(--lg-s4);
+}
+.lg-ctrl button {
+  width: var(--lg-h-ctrl);
+  height: var(--lg-h-ctrl);
+  border-radius: var(--lg-r-full);
+  border: var(--lg-bd) solid var(--lg-stroke);
+  background: var(--lg-glass-solid);
+  color: var(--text);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  box-shadow: var(--lg-sh-3);
+  transition: var(--lg-t-fast) var(--lg-e-out);
+}
+.lg-ctrl button:hover {
+  transform: translateY(calc(var(--k) * -2px));
+}
+.lg-ctrl button svg {
+  width: var(--lg-ico-md);
+  height: var(--lg-ico-md);
+}
+
+/* ---- 12.11 提示气泡 ---- */
+.lg-toast {
+  position: fixed;
+  bottom: var(--lg-s11);
+  left: 50%;
+  z-index: 20;
+  padding: var(--lg-s4) var(--lg-s8);
+  border-radius: var(--lg-r-xl);
+  background: var(--lg-glass-solid-2);
+  border: var(--lg-bd) solid var(--lg-stroke);
+  color: var(--text);
+  font-size: var(--lg-fs-xs);
+  font-weight: var(--lg-fw-m);
+  box-shadow: var(--lg-sh-4);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-50%) translateY(140%);
+  transition:
+    transform 0.38s var(--lg-e-spring),
+    opacity 0.38s;
+}
+.lg-toast.on {
+  transform: translateX(-50%) translateY(0);
+  opacity: 1;
+}
+
+/* ---- 12.12 成功态 ---- */
+.lg-done {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--lg-s6);
+  background: var(--lg-glass-solid-2);
+}
+.lg-done.on {
+  display: flex;
+}
+.lg-done .lg-ring {
+  width: calc(var(--k) * 86px);
+  height: calc(var(--k) * 86px);
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--lg-success-soft);
+  border: var(--lg-bd-2) solid rgba(16, 185, 129, 0.5);
+  box-shadow: var(--lg-glow-ok);
+}
+.lg-done .lg-ring svg {
+  width: calc(var(--k) * 40px);
+  height: calc(var(--k) * 40px);
+}
+.lg-done .lg-ring path {
+  fill: none;
+  stroke: var(--ok);
+  stroke-width: 3.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 44;
+  stroke-dashoffset: 44;
+  animation: lgDraw 0.55s 0.12s ease forwards;
+}
+@keyframes lgDraw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+.lg-done b {
+  font-size: var(--lg-fs-2xl);
+}
+.lg-done span {
+  font-size: var(--lg-fs-xs);
+  color: var(--muted);
+}
+
+/* =========================== 13. 性能模式 / 无障碍 ======================= */
+/* 离屏暂停 */
+body.paused .lg-orb,
+body.paused .lg-spark,
+body.paused .lg-btn::before,
+body.paused .lg-btn::after {
+  animation-play-state: paused;
+}
+
+/* 低特效：关毛玻璃、隐藏粒子噪点光斑 */
+[data-fx='lite'] .lg-orb {
+  animation: none;
+}
+[data-fx='lite'] .lg-spark,
+[data-fx='lite'] .lg-noise {
+  display: none;
+}
+[data-fx='lite'] .lg-card {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  background: var(--lg-glass-solid-2);
+}
+[data-fx='lite'] .lg-btn::before,
+[data-fx='lite'] .lg-btn::after {
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lg-orb,
+  .lg-spark,
+  .lg-btn::before,
+  .lg-btn::after {
+    animation: none !important;
+  }
+}
+
+/* =========================== 14. 自适应：--k 计算脚本契约 ================ */
+/* JS 侧约定（与 login.html 一致）：
+     var REF_W=1440, REF_H=900, BASE_H=820, MIN_K=.92, MAX_K=1.5, GAIN=.7;
+     base = Math.min(w/REF_W, h/REF_H);
+     k    = Math.min(Math.max(.92, Math.min(1.5, 1 + (base-1)*GAIN)), (h-60)/BASE_H);
+     document.documentElement.style.setProperty('--k', k.toFixed(2));
+   实测：1366×768→0.86｜1440×900→1.00｜1920×1080→1.14｜2560×1440→1.42｜3840×2160→1.50 */
