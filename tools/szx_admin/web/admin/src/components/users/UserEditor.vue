@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import Button from 'primevue/button'
-import InputText from 'primevue/inputtext'
-import Select from 'primevue/select'
+import {
+  LuminaButton as Button,
+  LuminaInput as InputText,
+  LuminaSelect as Select,
+} from '../../ui/lumina'
 import { computed } from 'vue'
 import type { Role, User } from '../../api/types'
 import type { UserAction, UserDraft } from '../../composables/useUsersViewModel'
@@ -32,8 +34,6 @@ const roleOptions = computed(() =>
       type="button"
       :disabled="busy"
       @click="emit('reload')"
-      severity="secondary"
-      outlined
     >
       {{ t('users.reload') }}
     </Button>
@@ -133,13 +133,14 @@ const roleOptions = computed(() =>
       {{ t('users.resetWarning') }}
     </p>
     <div class="modal-actions">
-      <Button type="button" :disabled="busy" @click="emit('close')" severity="secondary" outlined>
+      <Button type="button" :disabled="busy" @click="emit('close')">
         {{ action === 'details' ? t('common.close') : t('common.cancel') }}</Button
       ><Button
         v-if="action !== 'details'"
         class="primary"
         :disabled="busy || conflict || (!!error && !!user && action !== 'reset')"
         type="submit"
+        variant="primary"
       >
         {{ busy ? t('common.processing') : t('common.confirm') }}
       </Button>

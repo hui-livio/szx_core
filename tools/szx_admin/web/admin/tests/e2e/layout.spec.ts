@@ -717,3 +717,151 @@ test('native context menu is prevented on pages and teleported overlays', async 
   await dialog.getByRole('button', { name: '取消', exact: true }).click()
   await expect(dialog).toHaveCount(0)
 })
+
+test('compact appearance controls work before and after login and persist only preferences', async ({
+  page,
+}) => {
+  await page.goto('/login')
+  const theme = page.getByRole('switch', { name: '深色主题', exact: true })
+  const performance = page.getByRole('switch', { name: '性能模式', exact: true })
+  await expect(theme).toHaveAttribute('aria-checked', 'false')
+  await expect(performance).toHaveAttribute('aria-checked', 'true')
+  const width = await page.locator('.language-switcher .p-select').evaluate((element) => {
+    const k = Number(getComputedStyle(document.documentElement).getPropertyValue('--k'))
+    return element.getBoundingClientRect().width / k
+  })
+  expect(width).toBeLessThan(95)
+  await theme.click()
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
+  await performance.click()
+  await expect(page.locator('html')).toHaveAttribute('data-fx', 'full')
+  await page.reload()
+  await expect(theme).toHaveAttribute('aria-checked', 'true')
+  await expect(performance).toHaveAttribute('aria-checked', 'false')
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
+  await expect(page.locator('html')).toHaveAttribute('data-fx', 'full')
+  await performance.click()
+  await expect(page.locator('html')).toHaveAttribute('data-fx', 'lite')
+  expect(await page.evaluate(() => document.getAnimations().length)).toBe(0)
+  await signInWithRows(page)
+  await expect(
+    page.locator('.topbar').getByRole('switch', { name: '深色主题', exact: true }),
+  ).toHaveAttribute('aria-checked', 'true')
+  await expect(
+    page.locator('.topbar').getByRole('switch', { name: '性能模式', exact: true }),
+  ).toHaveAttribute('aria-checked', 'true')
+  await theme.click()
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
+  expect(await page.evaluate(() => Object.keys(localStorage).sort())).toEqual([
+    'szx-admin-effects',
+    'szx-admin-theme',
+  ])
+  await page.screenshot({ path: 'test-results/appearance-controls-desktop.png' })
+})
+
+test('appearance preferences tolerate blocked storage and honor reduced motion', async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.addInitScript(() => {
+    const get = Storage.prototype.getItem
+    Storage.prototype.getItem = function (key) {
+      if (key.startsWith('szx-admin-') && key !== 'szx-admin-locale')
+        throw new DOMException('Blocked', 'SecurityError')
+      return get.call(this, key)
+    }
+    Storage.prototype.setItem = function () {
+      throw new DOMException('Blocked', 'SecurityError')
+    }
+  })
+  await page.goto('/login')
+  await page.getByRole('switch', { name: '深色主题', exact: true }).click()
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
+  await page.getByRole('switch', { name: '性能模式', exact: true }).click()
+  await expect(page.locator('html')).toHaveAttribute('data-fx', 'full')
+  expect(await page.evaluate(() => document.getAnimations().length)).toBe(0)
+})
+
+test('dark hover and active states stay dark with readable foregrounds', async ({ page }) => {
+  await signInWithRows(page)
+  await page.getByRole('switch', { name: '深色主题', exact: true }).click()
+  const hover = page.locator('.sidebar a[href="/home"]')
+  await hover.hover()
+  expect(await hover.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe(
+    'rgb(38, 43, 69)',
+  )
+  const selected = page.locator('.sidebar a[href="/users"]')
+  const activeGradient = await selected.evaluate(
+    (element) => getComputedStyle(element).backgroundImage,
+  )
+  expect(activeGradient).toContain('rgb(35, 42, 115)')
+  expect(activeGradient).toContain('rgb(63, 26, 102)')
+  const palette = async (selector: string) =>
+    page.locator(selector).evaluate((element) => {
+      const style = getComputedStyle(element)
+      return { background: style.backgroundImage, color: style.color }
+    })
+  expect(await palette('.avatar')).toEqual(await palette('.sidebar .brand-mark'))
+  expect((await palette('.avatar')).color).toBe('rgb(255, 255, 255)')
+  await hover.click()
+  await expect(page).toHaveURL('/home')
+  const secondary = page.locator('.main a[href="/change-password"]')
+  await secondary.hover()
+  const appearance = await secondary.evaluate((element) => {
+    const style = getComputedStyle(element)
+    return { background: style.backgroundColor, color: style.color, border: style.borderColor }
+  })
+  expect(appearance).toEqual({
+    background: 'rgb(38, 43, 69)',
+    color: 'rgb(233, 236, 255)',
+    border: 'rgb(53, 64, 204)',
+  })
+  await page.screenshot({ path: 'test-results/dark-hover-states.png' })
+  await page.getByRole('switch', { name: '深色主题', exact: true }).click()
+  await secondary.hover()
+  expect(await secondary.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe(
+    'rgb(238, 240, 255)',
+  )
+})
+
+test.describe('circular controls at fractional display scale', () => {
+  test.use({ deviceScaleFactor: 1.25 })
+  test('dark circular controls use physical-pixel sizing and smooth SVG strokes', async ({
+    page,
+  }) => {
+    await signInWithRows(page)
+    await page.getByRole('switch', { name: '深色主题', exact: true }).click()
+    const metrics = await page.locator('.lumina-preference-button').evaluateAll((elements) =>
+      elements.map((element) => {
+        const rect = element.getBoundingClientRect()
+        const style = getComputedStyle(element)
+        const icon = element.querySelector('svg')!
+        const iconRect = icon.getBoundingClientRect()
+        const path = icon.querySelector('path')!
+        return {
+          width: rect.width * devicePixelRatio,
+          height: rect.height * devicePixelRatio,
+          iconWidth: iconRect.width * devicePixelRatio,
+          border: style.borderColor,
+          shadow: style.boxShadow,
+          linecap: getComputedStyle(path).strokeLinecap,
+          vector: getComputedStyle(path).vectorEffect,
+          rendering: icon.getAttribute('shape-rendering'),
+        }
+      }),
+    )
+    for (const metric of metrics) {
+      expect(Math.abs(metric.width - Math.round(metric.width))).toBeLessThan(0.03)
+      expect(Math.abs(metric.height - Math.round(metric.height))).toBeLessThan(0.03)
+      expect(Math.abs(metric.iconWidth - Math.round(metric.iconWidth))).toBeLessThan(0.03)
+      expect(metric.border).toBe('rgba(0, 0, 0, 0)')
+      expect(metric.shadow).not.toBe('none')
+      expect(metric.linecap).toBe('round')
+      expect(metric.vector).toBe('non-scaling-stroke')
+      expect(metric.rendering).toBe('geometricPrecision')
+    }
+    await expect(page.locator('.brand-mark.lumina-mark')).toHaveText('S')
+    await expect(page.locator('.avatar.lumina-mark')).toHaveText('系')
+    await page.screenshot({ path: 'test-results/dark-controls-fractional-scale.png' })
+  })
+})

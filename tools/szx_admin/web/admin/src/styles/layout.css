@@ -41,20 +41,6 @@
   color: var(--text);
 }
 
-.brand-mark {
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-  width: var(--lg-h-ctrl);
-  height: var(--lg-h-ctrl);
-  background: var(--lg-gradient-brand);
-  color: white;
-  border: 1px solid var(--lg-stroke);
-  border-radius: var(--lg-r-lg);
-  box-shadow: var(--lg-sh-2);
-  font-size: var(--lg-fs-display);
-}
-
 .brand-light {
   font-size: var(--lg-fs-2xs);
   letter-spacing: var(--lg-ls-caps);
@@ -95,15 +81,15 @@
 }
 
 .sidebar nav a:hover {
-  background: var(--lg-brand-50);
+  background: var(--lg-hover-surface);
   color: var(--accent);
   text-decoration: none;
 }
 
 .sidebar nav a.router-link-active {
   color: var(--accent);
-  background: linear-gradient(135deg, var(--lg-brand-50), var(--lg-violet-50));
-  border-color: var(--lg-brand-200);
+  background: var(--lg-active-surface);
+  border-color: var(--lg-active-border);
   font-weight: var(--lg-fw-m);
 }
 
@@ -194,7 +180,9 @@
 }
 
 .language-switcher .p-select {
-  min-width: calc(var(--k) * 120px);
+  min-width: calc(var(--k) * 86px);
+  width: calc(var(--k) * 86px);
+  flex: none;
   padding: 0;
   color: var(--text);
   background: transparent;
@@ -241,19 +229,6 @@
   display: block;
   margin-top: var(--lg-s1);
   font-size: var(--lg-fs-2xs);
-}
-
-.avatar {
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-  width: var(--lg-h-icon);
-  height: var(--lg-h-icon);
-  background: var(--lg-brand-100);
-  color: var(--accent);
-  border: 1px solid var(--lg-stroke);
-  border-radius: 50%;
-  font-weight: var(--lg-fw-b);
 }
 
 .main {
@@ -570,4 +545,11 @@
   .login-panel > small {
     margin-top: var(--lg-s9);
   }
+}
+
+.ui-preferences {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--lg-s3);
+  flex-shrink: 0;
 }

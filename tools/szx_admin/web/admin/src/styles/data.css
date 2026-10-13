@@ -1,0 +1,35 @@
+/* Administrative states; not part of the reusable Lumina UI directory. */
+[data-theme='dark'] .role-badge,
+[data-theme='dark'] .capability-list span,
+[data-theme='dark'] .credential,
+[data-theme='dark'] .log-tabs button.active {
+  color: var(--lg-brand-200);
+  background: var(--lg-brand-900);
+  border-color: var(--lg-brand-700);
+}
+
+[data-theme='dark'] .alert.error {
+  color: var(--danger-ink);
+}
+
+[data-theme='dark'] .alert.success {
+  color: var(--success-ink);
+}
+
+[data-theme='dark'] .alert.warning {
+  color: var(--warning-ink);
+}
+
+.admin-table .user-link,
+.admin-table .table-actions .p-button,
+.admin-table .text-button {
+  background: transparent;
+  border: 0;
+  color: var(--accent);
+  padding: var(--lg-s2) 0;
+  min-height: calc(var(--k) * 32px);
+}
+
+.admin-table .table-actions .danger-text {
+  color: var(--danger-ink);
+}

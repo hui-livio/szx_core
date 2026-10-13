@@ -2,6 +2,14 @@ import en from './en-US'
 
 export default {
   ...en,
+  appearance: {
+    theme: 'Thème sombre',
+    performance: 'Mode performance',
+    light: 'Thème clair : passer au thème sombre',
+    dark: 'Thème sombre : passer au thème clair',
+    lite: 'Mode performance : activer tous les effets',
+    full: 'Tous les effets : activer le mode performance',
+  },
   datePicker: {
     today: 'Aujourd’hui',
     clear: 'Effacer',

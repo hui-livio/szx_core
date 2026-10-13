@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import Button from 'primevue/button'
-import InputText from 'primevue/inputtext'
+import { LuminaButton as Button, LuminaInput as InputText } from '../../ui/lumina'
 import { useI18n } from 'vue-i18n'
 const { t } = useI18n()
 const form = defineModel<{ oldPassword: string; password: string; confirmation: string }>({
@@ -60,16 +59,9 @@ const emit = defineEmits<{ submit: []; skip: [] }>()
         :disabled="busy"
     /></label>
     <div class="actions">
-      <Button class="primary" :disabled="busy" type="submit">
+      <Button class="primary" :disabled="busy" type="submit" variant="primary">
         {{ busy ? t('password.submitting') : t('password.submit') }}</Button
-      ><Button
-        v-if="!forced"
-        type="button"
-        :disabled="busy"
-        @click="emit('skip')"
-        severity="secondary"
-        outlined
-      >
+      ><Button v-if="!forced" type="button" :disabled="busy" @click="emit('skip')">
         {{ recommended ? t('password.skip') : t('password.back') }}
       </Button>
     </div>

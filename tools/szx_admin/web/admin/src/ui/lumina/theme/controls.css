@@ -153,51 +153,18 @@
   box-shadow: var(--lg-ring-focus);
 }
 
-.admin-table .p-datatable-table {
-  min-width: calc(var(--k) * 780px);
+.lumina-table .p-datatable-table {
+  min-width: var(--lumina-table-min-width, 0px);
   font-size: var(--lg-fs-sm);
 }
 
-.admin-table .p-datatable-header-cell {
+.lumina-table .p-datatable-header-cell {
   font-size: var(--lg-fs-2xs);
   font-weight: var(--lg-fw-m);
 }
 
-.admin-table .p-datatable-empty-message > td {
+.lumina-table .p-datatable-empty-message > td {
   padding: 0;
-}
-
-:root[data-theme='dark'] {
-  color-scheme: dark;
-  --accent: var(--lg-brand-300);
-  --muted: #8b92b8;
-  --success-ink: #6ee7b7;
-  --warning-ink: #fcd34d;
-  --danger-ink: #fda4af;
-  --table-header-background: var(--lg-n-800);
-  --table-row-hover: var(--lg-n-800);
-  --surface: var(--lg-n-900);
-}
-
-[data-theme='dark'] .role-badge,
-[data-theme='dark'] .capability-list span,
-[data-theme='dark'] .credential,
-[data-theme='dark'] .log-tabs button.active {
-  color: var(--lg-brand-200);
-  background: var(--lg-brand-900);
-  border-color: var(--lg-brand-700);
-}
-
-[data-theme='dark'] .alert.error {
-  color: var(--danger-ink);
-}
-
-[data-theme='dark'] .alert.success {
-  color: var(--success-ink);
-}
-
-[data-theme='dark'] .alert.warning {
-  color: var(--warning-ink);
 }
 
 .p-datepicker {
@@ -270,14 +237,14 @@
 
 /* Own these presentation contracts locally: a theme refresh must not collapse
    business-table spacing or leave a modal without a visible surface. */
-.admin-table .p-datatable-table {
+.lumina-table .p-datatable-table {
   border-collapse: collapse;
   text-align: left;
   color: var(--text);
   background: var(--surface);
 }
 
-.admin-table .p-datatable-header-cell {
+.lumina-table .p-datatable-header-cell {
   padding: var(--lg-s6) var(--lg-s9);
   color: var(--muted);
   background: var(--table-header-background);
@@ -285,31 +252,17 @@
   border-bottom: 1px solid var(--line);
 }
 
-.admin-table .p-datatable-tbody > tr > td {
+.lumina-table .p-datatable-tbody > tr > td {
   padding: var(--lg-s7) var(--lg-s9);
   border: 0;
   border-bottom: 1px solid var(--line);
 }
 
-.admin-table .p-datatable-tbody > tr:hover {
+.lumina-table .p-datatable-tbody > tr:hover {
   background: var(--table-row-hover);
 }
 
-.admin-table .user-link,
-.admin-table .table-actions .p-button,
-.admin-table .text-button {
-  background: transparent;
-  border: 0;
-  color: var(--accent);
-  padding: var(--lg-s2) 0;
-  min-height: calc(var(--k) * 32px);
-}
-
-.admin-table .table-actions .danger-text {
-  color: var(--danger-ink);
-}
-
-.p-dialog.modal {
+.p-dialog.lumina-dialog {
   color: var(--text);
   background: var(--surface);
   border: 1px solid var(--lg-line);
@@ -317,11 +270,11 @@
   box-shadow: var(--lg-sh-card);
 }
 
-.p-dialog.modal .p-dialog-header {
+.p-dialog.lumina-dialog .p-dialog-header {
   padding: var(--lg-s12) var(--lg-s12) var(--lg-s10);
 }
 
-.p-dialog.modal .p-dialog-content {
+.p-dialog.lumina-dialog .p-dialog-content {
   padding: 0 var(--lg-s12) var(--lg-s12);
 }
 
@@ -353,4 +306,105 @@
 .lumina-datetime-panel .p-datepicker-day-selected {
   background: var(--lg-brand-500);
   color: white;
+}
+
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--lg-s8) var(--lg-s10);
+  font-size: var(--lg-fs-xs);
+  color: var(--muted);
+  gap: var(--lg-s6);
+}
+
+.lumina-dialog {
+  width: min(calc(var(--k) * 600px), calc(100vw - 32px));
+  max-height: calc(100dvh - 48px);
+}
+
+.lumina-pagination-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--lg-s3);
+}
+
+.lumina-appearance-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--lg-s2);
+}
+
+.lumina-preference-button.p-button {
+  width: var(--lg-control-px, var(--lg-h-ctrl));
+  height: var(--lg-control-px, var(--lg-h-ctrl));
+  min-height: var(--lg-control-px, var(--lg-h-ctrl));
+  padding: 0;
+  flex-shrink: 0;
+  border: 1px solid transparent;
+  box-shadow:
+    inset 0 0 0 1px var(--lg-control-ring),
+    0 0 0 0.5px var(--lg-control-halo);
+  border-radius: var(--lg-r-full);
+}
+
+.lumina-preference-button.p-button[aria-checked='true'] {
+  background: var(--lg-brand-100);
+  border-color: transparent;
+  color: var(--accent);
+}
+
+.lumina-preference-button svg {
+  width: var(--lg-icon-px, 20px);
+  height: var(--lg-icon-px, 20px);
+}
+
+[data-theme='dark'] .lumina-preference-button.p-button[aria-checked='true'] {
+  background: var(--lg-brand-900);
+  color: var(--lg-brand-200);
+}
+
+.lumina-preference-button svg path,
+.lumina-preference-button svg circle {
+  vector-effect: non-scaling-stroke;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.lumina-preference-button.p-button:not(:disabled):hover {
+  border-color: transparent;
+}
+
+.lumina-preference-button.p-button:focus-visible {
+  outline: none;
+  box-shadow:
+    inset 0 0 0 1px var(--lg-control-ring),
+    var(--lg-ring-focus);
+}
+
+.lumina-mark {
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: var(--lumina-mark-size);
+  height: var(--lumina-mark-size);
+  border-radius: var(--lumina-mark-radius);
+  line-height: 1;
+  font-weight: var(--lumina-mark-font-weight);
+  font-size: var(--lumina-mark-font-size);
+  letter-spacing: 0;
+  overflow: hidden;
+}
+
+.lumina-mark-brand {
+  background: var(--lg-gradient-brand);
+  color: white;
+  border: 1px solid var(--lg-stroke);
+  box-shadow: var(--lg-sh-2);
+}
+
+.lumina-mark-soft {
+  background: var(--lg-soft-surface);
+  color: var(--accent);
+  border: 1px solid var(--lg-soft-border);
 }

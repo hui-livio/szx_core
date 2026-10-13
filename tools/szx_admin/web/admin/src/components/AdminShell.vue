@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import Button from 'primevue/button'
+import { LuminaButton as Button, LuminaMark } from '../ui/lumina'
 import { useShellViewModel } from '../composables/useAuthViewModel'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
-import LanguageSwitcher from './LanguageSwitcher.vue'
+import UiPreferences from './UiPreferences.vue'
 const { links, logout, user, title, role, passwordLink, busy, error } = useShellViewModel()
 const { t } = useI18n()
 const route = useRoute()
@@ -15,7 +15,7 @@ const route = useRoute()
   >
     <aside class="sidebar">
       <div class="brand">
-        <span class="brand-mark">S</span>
+        <LuminaMark class="brand-mark" />
         <div>
           SZX <span class="brand-light">ADMIN</span
           ><small>{{ t('shell.identityManagement') }}</small>
@@ -38,8 +38,16 @@ const route = useRoute()
           >{{ t('shell.console') }} <span>/</span> <strong>{{ title }}</strong></span
         >
         <div class="account">
-          <LanguageSwitcher />
-          <span class="avatar">{{ user?.display_name.slice(0, 1) }}</span>
+          <UiPreferences />
+          <LuminaMark
+            class="avatar"
+            :text="user?.display_name.slice(0, 1)"
+            variant="brand"
+            radius="50%"
+            size="var(--lg-h-icon)"
+            font-size="var(--lg-fs-xl)"
+            :font-weight="500"
+          />
           <div>
             {{ user?.display_name }}<small>{{ role }}</small>
           </div>
@@ -51,8 +59,7 @@ const route = useRoute()
             :disabled="busy"
             @click="logout"
             type="button"
-            severity="secondary"
-            text
+            variant="text"
           >
             {{ busy ? t('shell.logoutBusy') : t('shell.logout') }}
           </Button>

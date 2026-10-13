@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import Button from 'primevue/button'
+import { LuminaButton as Button } from '../../ui/lumina'
 import type { CredentialIssue } from '../../api/types'
 import { formatTime } from '../../domain'
 import { useI18n } from 'vue-i18n'
@@ -21,7 +21,7 @@ const emit = defineEmits<{ close: [] }>()
       <dd>{{ formatTime(issue.temporary_credential_expires_at) }}</dd>
     </dl>
     <p class="request-id">{{ t('common.requestId') }}：{{ requestId }}</p>
-    <Button class="primary" @click="emit('close')" type="button">{{
+    <Button class="primary" @click="emit('close')" type="button" variant="primary">{{
       t('users.acknowledged')
     }}</Button>
   </div>

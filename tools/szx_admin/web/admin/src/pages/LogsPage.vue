@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import Button from 'primevue/button'
+import { LuminaButton as Button } from '../ui/lumina'
 import { ref } from 'vue'
 import { useLogsViewModel } from '../composables/useLogsViewModel'
 import { useBehaviorEventsViewModel } from '../composables/useBehaviorEventsViewModel'
@@ -66,8 +66,6 @@ const {
         :class="{ active: activeTab === 'audit' }"
         @click="activeTab = 'audit'"
         type="button"
-        severity="secondary"
-        outlined
       >
         {{ t('audit.auditTab') }}</Button
       ><Button
@@ -76,8 +74,6 @@ const {
         :class="{ active: activeTab === 'behavior' }"
         @click="activeTab = 'behavior'"
         type="button"
-        severity="secondary"
-        outlined
       >
         {{ t('audit.behaviorTab') }}
       </Button>
@@ -95,9 +91,7 @@ const {
         <h2>
           {{ t('audit.records') }} <span class="count">{{ total }}</span>
         </h2>
-        <Button :disabled="busy" @click="load()" type="button" severity="secondary" outlined>{{
-          t('audit.refreshLogs')
-        }}</Button>
+        <Button :disabled="busy" @click="load()" type="button">{{ t('audit.refreshLogs') }}</Button>
       </div>
       <p v-if="error" class="alert error" role="alert">{{ error }}</p>
       <LogTable :logs="logs" :busy="busy" :failed="!!error" @details="showAudit" /><PaginationBar
@@ -123,13 +117,7 @@ const {
         <h2>
           {{ t('audit.events') }} <span class="count">{{ behaviorTotal }}</span>
         </h2>
-        <Button
-          :disabled="behaviorBusy"
-          @click="loadBehavior()"
-          type="button"
-          severity="secondary"
-          outlined
-        >
+        <Button :disabled="behaviorBusy" @click="loadBehavior()" type="button">
           {{ t('audit.refreshEvents') }}
         </Button>
       </div>
@@ -194,9 +182,7 @@ const {
       <h3>{{ t('audit.details') }}</h3>
       <pre class="json-details">{{ JSON.stringify(auditSelected.details, null, 2) }}</pre>
       <div class="modal-actions">
-        <Button @click="closeAudit" type="button" severity="secondary" outlined>{{
-          t('common.close')
-        }}</Button>
+        <Button @click="closeAudit" type="button">{{ t('common.close') }}</Button>
       </div></ModalDialog
     >
     <ModalDialog
@@ -232,9 +218,7 @@ const {
       <h3>{{ t('audit.details') }}</h3>
       <pre class="json-details">{{ JSON.stringify(behaviorSelected.details, null, 2) }}</pre>
       <div class="modal-actions">
-        <Button @click="closeBehavior" type="button" severity="secondary" outlined>{{
-          t('common.close')
-        }}</Button>
+        <Button @click="closeBehavior" type="button">{{ t('common.close') }}</Button>
       </div></ModalDialog
     >
   </div>

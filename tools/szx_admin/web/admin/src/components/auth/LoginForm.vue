@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import Button from 'primevue/button'
-import InputText from 'primevue/inputtext'
+import { LuminaButton as Button, LuminaInput as InputText } from '../../ui/lumina'
 import { useI18n } from 'vue-i18n'
 const { t } = useI18n()
 const form = defineModel<{
@@ -36,7 +35,7 @@ const emit = defineEmits<{ submit: [] }>()
         required
         :disabled="busy"
     /></label>
-    <Button class="primary login-submit" :disabled="busy" type="submit">
+    <Button class="primary login-submit" :disabled="busy" type="submit" variant="primary">
       {{ busy ? t('login.submitting') : t('login.submit') }}<span aria-hidden="true">→</span>
     </Button>
   </form>

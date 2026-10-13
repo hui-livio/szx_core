@@ -2,6 +2,14 @@ import zh from './zh-CN'
 
 export default {
   ...zh,
+  appearance: {
+    theme: 'Dark theme',
+    performance: 'Performance mode',
+    light: 'Light theme: switch to dark',
+    dark: 'Dark theme: switch to light',
+    lite: 'Performance mode: enable full effects',
+    full: 'Full effects: enable performance mode',
+  },
   datePicker: {
     today: 'Today',
     clear: 'Clear',

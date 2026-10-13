@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import Button from 'primevue/button'
-import DataTable from 'primevue/datatable'
-import Column from 'primevue/column'
+import {
+  LuminaButton as Button,
+  LuminaTable as DataTable,
+  LuminaColumn as Column,
+} from '../../ui/lumina'
 import type { AuditLog } from '../../api/types'
 import type { AuditLogView } from '../../composables/useLogsViewModel'
 import { formatTime, resultLabels } from '../../domain'
@@ -15,6 +17,7 @@ const emit = defineEmits<{ details: [log: AuditLog] }>()
     :value="logs"
     data-key="id"
     class="admin-table"
+    min-width="calc(var(--k) * 780px)"
     :pt="{ tableContainer: { class: 'table-scroll', 'aria-busy': busy } }"
   >
     <Column :header="`${t('common.event')} / ${t('common.requestId')}`">
@@ -43,13 +46,7 @@ const emit = defineEmits<{ details: [log: AuditLog] }>()
     </Column>
     <Column :header="t('common.details')">
       <template #body="{ data }: { data: AuditLogView }">
-        <Button
-          class="text-button"
-          @click="emit('details', data)"
-          type="button"
-          severity="secondary"
-          text
-        >
+        <Button class="text-button" @click="emit('details', data)" type="button" variant="text">
           {{ t('common.details') }}
         </Button>
       </template>

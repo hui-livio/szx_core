@@ -1,46 +1,8 @@
-@layer lumina, primevue, app;
-@import url('./styles/lumina-glass/theme.css') layer(lumina);
+@import url('./ui/lumina/styles.css');
 @import url('./styles/layout.css') layer(app);
-@import url('./styles/primevue.css') layer(app);
+@import url('./styles/data.css') layer(app);
 
 @layer app {
-  :root {
-    font-family: var(--lg-font-sans);
-    color: var(--text);
-    background: var(--bg);
-    font-synthesis: none;
-    text-rendering: optimizeLegibility;
-    --ink: var(--text);
-    --accent: var(--lg-brand-700);
-    --muted: var(--lg-n-600);
-    --line: var(--lg-line);
-    --surface: var(--lg-n-0);
-    --success-ink: #087653;
-    --warning-ink: #895309;
-    --danger-ink: #b42332;
-    --table-header-background: var(--lg-n-50);
-    --table-row-hover: var(--lg-brand-50);
-  }
-
-  /* Lite is the default from the first paint, including component pseudo-elements. */
-  html:not([data-fx='full']) *,
-  html:not([data-fx='full']) *::before,
-  html:not([data-fx='full']) *::after {
-    animation: none !important;
-    transition: none !important;
-    scroll-behavior: auto !important;
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    *,
-    *::before,
-    *::after {
-      animation: none !important;
-      transition: none !important;
-      scroll-behavior: auto !important;
-    }
-  }
-
   body {
     min-width: 320px;
   }
@@ -48,19 +10,6 @@
   #app {
     isolation: isolate;
     min-height: 100dvh;
-  }
-
-  .lg-bg {
-    z-index: -1;
-    background: var(--bg);
-  }
-
-  .lg-orb {
-    opacity: 0.32;
-  }
-
-  .lg-grid {
-    opacity: 0.2;
   }
 
   button,
@@ -89,8 +38,8 @@
 
   button:not(.p-button):hover,
   .button:hover {
-    background: var(--lg-brand-50);
-    border-color: var(--lg-brand-200);
+    background: var(--lg-hover-surface);
+    border-color: var(--lg-hover-border);
   }
 
   button:disabled,
@@ -421,7 +370,7 @@
   .count {
     font-size: var(--lg-fs-xs);
     color: var(--accent);
-    background: var(--lg-brand-50);
+    background: var(--lg-hover-surface);
     border-radius: var(--lg-r-full);
     padding: var(--lg-s1) var(--lg-s4);
     margin-left: var(--lg-s3);
@@ -524,16 +473,6 @@
     color: var(--muted);
   }
 
-  .pagination {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: var(--lg-s8) var(--lg-s10);
-    font-size: var(--lg-fs-xs);
-    color: var(--muted);
-    gap: var(--lg-s6);
-  }
-
   .request-id {
     color: var(--muted);
     font-size: var(--lg-fs-2xs);
@@ -545,11 +484,6 @@
   .json-details {
     font-family: var(--lg-font-mono);
     overflow-wrap: anywhere;
-  }
-
-  .modal {
-    width: min(calc(var(--k) * 600px), calc(100vw - 32px));
-    max-height: calc(100dvh - 48px);
   }
 
   .modal-actions {

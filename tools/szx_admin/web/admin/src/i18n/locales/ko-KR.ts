@@ -2,6 +2,14 @@ import en from './en-US'
 
 export default {
   ...en,
+  appearance: {
+    theme: '어두운 테마',
+    performance: '성능 모드',
+    light: '밝은 테마: 어두운 테마로 전환',
+    dark: '어두운 테마: 밝은 테마로 전환',
+    lite: '성능 모드: 전체 효과 활성화',
+    full: '전체 효과: 성능 모드 활성화',
+  },
   datePicker: {
     today: '오늘',
     clear: '지우기',

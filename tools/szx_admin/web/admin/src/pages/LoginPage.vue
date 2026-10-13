@@ -1,17 +1,18 @@
 <script setup lang="ts">
+import { LuminaMark } from '../ui/lumina'
 import LoginForm from '../components/auth/LoginForm.vue'
 import { useLoginViewModel } from '../composables/useAuthViewModel'
 import { useI18n } from 'vue-i18n'
-import LanguageSwitcher from '../components/LanguageSwitcher.vue'
+import UiPreferences from '../components/UiPreferences.vue'
 const { form, busy, error, notice, submit } = useLoginViewModel()
 const { t } = useI18n()
 </script>
 <template>
   <main class="login-page">
-    <div class="login-language"><LanguageSwitcher /></div>
+    <div class="login-language"><UiPreferences /></div>
     <section class="login-story">
       <div class="brand">
-        <span class="brand-mark">S</span>SZX <span class="brand-light">ADMIN</span>
+        <LuminaMark class="brand-mark" />SZX <span class="brand-light">ADMIN</span>
       </div>
       <div class="login-copy">
         <p class="eyebrow">{{ t('login.eyebrow') }}</p>

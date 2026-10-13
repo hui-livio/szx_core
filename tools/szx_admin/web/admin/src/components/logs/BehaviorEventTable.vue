@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import Button from 'primevue/button'
-import DataTable from 'primevue/datatable'
-import Column from 'primevue/column'
+import {
+  LuminaButton as Button,
+  LuminaTable as DataTable,
+  LuminaColumn as Column,
+} from '../../ui/lumina'
 import type { BehaviorEventRecord } from '../../api/types'
 import { formatTime, resultLabels } from '../../domain'
 import { useI18n } from 'vue-i18n'
@@ -14,6 +16,7 @@ const emit = defineEmits<{ details: [event: BehaviorEventRecord] }>()
     :value="events"
     data-key="id"
     class="admin-table"
+    min-width="calc(var(--k) * 780px)"
     :pt="{ tableContainer: { class: 'table-scroll', 'aria-busy': busy } }"
   >
     <Column :header="`${t('common.event')} / ${t('common.requestId')}`">
@@ -41,13 +44,7 @@ const emit = defineEmits<{ details: [event: BehaviorEventRecord] }>()
     </Column>
     <Column :header="t('common.details')">
       <template #body="{ data }: { data: BehaviorEventRecord }">
-        <Button
-          class="text-button"
-          @click="emit('details', data)"
-          type="button"
-          severity="secondary"
-          text
-        >
+        <Button class="text-button" @click="emit('details', data)" type="button" variant="text">
           {{ t('common.details') }}
         </Button>
       </template>

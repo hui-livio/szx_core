@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import Button from 'primevue/button'
+import { LuminaButton as Button } from '../ui/lumina'
 import { useUsersViewModel } from '../composables/useUsersViewModel'
 import UserFilters from '../components/users/UserFilters.vue'
 import UserTable from '../components/users/UserTable.vue'
@@ -43,7 +43,7 @@ const { busy: saving, error: saveError } = mutation
         <h1>{{ t('users.title') }}</h1>
         <p>{{ t('users.subtitle') }}</p>
       </div>
-      <Button class="primary" @click="open('create')" type="button"
+      <Button class="primary" @click="open('create')" type="button" variant="primary"
         >＋ {{ t('users.create') }}</Button
       >
     </header>
@@ -54,9 +54,7 @@ const { busy: saving, error: saveError } = mutation
         <h2>
           {{ t('users.directory') }} <span class="count">{{ total }}</span>
         </h2>
-        <Button :disabled="busy" @click="load()" type="button" severity="secondary" outlined>{{
-          t('users.refresh')
-        }}</Button>
+        <Button :disabled="busy" @click="load()" type="button">{{ t('users.refresh') }}</Button>
       </div>
       <p v-if="error" class="alert error" role="alert">{{ error }}</p>
       <UserTable

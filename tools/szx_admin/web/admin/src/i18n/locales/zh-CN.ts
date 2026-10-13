@@ -1,4 +1,12 @@
 export default {
+  appearance: {
+    theme: '深色主题',
+    performance: '性能模式',
+    light: '当前为浅色主题，点击切换为深色',
+    dark: '当前为深色主题，点击切换为浅色',
+    lite: '性能模式已开启：低特效，点击启用完整特效',
+    full: '完整特效已开启，点击切换为性能模式',
+  },
   datePicker: {
     today: '今天',
     clear: '清除',

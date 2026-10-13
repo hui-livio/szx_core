@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import Button from 'primevue/button'
-import InputText from 'primevue/inputtext'
-import Select from 'primevue/select'
+import {
+  LuminaButton as Button,
+  LuminaInput as InputText,
+  LuminaSelect as Select,
+} from '../../ui/lumina'
 import LocalDateTimePicker from '../LocalDateTimePicker.vue'
 import { computed, shallowRef } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -69,9 +71,9 @@ const resultOptions = computed(() => [
         v-model="filters.to"
         :label="t('audit.end')"
     /></label>
-    <Button class="primary" :disabled="busy" type="submit">{{ t('audit.queryEvents') }}</Button
-    ><Button type="button" :disabled="busy" @click="reset" severity="secondary" outlined>{{
-      t('common.reset')
-    }}</Button>
+    <Button class="primary" :disabled="busy" type="submit" variant="primary">{{
+      t('audit.queryEvents')
+    }}</Button
+    ><Button type="button" :disabled="busy" @click="reset">{{ t('common.reset') }}</Button>
   </form>
 </template>

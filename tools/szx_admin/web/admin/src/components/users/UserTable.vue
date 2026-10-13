@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import Button from 'primevue/button'
-import DataTable from 'primevue/datatable'
-import Column from 'primevue/column'
+import {
+  LuminaButton as Button,
+  LuminaTable as DataTable,
+  LuminaColumn as Column,
+} from '../../ui/lumina'
 import type { User } from '../../api/types'
 import type { UserAction, UserRowView } from '../../composables/useUsersViewModel'
 import { roleLabels, statusLabels, formatTime } from '../../domain'
@@ -15,6 +17,7 @@ const emit = defineEmits<{ action: [action: UserAction, user: User] }>()
     :value="users"
     data-key="id"
     class="admin-table"
+    min-width="calc(var(--k) * 780px)"
     :pt="{ tableContainer: { class: 'table-scroll', 'aria-busy': busy } }"
   >
     <Column :header="t('common.user')">
@@ -23,8 +26,7 @@ const emit = defineEmits<{ action: [action: UserAction, user: User] }>()
           class="user-link"
           @click="emit('action', 'details', data)"
           type="button"
-          severity="secondary"
-          text
+          variant="text"
         >
           {{ data.display_name }}</Button
         ><small class="identity">{{ data.login_identifier }}</small>
@@ -52,8 +54,7 @@ const emit = defineEmits<{ action: [action: UserAction, user: User] }>()
             :disabled="!data.canManage"
             @click="emit('action', 'name', data)"
             type="button"
-            severity="secondary"
-            text
+            variant="text"
           >
             {{ t('users.edit') }}</Button
           ><Button
@@ -61,8 +62,7 @@ const emit = defineEmits<{ action: [action: UserAction, user: User] }>()
             :disabled="!data.canAssignRole"
             @click="emit('action', 'role', data)"
             type="button"
-            severity="secondary"
-            text
+            variant="text"
           >
             {{ t('users.assignRole') }}</Button
           ><Button
@@ -70,8 +70,7 @@ const emit = defineEmits<{ action: [action: UserAction, user: User] }>()
             :disabled="!data.canManage"
             @click="emit('action', 'unlock', data)"
             type="button"
-            severity="secondary"
-            text
+            variant="text"
           >
             {{ t('users.unlock') }}</Button
           ><Button
@@ -79,16 +78,14 @@ const emit = defineEmits<{ action: [action: UserAction, user: User] }>()
             :disabled="!data.canChangeStatus"
             @click="emit('action', 'status', data)"
             type="button"
-            severity="secondary"
-            text
+            variant="text"
           >
             {{ data.status === 'disabled' ? t('users.enable') : t('users.disable') }}</Button
           ><Button
             :disabled="!data.canManage"
             @click="emit('action', 'reset', data)"
             type="button"
-            severity="secondary"
-            text
+            variant="text"
           >
             {{ t('users.resetPassword') }}
           </Button>

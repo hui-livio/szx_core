@@ -11,7 +11,7 @@ export default defineConfig(({ mode, command }) => {
         handleHotUpdate(context) {
           // The preset seeds PrimeVue's shared runtime style registry.
           // Reboot that registry instead of retaining partially cached component CSS.
-          if (context.file.replaceAll('\\', '/').includes('/src/theme/')) {
+          if (context.file.replaceAll('\\', '/').includes('/src/ui/lumina/theme/')) {
             context.server.ws.send({ type: 'full-reload' })
             return []
           }

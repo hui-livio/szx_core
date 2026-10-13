@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import Button from 'primevue/button'
-import InputText from 'primevue/inputtext'
-import Select from 'primevue/select'
+import {
+  LuminaButton as Button,
+  LuminaInput as InputText,
+  LuminaSelect as Select,
+} from '../../ui/lumina'
 import { computed } from 'vue'
 import type { Role, UserStatus } from '../../api/types'
 import { roleLabels, statusLabels } from '../../domain'
@@ -67,6 +69,8 @@ const sortOptions = computed(() => [
         option-label="label"
         option-value="value"
         :aria-label="t('users.sort')" /></label
-    ><Button class="primary" :disabled="busy" type="submit">{{ t('common.search') }}</Button>
+    ><Button class="primary" :disabled="busy" type="submit" variant="primary">{{
+      t('common.search')
+    }}</Button>
   </form>
 </template>

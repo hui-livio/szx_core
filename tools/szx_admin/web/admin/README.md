@@ -35,15 +35,31 @@ Vue 组件不直接调用 HTTP 或实现业务操作。新增功能时将业务�
 
 ## UI 组件与主题
 
-管理界面使用 PrimeVue `4.5.5` 和 `@primeuix/themes` `2.0.3`（Aura preset），版本固定在 `package.json` 和锁文件中，这两个版本采用 MIT 许可证。
+主题与通用控件集中在独立目录 `src/ui/lumina/`，当前仍是应用内源码模块，**没有独立 npm 包、工作区包管理或单独的库构建**。后续可在边界稳定后再抽为 UI 库。
 
-- `src/theme/luminaAura.ts`：通过 `definePreset(Aura, ...)` 将品牌色、表面色、控件尺寸和圆角映射到现有 `--lg-*` CSS 变量。
-- `src/styles/lumina-glass/theme.css`：继续提供蓝紫光晕、玻璃容器、明暗配色与 `--k` 连续缩放。
-- `src/styles/primevue.css`：连接 PrimeVue 控件与现有页面布局，处理弹出层、语言选择、分页、表格和暗色状态。
+```text
+src/ui/lumina/
+├── components/   # 按钮、输入、下拉、表格、弹窗、日期时间、分页、背景、共享标记、主题/性能模式开关
+├── composables/  # 主题连续缩放
+├── theme/        # Aura preset、主题安装、通用日历 locale、CSS 与字体资源
+├── utils/        # 本地日期时间格式化/校验；不包含 UTC 查询规则
+├── index.ts      # TypeScript / Vue 控件的统一导出入口
+├── styles.css    # 样式入口（调用方显式引入）
+└── README.md     # 控件与接入示例、边界和验证方式
+```
 
-CSS 层顺序为 `lumina → primevue → app`。按钮、文本/密码输入、下拉选择、数据表格、分页和弹窗使用 PrimeVue；日期时间输入使用共享 `LocalDateTimePicker`（PrimeVue DatePicker），提供 24 小时制、秒精度和可主题化弹窗；内部 Date 转回本地时间字符串交给 ViewModel，查询仍通过 `toUtcSeconds` 转为 UTC。手动输入使用 `YYYY-MM-DD HH:mm:ss` 格式，并通过表单有效性校验阻止无效时间提交。数据筛选、排序、分页继续由服务端执行。
+后台组件通过统一入口使用 `LuminaButton`、`LuminaInput`、`LuminaSelect`、`LuminaTable`、`LuminaColumn` 等，不直接导入 PrimeVue。`ModalDialog`、`PaginationBar`、`LocalDateTimePicker` 仅是业务文案适配层；权限、角色、API、路由、会话和右键策略仍归应用所有。UI 目录不导入应用的 `domain`、ViewModel、Pinia 或 vue-i18n。
 
-主题通过 `<html data-theme="light|dark">` 控制；PrimeVue 的 `darkModeSelector` 使用相同属性。默认 `data-fx="lite"`，动效和 Ripple 默认关闭，并尊重 `prefers-reduced-motion`。新增控件优先从 PrimeVue 导入，颜色和尺寸优先复用 `--lg-*` 变量。表格样式限定在 `.admin-table` 内，日历不复用业务表格的全局间距；下拉浮层、对话框与日期面板统一使用不透明的 `--surface`，保留圆角、边框与阴影。所有 `.primary` 主操作按钮使用统一的蓝紫渐变。开发中修改 `src/theme/` preset 时会完整刷新页面，重新初始化 PrimeVue 的样式注册表；由于会话不持久化，需要重新登录。
+- `src/ui/lumina/theme/aura.ts`：映射 Aura token 到现有 `--lg-*` CSS 变量。
+- `src/ui/lumina/theme/glass/`：光晕、玻璃视觉及字体资源，字体许可证随资源保留。
+- `src/ui/lumina/theme/tokens.css`、`controls.css`：通用表面色、低特效规则、控件状态与圆角/阴影。
+- `src/styles/layout.css`、`data.css` 和 `src/style.css`：仅保留后台布局及角色标签、表格操作等应用样式。
+
+CSS 层顺序保持 `lumina → primevue → app`。安装使用 `createLuminaUi()`，组件按需导入，样式显式引入；详细说明见 [Lumina UI 接入说明](src/ui/lumina/README.md)。依赖仍固定为 PrimeVue `4.5.5`、`@primeuix/themes` `2.0.3`，未新增依赖。
+
+主题仍使用 `<html data-theme="light|dark" data-fx="lite|full">`，默认低特效和 Ripple 关闭，尊重系统减少动态效果偏好。缩放由 `useLuminaScale()` 管理。日期时间保持 24 小时制、秒精度和本地字符串模型，后台继续通过 `toUtcSeconds` 生成 UTC 查询参数。主操作按钮统一使用 `variant="primary"`。品牌 S 和用户头像复用 `LuminaMark`，统一蓝紫渐变底色与白色前景，支持独立配置尺寸与圆角；暗色 hover/active 使用专属语义色，不出现浅色块。圆形开关按物理像素对齐并使用柔和 SVG 描线。
+
+开发中修改 `src/ui/lumina/theme/` preset 时完整刷新页面，重新初始化样式注册表；会话不持久化，需要重新登录。登录页和顶部栏均提供紧凑的语言入口、性能模式与深色主题开关；主题/特效偏好分别保存到 `szx-admin-theme` 和 `szx-admin-effects`，只在用户切换时写入，默认浅色 + 低特效。浏览器禁用存储时仍可切换当前页面，系统减少动态效果偏好始终优先。验证用的独立页面位于 `tests/fixtures/lumina/`，不接入后台路由、Pinia 或 API，不进入生产构建。
 
 ## 页面和行为
 
@@ -59,7 +75,7 @@ CSS 层顺序为 `lumina → primevue → app`。按钮、文本/密码输入、
 
 任何用户都不能给自己分配角色或禁用自己；超出管理范围的用户操作按钮不可用，后端同样拒绝。
 
-Access/CSRF token 仅保存在 API 客户端闭包内，refresh token 由 HttpOnly Cookie 管理。没有 localStorage/sessionStorage 持久化，刷新页面后需要重新登录；当前也不做跨标签页会话同步。同一页面并发刷新合并为一次。429/5xx 保留会话并提示手动重试；失败的写请求不自动重复执行，只有明确的 access 鉴权失败会刷新后重试一次。退出仅在服务端成功返回后清除内存会话。
+Access/CSRF token 仅保存在 API 客户端闭包内，refresh token 由 HttpOnly Cookie 管理。会话没有 localStorage/sessionStorage 持久化（语言、主题和特效仅保存视觉偏好），刷新页面后需要重新登录；当前也不做跨标签页会话同步。同一页面并发刷新合并为一次。429/5xx 保留会话并提示手动重试；失败的写请求不自动重复执行，只有明确的 access 鉴权失败会刷新后重试一次。退出仅在服务端成功返回后清除内存会话。
 
 发请求前，access token 已过期或剩余有效期不超过 5 秒时，先调用 `POST /auth/refresh`；收到 `401 / 2200` 或 `401 / 2201` 时也会刷新并最多重试一次。刷新使用 HttpOnly Cookie 和 `X-CSRF-Token`，服务端轮换 refresh token。页面闲置时不定时刷新；默认连续空闲超过 30 分钟后，恢复操作会因 refresh 空闲过期而要求重新登录。成功刷新会重置空闲窗口，但不会延长默认 7 天的会话族绝对期限。
 
@@ -77,11 +93,11 @@ Access/CSRF token 仅保存在 API 客户端闭包内，refresh token 由 HttpOn
 
 ## 页面主题
 
-全站使用 Lumina Glass 的靛紫渐变、静态光晕、玻璃层和字体令牌，主题及字体从 `/mnt/d/share/lumina-glass` 引入并保存在 `src/styles/lumina-glass/`，构建与部署不依赖该外部目录。字体许可证与归属说明随字体一起保留。
+全站使用 Lumina Glass 的靛紫渐变、静态光晕、玻璃层和字体令牌，主题及字体从 `/mnt/d/share/lumina-glass` 引入并保存在 `src/ui/lumina/theme/glass/`，构建与部署不依赖该外部目录。字体许可证与归属说明随字体一起保留。
 
 入口 HTML 默认设置 `data-theme="light"`、`data-fx="lite"`，首屏即关闭动画、过渡、平滑滚动与毛玻璃，保留静态主题视觉；系统减少动态效果偏好同样禁用动画与过渡。后台布局适配手机与桌面，并沿用主题的连续比例 `--k`（限制为 0.92–1.5）；管理页面需要正常滚动，因此不使用演示登录卡片的高度压缩约束。
 
-业务组件复用原有样式类，主题适配集中在 `src/style.css` 和 `src/styles/layout.css`。后台工作区固定在视口内，顶部栏和页脚保持可见；用户管理、安全审计和用户行为页面仅在数据表格内滚动，表头和分页保持可见。窄屏与较矮窗口限制筛选区域高度并允许其单独滚动，底部采用紧凑间距，为表格保留更多空间。各子工作区移除主标题上方的重复小标题，并采用统一的紧凑顶部间距。
+业务组件复用原有样式类，通用控件适配集中在 `src/ui/lumina/`，后台布局保留在 `src/style.css` 和 `src/styles/layout.css`。后台工作区固定在视口内，顶部栏和页脚保持可见；用户管理、安全审计和用户行为页面仅在数据表格内滚动，表头和分页保持可见。窄屏与较矮窗口限制筛选区域高度并允许其单独滚动，底部采用紧凑间距，为表格保留更多空间。各子工作区移除主标题上方的重复小标题，并采用统一的紧凑顶部间距。
 
 ## 验证
 

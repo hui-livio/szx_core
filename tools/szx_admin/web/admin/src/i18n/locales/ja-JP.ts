@@ -2,6 +2,14 @@ import zh from './zh-CN'
 
 export default {
   ...zh,
+  appearance: {
+    theme: 'ダークテーマ',
+    performance: 'パフォーマンスモード',
+    light: 'ライトテーマ：ダークに切り替え',
+    dark: 'ダークテーマ：ライトに切り替え',
+    lite: '軽量表示：すべてのエフェクトを有効化',
+    full: '全エフェクト：パフォーマンスモードに切り替え',
+  },
   datePicker: {
     today: '今日',
     clear: 'クリア',

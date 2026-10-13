@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import Button from 'primevue/button'
+import { LuminaButton as Button } from '../ui/lumina'
 import { useHomeViewModel } from '../composables/useAuthViewModel'
 import { formatTime } from '../domain'
 import { useI18n } from 'vue-i18n'
@@ -37,7 +37,7 @@ const { t } = useI18n()
   <section class="panel">
     <div class="section-heading">
       <h2>{{ t('home.myPermissions') }}</h2>
-      <Button :disabled="busy" @click="load" type="button" severity="secondary" outlined>
+      <Button :disabled="busy" @click="load" type="button">
         {{ busy ? t('common.loading') : t('home.refreshPermissions') }}
       </Button>
     </div>
