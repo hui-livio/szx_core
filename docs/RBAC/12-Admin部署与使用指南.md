@@ -88,6 +88,8 @@ Set-Location build/bin
 3. 运行 `nginx -t` 检查配置，再启动 Nginx 或对已有实例运行 `nginx -s reload`。放通代理的 `443` 端口。同机代理部署时，admin 可监听 `127.0.0.1:7364`。
 4. 访问 `https://实际域名/admin/`。保留 `allowedOrigin: "*"` 可跨域访问；如配置单一 Origin，应使用浏览器访问的 HTTPS 来源。
 
+同机 IPv4 上游须明确写为 `proxy_pass http://127.0.0.1:7364;`。Windows 中 `localhost` 若同时解析为 `::1` 和 `127.0.0.1`，Nginx 可能尝试 IPv6 上游，而服务监听 `0.0.0.0` 或 WSL 的 IPv4 转发并不提供该上游。以 Nginx 错误日志中的实际 upstream 地址为准。
+
 可用 `curl.exe -I http://127.0.0.1:7364/admin/` 验证上游，再用 `curl.exe -I https://实际域名/admin/` 验证证书和代理。普通远端 HTTP 可以用于确认端口连通，但其 Web Crypto 与 Secure Cookie 限制使它不能替代完整 HTTPS 部署。浏览器强制 HTTPS 模式也可能把手工输入的 HTTP 地址升级成 HTTPS。
 
 Nginx 示例不修改 CORS、CSP 或 Cookie 响应头。当前 admin 使用连接对端地址进行 IP 限流，不信任 `X-Forwarded-For`；代理后的客户端会共享代理 IP 的限流预算，应按部署规模配置 `auth.attemptsPerMinute`。
@@ -139,6 +141,7 @@ curl.exe http://localhost:7364/api/v1/health
 | 页面空白或 JS/CSS 404 | 检查 index.html 引用 `/admin/assets/`；重新 build、deploy，确认代理保留前缀 |
 | `/admin/users` 刷新 404 | 确认 spaFallback 为 true，并使用支持 admin 挂载的新版后端 |
 | 页面能打开但登录/刷新失败 | 检查 API 地址、Origin、HTTPS、Cookie 和 Web Crypto；以请求状态码及 request_id 定位 |
+| 查询接口偶发约 2 秒、最终 200，Server-Timing 很小 | 检查 Nginx error.log 是否同期出现 `[::1]:7364` / `connect() failed (10061)`；IPv4 上游改为 `127.0.0.1:7364`，通过 `nginx -t` 后 `nginx -s reload`，复测 HTTPS 入口 |
 | 找不到配置或密钥 | 检查启动工作目录和配置内路径；--config 不会改变进程工作目录 |
 
 Windows 检查默认端口占用：
@@ -183,3 +186,10 @@ py -3 scripts/profile_admin_http.py "http://127.0.0.1:7364/api/v1/admin/users?pa
 `SZX_ADMIN_PROFILE_TOKEN` 应为现有会话的 access token。工具只发 GET，不执行登录、刷新或业务写入；不输出 token、响应正文或 URL 查询参数，慢样本输出请求 ID、响应头计时、首字节和总耗时。401/403 等响应不代表成功查询，工具会报告状态并返回非零退出码。它直连目标地址，不读取系统 HTTP 代理，因此与浏览器差异本身也是排查线索。
 
 在 Windows 浏览器访问 WSL 服务的场景，分别在 Windows 与 WSL 运行同样的采样；再对比 Windows 的 `localhost`/`127.0.0.1` 转发地址和 WSL 实际 IPv4 地址。以 `Get-NetTCPConnection` 的拥有进程确认是否经过 `wslrelay` 或其他代理。服务需重新启动新版可执行文件，响应才会出现新增计时头；替换磁盘文件不会让正在运行的旧进程自动更新。
+
+
+### IPv6 上游回退的已复现实例（2026-10-13）
+
+Windows Nginx 配置为 `proxy_pass http://localhost:7364;`、WSL 服务经 IPv4 转发时，两个用户查询慢请求分别在 10:06:28 和 10:12:38（北京时间）的代理错误日志出现连接 `[::1]:7364` 被拒绝。10:12:38 的请求 ID 为 `c2baf73d-899a-4a89-88ad-6a2fc6c983ef`，后端计时 `app=3 ms`、`access_log=1 ms`，浏览器等待约 2.05 秒。
+
+通过 Windows curl 对 `https://localhost/api/v1/health` 使用相同请求方式、新进程每次请求、间隔 250 ms 进行采样（本地自签证书采样使用 `-k`）：修复前 40 次中 2 次超过 1 秒，最大 2275.8 ms，慢请求同期均有 IPv6 上游连接失败。将 upstream 明确改为 `127.0.0.1:7364` 并平滑重载后，100 次采样全部返回 200，最大 244.6 ms，超过 1 秒为 0 次，新增 IPv6 上游错误为 0。该样本证明代理路径上的失败连接/回退，不代表数据库查询性能基准；业务接口仍应按请求 ID 和 Server-Timing 验证。
