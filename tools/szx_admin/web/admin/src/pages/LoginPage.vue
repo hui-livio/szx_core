@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { LuminaMark } from '../ui/lumina'
+import { LuminaMark, LuminaPanel } from '../ui/lumina'
 import LoginForm from '../components/auth/LoginForm.vue'
 import { useLoginViewModel } from '../composables/useAuthViewModel'
 import { useI18n } from 'vue-i18n'
@@ -35,13 +35,13 @@ const { t } = useI18n()
       <small>SZX · {{ t('shell.identityManagement') }}</small>
     </section>
     <section class="login-panel">
-      <div class="login-card lg-card">
+      <LuminaPanel class="login-card">
         <p class="eyebrow">{{ t('login.console') }}</p>
         <h2>{{ t('login.welcome') }}</h2>
         <p class="subtitle">{{ t('login.continue') }}</p>
         <LoginForm v-model="form" :busy="busy" :error="error" :notice="notice" @submit="submit" />
         <p class="login-help">{{ t('login.help') }}</p>
-      </div>
+      </LuminaPanel>
       <small>{{ t('login.authorizedOnly') }}</small>
     </section>
   </main>

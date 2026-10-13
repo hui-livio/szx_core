@@ -23,7 +23,7 @@ const route = useRoute()
       </div>
       <div class="nav-label">{{ t('shell.adminConsole') }}</div>
       <nav :aria-label="t('shell.mainNavigation')">
-        <RouterLink v-for="link in links" :key="link.to" :to="link.to"
+        <RouterLink class="lumina-smooth-edge" v-for="link in links" :key="link.to" :to="link.to"
           ><span aria-hidden="true">{{ link.symbol }}</span
           >{{ link.label }}</RouterLink
         >

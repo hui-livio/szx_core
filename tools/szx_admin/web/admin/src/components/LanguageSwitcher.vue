@@ -12,7 +12,7 @@ function selectLocale(value: string) {
 </script>
 
 <template>
-  <div class="language-switcher">
+  <div class="language-switcher lumina-smooth-edge">
     <span class="language-icon" aria-hidden="true">文A</span>
     <Select
       :model-value="locale"

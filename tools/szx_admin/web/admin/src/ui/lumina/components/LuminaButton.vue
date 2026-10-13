@@ -23,7 +23,10 @@ defineSlots<ButtonSlots>()
     :label="label"
     :disabled="disabled"
     :loading="loading"
-    :class="{ primary: variant === 'primary' }"
+    :class="{
+      primary: variant === 'primary',
+      'lumina-smooth-edge': variant === 'secondary' || variant === 'danger',
+    }"
     :severity="variant === 'primary' ? undefined : variant === 'danger' ? 'danger' : 'secondary'"
     :outlined="variant === 'secondary' || variant === 'danger'"
     :text="variant === 'text'"

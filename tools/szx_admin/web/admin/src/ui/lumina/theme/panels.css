@@ -1,0 +1,48 @@
+/* Reusable performance-aware surface, independent of login layout and page data. */
+.lumina-panel {
+  position: relative;
+  width: 100%;
+  padding: var(--lumina-panel-padding);
+  border: var(--lg-bd) solid var(--lg-stroke);
+  border-radius: var(--lumina-panel-radius);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--lg-sh-card);
+  overflow: hidden;
+}
+
+.lumina-panel-glass {
+  background: var(--lg-glass);
+  backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate));
+  -webkit-backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate));
+}
+
+.lumina-panel-glass::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.6), transparent 38%);
+  opacity: 0.5;
+}
+
+html:not([data-fx='full']) .lumina-panel-glass {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  background: var(--lg-glass-solid-2);
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .lumina-panel-glass {
+    background: var(--lg-glass-solid-2);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lumina-panel-glass {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: var(--lg-glass-solid-2);
+  }
+}

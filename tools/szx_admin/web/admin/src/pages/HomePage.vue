@@ -30,8 +30,12 @@ const { t } = useI18n()
       <RouterLink v-if="canManage" class="button primary" to="/users">{{
         t('home.enterUsers')
       }}</RouterLink>
-      <RouterLink v-if="canAudit" class="button" to="/logs">{{ t('home.viewAudit') }}</RouterLink>
-      <RouterLink class="button" to="/change-password">{{ t('shell.password') }}</RouterLink>
+      <RouterLink v-if="canAudit" class="button lumina-smooth-edge" to="/logs">{{
+        t('home.viewAudit')
+      }}</RouterLink>
+      <RouterLink class="button lumina-smooth-edge" to="/change-password">{{
+        t('shell.password')
+      }}</RouterLink>
     </div>
   </section>
   <section class="panel">

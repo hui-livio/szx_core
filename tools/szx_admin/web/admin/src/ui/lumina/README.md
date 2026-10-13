@@ -14,6 +14,8 @@ lumina/
 │   ├── locale.ts   # Intl 日历名称 + 调用方提供的文案
 │   ├── tokens.css  # 通用色彩、表面色、低特效模式
 │   ├── controls.css
+│   ├── edges.css   # 统一的柔化交互描边
+│   ├── panels.css  # 普通/玻璃面板与性能降级
 │   └── glass/      # 原有 Lumina Glass 主题、字体及许可证
 ├── utils/dateTime.ts
 ├── index.ts        # 控件、类型、工具的统一入口
@@ -177,7 +179,7 @@ npm run format:check
 
 `LuminaAppearanceControls` 接收 `theme`（light/dark）和 `effects`（lite/full）两个 model，及调用方提供的 labels（theme、performance、light、dark、lite、full）。性能开关开启表示 lite，关闭表示 full；深色开关开启表示 dark。
 
-控件只发出 model 更新，不负责保存偏好。调用方使用 `applyLuminaAppearance({ theme, effects })` 设置根元素属性；也可传入指定 HTMLElement。没有 DOM 时该函数不做操作，适用于 SSR 初始化。浏览器存储由应用自己的 `useUiPreferences` 管理，不进入 UI 目录。
+控件只发出 model 更新，不负责保存偏好。调用方使用 `applyLuminaAppearance({ theme, effects })` 设置根元素属性；也可传入指定 HTMLElement。没有 DOM 时该函数不做操作，适用于 SSR 初始化。浏览器存储由应用自己的 `ui-preferences` Pinia store 管理，`useUiPreferences` 只暴露同一份状态和操作；登录页与顶部栏共享它，认证状态变化不清除视觉偏好。该 store 不进入 UI 目录。
 
 ## 共享标记（Logo / 用户头像）
 
@@ -191,3 +193,28 @@ npm run format:check
 未提供 label 时是装饰元素；提供 label 时使用 img 语义供辅助技术读取。当前登录页、侧栏 S 标记和顶部用户标记都复用它；应用中的用户头像同样使用 brand 渐变与白色文字，仅尺寸与圆角不同。
 
 圆形外观开关的尺寸及 SVG viewport 通过 `useLuminaScale()` 对齐物理像素；使用柔和内描边、geometricPrecision 与不随缩放改变宽度的圆角 SVG 描线，降低小尺寸/非整数显示缩放下的硬边锯齿。明暗 hover、active 和 soft 表面使用语义化 token，应用不直接复用浅色底色。
+
+## 柔化交互描边
+
+`edges.css` 为按钮、输入、下拉、日期输入、关闭按钮以及外观开关提供统一描边。`.lumina-smooth-edge` 在组件本身计算 `--lumina-edge-shadow`，通过透明 border 保留原有占位，用 1 CSS 像素线宽和 1.25 CSS 像素羽化的内阴影绘制柔和边线，避免高 DPI 下仅一物理像素的过细硬线。hover 不改变宽高，focus 叠加原有焦点光晕，invalid/danger 仍使用错误语义色。
+
+`--lg-edge-px` 和 `--lg-edge-blur` 保持 CSS 像素尺寸，由浏览器在 DPR 1/1.25/1.5/2 下生成足够的物理像素进行平滑过渡；暗色 hover 另使用半透明高光，降低细线对比度。后台的语言入口、导航和次级链接按钮使用相同工具类，语言入口的内部 Select 不重复描边。静态表格分隔线和弹出层边框不受此规则影响。
+
+## 性能感知背景面板
+
+`LuminaPanel` 提供不依赖登录页的通用面板和内容插槽。登录卡片已改为使用它；全页光晕仍由 `LuminaBackground` 提供。
+
+```vue
+<LuminaPanel :radius="20" :padding="24">
+  <!-- 任意表单、设置项或页面内容 -->
+</LuminaPanel>
+<LuminaPanel variant="solid" as="section" :padding="16">
+  <!-- 始终不透明的普通面板 -->
+</LuminaPanel>
+```
+
+默认 variant 为 glass，普通表面为 solid。radius/padding 支持非负数值像素或 CSS 字符串；支持 div/section/article 根元素，ARIA 属性、class、style 与事件透传。面板不固定登录卡片宽度，布局由调用方决定。
+
+glass 自动响应根节点的 `data-fx`：lite（或未设置 full）关闭毛玻璃，full 启用玻璃背景与顶部高光；切换不改变内容尺寸。减少动态效果偏好或浏览器不支持 backdrop-filter 时使用低成本背景。solid 始终使用不透明主题表面。
+
+提示条使用 `--lg-info-surface`、`--lg-info-border`、`--lg-info-ink` 明暗语义 token；暗色信息提示不再使用浅色品牌底色。

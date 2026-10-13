@@ -2,3 +2,5 @@
 @import url('./theme/glass/theme.css') layer(lumina);
 @import url('./theme/tokens.css') layer(app);
 @import url('./theme/controls.css') layer(app);
+@import url('./theme/edges.css') layer(app);
+@import url('./theme/panels.css') layer(app);

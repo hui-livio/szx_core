@@ -566,6 +566,10 @@ test.describe('local date/time query contract', () => {
     await input.fill('2026-10-13 08:15:06')
     await input.fill('2026-02-30 08:15:06')
     expect(await input.evaluate((element: HTMLInputElement) => element.checkValidity())).toBe(false)
+    await input.hover()
+    expect(await input.evaluate((element) => getComputedStyle(element).boxShadow)).toContain(
+      'rgb(239, 68, 68)',
+    )
     await input.fill('2026-10-13 08:15:06')
     expect(await input.evaluate((element: HTMLInputElement) => element.checkValidity())).toBe(true)
     await page.getByRole('button', { name: '重置筛选' }).click()

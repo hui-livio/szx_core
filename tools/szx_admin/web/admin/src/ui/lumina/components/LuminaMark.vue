@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { toCssLength } from '../utils/cssLength'
 
 const props = withDefaults(
   defineProps<{
@@ -19,12 +20,10 @@ const props = withDefaults(
     fontWeight: 500,
   },
 )
-const length = (value: number | string) =>
-  typeof value === 'number' ? `${Math.max(0, value)}px` : value
 const style = computed(() => ({
-  '--lumina-mark-size': length(props.size),
-  '--lumina-mark-radius': length(props.radius),
-  '--lumina-mark-font-size': length(
+  '--lumina-mark-size': toCssLength(props.size),
+  '--lumina-mark-radius': toCssLength(props.radius),
+  '--lumina-mark-font-size': toCssLength(
     props.fontSize ?? (props.variant === 'brand' ? 'var(--lg-fs-display)' : 'var(--lg-fs-sm)'),
   ),
   '--lumina-mark-font-weight': String(props.fontWeight),

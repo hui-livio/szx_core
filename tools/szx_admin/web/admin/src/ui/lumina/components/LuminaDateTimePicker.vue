@@ -62,7 +62,10 @@ watch([model, () => props.invalidText], () => void nextTick(validateInput))
     show-button-bar
     :show-on-focus="false"
     placeholder="YYYY-MM-DD HH:mm:ss"
-    :pt="{ panel: { class: 'lumina-datetime-panel' } }"
+    :pt="{
+      panel: { class: 'lumina-datetime-panel' },
+      pcInputText: { root: { class: 'lumina-smooth-edge' } },
+    }"
     @update:model-value="selectDate"
     @input="inputDate"
     @blur="validateInput"

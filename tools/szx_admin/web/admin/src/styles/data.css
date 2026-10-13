@@ -33,3 +33,8 @@
 .admin-table .table-actions .danger-text {
   color: var(--danger-ink);
 }
+
+[data-theme='dark'] .log-tabs button.lumina-smooth-edge.active {
+  border-color: transparent;
+  --lumina-edge-color: var(--lg-brand-700);
+}

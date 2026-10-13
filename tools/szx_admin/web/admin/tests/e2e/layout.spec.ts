@@ -809,13 +809,19 @@ test('dark hover and active states stay dark with readable foregrounds', async (
   await secondary.hover()
   const appearance = await secondary.evaluate((element) => {
     const style = getComputedStyle(element)
-    return { background: style.backgroundColor, color: style.color, border: style.borderColor }
+    return {
+      background: style.backgroundColor,
+      color: style.color,
+      border: style.borderColor,
+      shadow: style.boxShadow,
+    }
   })
-  expect(appearance).toEqual({
+  expect(appearance).toMatchObject({
     background: 'rgb(38, 43, 69)',
     color: 'rgb(233, 236, 255)',
-    border: 'rgb(53, 64, 204)',
+    border: 'rgba(0, 0, 0, 0)',
   })
+  expect(appearance.shadow).toContain('rgb(53, 64, 204)')
   await page.screenshot({ path: 'test-results/dark-hover-states.png' })
   await page.getByRole('switch', { name: '深色主题', exact: true }).click()
   await secondary.hover()
@@ -864,4 +870,205 @@ test.describe('circular controls at fractional display scale', () => {
     await expect(page.locator('.avatar.lumina-mark')).toHaveText('系')
     await page.screenshot({ path: 'test-results/dark-controls-fractional-scale.png' })
   })
+})
+
+for (const ratio of [1, 1.25, 1.5, 2]) {
+  test.describe(`smooth hover strokes at DPR ${ratio}`, () => {
+    test.use({ deviceScaleFactor: ratio })
+    for (const theme of ['light', 'dark']) {
+      test(`${theme} hover strokes are feathered, DPI-scaled and layout stable`, async ({
+        page,
+      }) => {
+        await signInWithRows(page)
+        if (theme === 'dark')
+          await page.getByRole('switch', { name: '深色主题', exact: true }).click()
+        const controls = [
+          page.locator('.language-switcher'),
+          page.getByRole('combobox', { name: '角色', exact: true }).locator('..'),
+          page.getByRole('searchbox', { name: '搜索用户', exact: true }),
+          page.locator('.table-heading button'),
+          page.locator('.sidebar a[href="/users"]'),
+          page.locator('.lumina-preference-button').first(),
+        ]
+        for (const control of controls) {
+          const before = await control.boundingBox()
+          await control.hover()
+          const after = await control.boundingBox()
+          expect(after).toEqual(before)
+          const stroke = await control.evaluate((element) => {
+            const style = getComputedStyle(element)
+            return {
+              border: style.borderColor,
+              shadow: style.boxShadow,
+              width: parseFloat(style.getPropertyValue('--lg-edge-px')) * devicePixelRatio,
+              feather: parseFloat(style.getPropertyValue('--lg-edge-blur')) * devicePixelRatio,
+            }
+          })
+          expect(stroke.border).toBe('rgba(0, 0, 0, 0)')
+          expect(stroke.shadow).toContain('inset')
+          expect(stroke.width).toBeCloseTo(ratio, 4)
+          expect(stroke.feather).toBeCloseTo(1.25 * ratio, 4)
+        }
+        const role = page.getByRole('combobox', { name: '角色', exact: true })
+        await role.focus()
+        const focus = await role
+          .locator('..')
+          .evaluate((element) => getComputedStyle(element).boxShadow)
+        expect(focus).toContain('inset')
+        expect(focus).toContain('rgba(91, 108, 255,')
+        await expect(role).toHaveText('全部角色')
+        await page.screenshot({ path: `test-results/smooth-hover-${theme}-${ratio}.png` })
+      })
+    }
+  })
+}
+
+for (const ratio of [1, 1.25, 1.5, 2]) {
+  test.describe(`rendered result-select edge at DPR ${ratio}`, () => {
+    test.use({ deviceScaleFactor: ratio })
+    test('actual corner pixels transition more smoothly than the former hairline', async ({
+      page,
+    }) => {
+      await signInWithRows(page)
+      await page.getByRole('switch', { name: '深色主题', exact: true }).click()
+      await page.getByRole('link', { name: '审计日志', exact: true }).click()
+      const select = page.getByRole('combobox', { name: '结果', exact: true }).locator('..')
+      await select.hover()
+      const cornerMetrics = async () => {
+        const dimensions = await select.evaluate((element) => ({
+          width: element.getBoundingClientRect().width,
+          radius: parseFloat(getComputedStyle(element).borderTopLeftRadius),
+        }))
+        const png = (await select.screenshot()).toString('base64')
+        return page.evaluate(
+          async ({ png, dimensions }) => {
+            const image = new Image()
+            image.src = `data:image/png;base64,${png}`
+            await image.decode()
+            const canvas = document.createElement('canvas')
+            canvas.width = image.naturalWidth
+            canvas.height = image.naturalHeight
+            const context = canvas.getContext('2d')!
+            context.drawImage(image, 0, 0)
+            const radius = Math.floor((dimensions.radius * image.naturalWidth) / dimensions.width)
+            const data = context.getImageData(0, 0, radius, radius).data
+            let peak = 0
+            let jump = 0
+            const blue = (x: number, y: number) => data[(y * radius + x) * 4 + 2]!
+            const brightness = (x: number, y: number) => {
+              const index = (y * radius + x) * 4
+              return data[index]! * 0.2126 + data[index + 1]! * 0.7152 + data[index + 2]! * 0.0722
+            }
+            for (let y = 0; y < radius; y++) {
+              for (let x = 0; x < radius; x++) {
+                peak = Math.max(peak, blue(x, y))
+                if (x + 1 < radius)
+                  jump = Math.max(jump, Math.abs(brightness(x, y) - brightness(x + 1, y)))
+                if (y + 1 < radius)
+                  jump = Math.max(jump, Math.abs(brightness(x, y) - brightness(x, y + 1)))
+              }
+            }
+            return { peak, jump }
+          },
+          { png, dimensions },
+        )
+      }
+      // Reproduce the previous hard, one-physical-pixel hover edge on the same element.
+      await select.evaluate((element) => {
+        const node = element as HTMLElement
+        node.style.setProperty(
+          'box-shadow',
+          `inset 0 0 ${0.5 / devicePixelRatio}px ${1 / devicePixelRatio}px rgb(163, 170, 255)`,
+          'important',
+        )
+      })
+      const former = await cornerMetrics()
+      await select.evaluate((element) =>
+        (element as HTMLElement).style.removeProperty('box-shadow'),
+      )
+      const current = await cornerMetrics()
+      expect(current.jump).toBeLessThan(former.jump * 0.85)
+      expect(current.peak).toBeLessThan(former.peak)
+      expect(current.peak).toBeGreaterThan(75) // A visible blue hover indicator remains.
+      await page.screenshot({ path: `test-results/result-hover-rendered-${ratio}.png` })
+    })
+  })
+}
+
+test('login glass surface uses the reusable panel and respects the performance switch', async ({
+  page,
+}) => {
+  await page.goto('/login')
+  const panel = page.locator('.login-card.lumina-panel')
+  await expect(panel).toBeVisible()
+  const before = await panel.boundingBox()
+  expect(await panel.evaluate((element) => getComputedStyle(element).backdropFilter)).toBe('none')
+  await page.getByRole('switch', { name: '性能模式', exact: true }).click()
+  expect(await panel.evaluate((element) => getComputedStyle(element).backdropFilter)).toContain(
+    'blur(',
+  )
+  expect(await panel.boundingBox()).toEqual(before)
+  await page.getByRole('switch', { name: '性能模式', exact: true }).click()
+  expect(await panel.evaluate((element) => getComputedStyle(element).backdropFilter)).toBe('none')
+})
+
+test('dark password information notice keeps a dark semantic surface and readable text', async ({
+  page,
+}) => {
+  await signInWithRows(page)
+  await page.getByRole('switch', { name: '深色主题', exact: true }).click()
+  await page.locator('.topbar a[href="/change-password"]').click()
+  const notice = page.locator('.form-stack .alert.info')
+  await expect(notice).toContainText('修改密码后')
+  expect(
+    await notice.evaluate((element) => ({
+      background: getComputedStyle(element).backgroundColor,
+      color: getComputedStyle(element).color,
+      border: getComputedStyle(element).borderColor,
+    })),
+  ).toEqual({
+    background: 'rgba(91, 108, 255, 0.14)',
+    color: 'rgb(197, 202, 255)',
+    border: 'rgba(125, 139, 255, 0.36)',
+  })
+  await page.screenshot({ path: 'test-results/dark-password-notice.png' })
+  await page.getByRole('switch', { name: '深色主题', exact: true }).click()
+  expect(await notice.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe(
+    'rgb(238, 240, 255)',
+  )
+})
+
+test('login, authenticated shell and logout retain one appearance and language state', async ({
+  page,
+}) => {
+  await page.goto('/login')
+  await page.getByRole('switch', { name: '深色主题', exact: true }).click()
+  await page.getByRole('switch', { name: '性能模式', exact: true }).click()
+  await chooseOption(page, page.locator('.language-switcher').getByRole('combobox'), 'English')
+  await signInWithRows(page)
+  await expect(
+    page.locator('.topbar').getByRole('switch', { name: 'Dark theme', exact: true }),
+  ).toHaveAttribute('aria-checked', 'true')
+  await expect(
+    page.locator('.topbar').getByRole('switch', { name: 'Performance mode', exact: true }),
+  ).toHaveAttribute('aria-checked', 'false')
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
+  await expect(page.locator('html')).toHaveAttribute('data-fx', 'full')
+  await expect(page.locator('.language-switcher').getByRole('combobox')).toHaveText('English')
+  await page.getByRole('switch', { name: 'Dark theme', exact: true }).click()
+  await page.getByRole('switch', { name: 'Performance mode', exact: true }).click()
+  await page.route('**/api/v1/auth/logout', (route) => route.fulfill({ status: 204 }))
+  await page.locator('.topbar .text-button').click()
+  await expect(page).toHaveURL('/login')
+  await expect(page.getByRole('switch', { name: 'Dark theme', exact: true })).toHaveAttribute(
+    'aria-checked',
+    'false',
+  )
+  await expect(page.getByRole('switch', { name: 'Performance mode', exact: true })).toHaveAttribute(
+    'aria-checked',
+    'true',
+  )
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
+  await expect(page.locator('html')).toHaveAttribute('data-fx', 'lite')
+  await expect(page.locator('.language-switcher').getByRole('combobox')).toHaveText('English')
 })

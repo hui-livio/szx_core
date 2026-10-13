@@ -12,6 +12,9 @@
   --success-ink: #087653;
   --warning-ink: #895309;
   --danger-ink: #b42332;
+  --lg-info-surface: var(--lg-brand-50);
+  --lg-info-border: var(--lg-brand-200);
+  --lg-info-ink: var(--accent);
   --table-header-background: var(--lg-n-50);
   --table-row-hover: var(--lg-brand-50);
   --lg-hover-surface: var(--lg-brand-50);
@@ -22,6 +25,10 @@
   --lg-soft-border: var(--lg-stroke);
   --lg-control-ring: var(--lg-brand-200);
   --lg-control-halo: rgba(125, 139, 255, 0.04);
+  --lg-edge-px: 1px;
+  --lg-edge-blur: 1.25px;
+  --lg-edge-hover: rgba(125, 139, 255, 0.72);
+  --lg-edge-focus: rgba(125, 139, 255, 0.9);
 }
 
 /* Lite is the default from the first paint, including component pseudo-elements. */
@@ -63,6 +70,9 @@ html:not([data-fx='full']) *::after {
   --success-ink: #6ee7b7;
   --warning-ink: #fcd34d;
   --danger-ink: #fda4af;
+  --lg-info-surface: rgba(91, 108, 255, 0.14);
+  --lg-info-border: rgba(125, 139, 255, 0.36);
+  --lg-info-ink: var(--lg-brand-200);
   --table-header-background: var(--lg-n-800);
   --table-row-hover: var(--lg-n-800);
   --surface: var(--lg-n-900);
@@ -74,4 +84,6 @@ html:not([data-fx='full']) *::after {
   --lg-soft-border: var(--lg-brand-700);
   --lg-control-ring: rgba(125, 139, 255, 0.55);
   --lg-control-halo: rgba(125, 139, 255, 0.1);
+  --lg-edge-hover: rgba(125, 139, 255, 0.56);
+  --lg-edge-focus: rgba(125, 139, 255, 0.78);
 }

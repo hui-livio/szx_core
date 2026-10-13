@@ -39,7 +39,7 @@ Vue 组件不直接调用 HTTP 或实现业务操作。新增功能时将业务�
 
 ```text
 src/ui/lumina/
-├── components/   # 按钮、输入、下拉、表格、弹窗、日期时间、分页、背景、共享标记、主题/性能模式开关
+├── components/   # 按钮、输入、下拉、表格、弹窗、日期时间、分页、背景、通用背景面板、共享标记、主题/性能模式开关
 ├── composables/  # 主题连续缩放
 ├── theme/        # Aura preset、主题安装、通用日历 locale、CSS 与字体资源
 ├── utils/        # 本地日期时间格式化/校验；不包含 UTC 查询规则
@@ -59,7 +59,7 @@ CSS 层顺序保持 `lumina → primevue → app`。安装使用 `createLuminaUi
 
 主题仍使用 `<html data-theme="light|dark" data-fx="lite|full">`，默认低特效和 Ripple 关闭，尊重系统减少动态效果偏好。缩放由 `useLuminaScale()` 管理。日期时间保持 24 小时制、秒精度和本地字符串模型，后台继续通过 `toUtcSeconds` 生成 UTC 查询参数。主操作按钮统一使用 `variant="primary"`。品牌 S 和用户头像复用 `LuminaMark`，统一蓝紫渐变底色与白色前景，支持独立配置尺寸与圆角；暗色 hover/active 使用专属语义色，不出现浅色块。圆形开关按物理像素对齐并使用柔和 SVG 描线。
 
-开发中修改 `src/ui/lumina/theme/` preset 时完整刷新页面，重新初始化样式注册表；会话不持久化，需要重新登录。登录页和顶部栏均提供紧凑的语言入口、性能模式与深色主题开关；主题/特效偏好分别保存到 `szx-admin-theme` 和 `szx-admin-effects`，只在用户切换时写入，默认浅色 + 低特效。浏览器禁用存储时仍可切换当前页面，系统减少动态效果偏好始终优先。验证用的独立页面位于 `tests/fixtures/lumina/`，不接入后台路由、Pinia 或 API，不进入生产构建。
+开发中修改 `src/ui/lumina/theme/` preset 时完整刷新页面，重新初始化样式注册表；会话不持久化，需要重新登录。登录页和顶部栏均提供紧凑的语言入口、性能模式与深色主题开关；两处共享 `ui-preferences` Pinia store，登录、退出及组件重建不会重置状态，开发热更新也保留当前选择；主题/特效偏好分别保存到 `szx-admin-theme` 和 `szx-admin-effects`，只在用户切换时写入，默认浅色 + 低特效。登录卡片使用通用 `LuminaPanel` 响应性能开关，普通内容面板可使用 `variant="solid"`；玻璃模式切换不改变内容布局。浏览器禁用存储时仍可切换当前页面，系统减少动态效果偏好始终优先。验证用的独立页面位于 `tests/fixtures/lumina/`，不接入后台路由、Pinia 或 API，不进入生产构建。
 
 ## 页面和行为
 

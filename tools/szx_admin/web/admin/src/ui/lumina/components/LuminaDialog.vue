@@ -36,6 +36,7 @@ function closeFromSelect(event: KeyboardEvent) {
     :draggable="false"
     :close-button-props="{
       'aria-label': closeLabel,
+      class: 'lumina-smooth-edge',
       disabled: busy,
       severity: 'secondary',
       text: true,

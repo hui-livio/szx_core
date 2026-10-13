@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import {
   LuminaButton,
   LuminaMark,
+  LuminaPanel,
   LuminaInput,
   LuminaSelect,
   LuminaTable,
@@ -37,6 +38,12 @@ const rows = [
     <h1>Standalone Lumina controls</h1>
     <LuminaMark label="Reusable S mark" :size="48" :radius="6" :font-size="24" :font-weight="400" />
     <LuminaMark label="Reusable user mark" text="U" variant="soft" :size="48" radius="50%" />
+    <LuminaPanel data-testid="glass-panel" :radius="18" :padding="16"
+      ><p>Reusable glass panel slot</p></LuminaPanel
+    >
+    <LuminaPanel data-testid="solid-panel" variant="solid" as="section" :radius="10" :padding="12"
+      ><p>Reusable solid panel slot</p></LuminaPanel
+    >
     <form @submit.prevent="submissions++">
       <label>Name<LuminaInput v-model="name" aria-label="Name" required /></label>
       <LuminaButton label="Submit" type="submit" variant="primary">

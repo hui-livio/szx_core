@@ -342,9 +342,6 @@
   padding: 0;
   flex-shrink: 0;
   border: 1px solid transparent;
-  box-shadow:
-    inset 0 0 0 1px var(--lg-control-ring),
-    0 0 0 0.5px var(--lg-control-halo);
   border-radius: var(--lg-r-full);
 }
 
@@ -373,13 +370,6 @@
 
 .lumina-preference-button.p-button:not(:disabled):hover {
   border-color: transparent;
-}
-
-.lumina-preference-button.p-button:focus-visible {
-  outline: none;
-  box-shadow:
-    inset 0 0 0 1px var(--lg-control-ring),
-    var(--lg-ring-focus);
 }
 
 .lumina-mark {

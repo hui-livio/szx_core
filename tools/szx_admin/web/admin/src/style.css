@@ -177,9 +177,9 @@
   }
 
   .alert {
-    border: 1px solid var(--lg-brand-200);
-    background: var(--lg-brand-50);
-    color: var(--accent);
+    border: 1px solid var(--lg-info-border);
+    background: var(--lg-info-surface);
+    color: var(--lg-info-ink);
     padding: var(--lg-s5) var(--lg-s7);
     border-radius: var(--lg-r-lg);
     font-size: var(--lg-fs-sm);
@@ -620,5 +620,30 @@
     .data-page .pagination {
       padding-block: var(--lg-s5);
     }
+  }
+}
+
+@layer app {
+  .button.lumina-smooth-edge {
+    border-color: transparent;
+    --lumina-edge-color: var(--lg-line);
+    box-shadow: var(--lumina-edge-shadow);
+  }
+
+  .button.lumina-smooth-edge:hover {
+    border-color: transparent;
+    --lumina-edge-color: var(--lg-hover-border);
+  }
+
+  .button.lumina-smooth-edge:focus-visible {
+    outline: none;
+    --lumina-edge-color: var(--lg-edge-focus);
+    box-shadow: var(--lumina-edge-shadow), var(--lg-ring-focus);
+  }
+
+  .log-tabs button.lumina-smooth-edge.active {
+    border-color: transparent;
+    --lumina-edge-color: var(--lg-hover-border);
+    box-shadow: var(--lumina-edge-shadow);
   }
 }

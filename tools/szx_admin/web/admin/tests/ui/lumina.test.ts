@@ -82,3 +82,13 @@ it.each([1, 1.25, 1.5, 2])('snaps small controls to physical pixels at DPR %s', 
   const value = snapLuminaPixels(42 * 0.92, ratio)
   expect(value * ratio).toBeCloseTo(Math.round(42 * 0.92 * ratio), 8)
 })
+
+it.each([
+  [12, '12px'],
+  [-4, '0px'],
+  ['50%', '50%'],
+  ['var(--lg-r-lg)', 'var(--lg-r-lg)'],
+] as const)('normalizes reusable control lengths: %s', async (input, expected) => {
+  const { toCssLength } = await import('../../src/ui/lumina/utils/cssLength')
+  expect(toCssLength(input)).toBe(expected)
+})

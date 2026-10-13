@@ -5,5 +5,5 @@ defineOptions({ inheritAttrs: false })
 const model = defineModel<string | null>()
 </script>
 <template>
-  <InputText v-bind="$attrs" v-model="model" />
+  <InputText class="lumina-smooth-edge" v-bind="$attrs" v-model="model" />
 </template>

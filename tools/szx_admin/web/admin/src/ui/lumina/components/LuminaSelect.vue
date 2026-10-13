@@ -10,7 +10,7 @@ const options = computed(() => [...props.options])
 defineSlots<SelectSlots>()
 </script>
 <template>
-  <Select v-bind="$attrs" v-model="model" :options="options">
+  <Select class="lumina-smooth-edge" v-bind="$attrs" v-model="model" :options="options">
     <template v-for="(_, name) in $slots" #[name]="slotProps">
       <slot :name="name as keyof SelectSlots" v-bind="slotProps ?? {}" />
     </template>

@@ -22,3 +22,5 @@ export { applyLuminaAppearance } from './theme/appearance'
 export type { LuminaTheme, LuminaEffects } from './theme/appearance'
 
 export { default as LuminaMark } from './components/LuminaMark.vue'
+
+export { default as LuminaPanel } from './components/LuminaPanel.vue'

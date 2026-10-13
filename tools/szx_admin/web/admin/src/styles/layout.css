@@ -89,7 +89,9 @@
 .sidebar nav a.router-link-active {
   color: var(--accent);
   background: var(--lg-active-surface);
-  border-color: var(--lg-active-border);
+  border-color: transparent;
+  --lumina-edge-color: var(--lg-active-border);
+  box-shadow: var(--lumina-edge-shadow);
   font-weight: var(--lg-fw-m);
 }
 
@@ -174,7 +176,9 @@
   gap: var(--lg-s2);
   color: var(--muted);
   background: var(--lg-field);
-  border: 1px solid var(--line);
+  border: 1px solid transparent;
+  --lumina-edge-color: var(--lg-line);
+  box-shadow: var(--lumina-edge-shadow);
   border-radius: var(--lg-r-full);
   padding: 0 var(--lg-s4);
 }
@@ -195,11 +199,13 @@
 .language-switcher:focus-within,
 .language-switcher:hover {
   background: var(--lg-field-focus);
-  border-color: var(--lg-brand-300);
+  border-color: transparent;
+  --lumina-edge-color: var(--lg-edge-hover);
 }
 
 .language-switcher:focus-within {
-  box-shadow: var(--lg-ring-focus);
+  --lumina-edge-color: var(--lg-edge-focus);
+  box-shadow: var(--lumina-edge-shadow), var(--lg-ring-focus);
 }
 
 .language-switcher .p-select:focus-within {
@@ -552,4 +558,19 @@
   align-items: center;
   gap: var(--lg-s3);
   flex-shrink: 0;
+}
+
+/* The language pill owns its edge; its internal Select must never add a second one. */
+.language-switcher .p-select.lumina-smooth-edge,
+.language-switcher .p-select.lumina-smooth-edge:not(.p-disabled):hover,
+.language-switcher .p-select.lumina-smooth-edge:not(.p-disabled).p-focus {
+  border: 0;
+  box-shadow: none;
+  outline: none;
+}
+
+.sidebar nav a.lumina-smooth-edge:focus-visible {
+  outline: none;
+  --lumina-edge-color: var(--lg-edge-focus);
+  box-shadow: var(--lumina-edge-shadow), var(--lg-ring-focus);
 }

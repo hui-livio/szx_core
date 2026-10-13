@@ -89,3 +89,40 @@ test('shared logo and user marks honor size and configurable radius', async ({ p
       .evaluate((element) => getComputedStyle(element).fontWeight),
   ).toBe('500')
 })
+
+test('generic panels switch glass effects without resizing and keep solid surfaces opaque', async ({
+  page,
+}) => {
+  await page.goto(fixture)
+  const glass = page.getByTestId('glass-panel')
+  const solid = page.getByTestId('solid-panel')
+  await expect(glass).toContainText('Reusable glass panel slot')
+  expect(
+    await glass.evaluate((element) => ({
+      filter: getComputedStyle(element).backdropFilter,
+      radius: getComputedStyle(element).borderRadius,
+      padding: getComputedStyle(element).padding,
+    })),
+  ).toEqual({ filter: 'none', radius: '18px', padding: '16px' })
+  expect(await solid.evaluate((element) => element.tagName)).toBe('SECTION')
+  const before = await glass.boundingBox()
+  await page.evaluate(() => {
+    document.documentElement.dataset.fx = 'full'
+  })
+  expect(await glass.evaluate((element) => getComputedStyle(element).backdropFilter)).toContain(
+    'blur(',
+  )
+  expect(await glass.boundingBox()).toEqual(before)
+  expect(await solid.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe(
+    'rgb(255, 255, 255)',
+  )
+  expect(await solid.evaluate((element) => getComputedStyle(element).backdropFilter)).toBe('none')
+  await page.evaluate(() => {
+    document.documentElement.dataset.theme = 'dark'
+  })
+  expect(await solid.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe(
+    'rgb(20, 24, 51)',
+  )
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  expect(await glass.evaluate((element) => getComputedStyle(element).backdropFilter)).toBe('none')
+})
