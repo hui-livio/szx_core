@@ -53,7 +53,6 @@ export default {
   language: { switch: '언어 전환', current: '언어' },
   shell: {
     ...en.shell,
-    skipToContent: '본문으로 건너뛰기',
     identityManagement: 'ID 및 접근 관리',
     adminConsole: '관리 콘솔',
     mainNavigation: '주 탐색',

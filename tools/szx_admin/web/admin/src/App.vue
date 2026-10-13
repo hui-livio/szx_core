@@ -28,11 +28,20 @@ function updateThemeScale() {
   document.documentElement.style.setProperty('--k', scale.toFixed(2))
 }
 
+function preventNativeContextMenu(event: MouseEvent) {
+  event.preventDefault()
+}
+
 onMounted(() => {
   updateThemeScale()
   window.addEventListener('resize', updateThemeScale)
+  // Document scope also covers PrimeVue overlays teleported outside #app.
+  document.addEventListener('contextmenu', preventNativeContextMenu)
 })
-onBeforeUnmount(() => window.removeEventListener('resize', updateThemeScale))
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', updateThemeScale)
+  document.removeEventListener('contextmenu', preventNativeContextMenu)
+})
 </script>
 
 <template>

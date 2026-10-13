@@ -54,7 +54,6 @@ export default {
   language: { switch: 'Switch language', current: 'Language' },
   shell: {
     ...zh.shell,
-    skipToContent: 'Skip to main content',
     identityManagement: 'Identity & access management',
     adminConsole: 'Admin console',
     mainNavigation: 'Main navigation',

@@ -299,20 +299,6 @@
   font-size: var(--lg-fs-2xs);
 }
 
-.skip-link {
-  position: fixed;
-  z-index: 10;
-  top: -80px;
-  left: var(--lg-s9);
-  background: var(--surface);
-  padding: var(--lg-s5);
-  border-radius: var(--lg-r-lg);
-}
-
-.skip-link:focus {
-  top: var(--lg-s5);
-}
-
 .login-page {
   position: relative;
   min-height: 100dvh;

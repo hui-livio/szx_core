@@ -13,7 +13,6 @@ const route = useRoute()
     class="app-shell"
     :class="{ 'data-shell': route.path === '/users' || route.path === '/logs' }"
   >
-    <a class="skip-link" href="#main">{{ t('shell.skipToContent') }}</a>
     <aside class="sidebar">
       <div class="brand">
         <span class="brand-mark">S</span>

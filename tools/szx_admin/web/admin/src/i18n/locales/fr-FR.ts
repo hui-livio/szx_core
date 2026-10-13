@@ -53,7 +53,6 @@ export default {
   language: { switch: 'Changer de langue', current: 'Langue' },
   shell: {
     ...en.shell,
-    skipToContent: 'Aller au contenu principal',
     identityManagement: 'Gestion des identités et des accès',
     adminConsole: 'Console d’administration',
     mainNavigation: 'Navigation principale',

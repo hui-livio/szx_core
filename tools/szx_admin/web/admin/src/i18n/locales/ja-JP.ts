@@ -59,7 +59,6 @@ export default {
 
   shell: {
     ...zh.shell,
-    skipToContent: 'メインコンテンツへ移動',
     identityManagement: 'ID・アクセス管理',
     adminConsole: '管理コンソール',
     mainNavigation: 'メインナビゲーション',

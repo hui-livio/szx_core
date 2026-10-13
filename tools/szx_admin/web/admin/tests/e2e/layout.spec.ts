@@ -675,3 +675,45 @@ test('shared popup surfaces remain opaque when runtime component tokens are unav
     await page.getByRole('dialog').evaluate((element) => getComputedStyle(element).backgroundColor),
   ).toBe('rgb(255, 255, 255)')
 })
+
+test('shell has no skip-content entry and retains keyboard navigation', async ({ page }) => {
+  await signInWithRows(page)
+  await expect(page.locator('.skip-link, a[href="#main"]')).toHaveCount(0)
+  const navigation = page.locator('.sidebar nav a')
+  await navigation.first().focus()
+  await expect(navigation.first()).toBeFocused()
+  await page.keyboard.press('Tab')
+  await expect(navigation.nth(1)).toBeFocused()
+  await expect(page.getByRole('link', { name: '跳到主要内容' })).toHaveCount(0)
+})
+
+test('native context menu is prevented on pages and teleported overlays', async ({ page }) => {
+  const menuPrevented = async (target: Locator) => {
+    // Listen after the app handler and observe an actual right-click event.
+    const event = page.evaluate(
+      () =>
+        new Promise<boolean>((resolve) => {
+          document.addEventListener('contextmenu', (event) => resolve(event.defaultPrevented), {
+            once: true,
+          })
+        }),
+    )
+    await target.click({ button: 'right' })
+    expect(await event).toBe(true)
+  }
+  await page.goto('/login')
+  await menuPrevented(page.locator('input[name="identifier"]'))
+  await signInWithRows(page)
+  await menuPrevented(page.locator('.page-heading h1'))
+  await page.getByRole('button', { name: '创建用户' }).click()
+  const dialog = page.getByRole('dialog')
+  await menuPrevented(dialog.locator('.p-dialog-title'))
+  await dialog.getByRole('combobox', { name: '角色', exact: true }).click()
+  await menuPrevented(
+    page.locator('.p-select-overlay').getByRole('option', { name: '工程师', exact: true }),
+  )
+  await dialog.locator('.p-dialog-title').click()
+  await expect(page.locator('.p-select-overlay')).toHaveCount(0)
+  await dialog.getByRole('button', { name: '取消', exact: true }).click()
+  await expect(dialog).toHaveCount(0)
+})

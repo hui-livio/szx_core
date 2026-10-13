@@ -49,7 +49,6 @@ export default {
   },
   language: { switch: '切换语言', current: '语言' },
   shell: {
-    skipToContent: '跳到主要内容',
     identityManagement: '身份与访问管理',
     adminConsole: '管理控制台',
     mainNavigation: '主导航',
