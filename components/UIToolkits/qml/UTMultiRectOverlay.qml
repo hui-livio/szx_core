@@ -1066,22 +1066,47 @@ Item {
                     }
 
                     Rectangle {
-                        anchors.right: parent.right
-                        anchors.top: parent.top
-                        anchors.margins: 3
-                        visible: rectItem.recognizedText.length > 0
+                        id: characterBadge
+                        // Keep text above every ROI, independently of the
+                        // character frame's stacking order and selection.
+                        parent: rectItem.overlayRoot
+                        visible: rectItem.visible && rectItem.recognizedText.length > 0
                         width: characterLabel.implicitWidth + 8
                         height: characterLabel.implicitHeight + 4
+                        readonly property real imageWidth: rectItem.overlayRoot
+                                ? (rectItem.overlayRoot.imageSourceSize.width > 0
+                                   ? rectItem.overlayRoot.imageSourceSize.width
+                                   : rectItem.overlayRoot.width / Math.max(0.001, rectItem.overlayRoot.imageScale)) : 0
+                        readonly property real imageHeight: rectItem.overlayRoot
+                                ? (rectItem.overlayRoot.imageSourceSize.height > 0
+                                   ? rectItem.overlayRoot.imageSourceSize.height
+                                   : rectItem.overlayRoot.height / Math.max(0.001, rectItem.overlayRoot.imageScale)) : 0
+                        readonly property real textX: rectItem.displayX + rectItem.displayWidth + 6 + characterLabel.implicitWidth > imageWidth
+                                ? Math.max(0, rectItem.displayX - characterLabel.implicitWidth - 6)
+                                : rectItem.displayX + rectItem.displayWidth + 6
+                        readonly property real textY: {
+                            let value = rectItem.displayY - 2;
+                            if (value + characterLabel.implicitHeight > imageHeight)
+                                value = Math.max(0, imageHeight - characterLabel.implicitHeight);
+                            if (value < 0)
+                                value = Math.min(imageHeight - characterLabel.implicitHeight,
+                                                 rectItem.displayY + rectItem.displayHeight + 6);
+                            return value;
+                        }
+                        x: rectItem.overlayRoot ? rectItem.overlayRoot.imagePosition.x + (textX - 4) * scale : 0
+                        y: rectItem.overlayRoot ? rectItem.overlayRoot.imagePosition.y + (textY - 2) * scale : 0
+                        scale: rectItem.overlayRoot ? rectItem.overlayRoot.imageScale : 1
+                        transformOrigin: Item.TopLeft
                         color: "#A0000000"
                         radius: 2
-                        z: 3
+                        z: 220
 
                         Text {
                             id: characterLabel
                             anchors.centerIn: parent
                             text: rectItem.recognizedText
                             color: "#FFF176"
-                            font.pixelSize: 13
+                            font.pointSize: 11
                             font.bold: true
                             font.family: UTTheme.fontFamily
                         }
