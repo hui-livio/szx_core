@@ -172,8 +172,41 @@ test('language focus surrounds the complete component and effects start disabled
     innerShadow: 'none',
     shadow: expect.not.stringMatching(/^none$/),
   })
+  await expect(select.locator('option')).toHaveCount(6)
+  await expect(select.locator('option[value="en-US"]')).toHaveText('English')
+  await expect(select.locator('option[value="en-GB"]')).toHaveCount(0)
   await select.selectOption('en-US')
   await expect(page.locator('.login-submit')).toContainText('Sign in')
   await expect(page.locator('html')).toHaveAttribute('data-fx', 'lite')
   expect(await page.evaluate(() => document.getAnimations().length)).toBe(0)
+})
+
+for (const savedLocale of ['en-US', 'en-GB']) {
+  test(`saved ${savedLocale} preference uses the single English option`, async ({ page }) => {
+    await page.addInitScript((locale) => {
+      localStorage.setItem('szx-admin-locale', locale)
+    }, savedLocale)
+    await page.goto('/login')
+    await expect(page.locator('.language-switcher select')).toHaveValue('en-US')
+    await expect(page.locator('.login-submit')).toContainText('Sign in')
+    await expect(page.locator('html')).toHaveAttribute('lang', 'en-US')
+  })
+}
+
+test.describe('English browser language', () => {
+  test.use({ locale: 'en-GB' })
+
+  test('UK browser language resolves to the single English option', async ({ page }) => {
+    await page.goto('/login')
+    await expect(page.locator('.language-switcher select')).toHaveValue('en-US')
+    await expect(page.locator('.login-submit')).toContainText('Sign in')
+    await expect(page.locator('html')).toHaveAttribute('lang', 'en-US')
+
+    await page.locator('.language-switcher select').selectOption('zh-CN')
+    await page.locator('.language-switcher select').selectOption('en-US')
+    expect(await page.evaluate(() => localStorage.getItem('szx-admin-locale'))).toBe('en-US')
+    await page.reload()
+    await expect(page.locator('.language-switcher select')).toHaveValue('en-US')
+    await expect(page.locator('.login-submit')).toContainText('Sign in')
+  })
 })

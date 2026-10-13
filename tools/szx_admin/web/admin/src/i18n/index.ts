@@ -1,7 +1,6 @@
 import { createI18n } from 'vue-i18n'
 
 import enUS from './locales/en-US'
-import enGB from './locales/en-GB'
 import frFR from './locales/fr-FR'
 import jaJP from './locales/ja-JP'
 import koKR from './locales/ko-KR'
@@ -12,8 +11,7 @@ export const localeOptions = [
   { value: 'zh-CN', label: '简体中文' },
   { value: 'ja-JP', label: '日本語' },
   { value: 'ko-KR', label: '한국어' },
-  { value: 'en-GB', label: 'English (UK)' },
-  { value: 'en-US', label: 'English (US)' },
+  { value: 'en-US', label: 'English' },
   { value: 'fr-FR', label: 'Français' },
   { value: 'ru-RU', label: 'Русский' },
 ] as const
@@ -42,7 +40,6 @@ export const i18n = createI18n({
     'ja-JP': jaJP,
     'ko-KR': koKR,
     'en-US': enUS,
-    'en-GB': enGB,
     'fr-FR': frFR,
     'ru-RU': ruRU,
   },
