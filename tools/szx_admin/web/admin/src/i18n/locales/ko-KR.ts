@@ -2,6 +2,22 @@ import en from './en-US'
 
 export default {
   ...en,
+  datePicker: {
+    today: '오늘',
+    clear: '지우기',
+    chooseDate: '날짜 및 시간 선택',
+    chooseMonth: '월 선택',
+    chooseYear: '연도 선택',
+    invalid: 'YYYY-MM-DD HH:mm:ss 형식으로 유효한 날짜와 시간을 입력하세요.',
+    previous: '이전 {unit}',
+    next: '다음 {unit}',
+    month: '월',
+    year: '연도',
+    decade: '10년',
+    hour: '시간',
+    minute: '분',
+    second: '초',
+  },
   common: {
     ...en.common,
     close: '닫기',

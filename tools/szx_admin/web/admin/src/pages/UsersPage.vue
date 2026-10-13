@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Button from 'primevue/button'
 import { useUsersViewModel } from '../composables/useUsersViewModel'
 import UserFilters from '../components/users/UserFilters.vue'
 import UserTable from '../components/users/UserTable.vue'
@@ -32,7 +33,7 @@ const {
   closeCredential,
   submit,
 } = useUsersViewModel()
-const { page, pageCount, total, busy, error, requestId, load } = query
+const { page, pageSize, pageCount, total, busy, error, requestId, load } = query
 const { busy: saving, error: saveError } = mutation
 </script>
 <template>
@@ -42,7 +43,9 @@ const { busy: saving, error: saveError } = mutation
         <h1>{{ t('users.title') }}</h1>
         <p>{{ t('users.subtitle') }}</p>
       </div>
-      <button class="primary" @click="open('create')">＋ {{ t('users.create') }}</button>
+      <Button class="primary" @click="open('create')" type="button"
+        >＋ {{ t('users.create') }}</Button
+      >
     </header>
     <p v-if="success" class="alert success" role="status">{{ success }}</p>
     <section class="panel table-panel">
@@ -51,7 +54,9 @@ const { busy: saving, error: saveError } = mutation
         <h2>
           {{ t('users.directory') }} <span class="count">{{ total }}</span>
         </h2>
-        <button :disabled="busy" @click="load()">{{ t('users.refresh') }}</button>
+        <Button :disabled="busy" @click="load()" type="button" severity="secondary" outlined>{{
+          t('users.refresh')
+        }}</Button>
       </div>
       <p v-if="error" class="alert error" role="alert">{{ error }}</p>
       <UserTable
@@ -63,6 +68,7 @@ const { busy: saving, error: saveError } = mutation
       />
       <PaginationBar
         :page="page"
+        :page-size="pageSize"
         :page-count="pageCount"
         :total="total"
         :busy="busy"

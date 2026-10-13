@@ -1,3 +1,4 @@
+import { chooseOption } from './select'
 import { test, expect, type Page } from '@playwright/test'
 import { createHash } from 'node:crypto'
 import type { Role, User } from '../../src/api/types'
@@ -124,7 +125,7 @@ async function mockApi(
 }
 async function login(page: Page) {
   await page.goto('/login')
-  await page.getByLabel('登录账号').fill('admin')
+  await page.locator('input[name="identifier"]').fill('admin')
   await page.getByLabel('密码', { exact: true }).fill('TestPassword123')
   await page.getByRole('button', { name: '登录控制台' }).click()
 }
@@ -139,7 +140,7 @@ test('admin creates a user, clears one-time credentials and submits versioned ed
     password_hash: expect.stringMatching(/^[a-f0-9]{64}$/),
   })
   await page.getByRole('button', { name: '创建用户' }).click()
-  await page.getByLabel('用户名', { exact: true }).fill('bob')
+  await page.getByLabel('登录标识', { exact: true }).fill('bob')
   await page.getByLabel('展示名', { exact: true }).fill('Bob')
   await page.getByRole('button', { name: '确认', exact: true }).click()
   await expect(page.getByTestId('temporary-credential')).toHaveText('OnceOnlyCredential123')
@@ -166,7 +167,7 @@ test('creation validates a chosen password, submits only its digest and clears i
   const writes = await mockApi(page)
   await login(page)
   await page.getByRole('button', { name: '创建用户' }).click()
-  await page.getByLabel('用户名', { exact: true }).fill('chosen')
+  await page.getByLabel('登录标识', { exact: true }).fill('chosen')
   await page.getByLabel('展示名', { exact: true }).fill('指定密码')
   const password = page.getByLabel('初始密码', { exact: true })
   const confirmation = page.getByLabel('确认初始密码', { exact: true })
@@ -207,17 +208,17 @@ for (const role of ['operator', 'engineer'] as const) {
     const writes = await mockApi(page)
     await login(page)
     await page.getByRole('button', { name: '创建用户' }).click()
-    await page.getByLabel('用户名', { exact: true }).fill('simple')
+    await page.getByLabel('登录标识', { exact: true }).fill('simple')
     await page.getByLabel('展示名', { exact: true }).fill('Simple')
     const select = page.getByRole('dialog').getByLabel('角色', { exact: true })
-    await select.selectOption('admin')
+    await chooseOption(page, select, '管理员')
     await expect(page.locator('#initial-password-rule')).toContainText('至少 8 个字符')
     await page.getByLabel('初始密码', { exact: true }).fill('123456')
     await page.getByLabel('确认初始密码', { exact: true }).fill('123456')
     await page.getByRole('button', { name: '确认', exact: true }).click()
     await expect(page.getByRole('alert')).toContainText('至少 8 个字符')
     expect(writes.filter((write) => write.path === '/admin/users')).toHaveLength(0)
-    await select.selectOption(role)
+    await chooseOption(page, select, role === 'operator' ? '操作员' : '工程师')
     await expect(page.locator('#initial-password-rule')).toContainText('至少 6 个字符')
     await page.getByRole('button', { name: '确认', exact: true }).click()
     await expect(page.getByRole('dialog')).toHaveCount(0)
@@ -275,18 +276,20 @@ test('operator can skip recommendation and is blocked from admin routes', async 
 test('admin role options are restricted and audit details are redacted', async ({ page }) => {
   await mockApi(page, 'admin')
   await login(page)
-  await expect(page.getByRole('button', { name: '分配角色' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '分配角色', exact: true })).toBeEnabled()
   await page.getByRole('button', { name: '创建用户' }).click()
-  await expect(
-    page.getByRole('dialog').getByRole('combobox', { name: '角色', exact: true }).locator('option'),
-  ).toHaveText(['操作员', '工程师'])
+  await page.getByRole('dialog').getByRole('combobox', { name: '角色', exact: true }).click()
+  await expect(page.getByRole('option')).toHaveText(['操作员', '工程师'])
   await page.keyboard.press('Escape')
+  await expect(page.getByRole('listbox')).toHaveCount(0)
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('dialog')).toHaveCount(0)
   await page.getByRole('link', { name: '审计日志' }).click()
-  await expect(page.getByRole('columnheader', { name: '用户名', exact: true })).toBeVisible()
+  await expect(page.getByRole('columnheader', { name: '登录标识', exact: true })).toBeVisible()
   await expect(page.getByRole('cell', { name: 'admin', exact: true })).toBeVisible()
   await expect(page.getByRole('searchbox', { name: '搜索用户', exact: true })).toHaveAttribute(
     'placeholder',
-    '搜索展示名、用户名或 UID',
+    '搜索展示名或登录标识',
   )
   await page.getByRole('searchbox', { name: '搜索用户', exact: true }).fill(' 系统管理员 ')
   const searchRequest = page.waitForRequest((request) =>
@@ -325,7 +328,7 @@ test('audit event search sends trimmed keywords and clears the filter', async ({
   }
   await input.fill('登录成功')
   await page.getByRole('searchbox', { name: '搜索用户', exact: true }).fill('admin')
-  await page.getByLabel('开始时间（本地）').fill('2026-09-01T00:00')
+  await page.getByLabel('开始时间（本地）').fill('2026-09-01 00:00:00')
   const resetRequest = page.waitForRequest((request) =>
     new URL(request.url()).pathname.endsWith('/admin/audit-logs'),
   )
@@ -415,7 +418,7 @@ test('admin cannot operate on a higher-role row even if it appears in a stale li
   )
   await login(page)
   await expect(page.getByRole('cell', { name: '超级管理员', exact: true })).toBeVisible()
-  await expect(page.getByRole('button', { name: '分配角色', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '分配角色', exact: true })).toBeDisabled()
   for (const name of ['禁用', '编辑', '重置密码']) {
     await expect(page.getByRole('button', { name, exact: true })).toBeDisabled()
   }
@@ -449,4 +452,123 @@ test('self-reset keeps the one-time password visible until acknowledged', async 
   await page.getByRole('button', { name: '已妥善记录，关闭' }).click()
   await expect(page).toHaveURL('/login')
   await expect(page.getByTestId('temporary-credential')).toHaveCount(0)
+})
+
+test('PrimeVue filters preserve server query values', async ({ page }) => {
+  await mockApi(page)
+  await login(page)
+  await expect(page.getByRole('combobox', { name: '角色', exact: true })).toHaveText('全部角色')
+  await expect(page.getByRole('combobox', { name: '状态', exact: true })).toHaveText('全部状态')
+  await chooseOption(page, page.getByRole('combobox', { name: '角色', exact: true }), '工程师')
+  await chooseOption(page, page.getByRole('combobox', { name: '状态', exact: true }), '已禁用')
+  await chooseOption(page, page.getByRole('combobox', { name: '排序', exact: true }), '展示名')
+  const request = page.waitForRequest((request) => {
+    const url = new URL(request.url())
+    return url.pathname.endsWith('/admin/users') && url.searchParams.get('role') === 'engineer'
+  })
+  await page.getByRole('button', { name: '查询', exact: true }).click()
+  const url = new URL((await request).url())
+  expect(Object.fromEntries(url.searchParams)).toMatchObject({
+    role: 'engineer',
+    status: 'disabled',
+    sort: 'display_name',
+    page: '1',
+  })
+})
+
+test('dialog traps focus and restores it to the opening action on Escape', async ({ page }) => {
+  await mockApi(page)
+  await login(page)
+  const opener = page.getByRole('button', { name: '创建用户' })
+  await opener.click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByLabel('登录标识', { exact: true }).focus()
+  await page.keyboard.press('Shift+Tab')
+  await page.keyboard.press('Shift+Tab')
+  expect(await dialog.evaluate((element) => element.contains(document.activeElement))).toBe(true)
+  await page.keyboard.press('Escape')
+  await expect(dialog).toHaveCount(0)
+  await expect(opener).toBeFocused()
+})
+
+test('saving blocks dialog dismissal until the write finishes', async ({ page }) => {
+  await mockApi(page)
+  let release!: () => void
+  const pending = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  await page.route('**/api/v1/admin/users', async (route) => {
+    if (route.request().method() !== 'POST') return route.fallback()
+    await pending
+    return route.fulfill({
+      status: 201,
+      json: {
+        data: {
+          user: baseUser,
+          temporary_credential: 'OnceOnlyCredential123',
+          temporary_credential_expires_at: Date.now() + 86400000,
+        },
+        request_id: 'pending-write',
+      },
+    })
+  })
+  await login(page)
+  await page.getByRole('button', { name: '创建用户' }).click()
+  await page.getByLabel('登录标识', { exact: true }).fill('pending')
+  await page.getByLabel('展示名', { exact: true }).fill('Pending')
+  await page.getByRole('button', { name: '确认', exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  try {
+    await expect(dialog.getByRole('button', { name: '关闭', exact: true })).toBeDisabled()
+    await page.keyboard.press('Escape')
+    await expect(dialog).toBeVisible()
+    await expect(dialog.getByRole('button', { name: '取消', exact: true })).toBeDisabled()
+  } finally {
+    release()
+  }
+  await expect(page.getByTestId('temporary-credential')).toHaveText('OnceOnlyCredential123')
+  await page.getByRole('button', { name: '已妥善记录，关闭' }).click()
+  await expect(dialog).toHaveCount(0)
+})
+
+test.describe('local date/time query contract', () => {
+  test.use({ timezoneId: 'Asia/Shanghai' })
+  test('picker input retains seconds and submits UTC timestamps', async ({ page }) => {
+    await mockApi(page)
+    await login(page)
+    await page.getByRole('link', { name: '审计日志' }).click()
+    await page.getByLabel('开始时间（本地）').fill('2026-10-13 08:15:06')
+    await page.getByLabel('结束时间（本地）').fill('2026-10-13 09:16:07')
+    const request = page.waitForRequest((request) => {
+      const url = new URL(request.url())
+      return url.pathname.endsWith('/admin/audit-logs') && url.searchParams.has('from')
+    })
+    await page.getByRole('button', { name: '查询日志' }).click()
+    const params = new URL((await request).url()).searchParams
+    expect(params.get('from')).toBe('2026-10-13T00:15:06Z')
+    expect(params.get('to')).toBe('2026-10-13T01:16:07Z')
+    await page.getByRole('tab', { name: '用户行为' }).click()
+    await page.getByLabel('开始时间（本地）').fill('2026-10-13 08:15:06')
+    await page.getByLabel('结束时间（本地）').fill('2026-10-13 09:16:07')
+    const behavior = page.waitForRequest(
+      (request) =>
+        new URL(request.url()).pathname.endsWith('/admin/behavior-events') &&
+        new URL(request.url()).searchParams.has('from'),
+    )
+    await page.getByRole('button', { name: '查询事件' }).click()
+    expect(new URL((await behavior).url()).searchParams.get('from')).toBe('2026-10-13T00:15:06Z')
+  })
+  test('invalid manual input cannot submit a stale date', async ({ page }) => {
+    await mockApi(page)
+    await login(page)
+    await page.getByRole('link', { name: '审计日志' }).click()
+    const input = page.getByLabel('开始时间（本地）')
+    await input.fill('2026-10-13 08:15:06')
+    await input.fill('2026-02-30 08:15:06')
+    expect(await input.evaluate((element: HTMLInputElement) => element.checkValidity())).toBe(false)
+    await input.fill('2026-10-13 08:15:06')
+    expect(await input.evaluate((element: HTMLInputElement) => element.checkValidity())).toBe(true)
+    await page.getByRole('button', { name: '重置筛选' }).click()
+    await expect(input).toHaveValue('')
+  })
 })

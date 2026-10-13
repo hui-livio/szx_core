@@ -193,9 +193,9 @@
   padding: 0 var(--lg-s4);
 }
 
-.language-switcher select {
+.language-switcher .p-select {
   min-width: calc(var(--k) * 120px);
-  padding: var(--lg-s3) var(--lg-s8) var(--lg-s3) 0;
+  padding: 0;
   color: var(--text);
   background: transparent;
   border: 0;
@@ -214,13 +214,25 @@
   box-shadow: var(--lg-ring-focus);
 }
 
-.language-switcher select:focus {
+.language-switcher .p-select:focus-within {
   border: 0;
   outline: none;
   box-shadow: none;
 }
 
+.language-switcher .p-select-label {
+  padding: var(--lg-s3) var(--lg-s2) var(--lg-s3) 0;
+  font-size: var(--lg-fs-2xs);
+  outline: none;
+}
+
+.language-switcher .p-select-dropdown {
+  width: var(--lg-s9);
+}
+
 .language-icon {
+  flex-shrink: 0;
+  white-space: nowrap;
   font-weight: var(--lg-fw-b);
   letter-spacing: -1px;
 }

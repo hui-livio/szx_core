@@ -1,4 +1,9 @@
 <script setup lang="ts">
+import Button from 'primevue/button'
+import InputText from 'primevue/inputtext'
+import Select from 'primevue/select'
+import LocalDateTimePicker from '../LocalDateTimePicker.vue'
+import { computed, shallowRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 const { t } = useI18n()
 const filters = defineModel<{
@@ -10,12 +15,24 @@ const filters = defineModel<{
 }>({ required: true })
 defineProps<{ busy: boolean; eventOptions: { code: string; label: string }[] }>()
 const emit = defineEmits<{ search: []; reset: [] }>()
+const dateInputKey = shallowRef(0)
+function reset() {
+  // Reset also discards incomplete manual input that has no committed model value.
+  dateInputKey.value++
+  emit('reset')
+}
+const resultOptions = computed(() => [
+  { value: '', label: t('audit.allResults') },
+  { value: 'success', label: t('result.success') },
+  { value: 'failure', label: t('result.failure') },
+  { value: 'denied', label: t('result.denied') },
+])
 </script>
 <template>
   <form class="filters log-filters" @submit.prevent="emit('search')">
     <label
       >{{ t('audit.eventName')
-      }}<input
+      }}<InputText
         v-model="filters.event_search"
         type="search"
         :placeholder="t('audit.eventSearchPlaceholder')"
@@ -33,26 +50,39 @@ const emit = defineEmits<{ search: []; reset: [] }>()
     </datalist>
     <label
       >{{ t('audit.result')
-      }}<select v-model="filters.result">
-        <option value="">{{ t('audit.allResults') }}</option>
-        <option value="success">{{ t('result.success') }}</option>
-        <option value="failure">{{ t('result.failure') }}</option>
-        <option value="denied">{{ t('result.denied') }}</option>
-      </select></label
-    >
+      }}<Select
+        v-model="filters.result"
+        :placeholder="t('audit.allResults')"
+        :options="resultOptions"
+        option-label="label"
+        option-value="value"
+        :aria-label="t('audit.result')"
+    /></label>
     <label
       >{{ t('audit.searchUser')
-      }}<input
+      }}<InputText
         v-model="filters.actor_search"
         :placeholder="t('audit.searchUserPlaceholder')"
         maxlength="128"
         type="search"
     /></label>
     <label
-      >{{ t('audit.start') }}<input v-model="filters.from" type="datetime-local" step="1"
+      >{{ t('audit.start')
+      }}<LocalDateTimePicker
+        :key="`from-${dateInputKey}`"
+        v-model="filters.from"
+        :label="t('audit.start')"
     /></label>
-    <label>{{ t('audit.end') }}<input v-model="filters.to" type="datetime-local" step="1" /></label>
-    <button class="primary" :disabled="busy">{{ t('audit.queryLogs') }}</button>
-    <button type="button" :disabled="busy" @click="emit('reset')">{{ t('common.reset') }}</button>
+    <label
+      >{{ t('audit.end')
+      }}<LocalDateTimePicker
+        :key="`to-${dateInputKey}`"
+        v-model="filters.to"
+        :label="t('audit.end')"
+    /></label>
+    <Button class="primary" :disabled="busy" type="submit">{{ t('audit.queryLogs') }}</Button>
+    <Button type="button" :disabled="busy" @click="reset" severity="secondary" outlined>{{
+      t('common.reset')
+    }}</Button>
   </form>
 </template>

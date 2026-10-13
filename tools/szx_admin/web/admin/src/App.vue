@@ -1,10 +1,25 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted } from 'vue'
+import { onBeforeUnmount, onMounted, watchEffect } from 'vue'
+import { usePrimeVue } from 'primevue/config'
 import { useI18n } from 'vue-i18n'
 import { useSessionNavigation } from './composables/useAuthViewModel'
+import { datePickerLocale } from './i18n/primevue'
+import type { SupportedLocale } from './i18n'
 import AdminShell from './components/AdminShell.vue'
 const { authenticated } = useSessionNavigation()
-const { t } = useI18n()
+const { t, locale } = useI18n()
+const primevue = usePrimeVue()
+watchEffect(() => {
+  if (primevue.config.locale)
+    Object.assign(primevue.config.locale, datePickerLocale(locale.value as SupportedLocale))
+  const aria = primevue.config.locale?.aria
+  if (!aria) return
+  Object.assign(aria, {
+    prevPageLabel: t('common.previous'),
+    nextPageLabel: t('common.next'),
+    close: t('common.close'),
+  })
+})
 
 // Keep the theme's continuous scaling, without shrinking long admin pages to fit a card.
 function updateThemeScale() {

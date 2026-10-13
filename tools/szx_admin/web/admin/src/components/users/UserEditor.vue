@@ -1,11 +1,15 @@
 <script setup lang="ts">
+import Button from 'primevue/button'
+import InputText from 'primevue/inputtext'
+import Select from 'primevue/select'
+import { computed } from 'vue'
 import type { Role, User } from '../../api/types'
 import type { UserAction, UserDraft } from '../../composables/useUsersViewModel'
 import { roleLabels, statusLabels, formatTime } from '../../domain'
 import { useI18n } from 'vue-i18n'
 const { t } = useI18n()
 const draft = defineModel<UserDraft>({ required: true })
-defineProps<{
+const props = defineProps<{
   action: UserAction
   user: User | null
   roles: Role[]
@@ -16,37 +20,51 @@ defineProps<{
   targetStatus: string
 }>()
 const emit = defineEmits<{ submit: []; close: []; reload: [] }>()
+const roleOptions = computed(() =>
+  props.roles.map((value) => ({ value, label: t(roleLabels[value]) })),
+)
 </script>
 <template>
   <form class="form-stack" @submit.prevent="emit('submit')">
     <p v-if="error" class="alert error" role="alert">{{ error }}</p>
-    <button
+    <Button
       v-if="conflict || (error && user)"
       type="button"
       :disabled="busy"
       @click="emit('reload')"
+      severity="secondary"
+      outlined
     >
       {{ t('users.reload') }}
-    </button>
+    </Button>
     <label v-if="action === 'create'"
       >{{ t('users.identity')
-      }}<input v-model="draft.identity" required maxlength="64" autocomplete="off" :disabled="busy"
+      }}<InputText
+        v-model="draft.identity"
+        required
+        maxlength="64"
+        autocomplete="off"
+        :disabled="busy"
     /></label>
     <p v-if="action === 'create'" class="hint">{{ t('users.identityImmutable') }}</p>
     <label v-if="action === 'create' || action === 'name'"
       >{{ t('users.displayName')
-      }}<input v-model="draft.displayName" required maxlength="128" :disabled="busy"
+      }}<InputText v-model="draft.displayName" required maxlength="128" :disabled="busy"
     /></label>
     <label v-if="action === 'create' || action === 'role'"
       >{{ t('common.role')
-      }}<select v-model="draft.role" :aria-label="t('common.role')" :disabled="busy">
-        <option v-for="role in roles" :key="role" :value="role">{{ t(roleLabels[role]) }}</option>
-      </select></label
-    >
+      }}<Select
+        v-model="draft.role"
+        :options="roleOptions"
+        option-label="label"
+        option-value="value"
+        :aria-label="t('common.role')"
+        :disabled="busy"
+    /></label>
     <template v-if="action === 'create' || action === 'reset'">
       <label
         >{{ action === 'create' ? t('users.initialPassword') : t('users.newPassword')
-        }}<input
+        }}<InputText
           v-model="draft.password"
           name="initial-password"
           type="password"
@@ -59,7 +77,7 @@ const emit = defineEmits<{ submit: []; close: []; reload: [] }>()
       </p>
       <label
         >{{ action === 'create' ? t('users.confirmInitialPassword') : t('users.confirmNewPassword')
-        }}<input
+        }}<InputText
           v-model="draft.confirmation"
           name="confirm-initial-password"
           type="password"
@@ -115,15 +133,16 @@ const emit = defineEmits<{ submit: []; close: []; reload: [] }>()
       {{ t('users.resetWarning') }}
     </p>
     <div class="modal-actions">
-      <button type="button" :disabled="busy" @click="emit('close')">
-        {{ action === 'details' ? t('common.close') : t('common.cancel') }}</button
-      ><button
+      <Button type="button" :disabled="busy" @click="emit('close')" severity="secondary" outlined>
+        {{ action === 'details' ? t('common.close') : t('common.cancel') }}</Button
+      ><Button
         v-if="action !== 'details'"
         class="primary"
         :disabled="busy || conflict || (!!error && !!user && action !== 'reset')"
+        type="submit"
       >
         {{ busy ? t('common.processing') : t('common.confirm') }}
-      </button>
+      </Button>
     </div>
   </form>
 </template>

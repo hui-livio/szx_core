@@ -2,6 +2,22 @@ import zh from './zh-CN'
 
 export default {
   ...zh,
+  datePicker: {
+    today: '今日',
+    clear: 'クリア',
+    chooseDate: '日時を選択',
+    chooseMonth: '月を選択',
+    chooseYear: '年を選択',
+    invalid: '有効な日時を YYYY-MM-DD HH:mm:ss 形式で入力してください。',
+    previous: '前の{unit}',
+    next: '次の{unit}',
+    month: '月',
+    year: '年',
+    decade: '10年',
+    hour: '時間',
+    minute: '分',
+    second: '秒',
+  },
 
   common: {
     ...zh.common,

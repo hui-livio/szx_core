@@ -31,7 +31,19 @@ npm run dev
 | 会话传输    | `src/api/client.ts`                | Axios、Bearer、Cookie/CSRF、单次并发刷新、稳定错误码 |
 | 领域规则    | `src/domain.ts`                    | 固定角色、密码校验、摘要、日志脱敏与时间转换         |
 
-Vue 组件不直接调用 HTTP 或实现业务操作。新增功能时将业务行为加入对应 ViewModel，展示组件通过 props/model 输入和 emits 输出。DOM 生命周期（对话框）由独立 composable 处理。
+Vue 组件不直接调用 HTTP 或实现业务操作。新增功能时将业务行为加入对应 ViewModel，展示组件通过 props/model 输入和 emits 输出。弹窗的焦点管理、Escape 关闭和遮罩由 PrimeVue Dialog 处理；保存期间禁止关闭。
+
+## UI 组件与主题
+
+管理界面使用 PrimeVue `4.5.5` 和 `@primeuix/themes` `2.0.3`（Aura preset），版本固定在 `package.json` 和锁文件中，这两个版本采用 MIT 许可证。
+
+- `src/theme/luminaAura.ts`：通过 `definePreset(Aura, ...)` 将品牌色、表面色、控件尺寸和圆角映射到现有 `--lg-*` CSS 变量。
+- `src/styles/lumina-glass/theme.css`：继续提供蓝紫光晕、玻璃容器、明暗配色与 `--k` 连续缩放。
+- `src/styles/primevue.css`：连接 PrimeVue 控件与现有页面布局，处理弹出层、语言选择、分页、表格和暗色状态。
+
+CSS 层顺序为 `lumina → primevue → app`。按钮、文本/密码输入、下拉选择、数据表格、分页和弹窗使用 PrimeVue；日期时间输入使用共享 `LocalDateTimePicker`（PrimeVue DatePicker），提供 24 小时制、秒精度和可主题化弹窗；内部 Date 转回本地时间字符串交给 ViewModel，查询仍通过 `toUtcSeconds` 转为 UTC。手动输入使用 `YYYY-MM-DD HH:mm:ss` 格式，并通过表单有效性校验阻止无效时间提交。数据筛选、排序、分页继续由服务端执行。
+
+主题通过 `<html data-theme="light|dark">` 控制；PrimeVue 的 `darkModeSelector` 使用相同属性。默认 `data-fx="lite"`，动效和 Ripple 默认关闭，并尊重 `prefers-reduced-motion`。新增控件优先从 PrimeVue 导入，颜色和尺寸优先复用 `--lg-*` 变量。表格样式限定在 `.admin-table` 内，日历不复用业务表格的全局间距；下拉浮层、对话框与日期面板统一使用不透明的 `--surface`，保留圆角、边框与阴影。所有 `.primary` 主操作按钮使用统一的蓝紫渐变。开发中修改 `src/theme/` preset 时会完整刷新页面，重新初始化 PrimeVue 的样式注册表；由于会话不持久化，需要重新登录。
 
 ## 页面和行为
 

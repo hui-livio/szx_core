@@ -2,6 +2,22 @@ import en from './en-US'
 
 export default {
   ...en,
+  datePicker: {
+    today: 'Сегодня',
+    clear: 'Очистить',
+    chooseDate: 'Выбрать дату и время',
+    chooseMonth: 'Выбрать месяц',
+    chooseYear: 'Выбрать год',
+    invalid: 'Введите корректные дату и время в формате YYYY-MM-DD HH:mm:ss.',
+    previous: 'Предыдущий: {unit}',
+    next: 'Следующий: {unit}',
+    month: 'месяц',
+    year: 'год',
+    decade: 'десятилетие',
+    hour: 'час',
+    minute: 'минута',
+    second: 'секунда',
+  },
   common: {
     ...en.common,
     close: 'Закрыть',

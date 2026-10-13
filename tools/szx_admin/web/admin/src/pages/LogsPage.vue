@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Button from 'primevue/button'
 import { ref } from 'vue'
 import { useLogsViewModel } from '../composables/useLogsViewModel'
 import { useBehaviorEventsViewModel } from '../composables/useBehaviorEventsViewModel'
@@ -36,9 +37,10 @@ const {
   show: showBehavior,
   close: closeBehavior,
 } = behavior
-const { page, pageCount, total, busy, error, requestId, load } = audit.query
+const { page, pageSize, pageCount, total, busy, error, requestId, load } = audit.query
 const {
   page: behaviorPage,
+  pageSize: behaviorPageSize,
   pageCount: behaviorPageCount,
   total: behaviorTotal,
   busy: behaviorBusy,
@@ -58,21 +60,27 @@ const {
       <span class="role-badge">{{ t('audit.readOnly') }}</span>
     </header>
     <nav class="log-tabs" :aria-label="t('audit.tabs')" role="tablist">
-      <button
+      <Button
         role="tab"
         :aria-selected="activeTab === 'audit'"
         :class="{ active: activeTab === 'audit' }"
         @click="activeTab = 'audit'"
+        type="button"
+        severity="secondary"
+        outlined
       >
-        {{ t('audit.auditTab') }}</button
-      ><button
+        {{ t('audit.auditTab') }}</Button
+      ><Button
         role="tab"
         :aria-selected="activeTab === 'behavior'"
         :class="{ active: activeTab === 'behavior' }"
         @click="activeTab = 'behavior'"
+        type="button"
+        severity="secondary"
+        outlined
       >
         {{ t('audit.behaviorTab') }}
-      </button>
+      </Button>
     </nav>
     <section v-if="activeTab === 'audit'" class="panel table-panel">
       <LogFilters
@@ -87,11 +95,14 @@ const {
         <h2>
           {{ t('audit.records') }} <span class="count">{{ total }}</span>
         </h2>
-        <button :disabled="busy" @click="load()">{{ t('audit.refreshLogs') }}</button>
+        <Button :disabled="busy" @click="load()" type="button" severity="secondary" outlined>{{
+          t('audit.refreshLogs')
+        }}</Button>
       </div>
       <p v-if="error" class="alert error" role="alert">{{ error }}</p>
       <LogTable :logs="logs" :busy="busy" :failed="!!error" @details="showAudit" /><PaginationBar
         :page="page"
+        :page-size="pageSize"
         :page-count="pageCount"
         :total="total"
         :busy="busy"
@@ -112,9 +123,15 @@ const {
         <h2>
           {{ t('audit.events') }} <span class="count">{{ behaviorTotal }}</span>
         </h2>
-        <button :disabled="behaviorBusy" @click="loadBehavior()">
+        <Button
+          :disabled="behaviorBusy"
+          @click="loadBehavior()"
+          type="button"
+          severity="secondary"
+          outlined
+        >
           {{ t('audit.refreshEvents') }}
-        </button>
+        </Button>
       </div>
       <p v-if="behaviorError" class="alert error" role="alert">{{ behaviorError }}</p>
       <BehaviorEventTable
@@ -124,6 +141,7 @@ const {
         @details="showBehavior"
       /><PaginationBar
         :page="behaviorPage"
+        :page-size="behaviorPageSize"
         :page-count="behaviorPageCount"
         :total="behaviorTotal"
         :busy="behaviorBusy"
@@ -176,7 +194,9 @@ const {
       <h3>{{ t('audit.details') }}</h3>
       <pre class="json-details">{{ JSON.stringify(auditSelected.details, null, 2) }}</pre>
       <div class="modal-actions">
-        <button @click="closeAudit">{{ t('common.close') }}</button>
+        <Button @click="closeAudit" type="button" severity="secondary" outlined>{{
+          t('common.close')
+        }}</Button>
       </div></ModalDialog
     >
     <ModalDialog
@@ -212,7 +232,9 @@ const {
       <h3>{{ t('audit.details') }}</h3>
       <pre class="json-details">{{ JSON.stringify(behaviorSelected.details, null, 2) }}</pre>
       <div class="modal-actions">
-        <button @click="closeBehavior">{{ t('common.close') }}</button>
+        <Button @click="closeBehavior" type="button" severity="secondary" outlined>{{
+          t('common.close')
+        }}</Button>
       </div></ModalDialog
     >
   </div>

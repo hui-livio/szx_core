@@ -1,32 +1,47 @@
 <script setup lang="ts">
-import { useId } from 'vue'
+import Dialog from 'primevue/dialog'
+import { nextTick, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useDialog } from '../composables/useDialog'
-defineProps<{ title: string; busy?: boolean }>()
+const props = defineProps<{ title: string; busy?: boolean }>()
 const emit = defineEmits<{ close: [] }>()
-const titleId = useId()
-useDialog()
 const { t } = useI18n()
+// Parent views also unmount the dialog after successful writes or explicit cancellation.
+const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
+onUnmounted(() => {
+  void nextTick(() => {
+    if (opener?.isConnected && !document.querySelector('[role="dialog"]')) opener.focus()
+  })
+})
+
+function closeFromSelect(event: KeyboardEvent) {
+  if (event.key !== 'Escape' || event.isComposing || props.busy) return
+  const control = event.target instanceof Element ? event.target.closest('[role="combobox"]') : null
+  // PrimeVue Select consumes Escape even when its list is already closed.
+  if (control?.getAttribute('aria-expanded') === 'false') {
+    event.preventDefault()
+    event.stopPropagation()
+    emit('close')
+  }
+}
 </script>
 <template>
-  <dialog
-    ref="dialog"
+  <Dialog
+    :visible="true"
+    modal
     class="modal"
-    :aria-labelledby="titleId"
-    @cancel.prevent="!busy && emit('close')"
+    :header="title"
+    :close-on-escape="!busy"
+    :dismissable-mask="false"
+    :draggable="false"
+    :close-button-props="{
+      'aria-label': t('common.close'),
+      disabled: busy,
+      severity: 'secondary',
+      text: true,
+    }"
+    @keydown.capture="closeFromSelect"
+    @update:visible="!$event && !busy && emit('close')"
   >
-    <header class="modal-header">
-      <h2 :id="titleId">{{ title }}</h2>
-      <button
-        type="button"
-        class="icon-button"
-        :aria-label="t('common.close')"
-        :disabled="busy"
-        @click="emit('close')"
-      >
-        ×
-      </button>
-    </header>
     <slot />
-  </dialog>
+  </Dialog>
 </template>

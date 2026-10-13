@@ -2,6 +2,22 @@ import zh from './zh-CN'
 
 export default {
   ...zh,
+  datePicker: {
+    today: 'Today',
+    clear: 'Clear',
+    chooseDate: 'Choose date and time',
+    chooseMonth: 'Choose month',
+    chooseYear: 'Choose year',
+    invalid: 'Enter a valid date and time in YYYY-MM-DD HH:mm:ss format.',
+    previous: 'Previous {unit}',
+    next: 'Next {unit}',
+    month: 'month',
+    year: 'year',
+    decade: 'decade',
+    hour: 'hour',
+    minute: 'minute',
+    second: 'second',
+  },
   common: {
     ...zh.common,
     close: 'Close',

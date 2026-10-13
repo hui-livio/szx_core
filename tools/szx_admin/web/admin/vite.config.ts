@@ -4,7 +4,20 @@ export default defineConfig(({ mode, command }) => {
   const env = loadEnv(mode, process.cwd(), '')
   return {
     base: command === 'build' ? '/admin/' : '/',
-    plugins: [vue()],
+    plugins: [
+      vue(),
+      {
+        name: 'lumina-theme-full-reload',
+        handleHotUpdate(context) {
+          // The preset seeds PrimeVue's shared runtime style registry.
+          // Reboot that registry instead of retaining partially cached component CSS.
+          if (context.file.replaceAll('\\', '/').includes('/src/theme/')) {
+            context.server.ws.send({ type: 'full-reload' })
+            return []
+          }
+        },
+      },
+    ],
     server: {
       host: 'localhost',
       port: 5173,

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import Button from 'primevue/button'
+import InputText from 'primevue/inputtext'
 import { useI18n } from 'vue-i18n'
 const { t } = useI18n()
 const form = defineModel<{
@@ -14,7 +16,7 @@ const emit = defineEmits<{ submit: [] }>()
     <p v-if="error" class="alert error" role="alert">{{ error }}</p>
     <label
       >{{ t('login.identifier')
-      }}<input
+      }}<InputText
         v-model="form.identifier"
         name="identifier"
         autocomplete="username"
@@ -26,7 +28,7 @@ const emit = defineEmits<{ submit: [] }>()
     /></label>
     <label
       >{{ t('login.password')
-      }}<input
+      }}<InputText
         v-model="form.password"
         name="password"
         autocomplete="current-password"
@@ -34,8 +36,8 @@ const emit = defineEmits<{ submit: [] }>()
         required
         :disabled="busy"
     /></label>
-    <button class="primary login-submit" :disabled="busy">
+    <Button class="primary login-submit" :disabled="busy" type="submit">
       {{ busy ? t('login.submitting') : t('login.submit') }}<span aria-hidden="true">→</span>
-    </button>
+    </Button>
   </form>
 </template>

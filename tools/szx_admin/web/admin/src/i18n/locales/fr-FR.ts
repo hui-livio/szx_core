@@ -2,6 +2,22 @@ import en from './en-US'
 
 export default {
   ...en,
+  datePicker: {
+    today: 'Aujourd’hui',
+    clear: 'Effacer',
+    chooseDate: 'Choisir la date et l’heure',
+    chooseMonth: 'Choisir le mois',
+    chooseYear: 'Choisir l’année',
+    invalid: 'Saisissez une date et une heure valides au format YYYY-MM-DD HH:mm:ss.',
+    previous: '{unit} précédent',
+    next: '{unit} suivant',
+    month: 'Mois',
+    year: 'An',
+    decade: 'Décennie',
+    hour: 'Heure',
+    minute: 'Minute',
+    second: 'Seconde',
+  },
   common: {
     ...en.common,
     close: 'Fermer',

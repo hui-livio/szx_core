@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Button from 'primevue/button'
 import { useShellViewModel } from '../composables/useAuthViewModel'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
@@ -46,9 +47,16 @@ const route = useRoute()
           <RouterLink v-if="passwordLink" to="/change-password">{{
             t('shell.password')
           }}</RouterLink
-          ><button class="text-button" :disabled="busy" @click="logout">
+          ><Button
+            class="text-button"
+            :disabled="busy"
+            @click="logout"
+            type="button"
+            severity="secondary"
+            text
+          >
             {{ busy ? t('shell.logoutBusy') : t('shell.logout') }}
-          </button>
+          </Button>
         </div>
       </header>
       <main id="main" class="main">

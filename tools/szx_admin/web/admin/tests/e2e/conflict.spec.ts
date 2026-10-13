@@ -42,7 +42,7 @@ test('version conflict blocks resubmission until the user reloads', async ({ pag
     return reply({ ...user, version })
   })
   await page.goto('/login')
-  await page.getByLabel('登录账号').fill('admin')
+  await page.locator('input[name="identifier"]').fill('admin')
   await page.getByLabel('密码', { exact: true }).fill('test')
   await page.getByRole('button', { name: '登录控制台' }).click()
   await page.getByRole('button', { name: '编辑', exact: true }).click()

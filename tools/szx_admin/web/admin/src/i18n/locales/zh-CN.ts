@@ -1,4 +1,20 @@
 export default {
+  datePicker: {
+    today: '今天',
+    clear: '清除',
+    chooseDate: '选择日期时间',
+    chooseMonth: '选择月份',
+    chooseYear: '选择年份',
+    invalid: '请输入有效的日期时间，格式为 YYYY-MM-DD HH:mm:ss。',
+    previous: '上一{unit}',
+    next: '下一{unit}',
+    month: '月',
+    year: '年',
+    decade: '个十年',
+    hour: '小时',
+    minute: '分钟',
+    second: '秒',
+  },
   common: {
     close: '关闭',
     cancel: '取消',

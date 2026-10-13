@@ -14,8 +14,10 @@
     "format:check": "prettier --check src tests *.ts *.json README.md"
   },
   "dependencies": {
+    "@primeuix/themes": "2.0.3",
     "axios": "^1.20.0",
     "pinia": "^4.0.3",
+    "primevue": "4.5.5",
     "vue": "^3.5.42",
     "vue-i18n": "^11.4.12",
     "vue-router": "^4.6.4"

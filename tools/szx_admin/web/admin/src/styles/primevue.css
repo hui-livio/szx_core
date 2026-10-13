@@ -1,0 +1,356 @@
+/* Aura supplies component states; these rules connect the existing Lumina layout. */
+/* Shared popup contract: never let a missing component token expose the page below. */
+.p-select-overlay,
+.p-datepicker-panel,
+.p-dialog {
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--lg-line);
+  box-shadow: var(--lg-sh-4);
+}
+
+.p-select-overlay {
+  border-radius: var(--lg-r-2xl);
+}
+
+.p-datepicker-panel {
+  border-radius: var(--lg-r-3xl);
+  padding: var(--lg-s7);
+}
+
+.p-dialog {
+  border-radius: var(--lg-r-4xl);
+}
+
+.p-component {
+  font-family: var(--lg-font-sans);
+  font-size: var(--lg-fs-sm);
+}
+
+.p-button {
+  min-height: var(--lg-h-ctrl);
+  font-size: var(--lg-fs-sm);
+}
+
+/* All primary actions share Lumina's brand gradient, not Aura's flat primary fill. */
+.p-button.primary,
+.button.primary {
+  background: var(--lg-gradient-brand);
+  color: white;
+  border-color: transparent;
+  box-shadow: 0 8px 20px -12px var(--lg-brand-500);
+}
+
+.p-button.primary:not(:disabled):hover,
+.button.primary:hover {
+  background: linear-gradient(135deg, var(--lg-brand-600), var(--lg-violet-600));
+  color: white;
+  border-color: transparent;
+}
+
+.p-button-outlined.p-button-secondary {
+  background: var(--lg-field);
+  border-color: var(--lg-line);
+  color: var(--text);
+}
+
+.p-button-outlined.p-button-secondary:not(:disabled):hover {
+  background: var(--lg-field-focus);
+  border-color: var(--lg-brand-300);
+}
+
+.p-button-text.p-button-secondary {
+  color: var(--accent);
+}
+
+.p-inputtext,
+.p-select {
+  width: 100%;
+  min-width: 0;
+  min-height: var(--lg-h-soc);
+  font-size: var(--lg-fs-sm);
+}
+
+.p-inputtext:enabled:focus {
+  background: var(--lg-field-focus);
+}
+
+/* Center the intrinsic label and arrow within Lumina's scaled minimum height.
+   Keep the label's block layout so its existing ellipsis behavior is preserved. */
+.p-select {
+  align-items: center;
+}
+
+/* The focusable label is rectangular; Aura draws the ring on the rounded Select root. */
+.p-select-label:focus-visible {
+  outline: none;
+}
+
+.p-select-overlay {
+  font-size: var(--lg-fs-sm);
+  /* Clip native scrollbar tracks to the overlay without clipping its outer shadow. */
+  overflow: hidden;
+}
+
+.p-select-list-container {
+  border-radius: inherit;
+}
+
+.p-select-option {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.pagination-controls {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.p-paginator-prev,
+.p-paginator-next {
+  width: auto;
+  padding-inline: var(--lg-s5);
+  font: inherit;
+  white-space: nowrap;
+}
+
+.p-paginator-current {
+  font-size: var(--lg-fs-xs);
+  white-space: nowrap;
+}
+
+.p-dialog-mask {
+  background: rgba(20, 24, 51, 0.45);
+}
+
+.p-dialog-title {
+  overflow-wrap: anywhere;
+}
+
+.p-dialog-close-button.p-button {
+  flex-shrink: 0;
+  width: calc(var(--k) * 48px);
+  height: calc(var(--k) * 32px);
+  min-height: calc(var(--k) * 32px);
+  padding: 0;
+  border: 1px solid var(--lg-line);
+  border-radius: var(--lg-r-sm);
+  background: var(--lg-field);
+  color: var(--muted);
+}
+
+.p-dialog-close-button.p-button:not(:disabled):hover {
+  background: var(--lg-field-focus);
+  border-color: var(--lg-brand-300);
+  color: var(--accent);
+}
+
+.p-dialog-close-button.p-button:focus-visible {
+  outline: none;
+  border-color: var(--lg-brand-400);
+  box-shadow: var(--lg-ring-focus);
+}
+
+.admin-table .p-datatable-table {
+  min-width: calc(var(--k) * 780px);
+  font-size: var(--lg-fs-sm);
+}
+
+.admin-table .p-datatable-header-cell {
+  font-size: var(--lg-fs-2xs);
+  font-weight: var(--lg-fw-m);
+}
+
+.admin-table .p-datatable-empty-message > td {
+  padding: 0;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --accent: var(--lg-brand-300);
+  --muted: #8b92b8;
+  --success-ink: #6ee7b7;
+  --warning-ink: #fcd34d;
+  --danger-ink: #fda4af;
+  --table-header-background: var(--lg-n-800);
+  --table-row-hover: var(--lg-n-800);
+  --surface: var(--lg-n-900);
+}
+
+[data-theme='dark'] .role-badge,
+[data-theme='dark'] .capability-list span,
+[data-theme='dark'] .credential,
+[data-theme='dark'] .log-tabs button.active {
+  color: var(--lg-brand-200);
+  background: var(--lg-brand-900);
+  border-color: var(--lg-brand-700);
+}
+
+[data-theme='dark'] .alert.error {
+  color: var(--danger-ink);
+}
+
+[data-theme='dark'] .alert.success {
+  color: var(--success-ink);
+}
+
+[data-theme='dark'] .alert.warning {
+  color: var(--warning-ink);
+}
+
+.p-datepicker {
+  width: 100%;
+  min-width: 0;
+}
+
+.lumina-datetime-panel {
+  font-size: var(--lg-fs-lg);
+  max-width: calc(100vw - 24px);
+}
+
+.lumina-datetime-panel .p-datepicker-select-month,
+.lumina-datetime-panel .p-datepicker-select-year,
+.lumina-datetime-panel .p-datepicker-weekday,
+.lumina-datetime-panel .p-datepicker-day,
+.lumina-datetime-panel .p-datepicker-month,
+.lumina-datetime-panel .p-datepicker-year,
+.lumina-datetime-panel .p-datepicker-buttonbar .p-button {
+  font-size: inherit;
+}
+
+.lumina-datetime-panel .p-datepicker-day-view {
+  min-width: 0;
+  width: 100%;
+  font-size: inherit;
+}
+
+.lumina-datetime-panel .p-datepicker-day-cell {
+  padding: var(--lg-s1);
+}
+
+.lumina-datetime-panel .p-datepicker-time-picker {
+  font-size: var(--lg-fs-xl);
+}
+
+.lumina-datetime-panel .p-datepicker-time-picker span {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Calendar cells and navigation must not inherit the admin data table spacing. */
+.lumina-datetime-panel .p-datepicker-weekday-cell {
+  padding: var(--lg-s2) var(--lg-s1);
+  border: 0;
+  background: transparent;
+  position: static;
+}
+
+.lumina-datetime-panel .p-datepicker-day-cell {
+  border: 0;
+}
+
+.lumina-datetime-panel .p-datepicker-day-view tbody tr:hover {
+  background: transparent;
+}
+
+.lumina-datetime-panel .p-datepicker-select-month,
+.lumina-datetime-panel .p-datepicker-select-year {
+  min-height: calc(var(--k) * 32px);
+  padding: var(--lg-s2) var(--lg-s3);
+  border: 0;
+  background: transparent;
+  border-radius: var(--lg-r-sm);
+}
+
+.lumina-datetime-panel {
+  max-height: calc(100dvh - 24px);
+  overflow: auto;
+}
+
+/* Own these presentation contracts locally: a theme refresh must not collapse
+   business-table spacing or leave a modal without a visible surface. */
+.admin-table .p-datatable-table {
+  border-collapse: collapse;
+  text-align: left;
+  color: var(--text);
+  background: var(--surface);
+}
+
+.admin-table .p-datatable-header-cell {
+  padding: var(--lg-s6) var(--lg-s9);
+  color: var(--muted);
+  background: var(--table-header-background);
+  border: 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.admin-table .p-datatable-tbody > tr > td {
+  padding: var(--lg-s7) var(--lg-s9);
+  border: 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.admin-table .p-datatable-tbody > tr:hover {
+  background: var(--table-row-hover);
+}
+
+.admin-table .user-link,
+.admin-table .table-actions .p-button,
+.admin-table .text-button {
+  background: transparent;
+  border: 0;
+  color: var(--accent);
+  padding: var(--lg-s2) 0;
+  min-height: calc(var(--k) * 32px);
+}
+
+.admin-table .table-actions .danger-text {
+  color: var(--danger-ink);
+}
+
+.p-dialog.modal {
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--lg-line);
+  border-radius: var(--lg-r-4xl);
+  box-shadow: var(--lg-sh-card);
+}
+
+.p-dialog.modal .p-dialog-header {
+  padding: var(--lg-s12) var(--lg-s12) var(--lg-s10);
+}
+
+.p-dialog.modal .p-dialog-content {
+  padding: 0 var(--lg-s12) var(--lg-s12);
+}
+
+.lumina-datetime-panel {
+  color: var(--text);
+  background: var(--surface);
+}
+
+@media (max-width: 600px) {
+  .lumina-datetime-panel {
+    position: fixed;
+    top: 50% !important;
+    left: 50% !important;
+    transform: translate(-50%, -50%);
+    width: min(calc(var(--k) * 360px), calc(100vw - 24px));
+    min-width: 0 !important;
+  }
+}
+
+.lumina-datetime-panel .p-datepicker-day {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(var(--k) * 36px);
+  height: calc(var(--k) * 36px);
+  border-radius: var(--lg-r-full);
+}
+
+.lumina-datetime-panel .p-datepicker-day-selected {
+  background: var(--lg-brand-500);
+  color: white;
+}

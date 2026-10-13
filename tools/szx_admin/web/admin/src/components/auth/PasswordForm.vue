@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import Button from 'primevue/button'
+import InputText from 'primevue/inputtext'
 import { useI18n } from 'vue-i18n'
 const { t } = useI18n()
 const form = defineModel<{ oldPassword: string; password: string; confirmation: string }>({
@@ -28,7 +30,7 @@ const emit = defineEmits<{ submit: []; skip: [] }>()
     <p v-if="error" class="alert error" role="alert">{{ error }}</p>
     <label
       >{{ t('password.current')
-      }}<input
+      }}<InputText
         v-model="form.oldPassword"
         type="password"
         autocomplete="current-password"
@@ -37,7 +39,7 @@ const emit = defineEmits<{ submit: []; skip: [] }>()
     /></label>
     <label
       >{{ t('password.new')
-      }}<input
+      }}<InputText
         v-model="form.password"
         type="password"
         autocomplete="new-password"
@@ -49,7 +51,7 @@ const emit = defineEmits<{ submit: []; skip: [] }>()
     <p id="password-rule" class="hint">{{ passwordHint }}{{ t('password.different') }}</p>
     <label
       >{{ t('password.confirmNew')
-      }}<input
+      }}<InputText
         v-model="form.confirmation"
         type="password"
         autocomplete="new-password"
@@ -58,11 +60,18 @@ const emit = defineEmits<{ submit: []; skip: [] }>()
         :disabled="busy"
     /></label>
     <div class="actions">
-      <button class="primary" :disabled="busy">
-        {{ busy ? t('password.submitting') : t('password.submit') }}</button
-      ><button v-if="!forced" type="button" :disabled="busy" @click="emit('skip')">
+      <Button class="primary" :disabled="busy" type="submit">
+        {{ busy ? t('password.submitting') : t('password.submit') }}</Button
+      ><Button
+        v-if="!forced"
+        type="button"
+        :disabled="busy"
+        @click="emit('skip')"
+        severity="secondary"
+        outlined
+      >
         {{ recommended ? t('password.skip') : t('password.back') }}
-      </button>
+      </Button>
     </div>
   </form>
 </template>

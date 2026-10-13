@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Button from 'primevue/button'
 import { useHomeViewModel } from '../composables/useAuthViewModel'
 import { formatTime } from '../domain'
 import { useI18n } from 'vue-i18n'
@@ -36,9 +37,9 @@ const { t } = useI18n()
   <section class="panel">
     <div class="section-heading">
       <h2>{{ t('home.myPermissions') }}</h2>
-      <button :disabled="busy" @click="load">
+      <Button :disabled="busy" @click="load" type="button" severity="secondary" outlined>
         {{ busy ? t('common.loading') : t('home.refreshPermissions') }}
-      </button>
+      </Button>
     </div>
     <p v-if="error" class="alert error" role="alert">{{ error }}</p>
     <div class="capability-list">
