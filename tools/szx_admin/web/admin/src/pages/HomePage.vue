@@ -3,7 +3,8 @@ import { LuminaButton as Button } from '../ui/lumina'
 import { useHomeViewModel } from '../composables/useAuthViewModel'
 import { formatTime } from '../domain'
 import { useI18n } from 'vue-i18n'
-const { user, role, capabilities, canManage, canAudit, busy, error, load } = useHomeViewModel()
+const { user, role, capabilities, canManage, canAudit, canViewRoles, busy, error, load } =
+  useHomeViewModel()
 const { t } = useI18n()
 </script>
 <template>
@@ -27,6 +28,9 @@ const { t } = useI18n()
       </div>
     </dl>
     <div class="actions">
+      <RouterLink v-if="canViewRoles" class="button lumina-smooth-edge" to="/roles">{{
+        t('rolePermissions.viewAssociations')
+      }}</RouterLink>
       <RouterLink v-if="canManage" class="button primary" to="/users">{{
         t('home.enterUsers')
       }}</RouterLink>

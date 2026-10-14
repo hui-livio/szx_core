@@ -33,6 +33,11 @@ export const router = createRouter({
       meta: { titleKey: 'shell.auditLogs', admin: true },
     },
     {
+      path: '/roles',
+      component: () => import('./pages/RolePermissionsPage.vue'),
+      meta: { titleKey: 'rolePermissions.title', capability: 'role.read' },
+    },
+    {
       path: '/permissions',
       component: () => import('./pages/PermissionsPage.vue'),
       meta: { titleKey: 'rbac.title', capability: 'permission.read' },

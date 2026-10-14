@@ -2,6 +2,30 @@ import zh from './zh-CN'
 
 export default {
   ...zh,
+  rolePermissions: {
+    title: 'Roles and permissions',
+    subtitle:
+      'Inspect complete permission assignments for accessible roles, not just your account.',
+    chooseRole: 'Choose role',
+    includeArchived: 'Include archived roles',
+    idsOnly:
+      'Permission metadata is unavailable or not authorized. Only assignment IDs are shown; effective permissions are not inferred.',
+    assigned: 'Assigned: {count}',
+    effective: 'Effective: {count}',
+    versions: 'Version: {version} · Authorization version: {authz}',
+    inactiveRole: 'This role is disabled or archived; its permissions are currently ineffective.',
+    readOnly:
+      'This page is read-only. Viewing does not require assignment rights. Use permission management to make changes.',
+    unknownPermission: 'Permission metadata unavailable',
+    permissionStatus: 'Permission status',
+    effectiveState: 'Effective status',
+    unknownState: 'Unknown',
+    isEffective: 'Effective',
+    notEffective: 'Ineffective',
+    loadFailed: 'Loading failed. Retry.',
+    noAssignments: 'This role has no permission assignments.',
+    viewAssociations: 'View role permission assignments',
+  },
   rbac: {
     codeConflict: 'This permission code already exists, including archived permissions.',
     inUse: 'The permission is still assigned to a role. Remove the bindings first.',

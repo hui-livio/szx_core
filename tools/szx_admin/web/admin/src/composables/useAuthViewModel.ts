@@ -77,6 +77,9 @@ export function useShellViewModel() {
       ? []
       : [
           { to: '/home', label: t('shell.dashboard'), symbol: '⌂' },
+          ...(auth.can('role.read')
+            ? [{ to: '/roles', label: t('rolePermissions.title'), symbol: '▦' }]
+            : []),
           ...(auth.can('permission.read')
             ? [{ to: '/permissions', label: t('rbac.title'), symbol: '◇' }]
             : []),
@@ -167,6 +170,7 @@ export function useHomeViewModel() {
     load,
     user: computed(() => auth.user),
     role: computed(() => (auth.user ? t(roleLabels[auth.user.role]) : '')),
+    canViewRoles: computed(() => auth.can('role.read')),
     canManage: computed(() => auth.can('user.read')),
     canAudit: computed(() => auth.can('audit.read')),
     capabilities: computed(() =>

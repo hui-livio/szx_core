@@ -36,11 +36,18 @@ export const rbacApi = {
       method: 'DELETE',
       headers: headers(permission.version),
     }),
-  roles: () => api.request<{ items: RoleRecord[] }>({ url: '/admin/roles' }),
-  role: (id: string) => api.request<RoleRecord>({ url: `/admin/roles/${encodeURIComponent(id)}` }),
-  rolePermissionIds: (id: string) =>
+  roles: (includeArchived = false, signal?: AbortSignal) =>
+    api.request<{ items: RoleRecord[] }>({
+      url: '/admin/roles',
+      params: { include_archived: includeArchived },
+      signal,
+    }),
+  role: (id: string, signal?: AbortSignal) =>
+    api.request<RoleRecord>({ url: `/admin/roles/${encodeURIComponent(id)}`, signal }),
+  rolePermissionIds: (id: string, signal?: AbortSignal) =>
     api.request<{ permission_ids: string[] }>({
       url: `/admin/roles/${encodeURIComponent(id)}/permissions`,
+      signal,
     }),
   replaceRolePermissions: (role: RoleRecord, permission_ids: string[]) =>
     api.request<RoleRecord>({

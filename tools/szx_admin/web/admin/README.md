@@ -132,3 +132,9 @@ CMake 配置时定位 npm；构建 `szx_admin_service` 时自动构建并复制�
 登录有 `permission.read` 的账号后可从“权限管理”进入 `/permissions`。默认超管拥有 RBAC 管理能力；普通管理员不自动新增授权。提供 client/custom 权限创建、说明编辑、启停、归档及给现有角色分配启用的自定义权限。归档必须先解除角色关联，内置权限只读；code/module 不可更改，版本冲突需重新加载。
 
 `features/permissions` 管理加载、取消、表单和乐观锁，`api/rbac.ts` 提供类型化接口。UI 继续复用 Lumina 表格、对话框、输入、下拉和主题滚动条。初始中文/英文文案完整，其余语言沿用现有 locale 的回退继承。自定义角色 CRUD 与用户编辑器动态角色列表属于后续切片。
+
+### 角色与权限关联查看
+
+拥有 `role.read` 的账号可从侧栏“角色与权限”、Home“查看角色权限关联”或权限管理页进入 `/roles`。选择一个角色即可查看全部关联，包括内置、自定义和停用权限，区分“已关联”和“当前生效”。只读查看不需要角色权限分配能力；若没有 `permission.read`，只显示关联 ID，不暴露权限目录或推断未知状态。
+
+角色/权限状态变更后可刷新；快速切换角色会取消旧读取，版本不一致会要求重载。页面不发送 PUT/PATCH/POST/DELETE，Home 的当前账号权限列表保留不变。查看页业务代码在 `features/roles/useRolePermissions.ts`，复用 `api/rbac.ts` 与独立 Lumina UI。
