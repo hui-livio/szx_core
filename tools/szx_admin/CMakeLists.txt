@@ -68,9 +68,11 @@ add_library(szx_admin_application STATIC
     src/user/UserService.cc
     src/user/UserLifecycle.cc
     src/policy/Policy.cc
+    src/system/SystemMetrics.cc
 )
 add_library(szx_admin_http STATIC
     src/Routes.cc
+    src/system/SystemMetricsHandler.cc
     src/HttpSupport.cc
     src/rbac/RbacHandler.cc
     src/infra/HttpTransport.cc
@@ -107,6 +109,7 @@ target_link_libraries(szx_rbac_infra INTERFACE szx_admin_http szx_admin_applicat
 
 if(WIN32)
     target_link_libraries(szx_admin_persistence PRIVATE Normaliz)
+    target_link_libraries(szx_admin_application PRIVATE Pdh)
 else()
     find_package(ICU REQUIRED COMPONENTS uc)
     target_link_libraries(szx_admin_persistence PRIVATE ICU::uc)

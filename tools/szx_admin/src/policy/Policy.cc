@@ -11,9 +11,10 @@ constexpr std::array<std::string_view, 4> kRoles{"operator", "engineer", "admin"
 constexpr std::array<std::string_view, 3> kStatuses{"active", "disabled", "locked"};
 
 // Indexed by Capability; keep in sync with the enumeration order.
-constexpr std::array<std::string_view, 12> kCodes{
-    "business.read", "business.operate", "engineering.configure", "user.read",        "user.create", "user.update",
-    "user.status",   "user.unlock",      "user.password.reset",   "user.role.assign", "audit.read", "behavior.read",
+constexpr std::array<std::string_view, 13> kCodes{
+    "business.read", "business.operate", "engineering.configure", "user.read",           "user.create",
+    "user.update",   "user.status",      "user.unlock",           "user.password.reset", "user.role.assign",
+    "audit.read",    "behavior.read",    "system.metrics.read",
 };
 
 constexpr auto bit(Capability capability) noexcept -> std::uint32_t
@@ -26,7 +27,7 @@ constexpr std::uint32_t kOperatorMask = bit(Capability::BusinessRead) | bit(Capa
 constexpr std::uint32_t kEngineerMask = kOperatorMask | bit(Capability::EngineeringConfigure);
 constexpr std::uint32_t kAdminMask    = kEngineerMask | bit(Capability::UserRead) | bit(Capability::UserCreate) |
     bit(Capability::UserUpdate) | bit(Capability::UserStatus) | bit(Capability::UserUnlock) | bit(Capability::UserPasswordReset) |
-    bit(Capability::AuditRead) | bit(Capability::BehaviorRead);
+    bit(Capability::AuditRead) | bit(Capability::BehaviorRead) | bit(Capability::SystemMetricsRead);
 constexpr std::uint32_t kSuperAdminMask = kAdminMask | bit(Capability::UserRoleAssign);
 
 constexpr std::array<std::uint32_t, 4> kMasks{kOperatorMask, kEngineerMask, kAdminMask, kSuperAdminMask};

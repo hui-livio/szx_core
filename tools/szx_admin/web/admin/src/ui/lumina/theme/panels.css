@@ -46,3 +46,57 @@ html:not([data-fx='full']) .lumina-panel-glass {
     background: var(--lg-glass-solid-2);
   }
 }
+
+.lumina-card {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--lg-s7);
+  border-color: transparent;
+  box-shadow: var(--lumina-edge-shadow), var(--lg-sh-card);
+}
+.lumina-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--lg-s5);
+  position: relative;
+  z-index: 1;
+}
+.lumina-card-heading {
+  min-width: 0;
+}
+.lumina-card-heading h2 {
+  margin: 0;
+  font-size: var(--lg-fs-lg);
+  font-weight: 500;
+}
+.lumina-card-heading p {
+  margin: var(--lg-s2) 0 0;
+  color: var(--muted);
+  font-size: var(--lg-fs-sm);
+  overflow-wrap: anywhere;
+}
+.lumina-card-body {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  z-index: 1;
+}
+.lumina-card-state {
+  min-height: 180px;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+}
+.lumina-card-footer {
+  color: var(--muted);
+  font-size: var(--lg-fs-sm);
+  position: relative;
+  z-index: 1;
+}
+.lumina-chart {
+  width: 100%;
+  height: 180px;
+  min-width: 0;
+}

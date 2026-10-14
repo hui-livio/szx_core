@@ -59,3 +59,8 @@ database:
   poolSize: 8
   connectTimeoutSeconds: 5
   lockWaitTimeoutSeconds: 5
+
+# Whole-machine metrics: CPU/memory every 2s, local disk capacity every 30s.
+# Empty diskPaths auto-discovers local volumes (max 32); never monitor network mounts.
+metrics:
+  diskPaths: []

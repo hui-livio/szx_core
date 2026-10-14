@@ -218,3 +218,20 @@ npm run format:check
 glass 自动响应根节点的 `data-fx`：lite（或未设置 full）关闭毛玻璃，full 启用玻璃背景与顶部高光；切换不改变内容尺寸。减少动态效果偏好或浏览器不支持 backdrop-filter 时使用低成本背景。solid 始终使用不透明主题表面。
 
 提示条使用 `--lg-info-surface`、`--lg-info-border`、`--lg-info-ink` 明暗语义 token；暗色信息提示不再使用浅色品牌底色。
+
+## 独立 Card 与图表
+
+`LuminaCard` 在 `LuminaPanel` 上封装标题和内容结构，默认 solid 不透明表面、柔化描边与主题阴影；支持 glass、radius/padding、title/subtitle 和 state（ready/loading/unavailable）/stateLabel。提供 `header`、`actions`、默认内容、`footer`、`state`（带 state 参数）插槽；状态为 loading 时设置 aria-busy，非 ready 时用状态槽替代默认正文。文案均由调用方传入。
+
+```vue
+<LuminaCard title="CPU" subtitle="8 logical processors" :radius="20" :padding="24">
+  <template #actions><LuminaButton label="Refresh" /></template>
+  <p>25%</p>
+  <LuminaChart :option="cpuOption" label="CPU usage trend" />
+  <template #footer>Updated every 2 seconds</template>
+</LuminaCard>
+```
+
+`LuminaChart` 接收 `LuminaChartOption`（从本目录入口导出）、必需的可访问名称 `label` 和可选 `animation`。按需注册 line/pie、grid/tooltip、SVG renderer；不加载 Canvas renderer 或 ECharts 全量入口。实例只初始化一次，option 更新调用 setOption，ResizeObserver 处理容器缩放，卸载时释放图表和所有监听器。
+
+图表监听根节点 data-theme/data-fx；使用当前文本/表面色，tooltip 限定在图表内，避免覆盖 Card 圆角；lite 或 prefers-reduced-motion 下禁用动画，调用方也可显式 animation=false。曲线、环图数据与刷新策略属于业务层，组件不自带 API/采集/历史存储。ECharts 作为固定版本 Apache-2.0 依赖保留在应用 package-lock 中，此目录仍不生成独立 npm 包。

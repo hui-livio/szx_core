@@ -3,7 +3,7 @@
   "info": {
     "title": "SZX Admin API",
     "version": "1.0.0",
-    "description": "单项目 RBAC · 18 个接口操作 · 四个固定角色。\n\n展开接口查看参数、示例和错误码，点击 **Try it out → Execute** 调用当前服务。\n\n**鉴权流程**：登录请求中的 password_hash 必须是原始密码 UTF-8 的 SHA-256 小写摘要。登录后复制 access_token 到 **Authorize / bearerAuth**（不用加 Bearer 前缀）。refresh Cookie 由浏览器管理；刷新/登出手动填写最新 csrf_token。Swagger 不自动登录或刷新，会话凭据不持久保存。refresh token 默认空闲期限为 30 分钟，会话族绝对期限为 7 天；成功刷新重置空闲窗口但不延长绝对期限。\n\n修改用户需填写 **If-Match**；管理员仅管理操作员/工程师，不能给自己分配角色或禁用自己。操作员/工程师新密码至少6位；管理员/超管至少8位并含字母和数字。\n\n响应时间为 UTC 毫秒；日志查询 from/to 为 UTC 秒精度字符串。行为事件不按分钟限流，成功 202 仅表示进入有界内存队列，后台按批次延迟写入；队列满返回 503/2225。生产使用 HTTPS；Cookie/Origin 规则与管理后台相同。\n\nauth.allowedOrigin 默认 * 允许 HTTP/HTTPS 来源跨域携带凭据，也可配置单一来源限制；拒绝 Origin: null。refresh Cookie 使用 HttpOnly、Secure、SameSite=None。跨站调用使用 HTTPS 并启用 credentials，刷新/登出仍校验 X-CSRF-Token。所有响应设置 CSP、禁止 iframe 嵌入和 MIME 嗅探等安全头。"
+    "description": "单项目 RBAC · 20 个接口操作 · 四个固定角色。\n\n展开接口查看参数、示例和错误码，点击 **Try it out → Execute** 调用当前服务。\n\n**鉴权流程**：登录请求中的 password_hash 必须是原始密码 UTF-8 的 SHA-256 小写摘要。登录后复制 access_token 到 **Authorize / bearerAuth**（不用加 Bearer 前缀）。refresh Cookie 由浏览器管理；刷新/登出手动填写最新 csrf_token。Swagger 不自动登录或刷新，会话凭据不持久保存。refresh token 默认空闲期限为 30 分钟，会话族绝对期限为 7 天；成功刷新重置空闲窗口但不延长绝对期限。\n\n修改用户需填写 **If-Match**；管理员仅管理操作员/工程师，不能给自己分配角色或禁用自己。操作员/工程师新密码至少6位；管理员/超管至少8位并含字母和数字。\n\n响应时间为 UTC 毫秒；日志查询 from/to 为 UTC 秒精度字符串。行为事件不按分钟限流，成功 202 仅表示进入有界内存队列，后台按批次延迟写入；队列满返回 503/2225。生产使用 HTTPS；Cookie/Origin 规则与管理后台相同。\n\nauth.allowedOrigin 默认 * 允许 HTTP/HTTPS 来源跨域携带凭据，也可配置单一来源限制；拒绝 Origin: null。refresh Cookie 使用 HttpOnly、Secure、SameSite=None。跨站调用使用 HTTPS 并启用 credentials，刷新/登出仍校验 X-CSRF-Token。所有响应设置 CSP、禁止 iframe 嵌入和 MIME 嗅探等安全头。"
   },
   "servers": [
     {
@@ -31,6 +31,10 @@
     {
       "name": "客户端",
       "description": "当前权限与业务行为上报"
+    },
+    {
+      "name": "机器性能",
+      "description": "Windows/Linux 服务端机器的 CPU、物理内存及本地磁盘容量；system.metrics.read 权限"
     }
   ],
   "security": [
@@ -1115,6 +1119,118 @@
           }
         }
       }
+    },
+    "/admin/system/metrics": {
+      "get": {
+        "tags": [
+          "机器性能"
+        ],
+        "operationId": "getMachineMetrics",
+        "summary": "查询机器性能快照",
+        "description": "需要 system.metrics.read（默认 admin/super_admin）。监控服务所在机器，不是浏览器所在机器。共享采集：CPU/内存 2 秒，磁盘 30 秒。CPU 初次采样 warming_up；局部失败 status=unavailable/error_code=2216，值为 null，其他指标可正常返回。响应不缓存。instance_id 区分采集实例，sequence 在该实例内递增；历史仅保留最近 15 分钟/450 条，服务重启丢失。拒绝未知查询参数。",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功（指标可部分不可用）",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "example": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MachineSnapshotResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "422": {
+            "$ref": "#/components/responses/422"
+          },
+          "500": {
+            "$ref": "#/components/responses/500"
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          }
+        }
+      }
+    },
+    "/admin/system/metrics/history": {
+      "get": {
+        "tags": [
+          "机器性能"
+        ],
+        "operationId": "getMachineMetricsHistory",
+        "summary": "查询机器性能历史",
+        "description": "需要 system.metrics.read（默认 admin/super_admin）。监控服务所在机器，不是浏览器所在机器。共享采集：CPU/内存 2 秒，磁盘 30 秒。CPU 初次采样 warming_up；局部失败 status=unavailable/error_code=2216，值为 null，其他指标可正常返回。响应不缓存。instance_id 区分采集实例，sequence 在该实例内递增；历史仅保留最近 15 分钟/450 条，服务重启丢失。拒绝未知查询参数。",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "name": "window_seconds",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 900,
+              "default": 300
+            },
+            "description": "滚动历史窗口秒数；最多 450 个样本，重启清空历史。"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功（指标可部分不可用）",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "example": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MachineHistoryResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "422": {
+            "$ref": "#/components/responses/422"
+          },
+          "500": {
+            "$ref": "#/components/responses/500"
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1963,6 +2079,254 @@
           "data",
           "request_id"
         ]
+      },
+      "MachineMetric": {
+        "type": "object",
+        "required": [
+          "status",
+          "error_code",
+          "usage_percent",
+          "total_bytes",
+          "used_bytes",
+          "available_bytes",
+          "free_bytes"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "warming_up",
+              "unavailable"
+            ]
+          },
+          "error_code": {
+            "type": "integer",
+            "nullable": true,
+            "description": "unavailable => 2216; otherwise null"
+          },
+          "usage_percent": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100,
+            "nullable": true
+          },
+          "total_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "nullable": true
+          },
+          "used_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "nullable": true
+          },
+          "available_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "nullable": true
+          },
+          "free_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "nullable": true
+          }
+        },
+        "additionalProperties": false,
+        "description": "CPU only has usage_percent; memory used=total-available (available includes reclaimable cache), free_bytes=null; disk used=total-free, available is caller/quota-aware. Failed values remain null, never fake zero."
+      },
+      "MachineSample": {
+        "type": "object",
+        "required": [
+          "sequence",
+          "sampled_at",
+          "cpu",
+          "memory"
+        ],
+        "properties": {
+          "sequence": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "sampled_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "UTC Unix milliseconds"
+          },
+          "cpu": {
+            "$ref": "#/components/schemas/MachineMetric"
+          },
+          "memory": {
+            "$ref": "#/components/schemas/MachineMetric"
+          }
+        },
+        "additionalProperties": false
+      },
+      "MachineDisk": {
+        "type": "object",
+        "required": [
+          "id",
+          "path",
+          "sampled_at",
+          "capacity"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string",
+            "description": "Local volume mountpoint, not an arbitrary request path"
+          },
+          "sampled_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "UTC Unix milliseconds"
+          },
+          "capacity": {
+            "$ref": "#/components/schemas/MachineMetric"
+          }
+        },
+        "additionalProperties": false
+      },
+      "MachineSnapshot": {
+        "type": "object",
+        "required": [
+          "sequence",
+          "sampled_at",
+          "cpu",
+          "memory",
+          "instance_id",
+          "platform",
+          "logical_cpus",
+          "sample_interval_ms",
+          "disk_interval_ms",
+          "disks"
+        ],
+        "properties": {
+          "sequence": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "sampled_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "UTC Unix milliseconds"
+          },
+          "cpu": {
+            "$ref": "#/components/schemas/MachineMetric"
+          },
+          "memory": {
+            "$ref": "#/components/schemas/MachineMetric"
+          },
+          "instance_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "platform": {
+            "type": "string",
+            "enum": [
+              "linux",
+              "windows"
+            ]
+          },
+          "logical_cpus": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "sample_interval_ms": {
+            "type": "integer",
+            "enum": [
+              2000
+            ]
+          },
+          "disk_interval_ms": {
+            "type": "integer",
+            "enum": [
+              30000
+            ]
+          },
+          "disks": {
+            "type": "array",
+            "maxItems": 32,
+            "items": {
+              "$ref": "#/components/schemas/MachineDisk"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "MachineHistory": {
+        "type": "object",
+        "required": [
+          "instance_id",
+          "sample_interval_ms",
+          "window_seconds",
+          "samples"
+        ],
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sample_interval_ms": {
+            "type": "integer",
+            "enum": [
+              2000
+            ]
+          },
+          "window_seconds": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 900
+          },
+          "samples": {
+            "type": "array",
+            "maxItems": 450,
+            "items": {
+              "$ref": "#/components/schemas/MachineSample"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "MachineSnapshotResponse": {
+        "type": "object",
+        "required": [
+          "data",
+          "request_id"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/MachineSnapshot"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "MachineHistoryResponse": {
+        "type": "object",
+        "required": [
+          "data",
+          "request_id"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/MachineHistory"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
       }
     },
     "parameters": {

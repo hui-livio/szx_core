@@ -20,7 +20,7 @@ describe('Lumina source-module boundary', () => {
       for (const imported of imports) {
         if (imported.startsWith('.'))
           expect(resolve(dirname(path), imported).startsWith(`${root}/`)).toBe(true)
-        else expect(imported).toMatch(/^(vue$|primevue\/|@primevue\/|@primeuix\/)/)
+        else expect(imported).toMatch(/^(vue$|echarts\/|primevue\/|@primevue\/|@primeuix\/)/)
       }
     }
   })

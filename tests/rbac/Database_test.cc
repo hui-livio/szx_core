@@ -1,8 +1,9 @@
-#include "SzxAdmin/Infra/Database.h"
+#include "../../tools/szx_admin/src/infra/DatabaseDialect.h"
 #include "../../tools/szx_admin/src/infra/DatabaseUnitOfWork.h"
-#include "../../tools/szx_admin/src/rbac/PermissionCodes.h"
 #include "../../tools/szx_admin/src/maintenance/LogMaintenanceService.h"
+#include "../../tools/szx_admin/src/rbac/PermissionCodes.h"
 #include "../../tools/szx_admin/src/telemetry/BehaviorEventWriter.h"
+#include "SzxAdmin/Infra/Database.h"
 #include "SzxAdmin/Infra/ErrorCode.h"
 #include "SzxCrypto/Random.h"
 
@@ -554,7 +555,7 @@ TEST(DatabaseInitializationTest, PreservesPublishedMigrationChecksumsAndExisting
 TEST(DatabaseInitializationTest, DropsLegacyLogTableWithoutRewritingPublishedMigrations)
 {
     const auto migrations = SZX::ADMIN::INFRA::embeddedMigrations();
-    ASSERT_EQ(migrations.size(), 10U);
+    ASSERT_EQ(migrations.size(), 11U);
     FakeDatabaseConnection connection;
     const auto legacy = migrations.first(5);
     for (const auto &migration : legacy.first(4))
@@ -576,14 +577,14 @@ TEST(DatabaseInitializationTest, DropsLegacyLogTableWithoutRewritingPublishedMig
 TEST(DatabaseInitializationTest, RegistersTheDynamicRbacCatalog)
 {
     const auto migrations = SZX::ADMIN::INFRA::embeddedMigrations();
-    ASSERT_EQ(migrations.back().version, 10U);
+    ASSERT_EQ(migrations.back().version, 11U);
     EXPECT_NE(migrations[5].sql.find("CREATE TABLE IF NOT EXISTS roles"), std::string_view::npos);
     EXPECT_NE(migrations[5].sql.find("CREATE TABLE IF NOT EXISTS permissions"), std::string_view::npos);
     EXPECT_NE(migrations[5].sql.find("role_manage_scopes"), std::string_view::npos);
     EXPECT_NE(migrations[6].sql.find("login_identifier"), std::string_view::npos);
     EXPECT_NE(migrations[6].sql.find("role_id"), std::string_view::npos);
     EXPECT_NE(migrations[8].sql.find("DROP COLUMN uid"), std::string_view::npos);
-    EXPECT_EQ(SZX::ADMIN::RBAC::PERMISSIONS::definitions().size(), 24U);
+    EXPECT_EQ(SZX::ADMIN::RBAC::PERMISSIONS::definitions().size(), 25U);
 }
 
 TEST(MigrationRunnerTest, AppliesPendingMigrationAndRecordsIt)
@@ -876,4 +877,52 @@ TEST(DatabaseUnitOfWorkTest, DoesNotRollbackAfterSuccessfulCommit)
     }
     EXPECT_EQ(connection.commitCount, 1);
     EXPECT_EQ(connection.rollbackCount, 0);
+}
+
+TEST(DatabaseDialectTest, DetectsSupportedServersWithoutManualConfig)
+{
+    using namespace SZX::ADMIN::INFRA::DETAIL;
+    struct Case
+    {
+        std::string version;
+        std::optional<DatabaseDialect> want;
+    };
+    const std::vector<Case> cases{{"8.0.16", DatabaseDialect::MySql8},
+                                  {"8.0.40-commercial", DatabaseDialect::MySql8},
+                                  {"8.4.0", DatabaseDialect::MySql8},
+                                  {"10.11.9-MariaDB", DatabaseDialect::MariaDb},
+                                  {"12.3.3-MariaDB", DatabaseDialect::MariaDb},
+                                  {"5.5.5-10.11.9-MariaDB", DatabaseDialect::MariaDb},
+                                  {"8.0.15", {}},
+                                  {"5.7.44", {}},
+                                  {"10.6.22-MariaDB", {}},
+                                  {"", {}},
+                                  {"garbage", {}},
+                                  {"8.0.40foo", {}}};
+    for (const auto &tc : cases)
+    {
+        SCOPED_TRACE(tc.version);
+        EXPECT_EQ(databaseDialect(tc.version), tc.want);
+    }
+}
+TEST(DatabaseDialectTest, AdaptsDdlWithoutChangingPublishedChecksumOrQuotedValues)
+{
+    using namespace SZX::ADMIN::INFRA::DETAIL;
+    const std::string sql =
+        "ALTER TABLE t DROP CHECK chk_a, DROP CHECK chk_b; -- DROP CHECK utf8mb4_0900_bin\n"
+        "CREATE TABLE t (code VARCHAR(64) COLLATE utf8mb4_0900_bin, name TEXT DEFAULT 'DROP CHECK utf8mb4_0900_ai_ci') COLLATE utf8mb4_0900_ai_ci;";
+    EXPECT_EQ(initializationSql(sql, DatabaseDialect::MySql8), sql);
+    const auto adapted = initializationSql(sql, DatabaseDialect::MariaDb);
+    EXPECT_NE(adapted.find("DROP CONSTRAINT chk_a, DROP CONSTRAINT chk_b"), std::string::npos);
+    EXPECT_NE(adapted.find("COLLATE utf8mb4_nopad_bin"), std::string::npos);
+    EXPECT_NE(adapted.find("COLLATE utf8mb4_unicode_520_ci"), std::string::npos);
+    EXPECT_NE(adapted.find("'DROP CHECK utf8mb4_0900_ai_ci'"), std::string::npos);
+    EXPECT_NE(adapted.find("-- DROP CHECK utf8mb4_0900_bin"), std::string::npos);
+    EXPECT_EQ(initializationSql("SELECT `utf8mb4_0900_bin`, 'it''s DROP CHECK', \"DROP CHECK\"; /* utf8mb4_0900_ai_ci */",
+                                DatabaseDialect::MariaDb),
+              "SELECT `utf8mb4_0900_bin`, 'it''s DROP CHECK', \"DROP CHECK\"; /* utf8mb4_0900_ai_ci */");
+    const auto migrations = SZX::ADMIN::INFRA::embeddedMigrations();
+    EXPECT_EQ(migrations[8].checksum, "b410199c9d5e1dd14e0a60017a2134d5826e824e50eede2196b68d11c3f18bc4");
+    EXPECT_NE(migrations[8].sql.find("DROP CHECK"), std::string_view::npos);
+    EXPECT_EQ(initializationSql(migrations[8].sql, DatabaseDialect::MariaDb).find("DROP CHECK"), std::string::npos);
 }

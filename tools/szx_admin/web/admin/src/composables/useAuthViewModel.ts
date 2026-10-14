@@ -77,6 +77,9 @@ export function useShellViewModel() {
       ? []
       : [
           { to: '/home', label: t('shell.dashboard'), symbol: '⌂' },
+          ...(auth.can('system.metrics.read')
+            ? [{ to: '/system/performance', label: t('performance.title'), symbol: '◴' }]
+            : []),
           ...(isAdmin(auth.user?.role)
             ? [
                 { to: '/users', label: t('shell.users'), symbol: '◎' },
@@ -105,6 +108,13 @@ export function useSessionNavigation() {
   const auth = useAuthStore()
   const router = useRouter()
   watch(
+    () => [auth.user?.id, auth.user?.authz_version] as const,
+    () => {
+      if (auth.user && !auth.permissions) void auth.loadPermissions().catch(() => {})
+    },
+    { immediate: true },
+  )
+  watch(
     () => auth.user,
     (user) => {
       if (!user) void router.replace('/login')
@@ -122,6 +132,7 @@ export function useHomeViewModel() {
   const { t } = useI18n()
   const load = () => task.run(auth.loadPermissions)
   const capabilityLabels: Record<string, string> = {
+    'system.metrics.read': 'performance.permission',
     'business.read': 'permissions.business_read',
     'business.operate': 'permissions.business_operate',
     'engineering.configure': 'permissions.engineering_configure',

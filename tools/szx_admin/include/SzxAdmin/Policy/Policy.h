@@ -25,6 +25,7 @@ enum class Capability : int
     UserRoleAssign,       ///< user.role.assign
     AuditRead,            ///< audit.read
     BehaviorRead,         ///< behavior.read
+    SystemMetricsRead,    ///< system.metrics.read
 };
 
 /** 四个固定角色之一。 */

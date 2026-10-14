@@ -33,18 +33,35 @@ export const router = createRouter({
       meta: { titleKey: 'shell.auditLogs', admin: true },
     },
     {
+      path: '/system/performance',
+      component: () => import('./pages/PerformancePage.vue'),
+      meta: { titleKey: 'performance.title', admin: true, capability: 'system.metrics.read' },
+    },
+    {
       path: '/:pathMatch(.*)*',
       component: () => import('./pages/NotFoundPage.vue'),
       meta: { titleKey: 'notFound.title' },
     },
   ],
 })
-router.beforeEach((to) => {
+router.beforeEach(async (to) => {
   const auth = useAuthStore()
   if (!auth.user) return to.path === '/login' ? true : '/login'
   if (auth.needsPassword && to.path !== '/change-password') return '/change-password'
   if (to.path === '/login') return auth.home
   if (to.meta.admin && !isAdmin(auth.user.role)) return '/home'
+  if (typeof to.meta.capability === 'string') {
+    if (!auth.permissions) {
+      try {
+        await auth.loadPermissions()
+      } catch {
+        return auth.user ? '/home' : '/login'
+      }
+    }
+    if (!auth.user) return '/login'
+    if (auth.needsPassword) return '/change-password'
+    if (!auth.can(to.meta.capability)) return '/home'
+  }
   return true
 })
 router.afterEach((to) => {

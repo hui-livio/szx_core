@@ -753,3 +753,45 @@ openssl pkey -in jwt-private.pem -pubout -out jwt-public.pem
 密钥放在静态目录之外；重启加载相同密钥可保留未过期 token 的可验证性。也可用仓库 `szx_license_issuer keygen` 生成专用密钥对，不与许可证签发共用密钥。
 
 服务端将客户端 SHA-256 摘要再经随机盐 Argon2id 哈希后保存，格式为 `sha256-v1:<Argon2id PHC>`。旧原密码 Argon2id 凭据不能直接转换；仅仍使用默认初始凭据且待改密的初始超管可在成功登录时自动升级，其他旧账号需明确重置密码。访问日志不记录 query、Authorization 或请求体，只保留 request ID、方法、路径和状态。
+
+## 机器性能接口
+
+监控对象是 **`szx_admin_service` 所在机器**，不是浏览器所在机器。两个接口均需 Bearer 认证和 `system.metrics.read` 权限；迁移 11 为 `admin` / `super_admin` 授权，更新其 `authz_version`，升级后旧会话可能需重新登录。接口不缓存（`Cache-Control: no-store`），不接受任意磁盘路径参数。
+
+| 方法 | 路径 | 用途 |
+| --- | --- | --- |
+| GET | `/api/v1/admin/system/metrics` | 当前 CPU、物理内存与本地卷容量快照 |
+| GET | `/api/v1/admin/system/metrics/history?window_seconds=300` | 最近 1–900 秒的 CPU/内存历史，默认 300 秒 |
+
+沿用 `{data, request_id}` 成功信封以及原有错误信封：401 未认证、403 缺少权限、422 参数错误、503/2216 采集服务未运行。拒绝未知参数、非正整数或超过 900 的时间窗口。指标的局部采集失败不使整个快照失败。
+
+快照 `data` 字段：
+
+- `instance_id`：每次启动采集器生成的 UUID；同一实例内 `sequence` 从 1 递增，用于去重和识别重启。
+- `sampled_at`：UTC Unix 毫秒；`platform`：`windows` / `linux`；`logical_cpus`：逻辑处理器数量。
+- `sample_interval_ms=2000`，`disk_interval_ms=30000`。
+- `cpu` / `memory`：`status`、`error_code`、`usage_percent`、`total_bytes`、`used_bytes`、`available_bytes`、`free_bytes`。
+- `disks[]`：最多 32 个去重后的本地卷，`id`、`path`、自己的 `sampled_at` 和 `capacity`（与指标字段一致）。磁盘采样时间不得用快照时间替代。
+
+`status` 为 `ok`、`warming_up` 或 `unavailable`；CPU 首次需要差分采样，返回 `warming_up` / 空使用率，不伪造 0%。失败返回 `unavailable` / `error_code=2216`，相关数值保持 `null`；其余情况下 `error_code=null`。CPU 只有使用率有意义，容量字段为空。
+
+内存按物理内存统计：`used=total-available`，Linux `MemAvailable` 包含可回收缓存，不能当成原始 `MemFree`；内存 `free_bytes=null`。磁盘 `used=total-free`，`available` 为服务运行身份/配额下可用空间，两者分别展示。暂不包含 GPU、磁盘读写/IOPS、进程排名或远程机器。
+
+历史 `data` 为 `{instance_id, sample_interval_ms, window_seconds, samples[]}`；每个样本含 `sequence`、`sampled_at`、`cpu`、`memory`。历史仅在内存中保留最近约 15 分钟，最多 450 条，重启清空。前端遇到实例变化或序列缺口重新拉取历史，禁止跨实例拼接曲线。
+
+### 采集配置与平台
+
+```yaml
+metrics:
+  diskPaths: []
+```
+
+空列表自动发现本地卷；配置绝对路径可限定监控范围（Linux 例如 `/`、`/data`；Windows 例如 `'C:\'`、`'D:\'`）。同一卷去重，最多 32 条，不探测网络或伪文件系统。Linux 目前支持 ext2/3/4、xfs、btrfs、zfs、overlay、f2fs、vfat、exfat、ntfs3；其他类型需显式扩展本地文件系统白名单。缺失/不支持的配置路径显示不可用而非成功零容量。
+
+Linux 使用 `/proc/stat`、`/proc/meminfo`、挂载表与 `statvfs`；Windows 使用 PDH 英文 aggregate 计数器（覆盖处理器组）、`GlobalMemoryStatusEx`、`GetDiskFreeSpaceExW`，链接 Pdh。采集线程共享缓存，不随网页暂停而停止；磁盘采集可能受底层本地文件系统延迟影响。
+
+### 前端与复用边界
+
+入口 `/admin/system/performance`（Vue 内部路由 `/system/performance`），侧栏“机器性能”。每个指标/磁盘卷一张 Card，响应式平铺；CPU/内存使用 ECharts 趋势，磁盘使用容量环图。可选 5/15 分钟窗口、暂停/继续、展示过期/不可用状态。离页、登出或隐藏标签页取消轮询；恢复刷新补齐历史；不重叠请求，错误时有界退避。
+
+`src/ui/lumina/components/LuminaCard.vue` 复用 LuminaPanel，提供 header/actions/default/footer/state 插槽与 title/subtitle/radius/padding/variant/state 属性。`LuminaChart.vue` 按需注册 ECharts 模块，SVG 渲染、ResizeObserver、自身销毁清理；主题、低特效和系统 reduced-motion 自动生效。这两个组件只依赖 Vue / ECharts / 同目录 UI，不依赖业务 API、Pinia、路由或 i18n，仍放独立目录，不构建独立 npm 库。

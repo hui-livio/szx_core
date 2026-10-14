@@ -6,6 +6,7 @@
 
 namespace SZX::ADMIN::RBAC::PERMISSIONS
 {
+inline constexpr std::string_view SystemMetricsRead{"system.metrics.read"};
 inline constexpr std::string_view BusinessRead{"business.read"};
 inline constexpr std::string_view BusinessOperate{"business.operate"};
 inline constexpr std::string_view EngineeringConfigure{"engineering.configure"};
@@ -45,7 +46,8 @@ struct Definition final
     bool requiredForSuperAdmin{};
 };
 
-inline constexpr std::array<Definition, 24> Definitions{
+inline constexpr std::array<Definition, 25> Definitions{
+    Definition{SystemMetricsRead, "system", true},
     Definition{BusinessRead, "business", true},
     Definition{BusinessOperate, "business", true},
     Definition{EngineeringConfigure, "engineering", true},

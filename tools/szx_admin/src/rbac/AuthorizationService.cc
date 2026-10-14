@@ -2,9 +2,9 @@
 #include "PermissionCodes.h"
 
 #include "../auth/LoginService.h"
+#include "../user/UserValidation.h"
 #include "PermissionRepository.h"
 #include "RoleRepository.h"
-#include "../user/UserValidation.h"
 #include "SzxAdmin/Infra/ErrorCode.h"
 #include "SzxAdmin/Policy/Policy.h"
 
@@ -52,6 +52,8 @@ auto capabilityFor(std::string_view code) noexcept -> std::optional<Capability>
         return Capability::AuditRead;
     if (code == BehaviorRead)
         return Capability::BehaviorRead;
+    if (code == SystemMetricsRead)
+        return Capability::SystemMetricsRead;
     return std::nullopt;
 }
 
@@ -64,8 +66,7 @@ AuthorizationService::AuthorizationService(AUTH::LoginService &auth) noexcept :
 }
 
 auto AuthorizationService::resolve(const USER::ActorContext &context, USER::UserRepository &repository, bool lock,
-                                   RoleRepository *roles)
-    -> Result<AuthorizedActor>
+                                   RoleRepository *roles) -> Result<AuthorizedActor>
 {
     try
     {
@@ -92,16 +93,15 @@ auto AuthorizationService::resolve(const USER::ActorContext &context, USER::User
                 return failed<AuthorizedActor>(ErrorCode::AuthRequired);
         }
         return Result<AuthorizedActor>::Success({.user = *found.value});
-    }
-    catch (...)
+    } catch (...)
     {
         return failed<AuthorizedActor>(ErrorCode::InternalFailure);
     }
 }
 
 auto AuthorizationService::authorizeUserMutation(const USER::ActorContext &context, USER::UserRepository &repository,
-                                                  std::string_view targetId, std::string_view permissionCode,
-                                                  std::uint32_t version, RoleRepository *roles) -> Result<AuthorizedMutation>
+                                                 std::string_view targetId, std::string_view permissionCode,
+                                                 std::uint32_t version, RoleRepository *roles) -> Result<AuthorizedMutation>
 {
     try
     {
@@ -149,11 +149,9 @@ auto AuthorizationService::authorizeUserMutation(const USER::ActorContext &conte
             return failed<AuthorizedMutation>(ErrorCode::Forbidden);
         if (locked.value.target->version != static_cast<int>(version))
             return failed<AuthorizedMutation>(ErrorCode::ConflictVersion);
-        return Result<AuthorizedMutation>::Success({.actor = *actor,
-                                                    .target = *locked.value.target,
-                                                    .activeSuperAdmins = locked.value.activeSuperAdmins});
-    }
-    catch (...)
+        return Result<AuthorizedMutation>::Success(
+            {.actor = *actor, .target = *locked.value.target, .activeSuperAdmins = locked.value.activeSuperAdmins});
+    } catch (...)
     {
         return failed<AuthorizedMutation>(ErrorCode::InternalFailure);
     }
@@ -176,8 +174,7 @@ auto AuthorizationService::allows(RoleRepository &roles, std::string_view role, 
         if (!currentRole.value || currentRole.value->status != "active")
             return Result<bool>::Success(false);
         return roles.hasPermission(role, permissionCode);
-    }
-    catch (...)
+    } catch (...)
     {
         return failed<bool>(ErrorCode::InternalFailure);
     }
@@ -203,8 +200,7 @@ auto AuthorizationService::capabilities(std::string_view role) const -> Result<s
     try
     {
         return Result<std::vector<std::string_view>>::Success(POLICY::capabilities(role));
-    }
-    catch (...)
+    } catch (...)
     {
         return failed<std::vector<std::string_view>>(ErrorCode::InternalFailure);
     }
@@ -216,8 +212,7 @@ auto AuthorizationService::capabilities(PermissionRepository &permissions, std::
     try
     {
         return permissions.listActiveCodes(role);
-    }
-    catch (...)
+    } catch (...)
     {
         return failed<std::vector<std::string>>(ErrorCode::InternalFailure);
     }
@@ -238,8 +233,7 @@ auto AuthorizationService::manageableRoles(RoleRepository &roles, std::string_vi
     try
     {
         return roles.manageableRoles(actorRole);
-    }
-    catch (...)
+    } catch (...)
     {
         return failed<std::vector<std::string>>(ErrorCode::InternalFailure);
     }

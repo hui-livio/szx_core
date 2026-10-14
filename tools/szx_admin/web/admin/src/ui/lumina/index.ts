@@ -24,3 +24,7 @@ export type { LuminaTheme, LuminaEffects } from './theme/appearance'
 export { default as LuminaMark } from './components/LuminaMark.vue'
 
 export { default as LuminaPanel } from './components/LuminaPanel.vue'
+
+export { default as LuminaCard } from './components/LuminaCard.vue'
+export { default as LuminaChart } from './components/LuminaChart.vue'
+export type { LuminaChartOption } from './types/chart'

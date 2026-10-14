@@ -2,6 +2,7 @@
 
 #include <coroutine>
 
+#include "DatabaseDialect.h"
 #include "OrmRuntime.h"
 
 #include "Logger.h"
@@ -10,10 +11,11 @@
 
 #include <algorithm>
 #include <chrono>
-#include <optional>
 #include <mutex>
+#include <optional>
 #include <stdexcept>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -34,12 +36,12 @@ class OrmConnection final
         connection_.reset_error();
         connection_.set_enable_transaction(false);
         const auto started = std::chrono::steady_clock::now();
-        auto result = callback();
+        auto result        = callback();
         const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - started);
         if (elapsed >= std::chrono::microseconds{5000})
             LOGM_DEBUG("szx_admin.database", "event=orm_operation_slow duration_microseconds={}", elapsed.count());
-        hasError_   = connection_.has_error();
-        lastError_  = connection_.get_last_error();
+        hasError_  = connection_.has_error();
+        lastError_ = connection_.get_last_error();
         return result;
     }
 
@@ -51,7 +53,25 @@ public:
     template <typename... Args>
     auto connect(Args &&...args) -> bool
     {
-        return invoke([&] { return connection_.connect(std::forward<Args>(args)...); });
+        if (!invoke([&] { return connection_.connect(std::forward<Args>(args)...); }))
+            return false;
+        const auto versions = query_s<std::tuple<std::string>>("SELECT VERSION()");
+        if (hasError_ || versions.size() != 1)
+            return false;
+        const auto detected = databaseDialect(std::get<0>(versions.front()));
+        if (!detected)
+        {
+            hasError_  = true;
+            lastError_ = "Unsupported database server version";
+            return false;
+        }
+        dialect_ = *detected;
+        return true;
+    }
+
+    [[nodiscard]] auto dialect() const noexcept -> DatabaseDialect
+    {
+        return dialect_;
     }
 
     auto execute(const std::string &sql) -> bool
@@ -130,6 +150,7 @@ public:
 
 private:
     ormpp::mysql connection_;
+    DatabaseDialect dialect_{DatabaseDialect::MySql8};
     std::recursive_mutex mutex_;
     bool hasError_{};
     std::string lastError_;

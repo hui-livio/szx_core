@@ -32,7 +32,7 @@ test('Lumina UI works without admin routes, Pinia, i18n or API calls', async ({ 
   // Browser-interaction policy belongs to the consuming application, not the UI.
   expect(
     await page
-      .getByRole('heading')
+      .getByRole('heading', { name: 'Standalone Lumina controls' })
       .evaluate((element) =>
         element.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })),
       ),
@@ -125,4 +125,30 @@ test('generic panels switch glass effects without resizing and keep solid surfac
   )
   await page.emulateMedia({ reducedMotion: 'reduce' })
   expect(await glass.evaluate((element) => getComputedStyle(element).backdropFilter)).toBe('none')
+})
+
+test('standalone Card slots/state and SVG Chart adapt to appearance changes', async ({ page }) => {
+  await page.goto(fixture)
+  const card = page.getByTestId('reusable-card')
+  await expect(card.getByRole('heading', { name: 'Reusable card', exact: true })).toBeVisible()
+  await expect(card.getByRole('button', { name: 'Card action' })).toBeVisible()
+  await expect(card).toContainText('Caller body')
+  await expect(card.locator('footer')).toHaveText('Caller footer')
+  expect(await card.evaluate((element) => getComputedStyle(element).borderRadius)).toBe('18px')
+  await expect(page.getByTestId('unavailable-card').getByRole('status')).toHaveText(
+    'Caller unavailable',
+  )
+  const chart = card.getByRole('img', { name: 'Reusable chart' })
+  await expect(chart.locator('svg')).toHaveCount(1)
+  const chartId = await chart.getAttribute('_echarts_instance_')
+  await page.evaluate(() => {
+    document.documentElement.dataset.theme = 'dark'
+    document.documentElement.dataset.fx = 'lite'
+  })
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await expect(chart.locator('svg')).toHaveCount(1)
+  expect(await chart.getAttribute('_echarts_instance_')).toBe(chartId)
+  expect(await card.evaluate((element) => getComputedStyle(element).backgroundColor)).not.toBe(
+    'rgba(0, 0, 0, 0)',
+  )
 })

@@ -193,3 +193,21 @@ py -3 scripts/profile_admin_http.py "http://127.0.0.1:7364/api/v1/admin/users?pa
 Windows Nginx 配置为 `proxy_pass http://localhost:7364;`、WSL 服务经 IPv4 转发时，两个用户查询慢请求分别在 10:06:28 和 10:12:38（北京时间）的代理错误日志出现连接 `[::1]:7364` 被拒绝。10:12:38 的请求 ID 为 `c2baf73d-899a-4a89-88ad-6a2fc6c983ef`，后端计时 `app=3 ms`、`access_log=1 ms`，浏览器等待约 2.05 秒。
 
 通过 Windows curl 对 `https://localhost/api/v1/health` 使用相同请求方式、新进程每次请求、间隔 250 ms 进行采样（本地自签证书采样使用 `-k`）：修复前 40 次中 2 次超过 1 秒，最大 2275.8 ms，慢请求同期均有 IPv6 上游连接失败。将 upstream 明确改为 `127.0.0.1:7364` 并平滑重载后，100 次采样全部返回 200，最大 244.6 ms，超过 1 秒为 0 次，新增 IPv6 上游错误为 0。该样本证明代理路径上的失败连接/回退，不代表数据库查询性能基准；业务接口仍应按请求 ID 和 Server-Timing 验证。
+
+### MySQL / MariaDB 兼容边界
+
+数据库连接参数仍使用原有 `database` 配置，无需新增 engine 选项。连接时只读检测 `SELECT VERSION()`：MySQL 8.0.16+（含 8.4）和 MariaDB 10.11+；不支持的旧版/未知引擎拒绝启动，不通过关闭 CHECK 等方式降低数据约束。
+
+初始化适配在 `infra/DatabaseDialect.h` 与 ORM 私有适配层：MySQL 按原 SQL 执行；MariaDB 执行 DDL 时将 `DROP CHECK` 转为 `DROP CONSTRAINT`，`utf8mb4_0900_ai_ci` 映射到 `utf8mb4_unicode_520_ci`，`utf8mb4_0900_bin` 映射到 `utf8mb4_nopad_bin`（保留二进制、无填充比较）。映射仅应用于可信初始化 SQL，字符串常量、注释和绑定业务参数不替换。
+
+已发布迁移 1–10 的 SQL 和 SHA-256 校验和保持不变；迁移日志记录原始目录校验和，不记录适配后 SQL。排序规则的 Unicode 权重版本不同，跨引擎的自然语言排序不承诺逐项一致；不要直接复制 MySQL 的内部数据文件给 MariaDB，也不要据此宣称任意旧 MariaDB 库可原地升级。身份与权限标识仍按业务规范校验并使用二进制比较。
+
+数据库由服务自动创建时也按检测结果选择排序规则。已有库不做全库排序规则重写。备份/恢复及生产版本升级仍需独立验收。
+
+机器指标验证脚本：
+
+```sh
+python scripts/test_admin_metrics.py --service build/bin/szx_admin_service
+```
+
+该脚本启动临时、仅监听 loopback 的 MySQL/MariaDB 数据目录，验证全新迁移到 11、真实指标快照/历史、角色权限、非法查询参数及已部署的 OpenAPI；退出后清理，绝不连接现有应用库。MySQL 需要 mysql/mysqld，MariaDB 另需 mariadb-install-db；Python 需 cryptography。具体已验证版本见本次交付说明，不以版本检测范围替代跨版本实机测试。

@@ -1,5 +1,5 @@
-#include "DatabaseInitialization.h"
 #include "../auth/PasswordHash.h"
+#include "DatabaseInitialization.h"
 #include "OrmConnection.h"
 
 #include "Logger.h"
@@ -330,6 +330,15 @@ SELECT r.id, p.id FROM roles r JOIN permissions p
 WHERE r.code = 'admin' AND p.code = 'user.role.assign';
 )SZXSQL";
 
+constexpr std::string_view kMigration11 =
+    R"SZXSQL(INSERT IGNORE INTO permissions (id, code, name, module, enforcement, source, required_for_super_admin)
+VALUES ('10000000-0000-4000-8000-000000000025', 'system.metrics.read', 'Read machine performance', 'system', 'server', 'system', TRUE);
+INSERT IGNORE INTO role_permissions (role_id, permission_id)
+SELECT r.id, p.id FROM roles r JOIN permissions p
+WHERE r.code IN ('admin', 'super_admin') AND p.code = 'system.metrics.read';
+UPDATE users SET authz_version = authz_version + 1 WHERE role IN ('admin', 'super_admin');
+)SZXSQL";
+
 constexpr MigrationDefinition kMigrations[] = {
     {1, kMigration1, "86a4ac820cc8457a2131d0400d4968268576b17113f38fe86b6beceea48c2047"},
     {2, kMigration2, "f4223aadebf005f145941d06b89d2d41e964f4c059d2f765a8e1b3678d389d2d"},
@@ -341,6 +350,7 @@ constexpr MigrationDefinition kMigrations[] = {
     {8, kMigration8, "3ff6dc5983213744cceb8879b5af8f2522147cd42768843272178526b643cc72"},
     {9, kMigration9, "b410199c9d5e1dd14e0a60017a2134d5826e824e50eede2196b68d11c3f18bc4"},
     {10, kMigration10, "2cb2059bc9b16ca77652475fe8e7435eecb4793d243c966850b2110bdfe87ccd"},
+    {11, kMigration11, "67e60f625227f001d7001a2e3e34b0f9d44c26a3127782cce9b3f88d7cf386a6"},
 };
 
 constexpr DETAIL::InitialAdministratorDefinition kInitialAdministrator{
@@ -541,7 +551,7 @@ auto DETAIL::ensureDatabase(const DatabaseConfig &config) -> SZX::COMMON::Result
                    config.username);
         const auto statement =
             "CREATE DATABASE IF NOT EXISTS `" + config.database + "` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci";
-        if (!connection.execute(statement))
+        if (!connection.execute(DETAIL::initializationSql(statement, connection.dialect())))
         {
             LOGM_ERROR("szx_admin.database", "event=database_create_failed database={} driver_error={}", config.database,
                        connection.lastError());

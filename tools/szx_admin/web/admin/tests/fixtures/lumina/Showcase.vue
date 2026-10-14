@@ -4,6 +4,8 @@ import {
   LuminaButton,
   LuminaMark,
   LuminaPanel,
+  LuminaCard,
+  LuminaChart,
   LuminaInput,
   LuminaSelect,
   LuminaTable,
@@ -44,6 +46,31 @@ const rows = [
     <LuminaPanel data-testid="solid-panel" variant="solid" as="section" :radius="10" :padding="12"
       ><p>Reusable solid panel slot</p></LuminaPanel
     >
+    <LuminaCard
+      data-testid="reusable-card"
+      title="Reusable card"
+      subtitle="Caller subtitle"
+      :radius="18"
+      :padding="16"
+    >
+      <template #actions><LuminaButton label="Card action" /></template>
+      <p>Caller body</p>
+      <LuminaChart
+        :option="{
+          series: [{ type: 'line', data: [1, 2, 3] }],
+          xAxis: { type: 'category', data: ['A', 'B', 'C'] },
+          yAxis: { type: 'value' },
+        }"
+        label="Reusable chart"
+      />
+      <template #footer>Caller footer</template>
+    </LuminaCard>
+    <LuminaCard
+      data-testid="unavailable-card"
+      title="Unavailable card"
+      state="unavailable"
+      state-label="Caller unavailable"
+    />
     <form @submit.prevent="submissions++">
       <label>Name<LuminaInput v-model="name" aria-label="Name" required /></label>
       <LuminaButton label="Submit" type="submit" variant="primary">

@@ -1,15 +1,15 @@
-#include "SzxAdmin/Infra/Database.h"
 #include "OrmConnection.h"
+#include "SzxAdmin/Infra/Database.h"
 
+#include "../rbac/PermissionCodes.h"
 #include "AuditRepository.h"
 #include "BehaviorEventRepository.h"
 #include "DatabaseInitialization.h"
 #include "LogMaintenanceRepository.h"
-#include "PermissionRepository.h"
 #include "Logger.h"
 #include "LoginRepository.h"
+#include "PermissionRepository.h"
 #include "RoleRepository.h"
-#include "../rbac/PermissionCodes.h"
 #include "SzxAdmin/Infra/ErrorCode.h"
 #include "UserRepository.h"
 
@@ -58,8 +58,8 @@ struct users final
 };
 // Deliberately project only initialized columns. Nullable identities and timestamps
 // are supplied by MySQL defaults, rather than empty strings.
-YLT_REFL(users, id, login_identifier, login_identifier_canonical, identifier_type, role_id,
-         display_name, password_hash, role, status, force_password_change);
+YLT_REFL(users, id, login_identifier, login_identifier_canonical, identifier_type, role_id, display_name, password_hash, role,
+         status, force_password_change);
 
 auto failure(ErrorCode code, const std::string &message) -> SZX::COMMON::Result<void>
 {
@@ -165,9 +165,15 @@ public:
 
     auto executeMigrationStatement(std::string_view sql) -> SZX::COMMON::Result<void> override
     {
-        if (sql.empty() || connection_.execute(std::string{sql}))
-            return SZX::COMMON::Result<void>::Success();
-        return databaseFailure(ErrorCode::DatabaseQueryFailed, "Database statement execution failed", {});
+        try
+        {
+            if (sql.empty() || connection_.execute(DETAIL::initializationSql(sql, connection_.dialect())))
+                return SZX::COMMON::Result<void>::Success();
+            return databaseFailure(ErrorCode::DatabaseQueryFailed, "Database statement execution failed", {});
+        } catch (...)
+        {
+            return databaseFailure(ErrorCode::DatabaseQueryFailed, "Database statement execution failed", {});
+        }
     }
 
     auto loadAppliedMigrations() -> SZX::COMMON::Result<std::vector<AppliedMigration>> override
@@ -267,17 +273,17 @@ public:
     auto findBootstrapAdministrator() -> SZX::COMMON::Result<std::optional<BootstrapAdministrator>> override
     {
         const auto &initial = DETAIL::initialAdministrator();
-        const auto rows =
-            connection_.query_s<users>("(login_identifier_canonical = ? OR role = ?) ORDER BY (role = ?) DESC, id LIMIT 1 FOR UPDATE",
-                                       std::string{initial.username}, std::string{initial.role}, std::string{initial.role});
+        const auto rows     = connection_.query_s<users>(
+            "(login_identifier_canonical = ? OR role = ?) ORDER BY (role = ?) DESC, id LIMIT 1 FOR UPDATE",
+            std::string{initial.username}, std::string{initial.role}, std::string{initial.role});
         if (connection_.has_error())
             return SZX::COMMON::Result<std::optional<BootstrapAdministrator>>::Failure(
                 static_cast<int>(ErrorCode::DatabaseQueryFailed), "Failed to read bootstrap administrator.");
         if (rows.empty())
             return SZX::COMMON::Result<std::optional<BootstrapAdministrator>>::Success(std::nullopt);
         const auto &row = rows.front();
-        return SZX::COMMON::Result<std::optional<BootstrapAdministrator>>::Success(
-            BootstrapAdministrator{row.id, row.login_identifier, row.password_hash, row.role, row.status, row.force_password_change});
+        return SZX::COMMON::Result<std::optional<BootstrapAdministrator>>::Success(BootstrapAdministrator{
+            row.id, row.login_identifier, row.password_hash, row.role, row.status, row.force_password_change});
     }
 
     auto insertBootstrapAdministrator(const BootstrapAdministrator &administrator) -> SZX::COMMON::Result<void> override
@@ -287,20 +293,14 @@ public:
             administrator.status != initial.status || administrator.forcePasswordChange != initial.forcePasswordChange ||
             administrator.passwordHash.empty())
             return failure(ErrorCode::ValidationError, "Invalid bootstrap administrator.");
-        const auto roles = connection_.query_s<std::tuple<std::string>>("SELECT id FROM roles WHERE code = ? LIMIT 1",
-                                                                          administrator.role);
+        const auto roles =
+            connection_.query_s<std::tuple<std::string>>("SELECT id FROM roles WHERE code = ? LIMIT 1", administrator.role);
         if (connection_.has_error() || roles.size() != 1)
             return databaseFailure(ErrorCode::DatabaseQueryFailed, "Failed to resolve bootstrap role", {});
-        const users row{administrator.id,
-                        administrator.username,
-                        administrator.username,
-                        "username",
-                        std::get<0>(roles.front()),
-                        std::string{initial.displayName},
-                        administrator.passwordHash,
-                        administrator.role,
-                        administrator.status,
-                        administrator.forcePasswordChange};
+        const users row{
+            administrator.id,           administrator.username,           administrator.username,     "username",
+            std::get<0>(roles.front()), std::string{initial.displayName}, administrator.passwordHash, administrator.role,
+            administrator.status,       administrator.forcePasswordChange};
         const auto affected = connection_.insert(row);
         if (affected != 1 || connection_.has_error())
             return databaseFailure(ErrorCode::DatabaseQueryFailed, "Failed to create bootstrap administrator", {});
@@ -398,13 +398,12 @@ public:
                 "AND target.status <> 'archived'");
             if (connection_.has_error() || scopes.size() != 1)
                 return SZX::COMMON::Result<bool>::Failure(static_cast<int>(ErrorCode::DatabaseQueryFailed), {});
-            const auto nonArchived = connection_.query_s<std::tuple<std::uint64_t>>(
-                "SELECT COUNT(*) FROM roles WHERE status <> 'archived'");
+            const auto nonArchived =
+                connection_.query_s<std::tuple<std::uint64_t>>("SELECT COUNT(*) FROM roles WHERE status <> 'archived'");
             if (connection_.has_error() || nonArchived.size() != 1)
                 return SZX::COMMON::Result<bool>::Failure(static_cast<int>(ErrorCode::DatabaseQueryFailed), {});
             return SZX::COMMON::Result<bool>::Success(std::get<0>(scopes.front()) == std::get<0>(nonArchived.front()));
-        }
-        catch (...)
+        } catch (...)
         {
             return SZX::COMMON::Result<bool>::Failure(static_cast<int>(ErrorCode::DatabaseQueryFailed), {});
         }
@@ -595,7 +594,8 @@ auto DatabasePool::withConnectionImpl(const ConnectionCallback &callback,
         connection = std::move(impl_->connections.front());
         impl_->connections.pop_front();
     }
-    const auto acquireElapsed = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - acquireStarted);
+    const auto acquireElapsed =
+        std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - acquireStarted);
     if (acquireElapsed >= std::chrono::milliseconds{100})
         LOGM_DEBUG("szx_admin.database", "event=pool_acquire_slow duration_microseconds={}", acquireElapsed.count());
     if (connection)
@@ -664,7 +664,8 @@ auto DatabasePool::withConnectionImpl(const ConnectionCallback &callback,
             const auto callbackElapsed =
                 std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - callbackStarted);
             if (callbackElapsed >= std::chrono::milliseconds{100})
-                LOGM_DEBUG("szx_admin.database", "event=database_callback_slow duration_microseconds={}", callbackElapsed.count());
+                LOGM_DEBUG("szx_admin.database", "event=database_callback_slow duration_microseconds={}",
+                           callbackElapsed.count());
             if (!wrapper.reusable())
             {
                 returnConnection(false);

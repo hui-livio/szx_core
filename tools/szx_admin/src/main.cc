@@ -9,6 +9,8 @@
 #include "SzxAdmin/Infra/ServerConfig.h"
 #include "auth/LoginService.h"
 #include "maintenance/LogMaintenanceService.h"
+#include "system/SystemMetrics.h"
+#include "system/SystemMetricsHandler.h"
 #include "telemetry/BehaviorEventWriter.h"
 
 #include <atomic>
@@ -58,6 +60,7 @@ struct ServiceConfig final
         bool truncate{false};
         bool console{false};
     } logging;
+    SZX::ADMIN::SYSTEM::MetricsConfig metrics;
     ServerConfig server;
     DatabaseConfig database;
     SZX::ADMIN::INFRA::LogStorageConfig logs;
@@ -65,7 +68,8 @@ struct ServiceConfig final
     SZX::ADMIN::TELEMETRY::TelemetryConfig telemetry;
 };
 SZX_REFL(ServiceConfig::Logging, level, flushLevel, loggerName, pattern, filePath, maxFileSize, maxFiles, truncate, console);
-SZX_REFL(ServiceConfig, logging, server, database, logs, auth, telemetry);
+SZX_REFL(SZX::ADMIN::SYSTEM::MetricsConfig, diskPaths);
+SZX_REFL(ServiceConfig, logging, server, database, logs, auth, telemetry, metrics);
 
 auto logLevel(std::string_view value) -> std::optional<SZX::LOGGER::LogLevel>
 {
@@ -160,8 +164,9 @@ auto loadConfig(int argc, char **argv, ServiceConfig &config, std::string &maint
 
     LOGM_INFO("szx_admin", "event=config_loaded path={} log_level={} flush_level={} console={}", resolvedPath.string(),
               config.logging.level, config.logging.flushLevel, config.logging.console);
-    LOGM_DEBUG("szx_admin", "event=config_runtime server_host={} server_port={} api_prefix={} database_host={} "
-                            "database_port={} database_name={} pool_size={} access_log={}",
+    LOGM_DEBUG("szx_admin",
+               "event=config_runtime server_host={} server_port={} api_prefix={} database_host={} "
+               "database_port={} database_name={} pool_size={} access_log={}",
                config.server.host, config.server.port, config.server.apiPrefix, config.database.host, config.database.port,
                config.database.database, config.database.poolSize, config.server.accessLog);
 
@@ -286,9 +291,20 @@ int main(int argc, char **argv)
         return reportFailure("behavior event writer startup", result);
     }
 
+    SZX::ADMIN::SYSTEM::SystemMetricsService metrics(options.metrics);
+    result = metrics.start();
+    if (!result.ok)
+    {
+        (void)behaviorWriter.stop();
+        (void)database.stop();
+        return reportFailure("metrics sampler startup", result);
+    }
+
     HttpTransport transport(options.server);
     LOGM_INFO("szx_admin.http", "event=route_registration_begin api_prefix={}", options.server.apiPrefix);
-    const auto routes = SZX::ADMIN::registerRoutes(transport, database, &login, &behaviorWriter);
+    auto routes = SZX::ADMIN::registerRoutes(transport, database, &login, &behaviorWriter);
+    if (routes.ok)
+        routes = SZX::ADMIN::SYSTEM::registerSystemMetricsRoutes(transport, database, login, metrics);
     if (!routes.ok)
     {
         (void)behaviorWriter.stop();
@@ -328,7 +344,8 @@ int main(int argc, char **argv)
     }
 
     LOGM_INFO("szx_admin", "event=shutdown_requested");
-    const auto stopResult     = transport.stop();
+    const auto stopResult = transport.stop();
+    metrics.stop();
     const auto drained        = behaviorWriter.stop();
     const auto databaseResult = database.stop();
     if (!stopResult.ok)

@@ -74,3 +74,39 @@ export type CreateUser = {
   login_identifier: string
   password_hash?: string
 }
+
+export interface MachineMetric {
+  status: 'ok' | 'warming_up' | 'unavailable'
+  error_code: number | null
+  usage_percent: number | null
+  total_bytes: number | null
+  used_bytes: number | null
+  available_bytes: number | null
+  free_bytes: number | null
+}
+export interface MachineSample {
+  sequence: number
+  sampled_at: number
+  cpu: MachineMetric
+  memory: MachineMetric
+}
+export interface MachineDisk {
+  id: string
+  path: string
+  sampled_at: number
+  capacity: MachineMetric
+}
+export interface MachineSnapshot extends MachineSample {
+  instance_id: string
+  platform: 'windows' | 'linux'
+  logical_cpus: number
+  sample_interval_ms: number
+  disk_interval_ms: number
+  disks: MachineDisk[]
+}
+export interface MachineHistory {
+  instance_id: string
+  sample_interval_ms: number
+  window_seconds: number
+  samples: MachineSample[]
+}
