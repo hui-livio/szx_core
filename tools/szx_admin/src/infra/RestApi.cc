@@ -229,6 +229,10 @@ auto RestApi::error(ErrorCode code, std::string_view requestId) -> HttpResponse
         case ErrorCode::DatabaseTransactionFailed:
         case ErrorCode::MigrationFailed:
         case ErrorCode::MigrationConflict:
+        case ErrorCode::PermissionCodeConflict:
+        case ErrorCode::PermissionInUse:
+        case ErrorCode::ProtectedPermission:
+        case ErrorCode::SuperAdminSecurityFloor:
         case ErrorCode::InternalFailure:
             break;
         default:

@@ -2,6 +2,54 @@ import zh from './zh-CN'
 
 export default {
   ...zh,
+  rbac: {
+    codeConflict: 'This permission code already exists, including archived permissions.',
+    inUse: 'The permission is still assigned to a role. Remove the bindings first.',
+    resourceProtected: 'Built-in or archived permissions cannot be modified.',
+    securityFloor: 'Required super-administrator permissions cannot be removed.',
+
+    title: 'Permission management',
+    subtitle: 'Manage custom client permissions and assign them to roles.',
+    create: 'Create permission',
+    edit: 'Edit',
+    assign: 'Assign role permissions',
+    archive: 'Archive',
+    enable: 'Enable',
+    disable: 'Disable',
+    all: 'All sources',
+    system: 'Built-in',
+    custom: 'Custom',
+    search: 'Search permissions',
+    searchHint: 'Name, code, module or description',
+    source: 'Source',
+    includeArchived: 'Include archived',
+    clientHint:
+      'Custom permissions are for business clients, not automatic server route protection. Built-in permissions are protected.',
+    name: 'Permission name',
+    module: 'Module',
+    enforcement: 'Enforcement',
+    server: 'Server',
+    client: 'Client',
+    active: 'Active',
+    disabled: 'Disabled',
+    archived: 'Archived',
+    actions: 'Actions',
+    protected: 'Protected',
+    code: 'Permission code',
+    codeHint:
+      'Lowercase letters, digits, underscores and dot-separated segments. Code is immutable; system/user/role and other server prefixes are reserved.',
+    description: 'Description',
+    assignHint:
+      'Only active custom permissions are editable here. Existing system/disabled assignments are preserved. Authorization changes invalidate old role tokens.',
+    noCustom: 'No active custom permissions.',
+    archiveHint:
+      'Archive {code}? Remove all role bindings first. Archived codes cannot be restored or reused.',
+    statusHint:
+      'Change status for {code}? Bound roles will invalidate their old authorization tokens.',
+    conflict: 'The version changed. Reload and confirm before retrying; no automatic overwrite.',
+    reload: 'Reload',
+    saved: 'Changes saved.',
+  },
   performance: {
     title: 'Machine performance',
     subtitle: 'Live CPU, physical memory and local disk capacity of the backend host',
@@ -114,6 +162,8 @@ export default {
   result: { success: 'Success', failure: 'Failure', denied: 'Denied' },
   events: {
     ...zh.events,
+    rbac_permission_changed: 'Permission changed',
+    rbac_role_changed: 'Role authorization changed',
     auth_login: 'User login',
     auth_login_success: 'Login succeeded',
     auth_login_failure: 'Login failed',

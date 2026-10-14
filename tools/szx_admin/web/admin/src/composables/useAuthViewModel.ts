@@ -77,6 +77,9 @@ export function useShellViewModel() {
       ? []
       : [
           { to: '/home', label: t('shell.dashboard'), symbol: '⌂' },
+          ...(auth.can('permission.read')
+            ? [{ to: '/permissions', label: t('rbac.title'), symbol: '◇' }]
+            : []),
           ...(auth.can('system.metrics.read')
             ? [{ to: '/system/performance', label: t('performance.title'), symbol: '◴' }]
             : []),

@@ -24,6 +24,7 @@ from test_admin_database import free_port, running, wait_until
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--service", type=Path, required=True)
+    parser.add_argument("--rbac", action="store_true", help="Also verify the custom permission lifecycle")
     args = parser.parse_args()
     service = args.service.resolve(strict=True)
     mysql, mysqld = shutil.which("mysql"), shutil.which("mysqld")
@@ -153,6 +154,9 @@ def main():
                 assert status == 200
                 assert "/admin/system/metrics" in document["paths"]
                 print("PASS: migration 11, real metrics/history, default role RBAC, strict queries and deployed OpenAPI")
+                if args.rbac:
+                    from test_admin_permissions import run_permission_checks
+                    run_permission_checks(call, sql, login, token)
 
 
 if __name__ == "__main__":

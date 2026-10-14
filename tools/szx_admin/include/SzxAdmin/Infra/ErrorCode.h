@@ -34,6 +34,10 @@ enum class ErrorCode : int
     MigrationConflict         = 2224,
     BehaviorEventQueueFull    = 2225,
     BehaviorEventQueueClosed  = 2226,
+    PermissionCodeConflict    = 2228,
+    PermissionInUse           = 2230,
+    ProtectedPermission       = 2232,
+    SuperAdminSecurityFloor   = 2233,
     InternalFailure           = 2299,
 };
 

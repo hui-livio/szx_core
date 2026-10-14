@@ -21,6 +21,8 @@ export const resultLabels = {
 }
 
 const auditEventLabels: Readonly<Record<string, string>> = {
+  'rbac.permission.changed': 'events.rbac_permission_changed',
+  'rbac.role.changed': 'events.rbac_role_changed',
   'auth.login': 'events.auth_login',
   'auth.login.success': 'events.auth_login_success',
   'auth.login.failure': 'events.auth_login_failure',

@@ -110,3 +110,32 @@ export interface MachineHistory {
   window_seconds: number
   samples: MachineSample[]
 }
+
+export interface PermissionRecord {
+  id: string
+  code: string
+  name: string
+  description: string
+  module: string
+  enforcement: 'server' | 'client'
+  source: 'system' | 'custom'
+  status: 'active' | 'disabled' | 'archived'
+  required_for_super_admin: boolean
+  version: number
+}
+export interface RoleRecord {
+  id: string
+  code: string
+  name: string
+  description: string
+  system_key: string | null
+  status: 'active' | 'disabled' | 'archived'
+  version: number
+  authz_version: number
+}
+export interface NewPermission {
+  code: string
+  name: string
+  description: string
+  module: string
+}

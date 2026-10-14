@@ -20,8 +20,9 @@ struct permission_record final
     std::string status;
     bool required_for_super_admin{};
     std::uint32_t version{};
+    std::string description;
 };
-YLT_REFL(permission_record, id, code, name, module, enforcement, source, status, required_for_super_admin, version);
+YLT_REFL(permission_record, id, code, name, module, enforcement, source, status, required_for_super_admin, version, description);
 inline constexpr auto get_alias_struct_name(permission_record *)
 {
     return std::string_view{"permissions"};
@@ -56,11 +57,11 @@ struct permission_update final
     std::optional<std::string> archived_at;
 };
 YLT_REFL(permission_update, id, name, description, status, version, updated_by, archived_at);
-REGISTER_CONFLICT_KEY(permission_update, id)
 inline constexpr auto get_alias_struct_name(permission_update *)
 {
     return std::string_view{"permissions"};
 }
+REGISTER_CONFLICT_KEY(permission_update, id)
 
 template <typename T>
 auto failed() -> SZX::COMMON::Result<T>
@@ -70,15 +71,16 @@ auto failed() -> SZX::COMMON::Result<T>
 
 auto project(permission_record row) -> RBAC::PermissionRow
 {
-    return {.id                   = std::move(row.id),
-            .code                 = std::move(row.code),
-            .name                 = std::move(row.name),
-            .module               = std::move(row.module),
-            .enforcement          = std::move(row.enforcement),
-            .source               = std::move(row.source),
-            .status               = std::move(row.status),
+    return {.id                    = std::move(row.id),
+            .code                  = std::move(row.code),
+            .name                  = std::move(row.name),
+            .module                = std::move(row.module),
+            .enforcement           = std::move(row.enforcement),
+            .source                = std::move(row.source),
+            .status                = std::move(row.status),
             .requiredForSuperAdmin = row.required_for_super_admin,
-            .version              = row.version};
+            .version               = row.version,
+            .description           = std::move(row.description)};
 }
 } // namespace
 
@@ -98,8 +100,7 @@ auto MySqlPermissionRepository::findById(std::string_view id, bool lock)
         if (rows.size() != 1)
             return SZX::COMMON::Result<std::optional<RBAC::PermissionRow>>::Success(std::nullopt);
         return SZX::COMMON::Result<std::optional<RBAC::PermissionRow>>::Success(project(std::move(rows.front())));
-    }
-    catch (...)
+    } catch (...)
     {
         return failed<std::optional<RBAC::PermissionRow>>();
     }
@@ -116,8 +117,7 @@ auto MySqlPermissionRepository::findByCode(std::string_view code, bool lock)
         if (rows.size() != 1)
             return SZX::COMMON::Result<std::optional<RBAC::PermissionRow>>::Success(std::nullopt);
         return SZX::COMMON::Result<std::optional<RBAC::PermissionRow>>::Success(project(std::move(rows.front())));
-    }
-    catch (...)
+    } catch (...)
     {
         return failed<std::optional<RBAC::PermissionRow>>();
     }
@@ -128,7 +128,7 @@ auto MySqlPermissionRepository::list(bool includeArchived) -> SZX::COMMON::Resul
     try
     {
         auto rows = connection_.query_s<permission_record>(includeArchived ? "ORDER BY module, code" :
-                                                                          "status <> 'archived' ORDER BY module, code");
+                                                                             "status <> 'archived' ORDER BY module, code");
         if (connection_.has_error())
             return failed<std::vector<RBAC::PermissionRow>>();
         std::vector<RBAC::PermissionRow> result;
@@ -136,8 +136,7 @@ auto MySqlPermissionRepository::list(bool includeArchived) -> SZX::COMMON::Resul
         for (auto &row : rows)
             result.push_back(project(std::move(row)));
         return SZX::COMMON::Result<std::vector<RBAC::PermissionRow>>::Success(std::move(result));
-    }
-    catch (...)
+    } catch (...)
     {
         return failed<std::vector<RBAC::PermissionRow>>();
     }
@@ -147,13 +146,13 @@ auto MySqlPermissionRepository::insert(const RBAC::NewPermission &permission) ->
 {
     try
     {
-        const auto count = connection_.insert(permission_insert{permission.id, permission.code, permission.name,
-                                                                permission.description, permission.module, permission.enforcement,
-                                                                permission.source, permission.status, permission.requiredForSuperAdmin});
-        return count == 1 && !connection_.has_error() ? SZX::COMMON::Result<void>::Success() :
-                                                        SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::DatabaseQueryFailed), {});
-    }
-    catch (...)
+        const auto count = connection_.insert(
+            permission_insert{permission.id, permission.code, permission.name, permission.description, permission.module,
+                              permission.enforcement, permission.source, permission.status, permission.requiredForSuperAdmin});
+        return count == 1 && !connection_.has_error() ?
+            SZX::COMMON::Result<void>::Success() :
+            SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::DatabaseQueryFailed), {});
+    } catch (...)
     {
         return SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::DatabaseQueryFailed), {});
     }
@@ -168,10 +167,10 @@ auto MySqlPermissionRepository::updateProfile(std::string_view id, std::string_v
                                               &permission_update::version, &permission_update::updated_by>(
             permission_update{std::string{id}, std::string{name}, std::string{description}, "active", version,
                               std::string{updatedBy}, std::nullopt});
-        return count == 1 && !connection_.has_error() ? SZX::COMMON::Result<void>::Success() :
-                                                        SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::DatabaseQueryFailed), {});
-    }
-    catch (...)
+        return count == 1 && !connection_.has_error() ?
+            SZX::COMMON::Result<void>::Success() :
+            SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::DatabaseQueryFailed), {});
+    } catch (...)
     {
         return SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::DatabaseQueryFailed), {});
     }
@@ -185,19 +184,23 @@ auto MySqlPermissionRepository::updateStatus(std::string_view id, std::string_vi
     {
         const auto count = connection_.update<&permission_update::status, &permission_update::version,
                                               &permission_update::updated_by, &permission_update::archived_at>(
-            permission_update{std::string{id}, {}, {}, std::string{status}, version, std::string{updatedBy},
+            permission_update{std::string{id},
+                              {},
+                              {},
+                              std::string{status},
+                              version,
+                              std::string{updatedBy},
                               archivedAt ? std::optional<std::string>{std::string{*archivedAt}} : std::nullopt});
-        return count == 1 && !connection_.has_error() ? SZX::COMMON::Result<void>::Success() :
-                                                        SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::DatabaseQueryFailed), {});
-    }
-    catch (...)
+        return count == 1 && !connection_.has_error() ?
+            SZX::COMMON::Result<void>::Success() :
+            SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::DatabaseQueryFailed), {});
+    } catch (...)
     {
         return SZX::COMMON::Result<void>::Failure(static_cast<int>(ErrorCode::DatabaseQueryFailed), {});
     }
 }
 
-auto MySqlPermissionRepository::listActiveCodes(std::string_view roleCode)
-    -> SZX::COMMON::Result<std::vector<std::string>>
+auto MySqlPermissionRepository::listActiveCodes(std::string_view roleCode) -> SZX::COMMON::Result<std::vector<std::string>>
 {
     try
     {
@@ -213,10 +216,24 @@ auto MySqlPermissionRepository::listActiveCodes(std::string_view roleCode)
         for (const auto &row : rows)
             result.push_back(std::get<0>(row));
         return SZX::COMMON::Result<std::vector<std::string>>::Success(std::move(result));
-    }
-    catch (...)
+    } catch (...)
     {
         return failed<std::vector<std::string>>();
+    }
+}
+
+auto MySqlPermissionRepository::roleBindingCount(std::string_view permissionId) -> SZX::COMMON::Result<std::uint64_t>
+{
+    try
+    {
+        const auto rows = connection_.query_s<std::tuple<std::uint64_t>>(
+            "SELECT COUNT(*) FROM role_permissions WHERE permission_id = ?", std::string{permissionId});
+        if (connection_.has_error() || rows.size() != 1)
+            return failed<std::uint64_t>();
+        return SZX::COMMON::Result<std::uint64_t>::Success(std::get<0>(rows.front()));
+    } catch (...)
+    {
+        return failed<std::uint64_t>();
     }
 }
 
@@ -224,10 +241,14 @@ auto MySqlPermissionRepository::bumpRoleAuthzVersions(std::string_view permissio
 {
     try
     {
-        return connection_.execute("UPDATE roles r JOIN role_permissions rp ON rp.role_id = r.id SET r.version = r.version + 1, r.authz_version = r.authz_version + 1 WHERE rp.permission_id = '" + std::string{permissionId} + "'")
-                   ? SZX::COMMON::Result<void>::Success()
-                   : failed<void>();
+        return connection_.execute(
+                   "UPDATE roles r JOIN role_permissions rp ON rp.role_id = r.id SET r.version = r.version + 1, r.authz_version = r.authz_version + 1 WHERE rp.permission_id = '" +
+                   std::string{permissionId} + "'") ?
+            SZX::COMMON::Result<void>::Success() :
+            failed<void>();
+    } catch (...)
+    {
+        return failed<void>();
     }
-    catch (...) { return failed<void>(); }
 }
 } // namespace SZX::ADMIN::INFRA::DETAIL

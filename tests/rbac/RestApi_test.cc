@@ -180,3 +180,18 @@ TEST(RestApiTest, SerializedSuccessPreservesIguanaBodyAndStatusPolicy)
         }
     }
 }
+
+TEST(RestApiTest, PreservesSecondPhasePermissionErrorCodes)
+{
+    for (const auto code : {ErrorCode::PermissionCodeConflict, ErrorCode::PermissionInUse, ErrorCode::ProtectedPermission,
+                            ErrorCode::SuperAdminSecurityFloor})
+    {
+        SCOPED_TRACE(static_cast<int>(code));
+        const auto response = RestApi::error(code, "rbac-error");
+        EXPECT_EQ(response.statusCode, 409);
+        const auto parsed = SZX::COMMON::Json::parse(response.body);
+        EXPECT_EQ(parsed.at("code"), static_cast<int>(code));
+        EXPECT_FALSE(parsed.at("message").get<std::string>().empty());
+        EXPECT_NE(errorCodeName(code), "INTERNAL_FAILURE");
+    }
+}

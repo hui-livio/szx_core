@@ -797,3 +797,30 @@ Linux 使用 `/proc/stat`、`/proc/meminfo`、挂载表与 `statvfs`；Windows �
 入口 `/admin/system/performance`（Vue 内部路由 `/system/performance`），侧栏“机器性能”。每个指标/磁盘卷一张 Card，响应式平铺；CPU/内存使用 ECharts 趋势，磁盘使用容量环图。可选 5/15 分钟窗口、暂停/继续、展示过期/不可用状态。离页、登出或隐藏标签页取消轮询；恢复刷新补齐历史；不重叠请求，错误时有界退避。
 
 `src/ui/lumina/components/LuminaCard.vue` 复用 LuminaPanel，提供 header/actions/default/footer/state 插槽与 title/subtitle/radius/padding/variant/state 属性。`LuminaChart.vue` 按需注册 ECharts 模块，SVG 渲染、ResizeObserver、自身销毁清理；主题、低特效和系统 reduced-motion 自动生效。这两个组件只依赖 Vue / ECharts / 同目录 UI，不依赖业务 API、Pinia、路由或 i18n，仍放独立目录，不构建独立 npm 库。
+
+## 第二阶段：自定义权限管理
+
+新增前端 `/admin/permissions`（内部 `/permissions`），接通已注册的 RBAC 接口；Swagger 同步包含角色与权限全部资源路径。
+
+| 方法 | 路径 | 能力 |
+| --- | --- | --- |
+| GET / POST | `/api/v1/admin/permissions` | permission.read / permission.create |
+| GET / PATCH / DELETE | `/api/v1/admin/permissions/{id}` | permission.read / permission.update / permission.archive |
+| PATCH | `/api/v1/admin/permissions/{id}/status` | permission.status |
+| GET | `/api/v1/admin/roles`、`/api/v1/admin/roles/{id}` | role.read |
+| GET / PUT | `/api/v1/admin/roles/{id}/permissions` | role.read / role.permission.assign |
+
+列表为 `{data:{items:[]},request_id}`，可选 `include_archived=true`。权限字段含 id/code/name/description/module/enforcement/source/status/required_for_super_admin/version，成功响应使用反射 DTO 与 iguana，不手工构造权限 JSON。
+
+POST 接收 code/name/module/可选 description，返回 201 和 version=1；自定义权限固定 client/custom/active，不能指定 source/enforcement/status，不允许保留的 auth/user/role/permission/audit/behavior/system 前缀。PATCH 只接受 name/description。所有变更使用 If-Match；版本冲突 409/2209，重复 code（含归档）409/2228，未知字段/非法数据 422/2206，内置或不可恢复资源 409/2232。DELETE 返回 204；必须先解除全部角色关联，仍有关联返回 409/2230。
+
+自定义权限不是新的服务端权限注册：业务客户端调用 `/client/me/permissions` 获取 capabilities 决定业务功能；服务端路由仍由代码注册权限保护。角色权限 PUT 提交完整 permission_ids 集合，前端仅改动活跃自定义项，保留其他关联；超管 required_for_super_admin 权限不允许移除，系统权限由受控服务端代码发布。启停权限或替换角色集合更新角色 authz_version，旧 access token 下次请求被拒绝，客户端需刷新/重新认证获取新授权。审计与业务变更在同一事务中提交；审计失败回滚写入。
+
+第二阶段新增的错误码遵循 V1.2 设计，不改变原有用户/会话错误码：
+
+| 码 | 名称 | HTTP | 含义 |
+| --- | --- | --- | --- |
+| 2228 | PERMISSION_CODE_CONFLICT | 409 | 权限代码已存在，包括归档占用 |
+| 2230 | PERMISSION_IN_USE | 409 | 权限仍被角色引用，不能归档 |
+| 2232 | PROTECTED_PERMISSION | 409 | 内置或已归档权限不可变更 |
+| 2233 | SUPER_ADMIN_SECURITY_FLOOR | 409 | 尝试移除超管必需权限 |
