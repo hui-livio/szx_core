@@ -61,6 +61,8 @@ Item {
     // click; callers that need edge-only read-only hit testing leave this off.
     property bool allowInteriorSelection: false
     property bool creationEnabled: false
+    property real minimumCreationSize: 2
+    property bool alignCreatedRectangles: false
     property bool shiftDeleteEnabled: false
     property bool viewportInteractionEnabled: false
     property string createGroupKey: "general"
@@ -89,6 +91,7 @@ Item {
     signal rectangleClicked(string key)
     signal rectangleSelected(string key)
     signal rectangleRightClicked(string key)
+    signal rectangleContextMenuRequested(string key, point position)
     signal rectangleDeleteRequested(string key)
     signal rectangleUpdated(string key, var rectangle)
     signal rectangleEditFinished(string key, var rectangle)
@@ -193,6 +196,9 @@ Item {
     // without a key keep the original reset-on-data-change behavior.
     onGroupsChanged: reconcileGroups(groups)
     onSessionKeyChanged: resetState()
+    onEditableChanged: if (!editable) draftRectangle = null
+    onCreationEnabledChanged: if (!creationEnabled) draftRectangle = null
+    onVisibleChanged: if (!visible) draftRectangle = null
 
     function imagePoint(viewX, viewY) {
         const scale = Math.max(imageScale, 0.0001);
@@ -499,6 +505,14 @@ Item {
         }
     }
 
+    function beginDraft(point) {
+        if (!editable || !creationEnabled)
+            return;
+        forceActiveFocus();
+        const image = imagePoint(point.x, point.y);
+        draftRectangle = {startX: image.x, startY: image.y, x: image.x, y: image.y, width: 0, height: 0};
+    }
+
     function updateDraft(point) {
         if (!draftRectangle)
             return;
@@ -519,14 +533,16 @@ Item {
             return;
         const draft = draftRectangle;
         draftRectangle = null;
-        if (draft.width < 2 || draft.height < 2)
+        if (draft.width < minimumCreationSize || draft.height < minimumCreationSize)
             return;
+        const x = alignCreatedRectangles ? Math.floor(draft.x) : Math.round(draft.x);
+        const y = alignCreatedRectangles ? Math.floor(draft.y) : Math.round(draft.y);
         rectangleCreated({
             key: "draft:" + Date.now(),
-            x: Math.round(draft.x),
-            y: Math.round(draft.y),
-            width: Math.round(draft.width),
-            height: Math.round(draft.height),
+            x: x,
+            y: y,
+            width: alignCreatedRectangles ? Math.ceil(draft.x + draft.width) - x : Math.round(draft.width),
+            height: alignCreatedRectangles ? Math.ceil(draft.y + draft.height) - y : Math.round(draft.height),
             label: createLabel,
             groupKey: createGroupKey
         });
@@ -627,8 +643,7 @@ Item {
                 mouse.accepted = false;
                 return;
             }
-            const point = root.imagePoint(mouse.x, mouse.y);
-            root.draftRectangle = { startX: point.x, startY: point.y, x: point.x, y: point.y, width: 0, height: 0 };
+            root.beginDraft(Qt.point(mouse.x, mouse.y));
         }
         onPositionChanged: function (mouse) {
             if (panning && pressed)
@@ -642,6 +657,13 @@ Item {
                 root.viewportPanFinished();
             } else {
                 root.finishDraft();
+            }
+        }
+        onCanceled: {
+            root.draftRectangle = null;
+            if (panning) {
+                panning = false;
+                root.viewportPanFinished();
             }
         }
         onWheel: function (wheel) {
@@ -1152,20 +1174,33 @@ Item {
 
                                 onPressed: function (mouse) {
                                     const point = cornerHandle.mapToItem(rectItem.overlayRoot, mouse.x, mouse.y);
-                                    rectItem.beginEdit(cornerHandle.handleName, point);
+                                    if ((mouse.modifiers & Qt.ControlModifier) && rectItem.overlayRoot.creationEnabled)
+                                        rectItem.overlayRoot.beginDraft(point);
+                                    else
+                                        rectItem.beginEdit(cornerHandle.handleName, point);
                                 }
                                 onPositionChanged: function (mouse) {
                                     if (pressed) {
                                         const point = cornerHandle.mapToItem(rectItem.overlayRoot, mouse.x, mouse.y);
-                                        rectItem.updateEdit(point);
+                                        if (rectItem.overlayRoot.draftRectangle)
+                                            rectItem.overlayRoot.updateDraft(rectItem.overlayRoot.imagePoint(point.x, point.y));
+                                        else
+                                            rectItem.updateEdit(point);
                                     }
                                 }
                                 onReleased: function (mouse) {
                                     const point = cornerHandle.mapToItem(rectItem.overlayRoot, mouse.x, mouse.y);
-                                    rectItem.updateEdit(point);
-                                    rectItem.finishEdit();
+                                    if (rectItem.overlayRoot.draftRectangle) {
+                                        rectItem.overlayRoot.finishDraft();
+                                    } else {
+                                        rectItem.updateEdit(point);
+                                        rectItem.finishEdit();
+                                    }
                                 }
-                                onCanceled: rectItem.cancelEdit()
+                                onCanceled: {
+                                    rectItem.overlayRoot.draftRectangle = null;
+                                    rectItem.cancelEdit();
+                                }
                             }
                         }
                         }
@@ -1215,19 +1250,21 @@ Item {
                             }
                             if (mouse.button === Qt.RightButton) {
                                 rectItem.select();
+                                const point = rectItem.mapToItem(rectItem.overlayRoot, mouse.x, mouse.y);
+                                rectItem.overlayRoot.rectangleContextMenuRequested(rectItem.rectKey, point);
                                 rectItem.overlayRoot.rectangleRightClicked(rectItem.rectKey);
+                                return;
+                            }
+                            if (mouse.button === Qt.LeftButton && (mouse.modifiers & Qt.ControlModifier)
+                                    && rectItem.overlayRoot.editable && rectItem.overlayRoot.creationEnabled) {
+                                const point = rectItem.mapToItem(rectItem.overlayRoot, mouse.x, mouse.y);
+                                rectItem.overlayRoot.beginDraft(point);
                                 return;
                             }
                             if (mouse.button === Qt.LeftButton && (mouse.modifiers & Qt.ShiftModifier)
                                     && rectItem.rectangleEditable && rectItem.overlayRoot.shiftDeleteEnabled) {
                                 rectItem.select();
                                 rectItem.overlayRoot.rectangleDeleteRequested(rectItem.rectKey);
-                                return;
-                            }
-                            if (rectItem.rectangleEditable && rectItem.overlayRoot.creationEnabled && (mouse.modifiers & Qt.ControlModifier)) {
-                                const point = rectItem.mapToItem(rectItem.overlayRoot, mouse.x, mouse.y);
-                                const imagePoint = rectItem.overlayRoot.imagePoint(point.x, point.y);
-                                rectItem.overlayRoot.draftRectangle = { startX: imagePoint.x, startY: imagePoint.y, x: imagePoint.x, y: imagePoint.y, width: 0, height: 0 };
                                 return;
                             }
                             if (rectItem.rectangleEditable) {
@@ -1251,6 +1288,10 @@ Item {
                                 rectItem.overlayRoot.finishDraft();
                             else
                                 rectItem.finishEdit();
+                        }
+                        onCanceled: {
+                            rectItem.overlayRoot.draftRectangle = null;
+                            rectItem.cancelEdit();
                         }
                     }
 
@@ -1278,6 +1319,7 @@ Item {
         width: (draft ? draft.width : 0) * root.imageScale
         height: (draft ? draft.height : 0) * root.imageScale
         visible: draft !== null
+        z: 250
         color: "transparent"
         border.color: "#ffffff"
         border.width: 2
