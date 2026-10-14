@@ -156,7 +156,7 @@ async function setup(page: Page, allow = true, readOnly = false, disabledBinding
 }
 
 async function navigate(page: Page) {
-  await page.getByRole('link', { name: '权限管理', exact: true }).click()
+  await page.locator('.sidebar nav').getByRole('link', { name: '权限管理', exact: true }).click()
 }
 
 test('custom permission create/edit/status/archive with stable metadata and system protection', async ({

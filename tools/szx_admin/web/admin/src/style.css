@@ -299,6 +299,8 @@
   .data-page .filters,
   .data-page .table-heading,
   .data-page .pagination,
+  .data-page .table-panel > .hint,
+  .data-page .role-permissions-summary,
   .data-page > .alert,
   .data-page .table-panel > .alert,
   .data-page > .request-id {

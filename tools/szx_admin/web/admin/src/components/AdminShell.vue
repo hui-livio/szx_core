@@ -9,10 +9,7 @@ const { t } = useI18n()
 const route = useRoute()
 </script>
 <template>
-  <div
-    class="app-shell"
-    :class="{ 'data-shell': route.path === '/users' || route.path === '/logs' }"
-  >
+  <div class="app-shell" :class="{ 'data-shell': route.meta.tableLayout }">
     <aside class="sidebar">
       <div class="brand">
         <LuminaMark class="brand-mark" />

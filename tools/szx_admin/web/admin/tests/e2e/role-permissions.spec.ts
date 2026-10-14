@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test'
 import type { PermissionRecord, RoleRecord } from '../../src/api/types'
 
-async function setup(page: Page, rights = ['role.read', 'permission.read']) {
+async function setup(page: Page, rights = ['role.read', 'permission.read'], extraPermissions = 0) {
   const writes: string[] = []
   const reads: string[] = []
   let conflict = false
@@ -92,6 +92,16 @@ async function setup(page: Page, rights = ['role.read', 'permission.read']) {
     engineer: [],
     'disabled-role': ['export'],
     'archived-role': ['business'],
+  }
+  for (let index = 0; index < extraPermissions; index++) {
+    const permission: PermissionRecord = {
+      ...permissions[1]!,
+      id: `extra-${index}`,
+      code: `report.extra_${index}`,
+      name: `额外权限 ${index}`,
+    }
+    permissions.push(permission)
+    ids.operator!.push(permission.id)
   }
   const user = {
     id: 'admin',
@@ -281,3 +291,102 @@ test('dark mobile view keeps scrolling and metadata errors fall back to IDs', as
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
   expect(errors).toEqual([])
 })
+
+test('sidebar tab order matches the home page shortcut order', async ({ page }) => {
+  await setup(page, [
+    'user.read',
+    'role.read',
+    'permission.read',
+    'audit.read',
+    'system.metrics.read',
+  ])
+  const paths = ['/home', '/users', '/roles', '/permissions', '/logs', '/system/performance']
+  const navigation = page.locator('.sidebar nav a')
+  await expect(navigation).toHaveCount(paths.length)
+  expect(
+    await navigation.evaluateAll((elements) =>
+      elements.map((element) => element.getAttribute('href')),
+    ),
+  ).toEqual(paths)
+  expect(
+    await page
+      .locator('.home-navigation a')
+      .evaluateAll((elements) => elements.map((element) => element.getAttribute('href'))),
+  ).toEqual([...paths.slice(1), '/change-password'])
+  await navigation.first().focus()
+  for (const path of paths.slice(1)) {
+    await page.keyboard.press('Tab')
+    await expect(page.locator(`.sidebar nav a[href="${path}"]`)).toBeFocused()
+  }
+})
+
+for (const viewport of [
+  { width: 1440, height: 900 },
+  { width: 390, height: 844 },
+  { width: 1280, height: 560 },
+]) {
+  test(`RBAC tables contain wheel scrolling at ${viewport.width}×${viewport.height}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(viewport)
+    await setup(page, ['role.read', 'permission.read'], 60)
+    for (const path of ['/roles', '/permissions']) {
+      await page.locator(`.sidebar nav a[href="${path}"]`).click()
+      await expect(page).toHaveURL(path)
+      await expect(
+        page.locator(path === '/roles' ? '.role-permissions-summary' : '.permissions-page'),
+      ).toBeVisible()
+      const table = page.locator('.table-scroll')
+      await expect(table.locator('tbody tr')).toHaveCount(63)
+      await page.evaluate(() => document.fonts.ready)
+      expect(await table.evaluate((element) => element.clientHeight)).toBeGreaterThan(70)
+      expect(await table.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(
+        true,
+      )
+      const fixed = page.locator('.topbar, .page-heading, .filters, .app-footer')
+      const positions = await fixed.evaluateAll((elements) =>
+        elements.map((element) => element.getBoundingClientRect().top),
+      )
+      await table.hover()
+      await page.mouse.wheel(0, 800)
+      await expect.poll(() => table.evaluate((element) => element.scrollTop)).toBeGreaterThan(0)
+      expect(await page.locator('.main').evaluate((element) => element.scrollTop)).toBe(0)
+      expect(
+        await fixed.evaluateAll((elements) =>
+          elements.map((element) => element.getBoundingClientRect().top),
+        ),
+      ).toEqual(positions)
+      await table.evaluate((element) => {
+        element.scrollTop = element.scrollHeight
+      })
+      await page.mouse.wheel(0, 800)
+      expect(await page.locator('.main').evaluate((element) => element.scrollTop)).toBe(0)
+      if (viewport.width === 390) {
+        expect(await table.evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(
+          true,
+        )
+        await page.mouse.wheel(600, 0)
+        await expect.poll(() => table.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0)
+      }
+    }
+  })
+}
+
+for (const [locale, title, permissionTitle] of [
+  ['ja-JP', 'ロールと権限', '権限管理'],
+  ['ko-KR', '역할 및 권한', '권한 관리'],
+  ['fr-FR', 'Rôles et permissions', 'Gestion des permissions'],
+  ['ru-RU', 'Роли и разрешения', 'Управление разрешениями'],
+]) {
+  test(`RBAC pages use native translations in ${locale}`, async ({ page }) => {
+    await page.addInitScript((value) => localStorage.setItem('szx-admin-locale', value!), locale)
+    await setup(page)
+    await expect(page.locator('.sidebar nav a[href="/roles"]')).toContainText(title!)
+    await page.locator('.sidebar nav a[href="/roles"]').click()
+    await expect(page.locator('h1')).toHaveText(title!)
+    await expect(page.locator('.role-permissions-summary')).toBeVisible()
+    await page.locator('.sidebar nav a[href="/permissions"]').click()
+    await expect(page.locator('h1')).toHaveText(permissionTitle!)
+    await expect(page.locator('.table-scroll tbody tr')).toHaveCount(3)
+  })
+}

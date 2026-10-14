@@ -3,8 +3,7 @@ import { LuminaButton as Button } from '../ui/lumina'
 import { useHomeViewModel } from '../composables/useAuthViewModel'
 import { formatTime } from '../domain'
 import { useI18n } from 'vue-i18n'
-const { user, role, capabilities, canManage, canAudit, canViewRoles, busy, error, load } =
-  useHomeViewModel()
+const { user, role, capabilities, links, busy, error, load } = useHomeViewModel()
 const { t } = useI18n()
 </script>
 <template>
@@ -27,16 +26,15 @@ const { t } = useI18n()
         <dd>{{ formatTime(user?.last_login_at ?? null) }}</dd>
       </div>
     </dl>
-    <div class="actions">
-      <RouterLink v-if="canViewRoles" class="button lumina-smooth-edge" to="/roles">{{
-        t('rolePermissions.viewAssociations')
-      }}</RouterLink>
-      <RouterLink v-if="canManage" class="button primary" to="/users">{{
-        t('home.enterUsers')
-      }}</RouterLink>
-      <RouterLink v-if="canAudit" class="button lumina-smooth-edge" to="/logs">{{
-        t('home.viewAudit')
-      }}</RouterLink>
+    <div class="actions home-navigation">
+      <RouterLink
+        v-for="link in links"
+        :key="link.to"
+        class="button lumina-smooth-edge"
+        :class="{ primary: link.to === '/users' }"
+        :to="link.to"
+        >{{ link.label }}</RouterLink
+      >
       <RouterLink class="button lumina-smooth-edge" to="/change-password">{{
         t('shell.password')
       }}</RouterLink>
@@ -56,3 +54,9 @@ const { t } = useI18n()
     <p class="hint">{{ t('home.businessHint') }}</p>
   </section>
 </template>
+<style scoped>
+.home-navigation {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+}
+</style>

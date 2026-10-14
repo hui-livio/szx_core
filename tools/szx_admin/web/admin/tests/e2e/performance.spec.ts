@@ -111,7 +111,7 @@ async function setup(page: Page, role = 'admin', permission = true, diskPaths = 
 
 test('one card per metric/volume, ECharts SVG and pause/resume/leave cleanup', async ({ page }) => {
   const state = await setup(page)
-  await page.getByRole('link', { name: '机器性能' }).click()
+  await page.locator('.sidebar nav').getByRole('link', { name: '机器性能' }).click()
   await expect(page.locator('.performance-grid .lumina-card')).toHaveCount(4)
   await expect(page.getByRole('img', { name: 'CPU 使用率趋势' }).locator('svg')).toHaveCount(1)
   await expect(page.getByRole('heading', { name: 'CPU', exact: true })).toBeVisible()
@@ -133,7 +133,7 @@ test('partial unavailable, server restart, request failure retain explicit state
   page,
 }) => {
   const state = await setup(page)
-  await page.getByRole('link', { name: '机器性能' }).click()
+  await page.locator('.sidebar nav').getByRole('link', { name: '机器性能' }).click()
   await expect(page.locator('.performance-value').first()).toHaveText('25%')
   state.unavailable()
   await expect(page.getByText('暂时无法采集', { exact: true })).toBeVisible()
@@ -147,7 +147,7 @@ test('partial unavailable, server restart, request failure retain explicit state
 
 test('hidden document stops polling; showing document resumes', async ({ page }) => {
   const state = await setup(page)
-  await page.getByRole('link', { name: '机器性能' }).click()
+  await page.locator('.sidebar nav').getByRole('link', { name: '机器性能' }).click()
   await expect(page.locator('.performance-value').first()).toHaveText('25%')
   await page.evaluate(() => {
     Object.defineProperty(document, 'hidden', { configurable: true, get: () => true })
@@ -170,7 +170,7 @@ test('mobile cards stay inside viewport; dark/full/lite/reduced-motion charts re
   page.on('pageerror', (error) => errors.push(error.message))
   await page.setViewportSize({ width: 390, height: 844 })
   await setup(page)
-  await page.getByRole('link', { name: '机器性能' }).click()
+  await page.locator('.sidebar nav').getByRole('link', { name: '机器性能' }).click()
   await expect(page.locator('.lumina-chart svg')).toHaveCount(4)
   for (const fx of ['lite', 'full']) {
     await page.evaluate((fx) => {
@@ -235,7 +235,7 @@ for (const total of [2, 3, 4, 5, 6, 7, 8, 9, 14, 34]) {
       true,
       Array.from({ length: total - 2 }, (_, index) => `/volume-${index}`),
     )
-    await page.getByRole('link', { name: '机器性能' }).click()
+    await page.locator('.sidebar nav').getByRole('link', { name: '机器性能' }).click()
     await expect(page.locator('.performance-grid .lumina-card')).toHaveCount(total)
     const layout = await readCardRows(page)
     const capacity = Math.max(1, Math.floor((layout.width + layout.gap) / (320 + layout.gap)))
@@ -261,7 +261,7 @@ test('live disk count and container resizing rebalance without losing chart inst
   page.on('pageerror', (error) => errors.push(error.message))
   await page.setViewportSize({ width: 1920, height: 1000 })
   const state = await setup(page, 'admin', true, sevenCardVolumes)
-  await page.getByRole('link', { name: '机器性能' }).click()
+  await page.locator('.sidebar nav').getByRole('link', { name: '机器性能' }).click()
   await expect(page.locator('.performance-grid .lumina-card')).toHaveCount(7)
   const chart = page.getByRole('img', { name: 'CPU 使用率趋势' })
   const instance = await chart.getAttribute('_echarts_instance_')
@@ -285,7 +285,7 @@ test('live disk count and container resizing rebalance without losing chart inst
 test('seven cards become single-column without horizontal overflow on mobile', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await setup(page, 'admin', true, sevenCardVolumes)
-  await page.getByRole('link', { name: '机器性能' }).click()
+  await page.locator('.sidebar nav').getByRole('link', { name: '机器性能' }).click()
   await expect(page.locator('.performance-grid .lumina-card')).toHaveCount(7)
   const bounds = await page.locator('.performance-grid .lumina-card').evaluateAll((cards) =>
     cards.map((card) => {
@@ -305,7 +305,7 @@ test('main scrollbar is rounded, transparent, theme-aware and keeps native scrol
   page,
 }) => {
   await setup(page, 'admin', true, sevenCardVolumes)
-  await page.getByRole('link', { name: '机器性能' }).click()
+  await page.locator('.sidebar nav').getByRole('link', { name: '机器性能' }).click()
   await expect(page.locator('.performance-grid .lumina-card')).toHaveCount(7)
   const main = page.locator('.main.lumina-scrollbar')
   const styles = () =>

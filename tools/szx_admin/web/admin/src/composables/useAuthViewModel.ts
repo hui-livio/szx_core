@@ -4,6 +4,7 @@ import { useAuthStore } from '../stores/auth'
 import { isAdmin, passwordPolicy, passwordProblem, roleLabels } from '../domain'
 import { useTask } from './useTask'
 import { useI18n } from 'vue-i18n'
+import { visiblePages } from '../navigation'
 
 export function useLoginViewModel() {
   const auth = useAuthStore()
@@ -75,24 +76,7 @@ export function useShellViewModel() {
   const links = computed(() =>
     auth.needsPassword
       ? []
-      : [
-          { to: '/home', label: t('shell.dashboard'), symbol: '⌂' },
-          ...(auth.can('role.read')
-            ? [{ to: '/roles', label: t('rolePermissions.title'), symbol: '▦' }]
-            : []),
-          ...(auth.can('permission.read')
-            ? [{ to: '/permissions', label: t('rbac.title'), symbol: '◇' }]
-            : []),
-          ...(auth.can('system.metrics.read')
-            ? [{ to: '/system/performance', label: t('performance.title'), symbol: '◴' }]
-            : []),
-          ...(isAdmin(auth.user?.role)
-            ? [
-                { to: '/users', label: t('shell.users'), symbol: '◎' },
-                { to: '/logs', label: t('shell.auditLogs'), symbol: '≡' },
-              ]
-            : []),
-        ],
+      : visiblePages(auth.user?.role, auth.can).map((page) => ({ ...page, label: t(page.label) })),
   )
   const logout = () =>
     task.run(async () => {
@@ -170,9 +154,15 @@ export function useHomeViewModel() {
     load,
     user: computed(() => auth.user),
     role: computed(() => (auth.user ? t(roleLabels[auth.user.role]) : '')),
-    canViewRoles: computed(() => auth.can('role.read')),
-    canManage: computed(() => auth.can('user.read')),
-    canAudit: computed(() => auth.can('audit.read')),
+    links: computed(() =>
+      visiblePages(auth.user?.role, auth.can)
+        .filter((page) => page.to !== '/home')
+        .filter((page) => !('homeCapability' in page) || auth.can(page.homeCapability))
+        .map((page) => ({
+          to: page.to,
+          label: t('homeLabel' in page ? page.homeLabel : page.label),
+        })),
+    ),
     capabilities: computed(() =>
       (auth.permissions?.capabilities ?? []).map((code) => ({
         code,

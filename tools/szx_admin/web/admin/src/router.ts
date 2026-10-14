@@ -25,22 +25,22 @@ export const router = createRouter({
     {
       path: '/users',
       component: () => import('./pages/UsersPage.vue'),
-      meta: { titleKey: 'shell.users', admin: true },
+      meta: { titleKey: 'shell.users', admin: true, tableLayout: true },
     },
     {
       path: '/logs',
       component: () => import('./pages/LogsPage.vue'),
-      meta: { titleKey: 'shell.auditLogs', admin: true },
+      meta: { titleKey: 'shell.auditLogs', admin: true, tableLayout: true },
     },
     {
       path: '/roles',
       component: () => import('./pages/RolePermissionsPage.vue'),
-      meta: { titleKey: 'rolePermissions.title', capability: 'role.read' },
+      meta: { titleKey: 'rolePermissions.title', capability: 'role.read', tableLayout: true },
     },
     {
       path: '/permissions',
       component: () => import('./pages/PermissionsPage.vue'),
-      meta: { titleKey: 'rbac.title', capability: 'permission.read' },
+      meta: { titleKey: 'rbac.title', capability: 'permission.read', tableLayout: true },
     },
     {
       path: '/system/performance',

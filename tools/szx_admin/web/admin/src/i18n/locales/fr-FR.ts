@@ -2,6 +2,84 @@ import en from './en-US'
 
 export default {
   ...en,
+  rolePermissions: {
+    title: 'Rôles et permissions',
+    subtitle:
+      'Consultez toutes les permissions des rôles accessibles, pas seulement celles de votre compte.',
+    chooseRole: 'Choisir un rôle',
+    includeArchived: 'Inclure les rôles archivés',
+    idsOnly:
+      'Les détails des permissions sont indisponibles ou non autorisés. Seuls les identifiants sont affichés, sans déduire leur validité.',
+    assigned: 'Permissions attribuées : {count}',
+    effective: 'Permissions effectives : {count}',
+    versions: 'Version : {version} · Version des autorisations : {authz}',
+    inactiveRole: 'Ce rôle est désactivé ou archivé. Aucune de ses permissions ne prend effet.',
+    readOnly:
+      'Page en lecture seule, sans droit d’attribution requis. Pour modifier les permissions, ouvrez leur gestion.',
+    unknownPermission: 'Détails indisponibles',
+    permissionStatus: 'État de la permission',
+    effectiveState: 'Validité actuelle',
+    unknownState: 'Indéterminée',
+    isEffective: 'Effective',
+    notEffective: 'Non effective',
+    loadFailed: 'Échec du chargement. Réessayez.',
+    noAssignments: 'Aucune permission attribuée à ce rôle.',
+    viewAssociations: 'Voir les permissions des rôles',
+  },
+  rbac: {
+    codeConflict: 'Ce code existe déjà, y compris dans les archives. Choisissez un autre code.',
+    inUse: 'Cette permission est utilisée par des rôles. Supprimez d’abord les associations.',
+    resourceProtected: 'Les permissions intégrées ou archivées ne peuvent pas être modifiées.',
+    securityFloor:
+      'Les permissions obligatoires du super administrateur ne peuvent pas être retirées.',
+    title: 'Gestion des permissions',
+    subtitle:
+      'Gérez les permissions personnalisées du client métier et leur attribution aux rôles.',
+    create: 'Ajouter une permission',
+    edit: 'Modifier',
+    assign: 'Attribuer des permissions',
+    archive: 'Archiver',
+    enable: 'Activer',
+    disable: 'Désactiver',
+    all: 'Toutes les origines',
+    system: 'Intégrée',
+    custom: 'Personnalisée',
+    search: 'Rechercher des permissions',
+    searchHint: 'Nom, code, module ou description',
+    source: 'Origine',
+    includeArchived: 'Inclure les archives',
+    clientHint:
+      'Les permissions personnalisées concernent uniquement le client métier et ne protègent pas automatiquement les API serveur. Les permissions intégrées ne sont pas modifiables.',
+    name: 'Nom de la permission',
+    module: 'Module',
+    enforcement: 'Portée',
+    server: 'Serveur',
+    client: 'Client',
+    active: 'Active',
+    disabled: 'Désactivée',
+    archived: 'Archivée',
+    actions: 'Actions',
+    protected: 'Protégée',
+    code: 'Code de permission',
+    codeHint:
+      'Minuscules, chiffres, traits de soulignement et segments séparés par des points. Le code est immuable ; les préfixes system/user/role sont réservés.',
+    description: 'Description',
+    assignHint:
+      'Attribuez les permissions personnalisées actives ou retirez celles déjà désactivées. Les permissions intégrées sont conservées. Toute modification invalide les anciens jetons d’autorisation.',
+    noCustom: 'Aucune permission personnalisée à attribuer ou à retirer.',
+    archiveHint:
+      'Archiver {code} ? Retirez toutes les associations aux rôles. La restauration et la réutilisation du code sont impossibles.',
+    statusHint:
+      'Changer l’état de {code} ? Les anciens jetons d’autorisation des rôles associés seront invalidés.',
+    conflict: 'La version a changé. Rechargez avant de confirmer ; aucun écrasement automatique.',
+    reload: 'Recharger',
+    saved: 'Modifications enregistrées.',
+  },
+  events: {
+    ...en.events,
+    rbac_permission_changed: 'Permission modifiée',
+    rbac_role_changed: 'Autorisations du rôle modifiées',
+  },
   performance: {
     title: 'Performances machine',
     subtitle: 'CPU, mémoire physique et capacité des disques locaux du serveur',
