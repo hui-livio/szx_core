@@ -2,6 +2,7 @@
 
 #include "OrmConnection.h"
 #include "SzxAdmin/Infra/ErrorCode.h"
+#include "UUID.hpp"
 
 #include <tuple>
 
@@ -241,11 +242,29 @@ auto MySqlPermissionRepository::bumpRoleAuthzVersions(std::string_view permissio
 {
     try
     {
-        return connection_.execute(
-                   "UPDATE roles r JOIN role_permissions rp ON rp.role_id = r.id SET r.version = r.version + 1, r.authz_version = r.authz_version + 1 WHERE rp.permission_id = '" +
-                   std::string{permissionId} + "'") ?
-            SZX::COMMON::Result<void>::Success() :
-            failed<void>();
+        // The service holds the permission row lock. Read bindings without JOIN
+        // update locks, then acquire role PK locks in a deterministic order.
+        const auto roles = connection_.query_s<std::tuple<std::string>>(
+            "SELECT role_id FROM role_permissions WHERE permission_id = ? ORDER BY role_id", std::string{permissionId});
+        if (connection_.has_error())
+            return failed<void>();
+        std::vector<std::string> ids;
+        ids.reserve(roles.size());
+        for (const auto &role : roles)
+        {
+            const auto &id = std::get<0>(role);
+            if (!SZX::COMMON::Uuid::parse(id))
+                return failed<void>();
+            const auto locked = connection_.query_s<std::tuple<std::string>>("SELECT id FROM roles WHERE id = ? FOR UPDATE", id);
+            if (connection_.has_error() || locked.size() != 1)
+                return failed<void>();
+            ids.push_back(id);
+        }
+        for (const auto &id : ids)
+            if (!connection_.execute("UPDATE roles SET version = version + 1, authz_version = authz_version + 1 WHERE id = '" +
+                                     id + "'"))
+                return failed<void>();
+        return SZX::COMMON::Result<void>::Success();
     } catch (...)
     {
         return failed<void>();

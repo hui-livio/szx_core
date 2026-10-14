@@ -40,8 +40,8 @@ export default {
       'Lowercase letters, digits, underscores and dot-separated segments. Code is immutable; system/user/role and other server prefixes are reserved.',
     description: 'Description',
     assignHint:
-      'Only active custom permissions are editable here. Existing system/disabled assignments are preserved. Authorization changes invalidate old role tokens.',
-    noCustom: 'No active custom permissions.',
+      'Assign active custom permissions or remove existing disabled bindings. System assignments are preserved. Authorization changes invalidate old role tokens.',
+    noCustom: 'No custom permissions available to assign or unbind.',
     archiveHint:
       'Archive {code}? Remove all role bindings first. Archived codes cannot be restored or reused.',
     statusHint:

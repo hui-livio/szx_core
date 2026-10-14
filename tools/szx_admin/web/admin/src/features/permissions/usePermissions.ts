@@ -19,6 +19,7 @@ export function usePermissions() {
   const selected = shallowRef<PermissionRecord>()
   const selectedRole = shallowRef<RoleRecord>()
   const assigned = ref<string[]>([])
+  const initialAssigned = ref<string[]>([])
   const preserved = ref<string[]>([])
   const roleId = ref('')
   const conflict = ref(false)
@@ -39,7 +40,12 @@ export function usePermissions() {
   )
   const can = auth.can
   const assignmentOptions = computed(() =>
-    rows.value.filter((item) => item.status === 'active' && item.source === 'custom'),
+    rows.value.filter(
+      (item) =>
+        item.source === 'custom' &&
+        (item.status === 'active' ||
+          (item.status === 'disabled' && initialAssigned.value.includes(item.id))),
+    ),
   )
   async function load() {
     request?.abort()
@@ -65,6 +71,7 @@ export function usePermissions() {
     selectedRole.value = undefined
     roles.value = []
     assigned.value = []
+    initialAssigned.value = []
     preserved.value = []
     roleId.value = ''
     conflict.value = false
@@ -85,6 +92,7 @@ export function usePermissions() {
   async function loadRole() {
     selectedRole.value = undefined
     assigned.value = []
+    initialAssigned.value = []
     preserved.value = []
     if (!roleId.value) return
     const id = roleId.value
@@ -97,9 +105,10 @@ export function usePermissions() {
     }
     if (disposed || roleId.value !== id) return
     selectedRole.value = latest
+    initialAssigned.value = [...ids]
     const editable = new Set(assignmentOptions.value.map((item) => item.id))
     assigned.value = ids.filter((value) => editable.has(value))
-    // System, disabled and otherwise hidden assignments must never be silently removed.
+    // System and unknown assignments remain protected; existing disabled custom bindings are explicitly removable.
     preserved.value = ids.filter((value) => !editable.has(value))
     conflict.value = false
   }
@@ -108,10 +117,11 @@ export function usePermissions() {
     mutation.run(async () => {
       success.value = ''
       conflict.value = false
-      roles.value = (await rbacApi.roles()).data.items.filter((item) => item.status === 'active')
+      roles.value = (await rbacApi.roles()).data.items.filter((item) => item.status !== 'archived')
       roleId.value = ''
       selectedRole.value = undefined
       assigned.value = []
+      initialAssigned.value = []
       preserved.value = []
       action.value = 'assign'
     })

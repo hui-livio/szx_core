@@ -25,10 +25,21 @@ const custom: PermissionRecord = {
   required_for_super_admin: false,
   version: 1,
 }
-async function setup(page: Page, allow = true, readOnly = false) {
-  let items = [{ ...builtIn }, { ...custom }]
+async function setup(page: Page, allow = true, readOnly = false, disabledBinding = false) {
+  let items: PermissionRecord[] = [
+    { ...builtIn },
+    { ...custom, status: disabledBinding ? 'disabled' : 'active' },
+  ]
+  if (disabledBinding)
+    items.push({
+      ...custom,
+      id: 'unbound-disabled',
+      code: 'report.other',
+      name: '未关联停用权限',
+      status: 'disabled',
+    })
   let conflict = false
-  let assigned = [builtIn.id]
+  let assigned = disabledBinding ? [builtIn.id, custom.id] : [builtIn.id]
   const writes: { method: string; path: string; data: unknown; version?: string }[] = []
   const role: RoleRecord = {
     id: 'role-operator',
@@ -252,4 +263,33 @@ test('read-only capability hides mutations and keeps dark mobile table usable', 
   await expect(page.locator('.table-scroll')).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
   expect(errors).toEqual([])
+})
+
+test('disabled custom permission can be unbound and archived without ever re-enabling it', async ({
+  page,
+}) => {
+  const state = await setup(page, true, false, true)
+  await navigate(page)
+  await page.getByRole('button', { name: '分配角色权限', exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByRole('combobox', { name: '角色', exact: true }).click()
+  await page.getByRole('option', { name: '操作员', exact: true }).click()
+  const binding = dialog.getByRole('checkbox', { name: /查看报表/ })
+  await expect(binding).toBeChecked()
+  await expect(dialog.getByText('未关联停用权限')).toHaveCount(0)
+  await binding.uncheck()
+  // Keep the option visible to allow cancelling an accidental removal in the same edit.
+  await expect(binding).toBeVisible()
+  await dialog.getByRole('button', { name: '确认', exact: true }).click()
+  await expect(dialog).toHaveCount(0)
+  expect(state.assigned()).toEqual([builtIn.id])
+  await page
+    .getByRole('row')
+    .filter({ hasText: 'report.view' })
+    .getByRole('button', { name: '归档', exact: true })
+    .click()
+  await dialog.getByRole('button', { name: '确认', exact: true }).click()
+  await expect(dialog).toHaveCount(0)
+  expect(state.writes.filter((write) => write.path.endsWith('/status'))).toEqual([])
+  await expect(page.getByRole('row').filter({ hasText: 'report.view' })).toHaveCount(0)
 })

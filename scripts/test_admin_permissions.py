@@ -54,17 +54,21 @@ def run_permission_checks(call, sql, login, token):
     assert status == 401, body
     current = login("metrics_operator", "MetricsTest123")
     assert "report.export" not in get("/client/me/permissions", current)["capabilities"]
+    engineer_role = next(item for item in roles if item["code"] == "engineer")
+    engineer_path = "/admin/roles/" + engineer_role["id"] + "/permissions"
+    engineer_ids = get(engineer_path)["permission_ids"]
+    write("PUT", engineer_path, {"permission_ids": sorted(engineer_ids + [created["id"].upper()])}, engineer_role["version"], want=404)
     # Editing other assignments must preserve a pre-existing disabled custom binding.
     target = get("/admin/roles/" + target["id"])
-    write("PUT", rp, {"permission_ids": with_permission}, target["version"])
-    enabled = write("PATCH", path + "/status", {"status": "active"}, disabled["version"])
+    write("PUT", rp, {"permission_ids": [value.upper() for value in with_permission]}, target["version"])
     target = get("/admin/roles/" + target["id"])
     target = write("PUT", rp, {"permission_ids": original}, target["version"])
-    write("DELETE", path, version=enabled["version"], want=204)
+    assert get(path)["status"] == "disabled"  # no transient regrant needed to archive
+    write("DELETE", path, version=disabled["version"], want=204)
     assert get(path)["status"] == "archived"
     assert not any(item["id"] == created["id"] for item in get("/admin/permissions")["items"])
     assert any(item["id"] == created["id"] for item in get("/admin/permissions?include_archived=true")["items"])
-    write("PATCH", path + "/status", {"status": "active"}, enabled["version"] + 1, want=409)
+    write("PATCH", path + "/status", {"status": "active"}, disabled["version"] + 1, want=409)
     write("POST", "/admin/permissions", {"code": "report.export", "name": "Reused", "module": "reports"}, want=409)
     super_role = next(item for item in roles if item["code"] == "super_admin")
     write("PUT", "/admin/roles/" + super_role["id"] + "/permissions", {"permission_ids": []}, super_role["version"], want=409)
@@ -77,4 +81,10 @@ def run_permission_checks(call, sql, login, token):
     sql("DROP TRIGGER metrics_test.reject_permission_audit;")
     assert sql("SELECT COUNT(*) FROM metrics_test.permissions WHERE code='report.rollback';") == "0"
     assert int(sql("SELECT COUNT(*) FROM metrics_test.security_audit_logs WHERE event_name='rbac.permission.changed';")) >= 5
+    from urllib.parse import urlencode
+    for code, chinese in [("rbac.permission.changed", "权限变更"), ("rbac.role.changed", "角色授权变更")]:
+        by_code = get("/admin/audit-logs?" + urlencode({"event_search": code}))
+        by_label = get("/admin/audit-logs?" + urlencode({"event_search": chinese}))
+        assert by_code["total"] > 0 and by_label["total"] == by_code["total"], (code, by_code, by_label)
+    print("PASS: Chinese permission/role audit search and disabled unbind/archive without regrant")
     print("PASS: custom permission CRUD, description/version, protected system permissions, binding guard, role assignment and token invalidation")

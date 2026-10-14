@@ -219,7 +219,8 @@ const sources = computed(() => [
                 class="permission-check"
                 ><input v-model="assigned" type="checkbox" :value="permission.id" /><span
                   >{{ permission.name
-                  }}<small class="identity mono">{{ permission.code }}</small></span
+                  }}<span v-if="permission.status === 'disabled'"> · {{ t('rbac.disabled') }}</span
+                  ><small class="identity mono">{{ permission.code }}</small></span
                 ></label
               >
               <p v-if="!assignmentOptions.length" class="hint">{{ t('rbac.noCustom') }}</p>

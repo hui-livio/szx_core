@@ -7,7 +7,9 @@
 namespace SZX::ADMIN::USER
 {
 /** 中文名称用于审计事件关键词检索；未知事件仍可按原始代码搜索。 */
-inline constexpr std::array<std::pair<std::string_view, std::string_view>, 17> kAuditEventLabels{{
+inline constexpr std::array<std::pair<std::string_view, std::string_view>, 19> kAuditEventLabels{{
+    {"rbac.permission.changed", "权限变更"},
+    {"rbac.role.changed", "角色授权变更"},
     {"auth.login", "用户登录"},
     {"auth.login.success", "登录成功"},
     {"auth.login.failure", "登录失败"},

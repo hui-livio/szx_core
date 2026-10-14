@@ -814,7 +814,7 @@ Linux 使用 `/proc/stat`、`/proc/meminfo`、挂载表与 `statvfs`；Windows �
 
 POST 接收 code/name/module/可选 description，返回 201 和 version=1；自定义权限固定 client/custom/active，不能指定 source/enforcement/status，不允许保留的 auth/user/role/permission/audit/behavior/system 前缀。PATCH 只接受 name/description。所有变更使用 If-Match；版本冲突 409/2209，重复 code（含归档）409/2228，未知字段/非法数据 422/2206，内置或不可恢复资源 409/2232。DELETE 返回 204；必须先解除全部角色关联，仍有关联返回 409/2230。
 
-自定义权限不是新的服务端权限注册：业务客户端调用 `/client/me/permissions` 获取 capabilities 决定业务功能；服务端路由仍由代码注册权限保护。角色权限 PUT 提交完整 permission_ids 集合，前端仅改动活跃自定义项，保留其他关联；超管 required_for_super_admin 权限不允许移除，系统权限由受控服务端代码发布。启停权限或替换角色集合更新角色 authz_version，旧 access token 下次请求被拒绝，客户端需刷新/重新认证获取新授权。审计与业务变更在同一事务中提交；审计失败回滚写入。
+自定义权限不是新的服务端权限注册：业务客户端调用 `/client/me/permissions` 获取 capabilities 决定业务功能；服务端路由仍由代码注册权限保护。角色权限 PUT 提交完整 permission_ids 集合，前端可改动活跃自定义项并移除已有停用项，保留系统及未知关联；超管 required_for_super_admin 权限不允许移除，系统权限由受控服务端代码发布。启停权限或替换角色集合更新角色 authz_version，旧 access token 下次请求被拒绝，客户端需刷新/重新认证获取新授权。审计与业务变更在同一事务中提交；审计失败回滚写入。
 
 第二阶段新增的错误码遵循 V1.2 设计，不改变原有用户/会话错误码：
 

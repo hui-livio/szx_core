@@ -157,6 +157,8 @@ def main():
                 if args.rbac:
                     from test_admin_permissions import run_permission_checks
                     run_permission_checks(call, sql, login, token)
+                    from test_admin_rbac_concurrency import run_rbac_concurrency_checks
+                    run_rbac_concurrency_checks(call, sql, token, service, config)
 
 
 if __name__ == "__main__":

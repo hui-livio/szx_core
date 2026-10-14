@@ -48,9 +48,15 @@ auto validStatus(std::string_view value) noexcept -> bool
 auto normalizedIds(const std::vector<std::string> &ids) -> std::optional<std::vector<std::string>>
 {
     std::vector<std::string> result = ids;
-    for (const auto &id : result)
+    for (auto &id : result)
+    {
         if (!USER::validUuid(id))
             return std::nullopt;
+        const auto parsed = SZX::COMMON::Uuid::parse(id);
+        if (!parsed)
+            return std::nullopt;
+        id = parsed->toString();
+    }
     std::sort(result.begin(), result.end());
     if (std::adjacent_find(result.begin(), result.end()) != result.end())
         return std::nullopt;
@@ -392,6 +398,37 @@ try
             const auto actor = authorize(authorization_, context, unit, PERMISSIONS::RolePermissionAssign);
             if (!actor.ok)
                 return Result<void>::Failure(actor.error, {});
+            // Global order for this operation: permission UUIDs, then the role row.
+            // Include removed IDs as well: DELETE of a role binding must not race
+            // the permission status transaction that updates the same role.
+            const auto snapshotRole = repository->findById(id);
+            if (!snapshotRole.ok)
+                return Result<void>::Failure(snapshotRole.error, {});
+            if (!snapshotRole.value)
+                return failed<void>(ErrorCode::ResourceNotFound);
+            if (snapshotRole.value->version != version)
+                return failed<void>(ErrorCode::ConflictVersion);
+            const auto snapshotIds = repository->permissionIds(id);
+            if (!snapshotIds.ok)
+                return Result<void>::Failure(snapshotIds.error, {});
+            const auto beforeIds = normalizedIds(snapshotIds.value);
+            if (!beforeIds)
+                return failed<void>(ErrorCode::DatabaseQueryFailed);
+            auto lockIds = *beforeIds;
+            lockIds.insert(lockIds.end(), normalized->begin(), normalized->end());
+            std::sort(lockIds.begin(), lockIds.end());
+            lockIds.erase(std::unique(lockIds.begin(), lockIds.end()), lockIds.end());
+            std::vector<PermissionRow> lockedPermissions;
+            lockedPermissions.reserve(lockIds.size());
+            for (const auto &permissionId : lockIds)
+            {
+                const auto permission = permissions->findById(permissionId, true);
+                if (!permission.ok)
+                    return Result<void>::Failure(permission.error, {});
+                if (!permission.value)
+                    return failed<void>(ErrorCode::ResourceNotFound);
+                lockedPermissions.push_back(*permission.value);
+            }
             const auto found = repository->findById(id, true);
             if (!found.ok)
                 return Result<void>::Failure(found.error, {});
@@ -407,14 +444,19 @@ try
             const auto current = repository->permissionIds(id);
             if (!current.ok)
                 return Result<void>::Failure(current.error, {});
-            for (const auto &permissionId : *normalized)
+            // Do not apply a stale lock plan if another writer changed bindings.
+            const auto currentIds = normalizedIds(current.value);
+            if (!currentIds)
+                return failed<void>(ErrorCode::DatabaseQueryFailed);
+            if (*currentIds != *beforeIds)
+                return failed<void>(ErrorCode::ConflictVersion);
+            for (const auto &permission : lockedPermissions)
             {
-                const auto permission = permissions->findById(permissionId, true);
-                if (!permission.ok)
-                    return Result<void>::Failure(permission.error, {});
-                if (!permission.value || permission.value->status == "archived" ||
-                    (permission.value->status != "active" &&
-                     std::find(current.value.begin(), current.value.end(), permissionId) == current.value.end()))
+                if (!std::binary_search(normalized->begin(), normalized->end(), permission.id))
+                    continue;
+                if (permission.status == "archived" ||
+                    (permission.status != "active" &&
+                     std::find(currentIds->begin(), currentIds->end(), permission.id) == currentIds->end()))
                     return failed<void>(ErrorCode::ResourceNotFound);
             }
             if (found.value->systemKey && *found.value->systemKey == "super_admin")
@@ -428,7 +470,7 @@ try
                         return failed<void>(ErrorCode::SuperAdminSecurityFloor);
             }
             auto row = *found.value;
-            if (current.value != *normalized)
+            if (*currentIds != *normalized)
             {
                 ++row.version;
                 ++row.authzVersion;
