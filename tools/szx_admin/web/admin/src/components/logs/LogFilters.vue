@@ -32,24 +32,30 @@ const resultOptions = computed(() => [
 </script>
 <template>
   <form class="filters log-filters" @submit.prevent="emit('search')">
-    <label
-      >{{ t('audit.eventName')
-      }}<InputText
+    <label>
+      {{ t('audit.eventName') }}
+      <Select
         v-model="filters.event_search"
-        type="search"
+        editable
+        :options="eventOptions"
+        option-label="label"
+        option-value="code"
+        :empty-message="t('common.noResults')"
         :placeholder="t('audit.eventSearchPlaceholder')"
-        maxlength="128"
-        list="audit-event-options"
-        autocomplete="off"
-    /></label>
-    <datalist id="audit-event-options">
-      <option
-        v-for="event in eventOptions"
-        :key="event.code"
-        :value="event.label"
-        :label="event.code"
-      />
-    </datalist>
+        :aria-label="t('audit.eventName')"
+        :pt="{
+          label: { maxlength: 128, spellcheck: false },
+          listContainer: { class: 'lumina-scrollbar' },
+        }"
+      >
+        <template #option="{ option }">
+          <div class="lumina-select-option-content">
+            <span class="lumina-select-option-label">{{ option.label }}</span>
+            <span class="lumina-select-option-detail">{{ option.code }}</span>
+          </div>
+        </template>
+      </Select>
+    </label>
     <label
       >{{ t('audit.result')
       }}<Select

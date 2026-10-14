@@ -437,7 +437,12 @@ for (const viewport of [
       const offsets = await control.evaluate((element) => {
         const range = document.createRange()
         range.selectNodeContents(element)
-        const text = range.getBoundingClientRect()
+        // Editable values are rendered inside native input, not DOM text nodes;
+        // Range has empty bounds there. Check the input box instead of an empty range.
+        const text =
+          element instanceof HTMLInputElement
+            ? element.getBoundingClientRect()
+            : range.getBoundingClientRect()
         const root = element.closest('.p-select')!
         const rect = root.getBoundingClientRect()
         const arrow = root.querySelector('.p-select-dropdown')!.getBoundingClientRect()

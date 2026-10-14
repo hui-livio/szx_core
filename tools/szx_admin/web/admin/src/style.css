@@ -76,7 +76,7 @@
     outline-offset: 3px;
   }
 
-  input:not(.p-inputtext),
+  input:not(.p-inputtext, .p-select-label),
   select {
     width: 100%;
     min-width: 0;
@@ -88,14 +88,14 @@
     background: var(--lg-field);
   }
 
-  input:not(.p-inputtext):focus,
+  input:not(.p-inputtext, .p-select-label):focus,
   select:focus {
     border-color: var(--lg-brand-400);
     background: var(--lg-field-focus);
     box-shadow: var(--lg-ring-focus);
   }
 
-  input:not(.p-inputtext)::placeholder {
+  input:not(.p-inputtext, .p-select-label)::placeholder {
     color: var(--lg-n-600);
   }
 

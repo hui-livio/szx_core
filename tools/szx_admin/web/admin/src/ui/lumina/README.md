@@ -256,3 +256,20 @@ glass 自动响应根节点的 `data-fx`：lite（或未设置 full）关闭毛�
 调用方需将 `cellStyle(index)` 应用于每张卡片，并保持 count 与实际卡片数量一致。组件只负责布局，不请求数据、不持有业务状态；ResizeObserver 的更新延迟到下一帧，卸载时清理 observer 和待执行帧。布局改变不重新挂载原有图表。
 
 `.lumina-scrollbar` 是可复用、显式启用的滚动条样式：透明轨道、圆角窄滑块、明暗主题和高对比度适配。后台 main 使用该类；保持原生滚动和稳定 gutter，不影响下拉浮层的圆角裁剪。
+
+## 可编辑下拉框
+
+`LuminaSelect` 透传 PrimeVue 的 `editable` 属性，可选择预设值，也可输入不在列表中的字符串。继续使用同一套 Aura/Lumina 根元素、圆角、柔化 focus 边线和不透明主题弹出层，不使用浏览器原生 datalist。
+
+```vue
+<LuminaSelect
+  v-model="query"
+  editable
+  :options="options"
+  option-label="label"
+  option-value="code"
+  :pt="{ label: { maxlength: 128 }, listContainer: { class: 'lumina-scrollbar' } }"
+/>
+```
+
+选中时 model 为 option-value，输入时 model 为用户文本。输入限制应通过 `pt.label` 传给内部 input，而不是放在 Select 根 div 上。`option` 插槽可使用 `lumina-select-option-content/label/detail` 显示“名称＋代码”等两级文案。通用控件不决定查询语义或预设来源；审计页预设由业务事件目录提供，行为页预设从当前返回记录中去重获取，未知代码仍可手工查询。

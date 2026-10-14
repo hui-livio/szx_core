@@ -81,9 +81,51 @@
   align-items: center;
 }
 
+/* Aura defaults readonly labels to 1rem; use the same scaled field size for both modes. */
+.p-select-label {
+  font-size: inherit;
+}
+
 /* The focusable label is rectangular; Aura draws the ring on the rounded Select root. */
 .p-select-label:focus-visible {
   outline: none;
+}
+
+/* Editable Select uses one themed root, not a second rectangular native input.
+   The root owns hover/focus borders; preserve editable text and native selection. */
+.p-select > input.p-select-label {
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  caret-color: var(--accent);
+  box-shadow: none;
+}
+.p-select > input.p-select-label:focus {
+  outline: none;
+  box-shadow: none;
+}
+.p-select > input.p-select-label::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+.lumina-select-option-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--lg-s1);
+  min-width: 0;
+}
+.lumina-select-option-label {
+  font-weight: 500;
+}
+.lumina-select-option-detail {
+  color: var(--muted);
+  font-size: var(--lg-fs-xs);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
 }
 
 .p-select-overlay {

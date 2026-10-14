@@ -15,7 +15,7 @@ const filters = defineModel<{
   from: string
   to: string
 }>({ required: true })
-defineProps<{ busy: boolean }>()
+defineProps<{ busy: boolean; eventOptions: { code: string; label: string }[] }>()
 const emit = defineEmits<{ search: []; reset: [] }>()
 const dateInputKey = shallowRef(0)
 function reset() {
@@ -31,14 +31,23 @@ const resultOptions = computed(() => [
 </script>
 <template>
   <form class="filters log-filters" @submit.prevent="emit('search')">
-    <label
-      >{{ t('audit.eventName')
-      }}<InputText
+    <label>
+      {{ t('audit.eventName') }}
+      <Select
         v-model="filters.event_search"
-        type="search"
-        maxlength="128"
+        editable
+        :options="eventOptions"
+        option-label="label"
+        option-value="code"
+        :empty-message="t('common.noResults')"
         :placeholder="t('audit.behaviorSearchPlaceholder')"
-    /></label>
+        :aria-label="t('audit.eventName')"
+        :pt="{
+          label: { maxlength: 128, spellcheck: false },
+          listContainer: { class: 'lumina-scrollbar' },
+        }"
+      />
+    </label>
     <label
       >{{ t('audit.result')
       }}<Select

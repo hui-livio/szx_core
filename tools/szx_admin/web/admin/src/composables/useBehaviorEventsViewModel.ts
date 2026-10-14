@@ -30,6 +30,11 @@ export function useBehaviorEventsViewModel() {
       details: redactDetails(event.details) as Record<string, unknown>,
     })),
   )
+  const eventOptions = computed(() =>
+    [...new Set(query.items.value.map((event) => event.event_name))]
+      .filter((code) => typeof code === 'string' && code.length > 0)
+      .map((code) => ({ code, label: code })),
+  )
   function search() {
     validationError.value = ''
     if (!!filters.from !== !!filters.to) {
@@ -58,5 +63,16 @@ export function useBehaviorEventsViewModel() {
     search()
   }
   onMounted(() => query.load())
-  return { filters, query, events, validationError, selected, search, reset, show, close }
+  return {
+    filters,
+    query,
+    events,
+    eventOptions,
+    validationError,
+    selected,
+    search,
+    reset,
+    show,
+    close,
+  }
 }

@@ -175,3 +175,28 @@ test('independent CardGrid balances changing counts and observes its container',
   await page.getByRole('button', { name: 'Toggle grid width' }).click()
   await expect.poll(counts).toEqual([1, 1, 1, 1, 1, 1])
 })
+
+test('editable Select accepts free text and uses themed keyboard-accessible options', async ({
+  page,
+}) => {
+  await page.goto(fixture)
+  await page.evaluate(() => {
+    document.documentElement.dataset.theme = 'dark'
+  })
+  const editable = page.getByRole('combobox', { name: 'Editable choice' })
+  await expect(editable).toHaveAttribute('maxlength', '128')
+  await editable.fill('caller custom value')
+  await expect(page.getByTestId('editable-choice-model')).toHaveText('caller custom value')
+  await editable.press('Escape')
+  await editable.fill('')
+  await editable.press('ArrowDown')
+  await expect(page.getByRole('option', { name: 'Violet', exact: true })).toContainText('violet')
+  await editable.fill('Vio')
+  await editable.press('Enter')
+  await expect(editable).toHaveValue('Violet')
+  await expect(page.getByTestId('editable-choice-model')).toHaveText('violet')
+  await editable.fill('unknown code')
+  await editable.press('Escape')
+  await expect(editable).toHaveValue('unknown code')
+  await expect(page.locator('datalist')).toHaveCount(0)
+})

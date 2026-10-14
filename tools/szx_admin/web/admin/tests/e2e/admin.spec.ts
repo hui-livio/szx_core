@@ -309,11 +309,14 @@ test('audit event search sends trimmed keywords and clears the filter', async ({
   await login(page)
   await page.getByRole('link', { name: '审计日志' }).click()
   const input = page.getByRole('combobox', { name: '事件名称', exact: true })
-  await expect(input).toHaveAttribute('list', 'audit-event-options')
-  await expect(page.locator('#audit-event-options option[value="登录成功"]')).toHaveAttribute(
-    'label',
+  await expect(input).toHaveAttribute('maxlength', '128')
+  await expect(input).not.toHaveAttribute('list')
+  await expect(page.locator('datalist')).toHaveCount(0)
+  await page.locator('.log-filters .p-select-dropdown').first().click()
+  await expect(page.getByRole('option', { name: '登录成功', exact: true })).toContainText(
     'auth.login.success',
   )
+  await input.press('Escape')
   for (const term of ['login', 'auth.login', '登录', '']) {
     await input.fill(` ${term} `)
     const request = page.waitForRequest((request) =>
@@ -575,4 +578,109 @@ test.describe('local date/time query contract', () => {
     await page.getByRole('button', { name: '重置筛选' }).click()
     await expect(input).toHaveValue('')
   })
+})
+
+for (const theme of ['light', 'dark']) {
+  test(`editable event dropdown keeps Lumina ${theme} surfaces and submits selected codes`, async ({
+    page,
+  }) => {
+    await mockApi(page)
+    await login(page)
+    await page.getByRole('link', { name: '审计日志' }).click()
+    await page.evaluate((theme) => {
+      document.documentElement.dataset.theme = theme
+    }, theme)
+    const input = page.getByRole('combobox', { name: '事件名称', exact: true })
+    await input.focus()
+    const root = input.locator('..')
+    const field = await input.evaluate((element) => {
+      const style = getComputedStyle(element)
+      const bounds = element.getBoundingClientRect()
+      const container = element.parentElement!.getBoundingClientRect()
+      return {
+        border: style.borderTopWidth,
+        shadow: style.boxShadow,
+        background: style.backgroundColor,
+        verticalOffset: Math.abs(
+          bounds.top + bounds.height / 2 - container.top - container.height / 2,
+        ),
+      }
+    })
+    expect(field).toMatchObject({ border: '0px', shadow: 'none', background: 'rgba(0, 0, 0, 0)' })
+    expect(field.verticalOffset).toBeLessThan(1)
+    const readonly = page.getByRole('combobox', { name: '结果', exact: true })
+    expect(await input.evaluate((element) => getComputedStyle(element).fontSize)).toBe(
+      await readonly.evaluate((element) => getComputedStyle(element).fontSize),
+    )
+    expect(
+      await root.evaluate((element) => Number.parseFloat(getComputedStyle(element).borderRadius)),
+    ).toBeGreaterThan(0)
+    await root.locator('.p-select-dropdown').click()
+    const popup = page.locator('.p-select-overlay')
+    await expect(popup).toBeVisible()
+    await expect(popup.locator('.p-select-list-container')).toHaveClass(/lumina-scrollbar/)
+    await expect(page.getByRole('option', { name: '登录成功', exact: true })).toContainText(
+      'auth.login.success',
+    )
+    const surface = await popup.evaluate((element) => {
+      const style = getComputedStyle(element)
+      return {
+        background: style.backgroundColor,
+        radius: Number.parseFloat(style.borderRadius),
+        border: style.borderTopWidth,
+        shadow: style.boxShadow,
+      }
+    })
+    const channels = surface.background.match(/[\d.]+/g)!.map(Number)
+    expect(channels.length < 4 || channels[3]! >= 0.99).toBe(true)
+    expect(surface.radius).toBeGreaterThan(0)
+    expect(surface.border).toBe('1px')
+    expect(surface.shadow).not.toBe('none')
+    if (theme === 'dark') {
+      expect(Math.max(...channels.slice(0, 3))).toBeLessThan(90)
+      await page.screenshot({ path: '/tmp/szx-editable-audit-dark.png', fullPage: true })
+    }
+    await page.getByRole('option', { name: '登录成功', exact: true }).click()
+    await expect(input).toHaveValue('登录成功')
+    const selectedRequest = page.waitForRequest((request) =>
+      new URL(request.url()).pathname.endsWith('/admin/audit-logs'),
+    )
+    await page.getByRole('button', { name: '查询日志' }).click()
+    expect(new URL((await selectedRequest).url()).searchParams.get('event_search')).toBe(
+      'auth.login.success',
+    )
+    await expect(page.getByRole('button', { name: '查询日志' })).toBeEnabled()
+    await input.fill(' custom.event ')
+    const customRequest = page.waitForRequest((request) =>
+      new URL(request.url()).pathname.endsWith('/admin/audit-logs'),
+    )
+    await page.getByRole('button', { name: '查询日志' }).click()
+    expect(new URL((await customRequest).url()).searchParams.get('event_search')).toBe(
+      'custom.event',
+    )
+  })
+}
+
+test('behavior event dropdown offers returned codes and still accepts custom search', async ({
+  page,
+}) => {
+  await mockApi(page)
+  await login(page)
+  await page.getByRole('link', { name: '审计日志' }).click()
+  await page.getByRole('tab', { name: '用户行为' }).click()
+  const input = page.getByRole('combobox', { name: '事件名称', exact: true })
+  await input.locator('..').locator('.p-select-dropdown').click()
+  await page.getByRole('option', { name: 'report.view', exact: true }).click()
+  await expect(input).toHaveValue('report.view')
+  await input.fill(' client.custom ')
+  const requested = page.waitForRequest((request) =>
+    new URL(request.url()).pathname.endsWith('/admin/behavior-events'),
+  )
+  await page.getByRole('button', { name: '查询事件' }).click()
+  expect(new URL((await requested).url()).searchParams.get('event_search')).toBe('client.custom')
+  await expect(page.getByRole('button', { name: '查询事件' })).toBeEnabled()
+  await page.getByRole('button', { name: '重置筛选' }).click()
+  await expect(input).toHaveValue('')
+  await page.getByRole('tab', { name: '安全审计' }).click()
+  await expect(page.getByRole('combobox', { name: '事件名称', exact: true })).toHaveValue('')
 })

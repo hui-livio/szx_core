@@ -30,6 +30,7 @@ const {
 const {
   filters: behaviorFilters,
   events,
+  eventOptions: behaviorEventOptions,
   validationError: behaviorValidationError,
   selected: behaviorSelected,
   search: searchBehavior,
@@ -107,6 +108,7 @@ const {
       <BehaviorEventFilters
         v-model="behaviorFilters"
         :busy="behaviorBusy"
+        :event-options="behaviorEventOptions"
         @search="searchBehavior"
         @reset="resetBehavior"
       />

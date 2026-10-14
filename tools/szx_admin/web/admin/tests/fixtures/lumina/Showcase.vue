@@ -23,6 +23,7 @@ const gridCount = ref(7)
 const gridNarrow = ref(false)
 const name = ref('')
 const colour = ref('blue')
+const customChoice = ref('')
 const submissions = ref(0)
 const date = ref('')
 const page = ref(1)
@@ -111,6 +112,23 @@ const rows = [
     >
       <template #value="{ value }">Shade: {{ value }}</template>
     </LuminaSelect>
+    <LuminaSelect
+      v-model="customChoice"
+      editable
+      :options="options"
+      option-label="label"
+      option-value="value"
+      aria-label="Editable choice"
+      :pt="{ label: { maxlength: 128 }, listContainer: { class: 'lumina-scrollbar' } }"
+    >
+      <template #option="{ option }">
+        <div class="lumina-select-option-content">
+          <span class="lumina-select-option-label">{{ option.label }}</span>
+          <span class="lumina-select-option-detail">{{ option.value }}</span>
+        </div>
+      </template>
+    </LuminaSelect>
+    <output data-testid="editable-choice-model">{{ customChoice }}</output>
     <LuminaDateTimePicker
       v-model="date"
       label="Local time"
