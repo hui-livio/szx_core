@@ -63,6 +63,8 @@ Item {
     property bool creationEnabled: false
     property real minimumCreationSize: 2
     property bool alignCreatedRectangles: false
+    /// Preserve every covered image pixel when committing resized/moved ROIs.
+    property bool alignEditedRectangles: false
     property bool shiftDeleteEnabled: false
     property bool viewportInteractionEnabled: false
     property string createGroupKey: "general"
@@ -590,11 +592,15 @@ Item {
             y1 = Math.max(0, Math.min(imageSourceSize.height, y1));
             y2 = Math.max(0, Math.min(imageSourceSize.height, y2));
         }
+        const left = Math.min(x1, x2);
+        const top = Math.min(y1, y2);
+        const x = alignEditedRectangles ? Math.floor(left) : Math.round(left);
+        const y = alignEditedRectangles ? Math.floor(top) : Math.round(top);
         return {
-            x: Math.round(Math.min(x1, x2)),
-            y: Math.round(Math.min(y1, y2)),
-            width: Math.round(Math.abs(x2 - x1)),
-            height: Math.round(Math.abs(y2 - y1))
+            x: x,
+            y: y,
+            width: alignEditedRectangles ? Math.ceil(Math.max(x1, x2)) - x : Math.round(Math.abs(x2 - x1)),
+            height: alignEditedRectangles ? Math.ceil(Math.max(y1, y2)) - y : Math.round(Math.abs(y2 - y1))
         };
     }
 

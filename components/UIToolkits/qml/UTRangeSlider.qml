@@ -37,7 +37,7 @@ RangeSlider {
     property bool _sideEditorsReady: false
     property bool _syncingSideEditors: false
     property bool _rangeChangePending: false
-    /// 两端之间的最小距离；默认一个步长，保证右值始终严格大于左值。
+    /// 两端之间的最小距离；默认一个步长，设为 0 可选择相等的上下限。
     property real minimumSeparation: Math.max(Number(stepSize), 0.000001)
 
     // ── 信号 ─────────────────────────────────────────────────────────
@@ -231,7 +231,7 @@ RangeSlider {
     }
 
     function _enforceMinimumSeparation(firstChanged) {
-        const gap = Math.min(Math.max(minimumSeparation, 0.000001), Math.max(0, to - from));
+        const gap = Math.min(Math.max(minimumSeparation, 0), Math.max(0, to - from));
         if (second.value - first.value >= gap)
             return;
         if (firstChanged)
