@@ -105,7 +105,8 @@ Item {
     signal viewportPanFinished()
     signal viewportWheel(real x, real y, real delta)
 
-    focus: editable
+    // Editing availability also changes when preview images are refreshed.
+    // Only pointer interaction should move focus from a parameter editor.
 
     function resetState() {
         positionOverrides = ({});

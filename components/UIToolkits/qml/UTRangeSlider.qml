@@ -25,6 +25,7 @@ RangeSlider {
     property string valueSuffix: ""
     property int valuePrecision: -1  // -1 自动，>=0 固定小数位
     property int sideEditorWidth: 60
+    property bool keyboardTracking: false
     enum ValueDisplayMode {
         AboveHandles,
         SideValues
@@ -272,6 +273,8 @@ RangeSlider {
 
     UTSpinBox {
         id: sideLeftInteger
+        objectName: "sideLeftInteger"
+        keyboardTracking: root.keyboardTracking
         z: 10
         visible: root._showsSideValues && root._usesIntegerEditors
         anchors.left: parent.left
@@ -291,6 +294,8 @@ RangeSlider {
 
     UTDoubleSpinBox {
         id: sideRightDecimal
+        objectName: "sideRightDecimal"
+        keyboardTracking: root.keyboardTracking
         z: 10
         visible: root._showsSideValues && !root._usesIntegerEditors
         anchors.right: parent.right
@@ -310,6 +315,8 @@ RangeSlider {
 
     UTDoubleSpinBox {
         id: sideLeftDecimal
+        objectName: "sideLeftDecimal"
+        keyboardTracking: root.keyboardTracking
         z: 10
         visible: root._showsSideValues && !root._usesIntegerEditors
         anchors.left: parent.left
@@ -329,6 +336,8 @@ RangeSlider {
 
     UTSpinBox {
         id: sideRightInteger
+        objectName: "sideRightInteger"
+        keyboardTracking: root.keyboardTracking
         z: 10
         visible: root._showsSideValues && root._usesIntegerEditors
         anchors.right: parent.right
