@@ -14,6 +14,7 @@ const props = withDefaults(
 const host = ref<HTMLDivElement>()
 let chart: EChartsType | undefined
 let resize: ResizeObserver | undefined
+let resizeFrame: number | undefined
 let appearance: MutationObserver | undefined
 let motion: MediaQueryList | undefined
 
@@ -51,7 +52,13 @@ onMounted(() => {
   chart = init(host.value, undefined, { renderer: 'svg' })
   motion = window.matchMedia('(prefers-reduced-motion: reduce)')
   motion.addEventListener('change', update)
-  resize = new ResizeObserver(() => chart?.resize())
+  resize = new ResizeObserver(() => {
+    if (resizeFrame !== undefined) return
+    resizeFrame = requestAnimationFrame(() => {
+      resizeFrame = undefined
+      chart?.resize()
+    })
+  })
   resize.observe(host.value)
   appearance = new MutationObserver(update)
   appearance.observe(document.documentElement, {
@@ -63,6 +70,7 @@ onMounted(() => {
 watch(() => [props.option, props.animation], update, { deep: true })
 onBeforeUnmount(() => {
   resize?.disconnect()
+  if (resizeFrame !== undefined) cancelAnimationFrame(resizeFrame)
   appearance?.disconnect()
   motion?.removeEventListener('change', update)
   chart?.dispose()

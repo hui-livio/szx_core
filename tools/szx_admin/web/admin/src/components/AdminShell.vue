@@ -65,7 +65,7 @@ const route = useRoute()
           </Button>
         </div>
       </header>
-      <main id="main" class="main">
+      <main id="main" class="main lumina-scrollbar">
         <p v-if="error" class="alert error" role="alert">{{ error }}</p>
         <slot />
       </main>

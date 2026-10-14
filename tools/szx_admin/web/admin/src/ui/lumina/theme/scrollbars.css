@@ -1,0 +1,60 @@
+/* Opt-in utility: native scrolling stays intact, with no JS scroll container.
+   Other controls/popups retain their existing overflow and clipping contracts. */
+.lumina-scrollbar {
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: var(--lg-scroll-thumb) transparent;
+}
+.lumina-scrollbar:hover {
+  scrollbar-color: var(--lg-scroll-thumb-hover) transparent;
+}
+
+@supports selector(::-webkit-scrollbar) {
+  /* Standard non-auto properties override WebKit pseudo-elements in modern
+     Chromium; use them only as the non-WebKit fallback. */
+  .lumina-scrollbar,
+  .lumina-scrollbar:hover {
+    scrollbar-width: auto;
+    scrollbar-color: auto;
+  }
+  .lumina-scrollbar::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  .lumina-scrollbar::-webkit-scrollbar-track,
+  .lumina-scrollbar::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+  .lumina-scrollbar::-webkit-scrollbar-thumb {
+    min-height: 48px;
+    border: 2px solid transparent;
+    border-radius: 999px;
+    background: var(--lg-scroll-thumb);
+    background-clip: padding-box;
+  }
+  .lumina-scrollbar::-webkit-scrollbar-thumb:hover,
+  .lumina-scrollbar::-webkit-scrollbar-thumb:active {
+    background-color: var(--lg-scroll-thumb-hover);
+  }
+  .lumina-scrollbar::-webkit-scrollbar-button {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+}
+
+@media (forced-colors: active) {
+  .lumina-scrollbar,
+  .lumina-scrollbar:hover {
+    scrollbar-width: auto;
+    scrollbar-color: auto;
+  }
+  .lumina-scrollbar::-webkit-scrollbar {
+    width: auto;
+    height: auto;
+  }
+  .lumina-scrollbar::-webkit-scrollbar-thumb {
+    background: CanvasText;
+    border-color: Canvas;
+  }
+}

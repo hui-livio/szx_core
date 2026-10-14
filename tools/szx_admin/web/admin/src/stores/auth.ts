@@ -72,7 +72,10 @@ export const useAuthStore = defineStore('auth', () => {
     loadPermissions,
     changePassword,
     updateSelf,
-    can: (capability: string) => Boolean(permissions.value?.capabilities.includes(capability)),
+    can: (capability: string) => {
+      const capabilities = permissions.value?.capabilities
+      return Array.isArray(capabilities) && capabilities.includes(capability)
+    },
     logout: () => api.logout(),
   }
 })

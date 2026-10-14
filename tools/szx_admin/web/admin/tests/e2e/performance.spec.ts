@@ -9,7 +9,7 @@ const metric = (usage = 40) => ({
   available_bytes: 10 * 1024 ** 3,
   free_bytes: null,
 })
-async function setup(page: Page, role = 'admin', permission = true) {
+async function setup(page: Page, role = 'admin', permission = true, diskPaths = ['/', '/data']) {
   let loggedIn = false
   let count = 0
   let instance = 'instance-a'
@@ -75,7 +75,7 @@ async function setup(page: Page, role = 'admin', permission = true) {
         logical_cpus: 8,
         sample_interval_ms: 2000,
         disk_interval_ms: 30000,
-        disks: ['/', '/data'].map((path) => ({
+        disks: diskPaths.map((path) => ({
           id: path,
           path,
           sampled_at: Date.now(),
@@ -102,6 +102,9 @@ async function setup(page: Page, role = 'admin', permission = true) {
     },
     fail: () => {
       fail = true
+    },
+    setVolumes: (paths: string[]) => {
+      diskPaths = paths
     },
   }
 }
@@ -199,3 +202,158 @@ for (const role of ['operator', 'engineer', 'admin']) {
     expect(state.count()).toBe(0)
   })
 }
+
+const sevenCardVolumes = [
+  '/usr/lib/modules/6.18.33.2-microsoft-standard-WSL2',
+  '/',
+  '/usr/lib/wsl/lib',
+  '/mnt/wslg/version.txt',
+  '/mnt/wslg/doc',
+]
+
+async function readCardRows(page: Page) {
+  return page.locator('.performance-grid').evaluate((grid) => {
+    const bounds = grid.getBoundingClientRect()
+    const gap = Number.parseFloat(getComputedStyle(grid).columnGap)
+    const rows: { x: number; y: number; width: number }[][] = []
+    for (const card of grid.querySelectorAll('.lumina-card')) {
+      const { x, y, width } = card.getBoundingClientRect()
+      const row = rows.at(-1)
+      if (row && Math.abs(row[0]!.y - y) < 1) row.push({ x, y, width })
+      else rows.push([{ x, y, width }])
+    }
+    return { x: bounds.x, width: bounds.width, gap, rows }
+  })
+}
+
+for (const total of [2, 3, 4, 5, 6, 7, 8, 9, 14, 34]) {
+  test(`layout adapts to ${total} API-driven cards and fills every row`, async ({ page }) => {
+    await page.setViewportSize({ width: 1920, height: 1000 })
+    await setup(
+      page,
+      'admin',
+      true,
+      Array.from({ length: total - 2 }, (_, index) => `/volume-${index}`),
+    )
+    await page.getByRole('link', { name: '机器性能' }).click()
+    await expect(page.locator('.performance-grid .lumina-card')).toHaveCount(total)
+    const layout = await readCardRows(page)
+    const capacity = Math.max(1, Math.floor((layout.width + layout.gap) / (320 + layout.gap)))
+    expect(layout.rows).toHaveLength(Math.ceil(total / capacity))
+    const counts = layout.rows.map((row) => row.length)
+    expect(Math.max(...counts) - Math.min(...counts)).toBeLessThanOrEqual(1)
+    for (const row of layout.rows) {
+      expect(row[0]!.x).toBeCloseTo(layout.x, 0)
+      expect(row.at(-1)!.x + row.at(-1)!.width).toBeCloseTo(layout.x + layout.width, 0)
+      for (const card of row) expect(card.width).toBeGreaterThanOrEqual(319)
+    }
+    if (total === 7) {
+      expect(counts).toEqual([4, 3])
+      await page.screenshot({ path: '/tmp/szx-performance-adaptive.png', fullPage: true })
+    }
+  })
+}
+
+test('live disk count and container resizing rebalance without losing chart instances', async ({
+  page,
+}) => {
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await page.setViewportSize({ width: 1920, height: 1000 })
+  const state = await setup(page, 'admin', true, sevenCardVolumes)
+  await page.getByRole('link', { name: '机器性能' }).click()
+  await expect(page.locator('.performance-grid .lumina-card')).toHaveCount(7)
+  const chart = page.getByRole('img', { name: 'CPU 使用率趋势' })
+  const instance = await chart.getAttribute('_echarts_instance_')
+  expect(instance).toBeTruthy()
+  for (const diskCount of [1, 6, 0, 5]) {
+    state.setVolumes(Array.from({ length: diskCount }, (_, index) => `/volume-${index}`))
+    await expect(page.locator('.performance-grid .lumina-card')).toHaveCount(diskCount + 2)
+    const layout = await readCardRows(page)
+    for (const row of layout.rows)
+      expect(row.at(-1)!.x + row.at(-1)!.width).toBeCloseTo(layout.x + layout.width, 0)
+    expect(await chart.getAttribute('_echarts_instance_')).toBe(instance)
+  }
+  await page.setViewportSize({ width: 1024, height: 900 })
+  await expect.poll(async () => (await readCardRows(page)).rows.length).toBeGreaterThan(2)
+  await page.setViewportSize({ width: 390, height: 844 })
+  await expect.poll(async () => (await readCardRows(page)).rows.length).toBe(7)
+  await page.waitForTimeout(150)
+  expect(errors).toEqual([])
+})
+
+test('seven cards become single-column without horizontal overflow on mobile', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await setup(page, 'admin', true, sevenCardVolumes)
+  await page.getByRole('link', { name: '机器性能' }).click()
+  await expect(page.locator('.performance-grid .lumina-card')).toHaveCount(7)
+  const bounds = await page.locator('.performance-grid .lumina-card').evaluateAll((cards) =>
+    cards.map((card) => {
+      const { x, y, width } = card.getBoundingClientRect()
+      return { x, y, width }
+    }),
+  )
+  for (let index = 1; index < bounds.length; index++) {
+    expect(bounds[index]!.x).toBeCloseTo(bounds[0]!.x, 0)
+    expect(bounds[index]!.width).toBeCloseTo(bounds[0]!.width, 0)
+    expect(bounds[index]!.y).toBeGreaterThan(bounds[index - 1]!.y)
+  }
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
+})
+
+test('main scrollbar is rounded, transparent, theme-aware and keeps native scrolling', async ({
+  page,
+}) => {
+  await setup(page, 'admin', true, sevenCardVolumes)
+  await page.getByRole('link', { name: '机器性能' }).click()
+  await expect(page.locator('.performance-grid .lumina-card')).toHaveCount(7)
+  const main = page.locator('.main.lumina-scrollbar')
+  const styles = () =>
+    main.evaluate((element) => ({
+      gutter: getComputedStyle(element).scrollbarGutter,
+      width: getComputedStyle(element, '::-webkit-scrollbar').width,
+      radius: getComputedStyle(element, '::-webkit-scrollbar-thumb').borderRadius,
+      track: getComputedStyle(element, '::-webkit-scrollbar-track').backgroundColor,
+      thumb: getComputedStyle(element, '::-webkit-scrollbar-thumb').backgroundColor,
+      buttons: getComputedStyle(element, '::-webkit-scrollbar-button').display,
+    }))
+  const light = await styles()
+  expect(light).toMatchObject({
+    gutter: 'stable',
+    width: '10px',
+    radius: '999px',
+    track: 'rgba(0, 0, 0, 0)',
+    buttons: 'none',
+  })
+  await page.evaluate(() => {
+    document.documentElement.dataset.theme = 'dark'
+  })
+  const dark = await styles()
+  expect(dark.thumb).not.toBe(light.thumb)
+  const before = await main.evaluate((element) => element.clientWidth)
+  await main.hover()
+  await page.mouse.wheel(0, 500)
+  await expect.poll(() => main.evaluate((element) => element.scrollTop)).toBeGreaterThan(0)
+  expect(await main.evaluate((element) => element.clientWidth)).toBe(before)
+  await page.emulateMedia({ forcedColors: 'active' })
+  expect(await main.evaluate((element) => getComputedStyle(element).scrollbarColor)).toBe('auto')
+})
+
+test('missing capabilities fail closed without breaking the shell', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await setup(page, 'admin', false)
+  await page.route('**/api/v1/client/me/permissions', (route) =>
+    route.fulfill({ json: { data: {}, request_id: 'missing-capabilities' } }),
+  )
+  const loaded = page.waitForResponse((response) =>
+    response.url().endsWith('/client/me/permissions'),
+  )
+  await page.getByRole('link', { name: '工作台', exact: true }).click()
+  await loaded
+  await expect(page.locator('.page-heading h1')).toBeVisible()
+  await expect(page.getByRole('link', { name: '机器性能' })).toHaveCount(0)
+  await page.getByRole('link', { name: '用户管理', exact: true }).click()
+  await expect(page).toHaveURL('/users')
+  expect(errors).toEqual([])
+})

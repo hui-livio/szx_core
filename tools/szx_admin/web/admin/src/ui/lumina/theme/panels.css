@@ -100,3 +100,16 @@ html:not([data-fx='full']) .lumina-panel-glass {
   height: 180px;
   min-width: 0;
 }
+
+/* Counts and container width determine balanced rows. Consumers retain ownership
+   of card content, keys and accessible labels through the scoped slot. */
+.lumina-card-grid {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: var(--lumina-card-grid-gap);
+  min-width: 0;
+}
+.lumina-card-grid > * {
+  min-width: 0;
+}

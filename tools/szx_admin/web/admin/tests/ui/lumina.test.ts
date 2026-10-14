@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync, readdirSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { computeLuminaScale } from '../../src/ui/lumina/composables/useLuminaScale'
+import { balancedCardRows } from '../../src/ui/lumina/utils/cardGrid'
 import { createLuminaCalendarLocale } from '../../src/ui/lumina/theme/locale'
 
 const root = resolve('src/ui/lumina')
@@ -91,4 +92,34 @@ it.each([
 ] as const)('normalizes reusable control lengths: %s', async (input, expected) => {
   const { toCssLength } = await import('../../src/ui/lumina/utils/cssLength')
   expect(toCssLength(input)).toBe(expected)
+})
+
+it.each([
+  [0, 4, []],
+  [1, 5, [1]],
+  [2, 5, [2]],
+  [3, 5, [3]],
+  [5, 4, [3, 2]],
+  [6, 4, [3, 3]],
+  [7, 5, [4, 3]],
+  [7, 3, [3, 2, 2]],
+  [8, 4, [4, 4]],
+  [9, 4, [3, 3, 3]],
+  [5, 2, [2, 2, 1]],
+  [3, 1, [1, 1, 1]],
+  [3, 0, [1, 1, 1]],
+])('balances %s cards with capacity %s into %s', (count, capacity, expected) => {
+  expect(balancedCardRows(count as number, capacity as number)).toEqual(expected)
+})
+
+it('preserves counts and bounds row imbalance for all supported metric counts', () => {
+  for (let count = 1; count <= 34; count++) {
+    for (let capacity = 1; capacity <= 10; capacity++) {
+      const rows = balancedCardRows(count, capacity)
+      expect(rows.reduce((sum, size) => sum + size, 0)).toBe(count)
+      expect(Math.max(...rows)).toBeLessThanOrEqual(capacity)
+      expect(Math.max(...rows) - Math.min(...rows)).toBeLessThanOrEqual(1)
+      expect(rows).toHaveLength(Math.ceil(count / capacity))
+    }
+  }
 })

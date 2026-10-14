@@ -235,3 +235,24 @@ glass 自动响应根节点的 `data-fx`：lite（或未设置 full）关闭毛�
 `LuminaChart` 接收 `LuminaChartOption`（从本目录入口导出）、必需的可访问名称 `label` 和可选 `animation`。按需注册 line/pie、grid/tooltip、SVG renderer；不加载 Canvas renderer 或 ECharts 全量入口。实例只初始化一次，option 更新调用 setOption，ResizeObserver 处理容器缩放，卸载时释放图表和所有监听器。
 
 图表监听根节点 data-theme/data-fx；使用当前文本/表面色，tooltip 限定在图表内，避免覆盖 Card 圆角；lite 或 prefers-reduced-motion 下禁用动画，调用方也可显式 animation=false。曲线、环图数据与刷新策略属于业务层，组件不自带 API/采集/历史存储。ECharts 作为固定版本 Apache-2.0 依赖保留在应用 package-lock 中，此目录仍不生成独立 npm 包。
+
+## 数量自适应 CardGrid 与滚动条
+
+`LuminaCardGrid` 不区分 CPU、内存或磁盘，接收实际卡片 `count`、可选 `minCardWidth`（默认 320 CSS px）和 `gap`（默认主题间距）。根据自身容器宽度计算容量，再将实际卡片尽量均匀分配到最少的行；例如容量为 4 时，5 张为 3＋2，6 张为 3＋3，7 张为 4＋3。容器更窄或卡片数量变化会重新计算，每一行都铺满，不固定首行或卡片类型。
+
+```vue
+<LuminaCardGrid v-slot="{ cellStyle }" :count="items.length" :min-card-width="320">
+  <LuminaCard
+    v-for="(item, index) in items"
+    :key="item.id"
+    :style="cellStyle(index)"
+    :title="item.title"
+  >
+    <!-- 业务内容 -->
+  </LuminaCard>
+</LuminaCardGrid>
+```
+
+调用方需将 `cellStyle(index)` 应用于每张卡片，并保持 count 与实际卡片数量一致。组件只负责布局，不请求数据、不持有业务状态；ResizeObserver 的更新延迟到下一帧，卸载时清理 observer 和待执行帧。布局改变不重新挂载原有图表。
+
+`.lumina-scrollbar` 是可复用、显式启用的滚动条样式：透明轨道、圆角窄滑块、明暗主题和高对比度适配。后台 main 使用该类；保持原生滚动和稳定 gutter，不影响下拉浮层的圆角裁剪。

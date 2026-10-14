@@ -5,6 +5,7 @@ import {
   LuminaMark,
   LuminaPanel,
   LuminaCard,
+  LuminaCardGrid,
   LuminaChart,
   LuminaInput,
   LuminaSelect,
@@ -18,6 +19,8 @@ import {
 } from '../../../src/ui/lumina'
 
 useLuminaScale()
+const gridCount = ref(7)
+const gridNarrow = ref(false)
 const name = ref('')
 const colour = ref('blue')
 const submissions = ref(0)
@@ -71,6 +74,27 @@ const rows = [
       state="unavailable"
       state-label="Caller unavailable"
     />
+    <div class="actions">
+      <LuminaButton label="Toggle grid width" @click="gridNarrow = !gridNarrow" />
+      <LuminaButton label="Remove grid card" @click="gridCount = Math.max(0, gridCount - 1)" />
+    </div>
+    <div :style="{ width: gridNarrow ? '260px' : '100%', maxWidth: '100%' }">
+      <LuminaCardGrid
+        v-slot="{ cellStyle }"
+        data-testid="adaptive-grid"
+        :count="gridCount"
+        :min-card-width="180"
+        :gap="12"
+      >
+        <LuminaCard
+          v-for="index in gridCount"
+          :key="index"
+          :style="cellStyle(index - 1)"
+          :title="`Grid card ${index}`"
+          >Caller content</LuminaCard
+        >
+      </LuminaCardGrid>
+    </div>
     <form @submit.prevent="submissions++">
       <label>Name<LuminaInput v-model="name" aria-label="Name" required /></label>
       <LuminaButton label="Submit" type="submit" variant="primary">

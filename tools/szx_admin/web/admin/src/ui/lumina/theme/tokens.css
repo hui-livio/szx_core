@@ -25,6 +25,8 @@
   --lg-soft-border: var(--lg-stroke);
   --lg-control-ring: var(--lg-brand-200);
   --lg-control-halo: rgba(125, 139, 255, 0.04);
+  --lg-scroll-thumb: rgba(107, 105, 184, 0.44);
+  --lg-scroll-thumb-hover: rgba(107, 105, 184, 0.7);
   --lg-edge-px: 1px;
   --lg-edge-blur: 1.25px;
   --lg-edge-hover: rgba(125, 139, 255, 0.72);
@@ -66,6 +68,8 @@ html:not([data-fx='full']) *::after {
 :root[data-theme='dark'] {
   color-scheme: dark;
   --accent: var(--lg-brand-300);
+  --lg-scroll-thumb: rgba(156, 162, 225, 0.44);
+  --lg-scroll-thumb-hover: rgba(177, 183, 245, 0.72);
   --muted: #8b92b8;
   --success-ink: #6ee7b7;
   --warning-ink: #fcd34d;

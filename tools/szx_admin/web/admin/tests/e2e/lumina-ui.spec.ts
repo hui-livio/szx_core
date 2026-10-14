@@ -152,3 +152,26 @@ test('standalone Card slots/state and SVG Chart adapt to appearance changes', as
     'rgba(0, 0, 0, 0)',
   )
 })
+
+test('independent CardGrid balances changing counts and observes its container', async ({
+  page,
+}) => {
+  await page.goto(fixture)
+  const grid = page.getByTestId('adaptive-grid')
+  const counts = () =>
+    grid.evaluate((element) => {
+      const rows: { top: number; count: number }[] = []
+      for (const card of element.querySelectorAll('.lumina-card')) {
+        const top = card.getBoundingClientRect().top
+        const row = rows.at(-1)
+        if (row && Math.abs(row.top - top) < 1) row.count++
+        else rows.push({ top, count: 1 })
+      }
+      return rows.map((row) => row.count)
+    })
+  await expect.poll(counts).toEqual([3, 2, 2])
+  await page.getByRole('button', { name: 'Remove grid card' }).click()
+  await expect.poll(counts).toEqual([3, 3])
+  await page.getByRole('button', { name: 'Toggle grid width' }).click()
+  await expect.poll(counts).toEqual([1, 1, 1, 1, 1, 1])
+})

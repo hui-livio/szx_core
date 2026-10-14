@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import {
   LuminaButton as Button,
   LuminaCard,
+  LuminaCardGrid,
   LuminaChart,
   LuminaSelect as Select,
   type LuminaChartOption,
@@ -85,6 +86,7 @@ function trend(key: 'cpu' | 'memory'): LuminaChartOption {
   }
 }
 const cpuOption = computed(() => trend('cpu'))
+const cardCount = computed(() => 2 + (snapshot.value?.disks.length ?? 0))
 const memoryOption = computed(() => trend('memory'))
 const diskOptions = computed(
   () => new Map((snapshot.value?.disks ?? []).map((disk) => [disk.id, capacity(disk.capacity)])),
@@ -142,8 +144,14 @@ function capacity(metric: MachineMetric): LuminaChartOption {
       t(paused || hidden ? 'performance.paused' : 'performance.stale')
     }}</span>
   </div>
-  <section class="performance-grid" :aria-label="t('performance.title')">
+  <LuminaCardGrid
+    v-slot="{ cellStyle }"
+    class="performance-grid"
+    :count="cardCount"
+    :aria-label="t('performance.title')"
+  >
     <LuminaCard
+      :style="cellStyle(0)"
       :title="t('performance.cpu')"
       :subtitle="t('performance.cores', { count: snapshot?.logical_cpus ?? '—' })"
       :state="state(snapshot?.cpu)"
@@ -154,6 +162,7 @@ function capacity(metric: MachineMetric): LuminaChartOption {
       <template #footer>{{ t('performance.sampleEvery', { seconds: 2 }) }}</template>
     </LuminaCard>
     <LuminaCard
+      :style="cellStyle(1)"
       :title="t('performance.memory')"
       :subtitle="t('performance.physicalMemory')"
       :state="state(snapshot?.memory)"
@@ -178,7 +187,8 @@ function capacity(metric: MachineMetric): LuminaChartOption {
       <template #footer>{{ t('performance.availableHint') }}</template>
     </LuminaCard>
     <LuminaCard
-      v-for="disk in snapshot?.disks ?? []"
+      v-for="(disk, index) in snapshot?.disks ?? []"
+      :style="cellStyle(index + 2)"
       :key="disk.id"
       :title="t('performance.disk')"
       :subtitle="disk.path"
@@ -216,7 +226,7 @@ function capacity(metric: MachineMetric): LuminaChartOption {
         {{ t('performance.sampleEvery', { seconds: 30 }) }}
       </template>
     </LuminaCard>
-  </section>
+  </LuminaCardGrid>
   <p v-if="snapshot && !snapshot.disks.length" class="hint">{{ t('performance.noDisks') }}</p>
 </template>
 <style scoped>
@@ -234,11 +244,10 @@ function capacity(metric: MachineMetric): LuminaChartOption {
   font-size: var(--lg-fs-sm);
   margin-bottom: var(--lg-s7);
 }
-.performance-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
-  align-items: stretch;
-  gap: var(--lg-s7);
+.performance-grid :deep(.lumina-card-heading p) {
+  /* Reserve two subtitle lines so short and long mount names stay aligned. */
+  line-height: 1.4;
+  min-height: 2.8em;
 }
 .performance-value {
   font-size: clamp(30px, 3vw, 42px);
