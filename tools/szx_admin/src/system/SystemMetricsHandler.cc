@@ -9,6 +9,7 @@
 
 #include <array>
 #include <charconv>
+#include <utility>
 
 namespace SZX::ADMIN::SYSTEM
 {
@@ -62,12 +63,24 @@ auto respond(INFRA::DatabasePool &database, AUTH::LoginService &login, SystemMet
             if (error != std::errc{} || end != value.data() + value.size() || !window || window > 900)
                 return RestApi::error(ErrorCode::ValidationError, request.requestId);
         }
-        const auto result = history ? metrics.history(window) : metrics.snapshot();
-        if (!result.ok)
-            return RestApi::error(static_cast<ErrorCode>(result.error), request.requestId);
-        auto response                     = RestApi::success(result.value, request.requestId);
-        response.headers["Cache-Control"] = "no-store";
-        return response;
+        std::string body;
+        if (history)
+        {
+            auto result = metrics.history(window);
+            if (!result.ok)
+                return RestApi::error(static_cast<ErrorCode>(result.error), request.requestId);
+            const MetricsHistoryResponse response{std::move(result.value), request.requestId};
+            SZX::COMMON::Serializer::to_json(response, body);
+        }
+        else
+        {
+            auto result = metrics.snapshot();
+            if (!result.ok)
+                return RestApi::error(static_cast<ErrorCode>(result.error), request.requestId);
+            const MetricsSnapshotResponse response{std::move(result.value), request.requestId};
+            SZX::COMMON::Serializer::to_json(response, body);
+        }
+        return RestApi::serializedSuccess(std::move(body), request.requestId);
     } catch (...)
     {
         return RestApi::error(ErrorCode::InternalFailure, request.requestId);

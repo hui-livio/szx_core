@@ -765,6 +765,8 @@ openssl pkey -in jwt-private.pem -pubout -out jwt-public.pem
 
 沿用 `{data, request_id}` 成功信封以及原有错误信封：401 未认证、403 缺少权限、422 参数错误、503/2216 采集服务未运行。拒绝未知参数、非正整数或超过 900 的时间窗口。指标的局部采集失败不使整个快照失败。
 
+Metrics 的成功响应采用 `SystemMetricsDto.h` 中的强类型 DTO，使用 `SZX_REFL` 注册反射，由项目 `SZX::COMMON::Serializer::to_json`（iguana）一次生成完整 `{data, request_id}` JSON。采集服务只返回 DTO；HTTP 层不手工构建指标 JSON，也不先序列化再解析/重建 JSON。`null`、空数组、路径转义和 64 位数值保持既有协议，错误响应沿用公共 RestApi 错误契约。
+
 快照 `data` 字段：
 
 - `instance_id`：每次启动采集器生成的 UUID；同一实例内 `sequence` 从 1 递增，用于去重和识别重启。

@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <span>
+#include <string>
 #include <string_view>
 
 namespace SZX::ADMIN::INFRA
@@ -37,6 +38,10 @@ public:
 
     /** Build a data/request_id envelope; supported status codes are 200, 201, and 202. */
     [[nodiscard]] static auto success(SZX::COMMON::Json data, std::string_view requestId, int statusCode = 200) -> HttpResponse;
+    /** Accept a complete, server-serialized data/request_id JSON envelope without parsing/rebuilding it.
+     * The caller owns DTO validation and serialization; status/header policy matches success(). */
+    [[nodiscard]] static auto serializedSuccess(std::string body, std::string_view requestId, int statusCode = 200)
+        -> HttpResponse;
     /** Empty 204 response. */
     [[nodiscard]] static auto noContent(std::string_view requestId) -> HttpResponse;
     /** Build a stable error envelope with empty details and a safe default message. */

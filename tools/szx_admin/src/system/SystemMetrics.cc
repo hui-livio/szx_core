@@ -33,35 +33,21 @@ inline namespace v1
 namespace
 {
 using INFRA::ErrorCode;
-using SZX::COMMON::Json;
 using SZX::COMMON::Result;
 template <typename T>
 auto failure(ErrorCode code) -> Result<T>
 {
     return Result<T>::Failure(static_cast<int>(code), {});
 }
-template <typename T>
-auto nullable(const std::optional<T> &value) -> Json
+auto metricDto(const Metric &value) -> MetricDto
 {
-    return value ? Json(*value) : Json(nullptr);
+    const auto error =
+        value.status == "unavailable" ? std::optional<int>{static_cast<int>(ErrorCode::ServiceUnavailable)} : std::nullopt;
+    return {value.status, error, value.usagePercent, value.totalBytes, value.usedBytes, value.availableBytes, value.freeBytes};
 }
-auto metricJson(const Metric &value) -> Json
+auto sampleDto(const MetricsSample &value) -> MetricsSampleDto
 {
-    return Json{
-        {"status", value.status},
-        {"error_code", value.status == "unavailable" ? Json(static_cast<int>(ErrorCode::ServiceUnavailable)) : Json(nullptr)},
-        {"usage_percent", nullable(value.usagePercent)},
-        {"total_bytes", nullable(value.totalBytes)},
-        {"used_bytes", nullable(value.usedBytes)},
-        {"available_bytes", nullable(value.availableBytes)},
-        {"free_bytes", nullable(value.freeBytes)}};
-}
-auto sampleJson(const MetricsSample &value) -> Json
-{
-    return Json{{"sequence", value.sequence},
-                {"sampled_at", value.sampledAt},
-                {"cpu", metricJson(value.cpu)},
-                {"memory", metricJson(value.memory)}};
+    return {value.sequence, value.sampledAt, metricDto(value.cpu), metricDto(value.memory)};
 }
 #ifndef _WIN32
 auto unescapeMount(std::string value) -> std::string
@@ -469,54 +455,56 @@ void SystemMetricsService::sample(bool disks)
     if (volumes)
         disks_ = std::move(*volumes);
 }
-auto SystemMetricsService::snapshot() const -> Result<Json>
+auto SystemMetricsService::snapshot() const -> Result<MetricsSnapshotDto>
 {
     try
     {
         std::lock_guard lock{mutex_};
         if (!running_ || samples_.empty())
-            return failure<Json>(ErrorCode::ServiceUnavailable);
-        auto result            = sampleJson(samples_.back());
-        result["instance_id"]  = instanceId_;
-        result["logical_cpus"] = logicalCpus_;
+            return failure<MetricsSnapshotDto>(ErrorCode::ServiceUnavailable);
+        const auto &sample = samples_.back();
+        MetricsSnapshotDto result;
+        result.sequence     = sample.sequence;
+        result.sampled_at   = sample.sampledAt;
+        result.cpu          = metricDto(sample.cpu);
+        result.memory       = metricDto(sample.memory);
+        result.instance_id  = instanceId_;
+        result.logical_cpus = logicalCpus_;
 #ifdef _WIN32
-        result["platform"] = "windows";
+        result.platform = "windows";
 #else
-        result["platform"] = "linux";
+        result.platform = "linux";
 #endif
-        result["sample_interval_ms"] = 2000;
-        result["disk_interval_ms"]   = 30000;
-        result["disks"]              = Json::array();
+        result.disks.reserve(disks_.size());
         for (const auto &disk : disks_)
-            result["disks"].push_back(Json{
-                {"id", disk.id}, {"path", disk.path}, {"sampled_at", disk.sampledAt}, {"capacity", metricJson(disk.capacity)}});
-        return Result<Json>::Success(std::move(result));
+            result.disks.push_back({disk.id, disk.path, disk.sampledAt, metricDto(disk.capacity)});
+        return Result<MetricsSnapshotDto>::Success(std::move(result));
     } catch (...)
     {
-        return failure<Json>(ErrorCode::InternalFailure);
+        return failure<MetricsSnapshotDto>(ErrorCode::InternalFailure);
     }
 }
-auto SystemMetricsService::history(unsigned windowSeconds) const -> Result<Json>
+auto SystemMetricsService::history(unsigned windowSeconds) const -> Result<MetricsHistoryDto>
 {
     try
     {
         if (!windowSeconds || windowSeconds > 900)
-            return failure<Json>(ErrorCode::ValidationError);
+            return failure<MetricsHistoryDto>(ErrorCode::ValidationError);
         std::lock_guard lock{mutex_};
         if (!running_ || samples_.empty())
-            return failure<Json>(ErrorCode::ServiceUnavailable);
-        Json items        = Json::array();
+            return failure<MetricsHistoryDto>(ErrorCode::ServiceUnavailable);
+        MetricsHistoryDto result;
+        result.instance_id    = instanceId_;
+        result.window_seconds = windowSeconds;
+        result.samples.reserve(samples_.size());
         const auto cutoff = samples_.back().sampledAt - static_cast<std::int64_t>(windowSeconds) * 1000;
         for (const auto &sample : samples_)
             if (sample.sampledAt >= cutoff)
-                items.push_back(sampleJson(sample));
-        return Result<Json>::Success(Json{{"instance_id", instanceId_},
-                                          {"sample_interval_ms", 2000},
-                                          {"window_seconds", windowSeconds},
-                                          {"samples", std::move(items)}});
+                result.samples.push_back(sampleDto(sample));
+        return Result<MetricsHistoryDto>::Success(std::move(result));
     } catch (...)
     {
-        return failure<Json>(ErrorCode::InternalFailure);
+        return failure<MetricsHistoryDto>(ErrorCode::InternalFailure);
     }
 }
 } // namespace v1

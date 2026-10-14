@@ -1,7 +1,7 @@
 #pragma once
 
-#include "JsonHelper.hpp"
 #include "Result.hpp"
+#include "SystemMetricsDto.h"
 
 #include <array>
 #include <condition_variable>
@@ -70,8 +70,8 @@ public:
     auto operator=(const SystemMetricsService &) -> SystemMetricsService & = delete;
     [[nodiscard]] auto start() -> SZX::COMMON::Result<void>;
     void stop() noexcept;
-    [[nodiscard]] auto snapshot() const -> SZX::COMMON::Result<SZX::COMMON::Json>;
-    [[nodiscard]] auto history(unsigned windowSeconds = 300) const -> SZX::COMMON::Result<SZX::COMMON::Json>;
+    [[nodiscard]] auto snapshot() const -> SZX::COMMON::Result<MetricsSnapshotDto>;
+    [[nodiscard]] auto history(unsigned windowSeconds = 300) const -> SZX::COMMON::Result<MetricsHistoryDto>;
 
 private:
     class Platform;
