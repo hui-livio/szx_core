@@ -28,6 +28,13 @@ test('version conflict blocks resubmission until the user reloads', async ({ pag
         csrf_token: 'csrf',
         expires_at: Date.now() + 900000,
       })
+    if (path.endsWith('/client/me/permissions'))
+      return reply({
+        user_id: user.id,
+        role: user.role,
+        capabilities: ['user.read'],
+        authz_version: 1,
+      })
     if (path.endsWith('/admin/users'))
       return reply({ items: [user], total: 1, page: 1, page_size: 20 })
     if (request.method() === 'PATCH') {
@@ -45,6 +52,8 @@ test('version conflict blocks resubmission until the user reloads', async ({ pag
   await page.locator('input[name="identifier"]').fill('admin')
   await page.getByLabel('密码', { exact: true }).fill('test')
   await page.getByRole('button', { name: '登录控制台' }).click()
+  await expect(page).toHaveURL('/home')
+  await page.getByRole('link', { name: '用户管理', exact: true }).click()
   await page.getByRole('button', { name: '编辑', exact: true }).click()
   await expect(page.getByRole('button', { name: '确认', exact: true })).toBeEnabled()
   await page.getByLabel('展示名', { exact: true }).fill('Updated')

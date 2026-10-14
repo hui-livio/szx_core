@@ -128,6 +128,15 @@ async function login(page: Page) {
   await page.locator('input[name="identifier"]').fill('admin')
   await page.getByLabel('密码', { exact: true }).fill('TestPassword123')
   await page.getByRole('button', { name: '登录控制台' }).click()
+  await expect(page).not.toHaveURL('/login')
+  // These scenarios exercise the users module; login itself now always lands on home.
+  if (
+    new URL(page.url()).pathname === '/home' &&
+    (await page.locator('.sidebar a[href="/users"]').count())
+  ) {
+    await page.locator('.sidebar a[href="/users"]').click()
+    await expect(page).toHaveURL('/users')
+  }
 }
 test('admin creates a user, clears one-time credentials and submits versioned edits', async ({
   page,

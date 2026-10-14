@@ -65,7 +65,7 @@ test('successful login removes the login UI while the destination module is stil
   await mockSession(page)
   const module = gate()
   const requested = gate()
-  await page.route('**/src/pages/UsersPage.vue*', async (route) => {
+  await page.route('**/src/pages/HomePage.vue*', async (route) => {
     requested.release()
     await module.promise
     await route.continue()
@@ -77,8 +77,8 @@ test('successful login removes the login UI while the destination module is stil
     await expect(page.locator('.login-page')).toHaveCount(0)
     await expect(page.locator('.main [role="status"]')).toHaveText('加载中…')
     module.release()
-    await expect(page).toHaveURL('/users')
-    await expect(page.locator('.users-page')).toBeVisible()
+    await expect(page).toHaveURL('/home')
+    await expect(page.locator('.page-heading h1')).toHaveText('你好，测试账号')
   } finally {
     module.release()
   }
@@ -89,7 +89,7 @@ for (const role of ['super_admin', 'operator']) {
     await mockSession(page, role)
     const response = gate()
     const requested = gate()
-    const dataPath = role === 'super_admin' ? '/admin/users' : '/client/me/permissions'
+    const dataPath = '/client/me/permissions'
     await page.route(`**/api/v1${dataPath}*`, async (route) => {
       requested.release()
       await response.promise
@@ -98,24 +98,13 @@ for (const role of ['super_admin', 'operator']) {
     try {
       await submitLogin(page)
       await requested.promise
-      await expect(page).toHaveURL(role === 'super_admin' ? '/users' : '/home')
+      await expect(page).toHaveURL('/home')
       await expect(page.locator('.login-page')).toHaveCount(0)
       await expect(page.locator('.page-heading .eyebrow')).toHaveCount(0)
-      await expect(page.locator('.page-heading h1')).toHaveText(
-        role === 'super_admin' ? '用户管理' : '你好，测试账号',
-      )
-      if (role === 'super_admin') {
-        await expect(page.locator('.table-scroll')).toHaveAttribute('aria-busy', 'true')
-        await expect(page.locator('.table-scroll')).toContainText('正在加载用户…')
-      } else {
-        await expect(page.getByRole('button', { name: '加载中…' })).toBeDisabled()
-      }
+      await expect(page.locator('.page-heading h1')).toHaveText('你好，测试账号')
+      await expect(page.getByRole('button', { name: '加载中…' })).toBeDisabled()
       response.release()
-      if (role === 'super_admin') {
-        await expect(page.locator('.table-scroll')).toHaveAttribute('aria-busy', 'false')
-      } else {
-        await expect(page.getByRole('button', { name: '刷新权限' })).toBeEnabled()
-      }
+      await expect(page.getByRole('button', { name: '刷新权限' })).toBeEnabled()
       await page.locator('.topbar').getByRole('button', { name: '退出', exact: true }).click()
       await expect(page).toHaveURL('/login')
       await expect(page.locator('.login-page')).toBeVisible()
@@ -130,12 +119,12 @@ test('failed data loading reports an error in the destination rather than return
   page,
 }) => {
   await mockSession(page)
-  await page.route('**/api/v1/admin/users*', (route) =>
+  await page.route('**/api/v1/client/me/permissions*', (route) =>
     route.fulfill({ status: 503, json: { code: 2216, request_id: 'navigation-error' } }),
   )
   await submitLogin(page)
-  await expect(page).toHaveURL('/users')
-  await expect(page.locator('.users-page [role="alert"]')).toContainText('服务暂不可用')
+  await expect(page).toHaveURL('/home')
+  await expect(page.locator('.main [role="alert"]')).toContainText('服务暂不可用')
   await expect(page.locator('.login-page')).toHaveCount(0)
 })
 
@@ -148,3 +137,17 @@ test('first login still enters the mandatory password page', async ({ page }) =>
   await expect(page.locator('.login-page')).toHaveCount(0)
   await expect(page.getByRole('button', { name: '跳过，稍后修改' })).toHaveCount(0)
 })
+
+for (const role of ['operator', 'engineer', 'admin', 'super_admin']) {
+  test(`${role} defaults to home after normal login`, async ({ page }) => {
+    await mockSession(page, role)
+    await submitLogin(page)
+    await expect(page).toHaveURL('/home')
+    await expect(page.locator('.page-heading h1')).toHaveText('你好，测试账号')
+    await expect(page.getByRole('link', { name: '工作台', exact: true })).toHaveClass(
+      /router-link-active/,
+    )
+    const protectedLinks = page.locator('.sidebar a[href="/users"]')
+    await expect(protectedLinks).toHaveCount(role === 'admin' || role === 'super_admin' ? 1 : 0)
+  })
+}

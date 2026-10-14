@@ -77,6 +77,8 @@ async function signInWithRows(page: Page) {
   await page.locator('input[name="identifier"]').fill('admin')
   await page.locator('input[name="password"]').fill('TestPassword123')
   await page.locator('.login-submit').click()
+  await expect(page).toHaveURL('/home')
+  await page.locator('.sidebar a[href="/users"]').click()
   await expect(page).toHaveURL('/users')
 }
 
@@ -1076,4 +1078,71 @@ test('login, authenticated shell and logout retain one appearance and language s
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
   await expect(page.locator('html')).toHaveAttribute('data-fx', 'lite')
   await expect(page.locator('.language-switcher').getByRole('combobox')).toHaveText('English')
+})
+
+test('all admin scroll regions share Lumina styling including body portals and future content', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1024, height: 720 })
+  await signInWithRows(page)
+  await expect(page.locator('html')).toHaveAttribute('data-lumina-scrollbars', '')
+  const verify = async (region: Locator) => {
+    const style = await region.evaluate((element) => ({
+      width: getComputedStyle(element, '::-webkit-scrollbar').width,
+      height: getComputedStyle(element, '::-webkit-scrollbar').height,
+      radius: getComputedStyle(element, '::-webkit-scrollbar-thumb').borderRadius,
+      track: getComputedStyle(element, '::-webkit-scrollbar-track').backgroundColor,
+      buttons: getComputedStyle(element, '::-webkit-scrollbar-button').display,
+    }))
+    expect(style).toMatchObject({
+      width: '10px',
+      height: '10px',
+      radius: '999px',
+      track: 'rgba(0, 0, 0, 0)',
+      buttons: 'none',
+    })
+  }
+  await verify(page.locator('.sidebar'))
+  await verify(page.locator('.table-scroll'))
+  await verify(page.locator('.main'))
+  const table = page.locator('.table-scroll')
+  expect(await table.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true)
+  await table.hover()
+  await page.mouse.wheel(0, 400)
+  await expect.poll(() => table.evaluate((element) => element.scrollTop)).toBeGreaterThan(0)
+  await page.getByRole('link', { name: '审计日志' }).click()
+  const result = page.getByRole('combobox', { name: '结果', exact: true })
+  await result.click()
+  const list = page.locator('.p-select-list-container')
+  await expect(list).not.toHaveClass(/lumina-scrollbar/)
+  await verify(list)
+  expect(await list.evaluate((element) => Boolean(element.closest('#app')))).toBe(false)
+  await result.press('Escape')
+  await page.getByRole('button', { name: '查看详情', exact: true }).first().click()
+  const content = page.locator('.p-dialog-content')
+  await expect(content).toBeVisible()
+  await verify(content)
+  expect(await content.evaluate((element) => Boolean(element.closest('#app')))).toBe(false)
+  // A future/custom widget added after installation also receives the scope automatically.
+  await content.evaluate((element) => {
+    const pre = document.createElement('pre')
+    pre.dataset.testid = 'future-details-scroll'
+    pre.style.cssText = 'overflow:auto;max-height:80px;max-width:200px'
+    pre.textContent = Array.from({ length: 30 }, () => 'x'.repeat(120)).join('\n')
+    element.append(pre)
+  })
+  const future = page.getByTestId('future-details-scroll')
+  await verify(future)
+  expect(await future.evaluate((element) => getComputedStyle(element).scrollbarGutter)).toBe('auto')
+  const light = await future.evaluate(
+    (element) => getComputedStyle(element, '::-webkit-scrollbar-thumb').backgroundColor,
+  )
+  await page.evaluate(() => {
+    document.documentElement.dataset.theme = 'dark'
+  })
+  expect(
+    await future.evaluate(
+      (element) => getComputedStyle(element, '::-webkit-scrollbar-thumb').backgroundColor,
+    ),
+  ).not.toBe(light)
 })

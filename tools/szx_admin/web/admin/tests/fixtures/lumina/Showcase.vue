@@ -96,6 +96,12 @@ const rows = [
         >
       </LuminaCardGrid>
     </div>
+    <div
+      data-testid="native-scroll-area"
+      style="width: 260px; max-width: 100%; height: 120px; overflow: auto"
+    >
+      <div style="width: 720px; height: 400px">Caller horizontal and vertical scrolling</div>
+    </div>
     <form @submit.prevent="submissions++">
       <label>Name<LuminaInput v-model="name" aria-label="Name" required /></label>
       <LuminaButton label="Submit" type="submit" variant="primary">

@@ -200,3 +200,57 @@ test('editable Select accepts free text and uses themed keyboard-accessible opti
   await expect(editable).toHaveValue('unknown code')
   await expect(page.locator('datalist')).toHaveCount(0)
 })
+
+test('installed theme styles arbitrary scroll areas and teleported controls without opt-in classes', async ({
+  page,
+}) => {
+  await page.goto(fixture)
+  await expect(page.locator('html')).toHaveAttribute('data-lumina-scrollbars', '')
+  const scroll = page.getByTestId('native-scroll-area')
+  await expect(scroll).not.toHaveClass(/lumina-scrollbar/)
+  const read = () =>
+    scroll.evaluate((element) => ({
+      width: getComputedStyle(element, '::-webkit-scrollbar').width,
+      height: getComputedStyle(element, '::-webkit-scrollbar').height,
+      radius: getComputedStyle(element, '::-webkit-scrollbar-thumb').borderRadius,
+      track: getComputedStyle(element, '::-webkit-scrollbar-track').backgroundColor,
+      thumb: getComputedStyle(element, '::-webkit-scrollbar-thumb').backgroundColor,
+      corner: getComputedStyle(element, '::-webkit-scrollbar-corner').backgroundColor,
+      gutter: getComputedStyle(element).scrollbarGutter,
+      overflow: getComputedStyle(element).overflow,
+    }))
+  const light = await read()
+  expect(light).toMatchObject({
+    width: '10px',
+    height: '10px',
+    radius: '999px',
+    track: 'rgba(0, 0, 0, 0)',
+    corner: 'rgba(0, 0, 0, 0)',
+    gutter: 'auto',
+    overflow: 'auto',
+  })
+  await scroll.evaluate((element) => {
+    element.scrollLeft = 90
+    element.scrollTop = 90
+  })
+  expect(await scroll.evaluate((element) => [element.scrollLeft, element.scrollTop])).toEqual([
+    90, 90,
+  ])
+  await page.evaluate(() => {
+    document.documentElement.dataset.theme = 'dark'
+  })
+  expect((await read()).thumb).not.toBe(light.thumb)
+  // The original readonly Select has no listContainer scrollbar class or app adapter.
+  const control = page.getByRole('combobox', { name: 'Colour' })
+  await control.scrollIntoViewIfNeeded()
+  await control.click()
+  const list = page.locator('.p-select-list-container')
+  await expect(list).not.toHaveClass(/lumina-scrollbar/)
+  expect(
+    await list.evaluate((element) => getComputedStyle(element, '::-webkit-scrollbar').width),
+  ).toBe('10px')
+  expect(await list.evaluate((element) => Boolean(element.closest('#app')))).toBe(false)
+  await control.press('Escape')
+  await page.emulateMedia({ forcedColors: 'active' })
+  expect(await scroll.evaluate((element) => getComputedStyle(element).scrollbarColor)).toBe('auto')
+})

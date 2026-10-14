@@ -8,6 +8,9 @@ export type LuminaLocale = Partial<PrimeVueLocaleOptions>
 export function createLuminaUi(options: { ripple?: boolean; locale?: LuminaLocale } = {}): Plugin {
   return {
     install(app) {
+      // Root scope includes PrimeVue overlays teleported outside the Vue mount node.
+      if (typeof document !== 'undefined') document.documentElement.dataset.luminaScrollbars = ''
+
       app.use(PrimeVue, {
         ripple: options.ripple ?? false,
         ...(options.locale ? { locale: options.locale } : {}),

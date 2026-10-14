@@ -255,7 +255,9 @@ glass 自动响应根节点的 `data-fx`：lite（或未设置 full）关闭毛�
 
 调用方需将 `cellStyle(index)` 应用于每张卡片，并保持 count 与实际卡片数量一致。组件只负责布局，不请求数据、不持有业务状态；ResizeObserver 的更新延迟到下一帧，卸载时清理 observer 和待执行帧。布局改变不重新挂载原有图表。
 
-`.lumina-scrollbar` 是可复用、显式启用的滚动条样式：透明轨道、圆角窄滑块、明暗主题和高对比度适配。后台 main 使用该类；保持原生滚动和稳定 gutter，不影响下拉浮层的圆角裁剪。
+`createLuminaUi()` 在浏览器安装时给 document 根节点设置 `data-lumina-scrollbars`，默认覆盖整个 Lumina 页面及 body 中的 Teleport 弹出层：侧栏、表格、对话框、下拉列表、文本/JSON 内容区及后续新增滚动容器均使用统一样式，无需逐个添加类。保留原生滚动行为，横纵滚动条均为透明轨道、圆角窄滑块，并适配明暗主题和高对比度。
+
+`.lumina-scrollbar` 仍可在未安装插件的局部场景显式使用，并额外启用稳定 gutter；全局范围只修改滚动条外观，不统一施加 gutter，也不更改 overflow 或尺寸，避免裁剪容器产生多余留白。下拉浮层继续使用自己的圆角裁剪规则。
 
 ## 可编辑下拉框
 

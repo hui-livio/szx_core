@@ -349,7 +349,7 @@ test('missing capabilities fail closed without breaking the shell', async ({ pag
   const loaded = page.waitForResponse((response) =>
     response.url().endsWith('/client/me/permissions'),
   )
-  await page.getByRole('link', { name: '工作台', exact: true }).click()
+  await page.getByRole('button', { name: '刷新权限', exact: true }).click()
   await loaded
   await expect(page.locator('.page-heading h1')).toBeVisible()
   await expect(page.getByRole('link', { name: '机器性能' })).toHaveCount(0)

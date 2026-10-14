@@ -2,7 +2,7 @@ import { computed, shallowRef } from 'vue'
 import { acceptHMRUpdate, defineStore } from 'pinia'
 import { api } from '../api/client'
 import type { Permissions, User } from '../api/types'
-import { hashPassword, isAdmin } from '../domain'
+import { hashPassword } from '../domain'
 import { translate } from '../i18n'
 
 export const useAuthStore = defineStore('auth', () => {
@@ -10,7 +10,7 @@ export const useAuthStore = defineStore('auth', () => {
   const permissions = shallowRef<Permissions | null>(null)
   const recommendationSkipped = shallowRef(false)
   const notice = shallowRef('')
-  const home = computed(() => (isAdmin(user.value?.role) ? '/users' : '/home'))
+  const home = computed(() => '/home')
   const needsPassword = computed(() =>
     Boolean(
       user.value?.force_password_change ||
