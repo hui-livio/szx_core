@@ -44,13 +44,13 @@ auto validStatus(std::string_view value) noexcept -> bool
 }
 
 auto authorize(AuthorizationService &authorization, const USER::ActorContext &context, INFRA::DatabaseUnitOfWork &unit,
-               std::string_view permission) -> Result<AuthorizedActor>
+               std::string_view permission, bool lockActor = false) -> Result<AuthorizedActor>
 {
     auto *users = unit.users();
     auto *roles = unit.roles();
     if (!users || !roles)
         return failed<AuthorizedActor>(ErrorCode::DatabaseQueryFailed);
-    const auto actor = authorization.resolve(context, *users, false, roles);
+    const auto actor = authorization.resolve(context, *users, lockActor, roles);
     if (!actor.ok)
         return Result<AuthorizedActor>::Failure(actor.error, {});
     const auto allowed = authorization.allows(*roles, actor.value.user.role, permission);
@@ -143,7 +143,7 @@ try
             const auto begun = unit.begin();
             if (!begun.ok)
                 return begun;
-            const auto actor = authorize(authorization_, context, unit, PERMISSIONS::PermissionCreate);
+            const auto actor = authorize(authorization_, context, unit, PERMISSIONS::PermissionCreate, true);
             if (!actor.ok)
                 return Result<void>::Failure(actor.error, {});
             const auto existing = repository->findByCode(input.code);
@@ -209,7 +209,7 @@ try
             const auto begun = unit.begin();
             if (!begun.ok)
                 return begun;
-            const auto actor = authorize(authorization_, context, unit, PERMISSIONS::PermissionUpdate);
+            const auto actor = authorize(authorization_, context, unit, PERMISSIONS::PermissionUpdate, true);
             if (!actor.ok)
                 return Result<void>::Failure(actor.error, {});
             const auto found = repository->findById(id, true);
@@ -268,8 +268,9 @@ try
             const auto begun = unit.begin();
             if (!begun.ok)
                 return begun;
-            const auto actor = authorize(authorization_, context, unit,
-                                         status == "archived" ? PERMISSIONS::PermissionArchive : PERMISSIONS::PermissionStatus);
+            const auto actor =
+                authorize(authorization_, context, unit,
+                          status == "archived" ? PERMISSIONS::PermissionArchive : PERMISSIONS::PermissionStatus, true);
             if (!actor.ok)
                 return Result<void>::Failure(actor.error, {});
             const auto found = repository->findById(id, true);

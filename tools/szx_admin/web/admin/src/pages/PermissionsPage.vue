@@ -67,9 +67,12 @@ const sources = computed(() => [
         <p>{{ t('rbac.subtitle') }}</p>
       </div>
       <div class="actions">
-        <RouterLink v-if="can('role.read')" to="/roles" class="button lumina-smooth-edge">{{
-          t('rolePermissions.viewAssociations')
-        }}</RouterLink>
+        <RouterLink
+          v-if="can('role.read')"
+          to="/roles/permissions"
+          class="button lumina-smooth-edge"
+          >{{ t('rolePermissions.viewAssociations') }}</RouterLink
+        >
         <Button
           v-if="can('role.read') && can('role.permission.assign')"
           :disabled="saving || loading"

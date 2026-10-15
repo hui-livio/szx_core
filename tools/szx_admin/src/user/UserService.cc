@@ -7,6 +7,7 @@
 
 #include "SzxAdmin/Infra/ErrorCode.h"
 
+#include <algorithm>
 #include <utility>
 
 namespace SZX::ADMIN::USER
@@ -53,20 +54,32 @@ auto UserService::permissions(const ActorContext &context) -> Result<Permissions
                 auto *permissions = connection.permissionRepository();
                 if (!roles || !permissions)
                     return failed<void>(ErrorCode::DatabaseQueryFailed);
-                const auto actor  = resolve(context, *repository, false, roles);
+                const auto actor = resolve(context, *repository, false, roles);
                 if (!actor.ok)
                     return Result<void>::Failure(actor.error, {});
                 const auto capabilities = authorization_.capabilities(*permissions, actor.value.user.role);
                 if (!capabilities.ok)
                     return Result<void>::Failure(capabilities.error, {});
                 auto capabilityCodes = std::move(capabilities.value);
+                const auto scope     = roles->manageableRoles(actor.value.user.role);
+                if (!scope.ok)
+                    return Result<void>::Failure(scope.error, {});
+                const auto catalog = roles->list();
+                if (!catalog.ok)
+                    return Result<void>::Failure(catalog.error, {});
+                std::vector<std::string> assignable;
+                for (const auto &role : catalog.value)
+                    if (role.status == "active" &&
+                        std::find(scope.value.begin(), scope.value.end(), role.code) != scope.value.end())
+                        assignable.push_back(role.code);
                 output = {.userId              = actor.value.user.id,
                           .role                = actor.value.user.role,
                           .status              = actor.value.user.status,
-                          .forcePasswordChange = actor.value.user.force_password_change &&
-                              actor.value.user.role == "super_admin",
-                          .authzVersion = actor.value.user.authz_version,
-                          .capabilities = std::move(capabilityCodes)};
+                          .forcePasswordChange = actor.value.user.force_password_change && actor.value.user.role == "super_admin",
+                          .authzVersion        = actor.value.user.authz_version,
+                          .capabilities        = std::move(capabilityCodes),
+                          .manageableRoles     = scope.value,
+                          .assignableRoles     = std::move(assignable)};
                 return Result<void>::Success();
             });
         return operation.ok ? Result<Permissions>::Success(std::move(output)) : Result<Permissions>::Failure(operation.error, {});

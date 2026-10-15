@@ -2,6 +2,42 @@ import zh from './zh-CN'
 
 export default {
   ...zh,
+  roleManagement: {
+    title: 'Role management',
+    subtitle:
+      'Manage role profiles, permissions and management scopes. The server authorizes every write.',
+    create: 'Create role',
+    edit: 'Edit role',
+    permissions: 'Configure permissions',
+    scopes: 'Management scope',
+    search: 'Search roles',
+    searchHint: 'Name, code or description',
+    code: 'Role code',
+    codeHint:
+      '2–64 lowercase letters, digits or underscores, starting with a letter. The code is immutable and cannot be reused.',
+    name: 'Role name',
+    userCount: 'Users',
+    permissionCount: 'Permissions',
+    view: 'View assignments',
+    inUse: 'Users still reference this role; it cannot be archived.',
+    protected: 'Built-in or archived roles are protected against this operation.',
+    codeConflict: 'This role code already exists, including archived roles. Choose another code.',
+    unsaved: 'Discard unsaved changes and leave?',
+    keepEditing: 'Keep editing',
+    discard: 'Discard changes',
+    authorizationHint:
+      'Save the complete permission set. Existing disabled assignments may be removed; required super-admin permissions are protected. The current session will be revalidated.',
+    scopeHint:
+      'Scope controls which roles’ users may be managed; user.* capabilities are also required. Managing your own role does not allow changing your own role or disabling yourself.',
+    scopeFloor: 'The super administrator must retain management scope for every non-archived role.',
+    archiveHint:
+      'Archive {code}? No users may reference it. Permission and scope links will be cleared; the role becomes read-only and its code cannot be reused.',
+    confirmCode: 'Enter the role code to confirm',
+    statusHint:
+      'Change the status of {code}? Old authorization tokens for this role will be invalidated.',
+    preserveUnknown:
+      'Preserving {count} existing links missing from the directory; unknown items are not removed automatically.',
+  },
   rolePermissions: {
     title: 'Roles and permissions',
     subtitle:
@@ -15,7 +51,7 @@ export default {
     versions: 'Version: {version} · Authorization version: {authz}',
     inactiveRole: 'This role is disabled or archived; its permissions are currently ineffective.',
     readOnly:
-      'This page is read-only. Viewing does not require assignment rights. Use permission management to make changes.',
+      'This page is read-only. Viewing does not require assignment rights. Use role management to change roles and authorizations.',
     unknownPermission: 'Permission metadata unavailable',
     permissionStatus: 'Permission status',
     effectiveState: 'Effective status',
@@ -30,7 +66,8 @@ export default {
     codeConflict: 'This permission code already exists, including archived permissions.',
     inUse: 'The permission is still assigned to a role. Remove the bindings first.',
     resourceProtected: 'Built-in or archived permissions cannot be modified.',
-    securityFloor: 'Required super-administrator permissions cannot be removed.',
+    securityFloor:
+      'Required super-administrator permissions or management scopes cannot be removed.',
 
     title: 'Permission management',
     subtitle: 'Manage custom client permissions and assign them to roles.',
@@ -381,6 +418,7 @@ export default {
   },
   errors: {
     ...zh.errors,
+    resourceNotFound: 'The resource was not found. Reload and try again.',
     sessionInvalid: 'Session is invalid. Sign in again.',
     sessionExpired: 'Session expired. Sign in again.',
     sessionRevoked: 'Session was revoked. Sign in again.',

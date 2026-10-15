@@ -10,6 +10,8 @@ export const useAuthStore = defineStore('auth', () => {
   const permissions = shallowRef<Permissions | null>(null)
   const recommendationSkipped = shallowRef(false)
   const notice = shallowRef('')
+  let permissionsEpoch = 0
+  let permissionsRequest: { epoch: number; promise: Promise<void> } | undefined
   const home = computed(() => '/home')
   const needsPassword = computed(() =>
     Boolean(
@@ -21,16 +23,37 @@ export const useAuthStore = defineStore('auth', () => {
     if (
       !session ||
       session.user.id !== user.value?.id ||
-      session.user.authz_version !== user.value?.authz_version
+      session.user.authz_version !== user.value?.authz_version ||
+      session.user.role_id !== user.value?.role_id ||
+      session.user.role_authz_version !== user.value?.role_authz_version
     ) {
+      permissionsEpoch++
       permissions.value = null
       recommendationSkipped.value = false
     }
     user.value = session?.user ?? null
   })
-  async function loadPermissions() {
-    const response = await api.request<Permissions>({ url: '/client/me/permissions' })
-    permissions.value = response.data
+  function loadPermissions(): Promise<void> {
+    const epoch = permissionsEpoch
+    if (permissionsRequest?.epoch === epoch) return permissionsRequest.promise
+    const promise = (async () => {
+      try {
+        const response = await api.request<Permissions>({ url: '/client/me/permissions' })
+        if (epoch !== permissionsEpoch) {
+          return user.value && !permissions.value ? loadPermissions() : undefined
+        }
+        permissions.value = response.data
+      } catch (failure) {
+        if (epoch !== permissionsEpoch) {
+          return user.value && !permissions.value ? loadPermissions() : undefined
+        }
+        throw failure
+      } finally {
+        if (permissionsRequest?.epoch === epoch) permissionsRequest = undefined
+      }
+    })()
+    permissionsRequest = { epoch, promise }
+    return promise
   }
   async function login(identifier: string, password: string) {
     notice.value = ''

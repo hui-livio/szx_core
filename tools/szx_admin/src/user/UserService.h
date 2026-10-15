@@ -55,6 +55,8 @@ struct Permissions final
     bool forcePasswordChange{};
     int authzVersion{};
     std::vector<std::string> capabilities;
+    std::vector<std::string> manageableRoles;
+    std::vector<std::string> assignableRoles;
 };
 
 /**
@@ -92,8 +94,7 @@ public:
 private:
     /** 校验 token 和数据库当前状态；写操作须在事务内令 lock=true。 */
     auto resolve(const ActorContext &context, UserRepository &repository, bool lock = false,
-                 RBAC::RoleRepository *roles = nullptr)
-        -> SZX::COMMON::Result<RBAC::AuthorizedActor>;
+                 RBAC::RoleRepository *roles = nullptr) -> SZX::COMMON::Result<RBAC::AuthorizedActor>;
     /** 在已开启的事务中锁定调用者、目标及 active 超管行，并校验能力、目标角色和版本。 */
     auto authorize(const ActorContext &context, UserRepository &repository, const std::string &targetId,
                    std::string_view permissionCode, std::uint32_t version, RBAC::RoleRepository *roles = nullptr)

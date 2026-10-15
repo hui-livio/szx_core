@@ -1,10 +1,10 @@
+#include "../audit/AuditRepository.h"
 #include "../auth/LoginRepository.h"
 #include "../auth/LoginService.h"
+#include "../auth/PasswordHash.h"
+#include "../infra/DatabaseUnitOfWork.h"
 #include "../rbac/PermissionCodes.h"
 #include "../rbac/RoleRepository.h"
-#include "../auth/PasswordHash.h"
-#include "../audit/AuditRepository.h"
-#include "../infra/DatabaseUnitOfWork.h"
 #include "AuditDetails.h"
 #include "UserService.h"
 #include "UserValidation.h"
@@ -59,14 +59,14 @@ auto writeAudit(AUDIT::AuditRepository &audit, const ActorContext &context, cons
                 const std::string &targetId, std::string_view event, std::string_view result, const Json &details) -> Result<void>
 {
     return audit.append({.id             = SZX::COMMON::Uuid::v4().toString(),
-                                 .actor_user_id  = actorId,
-                                 .target_user_id = targetId,
-                                 .event_name     = std::string{event},
-                                 .result         = std::string{result},
-                                 .request_id     = context.requestId,
-                                 .ip             = context.peerAddress,
-                                 .user_agent     = context.userAgent,
-                                 .details_json   = details.dump()});
+                         .actor_user_id  = actorId,
+                         .target_user_id = targetId,
+                         .event_name     = std::string{event},
+                         .result         = std::string{result},
+                         .request_id     = context.requestId,
+                         .ip             = context.peerAddress,
+                         .user_agent     = context.userAgent,
+                         .details_json   = details.dump()});
 }
 
 auto reloadUser(UserRepository &users, UserRow &target) -> Result<void>
@@ -135,12 +135,11 @@ auto UserService::create(const ActorContext &context, const CreateUserInput &inp
         std::string displayValue;
         std::string canonicalValue;
         {
-            const auto normalized = AUTH::normalizeLoginIdentifier(
-                input.loginIdentifier, AUTH::IdentifierType::Username);
+            const auto normalized = AUTH::normalizeLoginIdentifier(input.loginIdentifier, AUTH::IdentifierType::Username);
             if (!normalized.ok)
                 return Result<CredentialIssue>::Failure(normalized.error, {});
-            isUid        = false;
-            displayValue = normalized.value.displayValue;
+            isUid          = false;
+            displayValue   = normalized.value.displayValue;
             canonicalValue = normalized.value.canonicalValue;
         }
         CredentialIssue output;
@@ -163,7 +162,7 @@ auto UserService::create(const ActorContext &context, const CreateUserInput &inp
                     return Result<void>::Failure(namespaceLock.error, {});
                 if (!namespaceLock.value)
                     return failed<void>(ErrorCode::DatabaseQueryFailed);
-                auto *roles = unit.roles();
+                auto *roles      = unit.roles();
                 const auto actor = resolve(context, *users, true, roles);
                 if (!actor.ok)
                     return Result<void>::Failure(actor.error, {});
@@ -183,7 +182,7 @@ auto UserService::create(const ActorContext &context, const CreateUserInput &inp
                     return Result<void>::Failure(targetRole.error, {});
                 if (!targetRole.value || targetRole.value->status != "active")
                     return failed<void>(ErrorCode::ValidationError);
-                roleId = targetRole.value->id;
+                roleId              = targetRole.value->id;
                 const auto existing = users->findByCanonical(canonicalValue);
                 if (!existing.ok)
                     return Result<void>::Failure(existing.error, {});
@@ -352,8 +351,8 @@ auto UserService::changeStatus(const ActorContext &context, const std::string &i
                     const auto revoked = sessions->revokeRefresh(target.id, stamp, "status_changed");
                     if (!revoked.ok)
                         return revoked;
-                    const auto audited = writeAudit(*audit, context, authorized.value.actor.id, target.id,
-                                                    "user.status.changed", "success", Json{{"from", previous}, {"to", status}});
+                    const auto audited = writeAudit(*audit, context, authorized.value.actor.id, target.id, "user.status.changed",
+                                                    "success", Json{{"from", previous}, {"to", status}});
                     if (!audited.ok)
                         return audited;
                 }
@@ -410,8 +409,8 @@ auto UserService::unlock(const ActorContext &context, const std::string &id, std
                 const auto revoked = sessions->revokeRefresh(target.id, stamp, "unlocked");
                 if (!revoked.ok)
                     return revoked;
-                const auto audited = writeAudit(*audit, context, authorized.value.actor.id, target.id, "user.unlocked",
-                                                "success", Json::object());
+                const auto audited =
+                    writeAudit(*audit, context, authorized.value.actor.id, target.id, "user.unlocked", "success", Json::object());
                 if (!audited.ok)
                     return audited;
                 const auto refreshed = reloadUser(*users, target);
@@ -463,6 +462,11 @@ auto UserService::assignRole(const ActorContext &context, const std::string &id,
                     return Result<void>::Failure(manageable.error, {});
                 if (!manageable.value)
                     return failed<void>(ErrorCode::Forbidden);
+                const auto targetRole = unit.roles()->findByCode(role, true);
+                if (!targetRole.ok)
+                    return Result<void>::Failure(targetRole.error, {});
+                if (!targetRole.value || targetRole.value->status != "active")
+                    return failed<void>(ErrorCode::ValidationError);
                 if (target.role != role)
                 {
                     if (target.role == "super_admin" && target.status == "active" && authorized.value.activeSuperAdmins <= 1)
@@ -470,6 +474,7 @@ auto UserService::assignRole(const ActorContext &context, const std::string &id,
                     const auto stamp    = now();
                     const auto previous = target.role;
                     target.role         = role;
+                    target.role_id      = targetRole.value->id;
                     if (!bumpVersion(target, true))
                         return failed<void>(ErrorCode::InternalFailure);
                     const auto saved = users->save(target);
@@ -520,7 +525,8 @@ auto UserService::resetPassword(const ActorContext &context, const std::string &
                 const auto begun = unit.begin();
                 if (!begun.ok)
                     return begun;
-                const auto authorized = authorize(context, *users, id, RBAC::PERMISSIONS::UserPasswordReset, version, unit.roles());
+                const auto authorized =
+                    authorize(context, *users, id, RBAC::PERMISSIONS::UserPasswordReset, version, unit.roles());
                 if (!authorized.ok)
                     return Result<void>::Failure(authorized.error, {});
                 const auto admitted = auth_.admitCredentialIssue(context.peerAddress);

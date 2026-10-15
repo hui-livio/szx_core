@@ -1,4 +1,4 @@
-export type Role = 'operator' | 'engineer' | 'admin' | 'super_admin'
+export type Role = string
 export type UserStatus = 'active' | 'disabled' | 'locked'
 export interface User {
   id: string
@@ -10,6 +10,8 @@ export interface User {
   password_change_recommended: boolean
   version: number
   authz_version: number
+  role_id?: string | null
+  role_authz_version?: number
   last_login_at: number | null
   created_at: number
   updated_at: number
@@ -45,6 +47,8 @@ export interface Permissions {
   force_password_change: boolean
   authz_version: number
   capabilities: string[]
+  manageable_roles?: string[]
+  assignable_roles?: string[]
 }
 export interface AuditLog {
   id: string
@@ -132,7 +136,12 @@ export interface RoleRecord {
   status: 'active' | 'disabled' | 'archived'
   version: number
   authz_version: number
+  user_count?: number
+  permission_count?: number
+  manageable?: boolean
 }
+
+export type NewRole = Pick<RoleRecord, 'code' | 'name' | 'description'>
 export interface NewPermission {
   code: string
   name: string

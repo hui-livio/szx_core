@@ -128,7 +128,7 @@ version 用于并发更新，冲突后应重新获取用户并使用新版本提
 | uid | string | UID 账号才有 | UID 登录标识，区分大小写 |
 | username | string | 用户名账号才有 | 展示值；匹配使用规范化后的小写值 |
 | display_name | string | 必有 | 展示名 |
-| role | string | 必有 | operator / engineer / admin / super_admin |
+| role | string | 必有 | 数据库角色 code，支持内置及自定义角色 |
 | status | string | 必有 | active / disabled / locked |
 | force_password_change | boolean | 必有 | 仅待改密超管为 true |
 | password_change_recommended | boolean | 必有 | 待改密非超管为 true，可跳过提示 |
@@ -388,7 +388,7 @@ Content-Type: application/json
 | page | integer | 否 | 默认 1；范围 1–4294967295 |
 | page_size | integer | 否 | 默认 20；范围 1–100 |
 | search | string | 否 | 最多 128 个 Unicode 字符，无控制字符；搜索 uid、username、display_name |
-| role | string | 否 | operator / engineer / admin / super_admin |
+| role | string | 否 | 调用者管理范围内的数据库角色 code，可筛选停用角色 |
 | status | string | 否 | active / disabled / locked |
 | sort | string | 否 | 默认 -created_at；白名单见下文 |
 
@@ -418,7 +418,7 @@ Authorization: Bearer <access-token>
 | uid | string | 与 username 二选一 | 规范化后 1–64 个 Unicode 字符；保留大小写 |
 | username | string | 与 uid 二选一 | 规范化后 1–64 个 Unicode 字符；按小写 canonical 判重 |
 | display_name | string | 是 | 1–128 个 Unicode 字符，无控制字符，不得全为空格 |
-| role | string | 是 | 四种角色之一，且调用者有权创建 |
+| role | string | 是 | 当前启用且在调用者管理范围内的角色 code，支持自定义角色 |
 
 可选 Body 字段 `password_hash` 为初始密码 UTF-8 SHA-256 摘要，必须是 64 位小写十六进制字符串；空字符串、null 和其他类型均返回 `422 / 2206`。省略时沿用自动生成临时密码的行为。前端按目标角色校验指定密码：操作员/技术员（engineer）至少 6 个 Unicode 字符，允许纯数字或纯字母；管理员/超级管理员至少 8 个 Unicode 字符且包含字母和数字。两次输入须一致；服务端仅收到摘要，校验摘要格式并加盐存储。
 
@@ -824,3 +824,25 @@ POST 接收 code/name/module/可选 description，返回 201 和 version=1；自
 | 2230 | PERMISSION_IN_USE | 409 | 权限仍被角色引用，不能归档 |
 | 2232 | PROTECTED_PERMISSION | 409 | 内置或已归档权限不可变更 |
 | 2233 | SUPER_ADMIN_SECURITY_FLOOR | 409 | 尝试移除超管必需权限 |
+
+## 角色管理与动态角色（2026-10-14）
+
+角色管理位于 `/roles`，完整只读关联页位于 `/roles/permissions`。服务端角色接口均在 `/api/v1/admin` 下：
+
+| 方法 | 路径 | 能力 |
+| --- | --- | --- |
+| GET / POST | `/roles` | role.read / role.create |
+| GET / PATCH / DELETE | `/roles/{id}` | role.read / role.update / role.archive |
+| PATCH | `/roles/{id}/status` | role.status |
+| GET / PUT | `/roles/{id}/permissions` | role.read / role.permission.assign |
+| GET / PUT | `/roles/{id}/manage-scopes` | role.read / role.scope.assign |
+
+创建只接受 code/name/可选 description，code 为 `^[a-z][a-z0-9_]{1,63}$`；编辑只接受 name/description。code 不可更改或复用，重复（含归档）返回 `409 / 2227`。内置角色不可归档，super_admin 不可停用，已归档不可恢复或编辑（`409 / 2231`）；有用户引用时归档返回 `409 / 2229`。归档清除权限及双向管理范围并失效受影响管理者授权；审计失败整体回滚。
+
+角色响应包含 id/code/name/description/system_key/status/version/authz_version，以及 user_count、permission_count、manageable。目录为 items 集合，可选 include_archived，不伪称已有分页/更新时间。写操作使用 If-Match 并重新授权。
+
+权限 PUT 提交完整 permission_ids；不可新绑定停用项，已绑定停用项可以解绑；超管必需权限不可移除。范围 PUT 提交完整 target_role_ids；super_admin 必须覆盖全部非归档角色。安全底线返回 `409 / 2233`。范围不替代 user.* 能力，也不放开自我改角色或禁用限制。
+
+创建角色会原子扩展 super_admin 范围、递增其授权版本；变更授权/状态/范围后旧 access token 失效。登录/刷新用户快照包含 role_id/role_authz_version，客户端据此清除旧能力缓存。停用或归档角色不能登录或刷新会话。`/client/me/permissions` 增加 manageable_roles 与 assignable_roles；用户筛选使用前者，创建/改角色选择后者。更新用户角色同时写 role 与 role_id。
+
+新错误码：2227 ROLE_CODE_CONFLICT、2229 ROLE_IN_USE、2231 PROTECTED_ROLE，均为 HTTP 409。角色审计事件仍为 rbac.role.changed，目标类型/ID 存 details_json。

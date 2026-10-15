@@ -42,7 +42,10 @@ async function mockSession(page: Page, role = 'super_admin', forcePassword = fal
         ? {
             user_id: user.id,
             role,
-            capabilities: ['business.read'],
+            capabilities:
+              role === 'admin' || role === 'super_admin'
+                ? ['business.read', 'user.read', 'audit.read']
+                : ['business.read'],
             authz_version: 1,
             status: 'active',
             force_password_change: forcePassword,

@@ -46,7 +46,9 @@ auto permissionsResponse(UserService &service, const INFRA::HttpRequest &request
                                      {"status", result.value.status},
                                      {"force_password_change", result.value.forcePasswordChange},
                                      {"authz_version", result.value.authzVersion},
-                                     {"capabilities", std::move(capabilities)}},
+                                     {"capabilities", std::move(capabilities)},
+                                     {"manageable_roles", result.value.manageableRoles},
+                                     {"assignable_roles", result.value.assignableRoles}},
                                 request.requestId);
     } catch (...)
     {
@@ -125,17 +127,17 @@ auto createResponse(UserService &service, const INFRA::HttpRequest &request) -> 
         const auto body = RestApi::jsonObject(request);
         if (!body.ok)
             return RestApi::error(static_cast<ErrorCode>(body.error), request.requestId);
-        constexpr std::array<std::string_view, 4> fields{"login_identifier", "display_name", "role",
-                                                         "password_hash"};
+        constexpr std::array<std::string_view, 4> fields{"login_identifier", "display_name", "role", "password_hash"};
         if (!RestApi::allowedFields(body.value, fields).ok || !body.value.contains("display_name") ||
             !body.value.at("display_name").is_string() || !body.value.contains("role") || !body.value.at("role").is_string())
             return RestApi::error(ErrorCode::ValidationError, request.requestId);
         if (!body.value.contains("login_identifier") || !body.value.at("login_identifier").is_string())
             return RestApi::error(ErrorCode::UserIdentityOneOfRequired, request.requestId);
-        CreateUserInput input{.displayName     = body.value.at("display_name").get<std::string>(),
-                              .role            = body.value.at("role").get<std::string>(),
-                              .loginIdentifier = body.value.at("login_identifier").get<std::string>(),
-                              };
+        CreateUserInput input{
+            .displayName     = body.value.at("display_name").get<std::string>(),
+            .role            = body.value.at("role").get<std::string>(),
+            .loginIdentifier = body.value.at("login_identifier").get<std::string>(),
+        };
         if (body.value.contains("password_hash"))
         {
             if (!body.value.at("password_hash").is_string())

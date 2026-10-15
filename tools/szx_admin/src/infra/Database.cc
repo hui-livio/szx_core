@@ -1,5 +1,5 @@
-#include "OrmConnection.h"
 #include "SzxAdmin/Infra/Database.h"
+#include "OrmConnection.h"
 
 #include "../rbac/PermissionCodes.h"
 #include "AuditRepository.h"
@@ -167,6 +167,23 @@ public:
     {
         try
         {
+            constexpr std::string_view roleColumnMigration = "ALTER TABLE users\n  DROP CHECK chk_users_role,\n";
+            std::string recovered;
+            if (sql.starts_with(roleColumnMigration))
+            {
+                const auto constraints = connection_.query_s<std::tuple<std::uint64_t>>(
+                    "SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS "
+                    "WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'users' "
+                    "AND CONSTRAINT_NAME = 'chk_users_role' AND CONSTRAINT_TYPE = 'CHECK'");
+                if (connection_.has_error() || constraints.size() != 1)
+                    return databaseFailure(ErrorCode::DatabaseQueryFailed, "Migration schema inspection failed", {});
+                if (std::get<0>(constraints.front()) == 0)
+                {
+                    recovered = "ALTER TABLE users\n";
+                    recovered.append(sql.substr(roleColumnMigration.size()));
+                    sql = recovered;
+                }
+            }
             if (sql.empty() || connection_.execute(DETAIL::initializationSql(sql, connection_.dialect())))
                 return SZX::COMMON::Result<void>::Success();
             return databaseFailure(ErrorCode::DatabaseQueryFailed, "Database statement execution failed", {});

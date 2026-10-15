@@ -1,5 +1,5 @@
-#include "../auth/PasswordHash.h"
 #include "DatabaseInitialization.h"
+#include "../auth/PasswordHash.h"
 #include "OrmConnection.h"
 
 #include "Logger.h"
@@ -339,6 +339,14 @@ WHERE r.code IN ('admin', 'super_admin') AND p.code = 'system.metrics.read';
 UPDATE users SET authz_version = authz_version + 1 WHERE role IN ('admin', 'super_admin');
 )SZXSQL";
 
+constexpr std::string_view kMigration12 = R"SZXSQL(ALTER TABLE users
+  DROP CHECK chk_users_role,
+  MODIFY role VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_bin NOT NULL;
+UPDATE users u JOIN roles r ON r.code = u.role
+SET u.role_id = r.id, u.authz_version = u.authz_version + 1
+WHERE u.role_id IS NULL OR u.role_id <> r.id;
+)SZXSQL";
+
 constexpr MigrationDefinition kMigrations[] = {
     {1, kMigration1, "86a4ac820cc8457a2131d0400d4968268576b17113f38fe86b6beceea48c2047"},
     {2, kMigration2, "f4223aadebf005f145941d06b89d2d41e964f4c059d2f765a8e1b3678d389d2d"},
@@ -351,6 +359,7 @@ constexpr MigrationDefinition kMigrations[] = {
     {9, kMigration9, "b410199c9d5e1dd14e0a60017a2134d5826e824e50eede2196b68d11c3f18bc4"},
     {10, kMigration10, "2cb2059bc9b16ca77652475fe8e7435eecb4793d243c966850b2110bdfe87ccd"},
     {11, kMigration11, "67e60f625227f001d7001a2e3e34b0f9d44c26a3127782cce9b3f88d7cf386a6"},
+    {12, kMigration12, "45e100531a7c3e97626232dc32014e0741ad3aad531a00ceebf5c9927487b83f"},
 };
 
 constexpr DETAIL::InitialAdministratorDefinition kInitialAdministrator{

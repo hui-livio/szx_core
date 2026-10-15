@@ -7,7 +7,7 @@ import {
 import { computed } from 'vue'
 import type { Role, User } from '../../api/types'
 import type { UserAction, UserDraft } from '../../composables/useUsersViewModel'
-import { roleLabels, statusLabels, formatTime } from '../../domain'
+import { roleLabel, statusLabels, formatTime } from '../../domain'
 import { useI18n } from 'vue-i18n'
 const { t } = useI18n()
 const draft = defineModel<UserDraft>({ required: true })
@@ -22,9 +22,7 @@ const props = defineProps<{
   targetStatus: string
 }>()
 const emit = defineEmits<{ submit: []; close: []; reload: [] }>()
-const roleOptions = computed(() =>
-  props.roles.map((value) => ({ value, label: t(roleLabels[value]) })),
-)
+const roleOptions = computed(() => props.roles.map((value) => ({ value, label: roleLabel(value) })))
 </script>
 <template>
   <form class="form-stack" @submit.prevent="emit('submit')">
@@ -104,7 +102,7 @@ const roleOptions = computed(() =>
         </div>
         <div>
           <dt>{{ t('users.roleStatus') }}</dt>
-          <dd>{{ t(roleLabels[user.role]) }} / {{ t(statusLabels[user.status]) }}</dd>
+          <dd>{{ roleLabel(user.role) }} / {{ t(statusLabels[user.status]) }}</dd>
         </div>
         <div>
           <dt>{{ t('common.createdAt') }}</dt>

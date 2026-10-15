@@ -5,6 +5,7 @@
 #include "../user/ActorContext.h"
 #include "PermissionDto.h"
 #include "PermissionService.h"
+#include "RoleDto.h"
 #include "RoleService.h"
 
 #include "SzxAdmin/Infra/Database.h"
@@ -40,16 +41,16 @@ auto includeArchived(const INFRA::HttpRequest &request) -> std::optional<bool>
     return std::nullopt;
 }
 
-auto roleJson(const RoleRow &row) -> Json
+auto roleDto(const RoleRow &row) -> RoleDto
 {
-    return Json{{"id", row.id},
-                {"code", row.code},
-                {"name", row.name},
-                {"description", row.description},
-                {"system_key", row.systemKey ? Json(*row.systemKey) : Json(nullptr)},
-                {"status", row.status},
-                {"version", row.version},
-                {"authz_version", row.authzVersion}};
+    return {row.id,      row.code,         row.name,      row.description,     row.systemKey, row.status,
+            row.version, row.authzVersion, row.userCount, row.permissionCount, row.manageable};
+}
+auto roleResponse(const RoleRow &row, std::string_view requestId, int status = 200) -> INFRA::HttpResponse
+{
+    std::string body;
+    SZX::COMMON::Serializer::to_json(RoleResponse{roleDto(row), std::string{requestId}}, body);
+    return RestApi::serializedSuccess(std::move(body), requestId, status);
 }
 
 auto permissionDto(const PermissionRow &row) -> PermissionDto
@@ -74,16 +75,19 @@ auto roleListResponse(RoleService &service, const INFRA::HttpRequest &request) -
     const auto result = service.list(actorContext(request), *archived);
     if (!result.ok)
         return RestApi::error(static_cast<ErrorCode>(result.error), request.requestId);
-    Json items = Json::array();
+    RoleListResponse response;
+    response.request_id = request.requestId;
     for (const auto &row : result.value)
-        items.push_back(roleJson(row));
-    return RestApi::success(Json{{"items", std::move(items)}}, request.requestId);
+        response.data.items.push_back(roleDto(row));
+    std::string body;
+    SZX::COMMON::Serializer::to_json(response, body);
+    return RestApi::serializedSuccess(std::move(body), request.requestId);
 }
 
 auto roleGetResponse(RoleService &service, const INFRA::HttpRequest &request) -> INFRA::HttpResponse
 {
     const auto result = service.get(actorContext(request), request.pathParams.at("id"));
-    return result.ok ? RestApi::success(roleJson(result.value), request.requestId) :
+    return result.ok ? roleResponse(result.value, request.requestId) :
                        RestApi::error(static_cast<ErrorCode>(result.error), request.requestId);
 }
 
@@ -96,13 +100,14 @@ auto roleCreateResponse(RoleService &service, const INFRA::HttpRequest &request)
         return RestApi::error(static_cast<ErrorCode>(body.error), request.requestId);
     constexpr std::array<std::string_view, 3> fields{"code", "name", "description"};
     if (!RestApi::allowedFields(body.value, fields).ok || !body.value.contains("code") || !body.value.contains("name") ||
-        !body.value.at("code").is_string() || !body.value.at("name").is_string())
+        !body.value.at("code").is_string() || !body.value.at("name").is_string() ||
+        (body.value.contains("description") && !body.value.at("description").is_string()))
         return RestApi::error(ErrorCode::ValidationError, request.requestId);
     const auto result =
         service.create(actorContext(request),
                        NewRoleInput{body.value.at("code").get<std::string>(), body.value.at("name").get<std::string>(),
                                     body.value.value("description", "")});
-    return result.ok ? RestApi::success(roleJson(result.value), request.requestId, 201) :
+    return result.ok ? roleResponse(result.value, request.requestId, 201) :
                        RestApi::error(static_cast<ErrorCode>(result.error), request.requestId);
 }
 
@@ -115,12 +120,13 @@ auto roleUpdateResponse(RoleService &service, const INFRA::HttpRequest &request)
     if (!body.ok)
         return RestApi::error(static_cast<ErrorCode>(body.error), request.requestId);
     constexpr std::array<std::string_view, 2> fields{"name", "description"};
-    if (!RestApi::allowedFields(body.value, fields).ok || !body.value.contains("name") || !body.value.at("name").is_string())
+    if (!RestApi::allowedFields(body.value, fields).ok || !body.value.contains("name") || !body.value.at("name").is_string() ||
+        (body.value.contains("description") && !body.value.at("description").is_string()))
         return RestApi::error(ErrorCode::ValidationError, request.requestId);
     const auto result =
         service.updateProfile(actorContext(request), request.pathParams.at("id"), body.value.at("name").get<std::string>(),
                               body.value.value("description", ""), version.value);
-    return result.ok ? RestApi::success(roleJson(result.value), request.requestId) :
+    return result.ok ? roleResponse(result.value, request.requestId) :
                        RestApi::error(static_cast<ErrorCode>(result.error), request.requestId);
 }
 
@@ -130,11 +136,13 @@ auto roleStatusResponse(RoleService &service, const INFRA::HttpRequest &request)
     if (!version.ok)
         return RestApi::error(static_cast<ErrorCode>(version.error), request.requestId);
     const auto body = RestApi::jsonObject(request);
-    if (!body.ok || !body.value.contains("status") || !body.value.at("status").is_string())
+    if (!body.ok || !body.value.contains("status") || !body.value.at("status").is_string() ||
+        !RestApi::allowedFields(body.value, std::array<std::string_view, 1>{"status"}).ok ||
+        (body.value.at("status") != "active" && body.value.at("status") != "disabled"))
         return RestApi::error(ErrorCode::ValidationError, request.requestId);
     const auto result = service.changeStatus(actorContext(request), request.pathParams.at("id"),
                                              body.value.at("status").get<std::string>(), version.value);
-    return result.ok ? RestApi::success(roleJson(result.value), request.requestId) :
+    return result.ok ? roleResponse(result.value, request.requestId) :
                        RestApi::error(static_cast<ErrorCode>(result.error), request.requestId);
 }
 
@@ -191,7 +199,7 @@ auto roleCollectionPut(RoleService &service, const INFRA::HttpRequest &request, 
     const auto result = scopes ?
         service.replaceManageScopeIds(actorContext(request), request.pathParams.at("id"), *values, version.value) :
         service.replacePermissionIds(actorContext(request), request.pathParams.at("id"), *values, version.value);
-    return result.ok ? RestApi::success(roleJson(result.value), request.requestId) :
+    return result.ok ? roleResponse(result.value, request.requestId) :
                        RestApi::error(static_cast<ErrorCode>(result.error), request.requestId);
 }
 

@@ -57,7 +57,20 @@ async function mockApi(
     if (path === '/client/me/permissions')
       return reply({
         role,
-        capabilities: role === 'operator' ? ['business.read'] : ['user.read', 'audit.read'],
+        capabilities:
+          role === 'operator' || role === 'engineer'
+            ? ['business.read']
+            : [
+                'user.read',
+                'audit.read',
+                'behavior.read',
+                'user.role.assign',
+                'user.create',
+                'user.update',
+                'user.status',
+                'user.unlock',
+                'user.password.reset',
+              ],
         user_id: actor.id,
         authz_version: 1,
         status: 'active',

@@ -184,13 +184,18 @@ async function selectRole(page: Page, name: string) {
   await page.getByRole('combobox', { name: '选择角色', exact: true }).click()
   await page.getByRole('option', { name, exact: true }).click()
 }
+async function openAssociations(page: Page) {
+  await page.locator('.sidebar nav a[href="/roles"]').click()
+  await page.getByRole('link', { name: '查看角色权限关联', exact: true }).click()
+  await expect(page).toHaveURL('/roles/permissions')
+}
 
 test('home and sidebar provide a read-only view of all role permission assignments', async ({
   page,
 }) => {
   const state = await setup(page)
-  await expect(page.getByRole('link', { name: '查看角色权限关联', exact: true })).toBeVisible()
-  await page.getByRole('link', { name: '角色与权限', exact: true }).click()
+  await expect(page.locator('.home-navigation a[href="/roles"]')).toBeVisible()
+  await openAssociations(page)
   await expect(page.locator('.role-permissions-summary')).toContainText('关联权限：3')
   await expect(page.locator('.role-permissions-summary')).toContainText('生效权限：2')
   await expect(page.getByRole('row').filter({ hasText: 'business.read' })).toContainText('内置')
@@ -212,7 +217,7 @@ test('role.read alone can inspect IDs without permission.read or assignment righ
   page,
 }) => {
   const state = await setup(page, ['role.read'])
-  await page.getByRole('link', { name: '角色与权限', exact: true }).click()
+  await openAssociations(page)
   await expect(page.locator('.role-permissions-summary')).toContainText('关联权限：3')
   await expect(page.getByText(/仅展示关联权限 ID/)).toBeVisible()
   await expect(page.getByRole('cell', { name: '无法确认', exact: true })).toHaveCount(3)
@@ -235,7 +240,7 @@ test('quick role switching cannot publish a stale assignment response', async ({
     await blocked
     await route.fallback().catch(() => {})
   })
-  await page.getByRole('link', { name: '角色与权限', exact: true }).click()
+  await openAssociations(page)
   await started
   await selectRole(page, '工程师')
   await expect(page.locator('.role-permissions-summary')).toContainText('工程师')
@@ -247,7 +252,7 @@ test('quick role switching cannot publish a stale assignment response', async ({
 
 test('refresh re-reads permission state and detects role version races', async ({ page }) => {
   const state = await setup(page)
-  await page.getByRole('link', { name: '角色与权限', exact: true }).click()
+  await openAssociations(page)
   await expect(page.locator('.role-permissions-summary')).toContainText('生效权限：2')
   state.disableExport()
   await page.getByRole('button', { name: '刷新', exact: true }).click()
@@ -264,10 +269,10 @@ test('without role.read neither home/sidebar links nor direct routing expose the
   page,
 }) => {
   const state = await setup(page, ['permission.read'])
-  await expect(page.getByRole('link', { name: '角色与权限', exact: true })).toHaveCount(0)
-  await expect(page.getByRole('link', { name: '查看角色权限关联', exact: true })).toHaveCount(0)
+  await expect(page.locator('.sidebar nav a[href="/roles"]')).toHaveCount(0)
+  await expect(page.locator('.home-navigation a[href="/roles"]')).toHaveCount(0)
   await page.evaluate(() => {
-    history.pushState({}, '', '/roles')
+    history.pushState({}, '', '/roles/permissions')
     window.dispatchEvent(new PopStateEvent('popstate'))
   })
   await expect(page).toHaveURL('/home')
@@ -279,7 +284,7 @@ test('dark mobile view keeps scrolling and metadata errors fall back to IDs', as
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(error.message))
   const state = await setup(page)
-  await page.getByRole('link', { name: '角色与权限', exact: true }).click()
+  await openAssociations(page)
   await expect(page.locator('.role-permissions-summary')).toContainText('关联权限：3')
   await page.evaluate(() => {
     document.documentElement.dataset.theme = 'dark'
@@ -330,11 +335,14 @@ for (const viewport of [
   }) => {
     await page.setViewportSize(viewport)
     await setup(page, ['role.read', 'permission.read'], 60)
-    for (const path of ['/roles', '/permissions']) {
-      await page.locator(`.sidebar nav a[href="${path}"]`).click()
+    for (const path of ['/roles/permissions', '/permissions']) {
+      if (path === '/roles/permissions') await openAssociations(page)
+      else await page.locator(`.sidebar nav a[href="${path}"]`).click()
       await expect(page).toHaveURL(path)
       await expect(
-        page.locator(path === '/roles' ? '.role-permissions-summary' : '.permissions-page'),
+        page.locator(
+          path === '/roles/permissions' ? '.role-permissions-summary' : '.permissions-page',
+        ),
       ).toBeVisible()
       const table = page.locator('.table-scroll')
       await expect(table.locator('tbody tr')).toHaveCount(63)
@@ -372,17 +380,18 @@ for (const viewport of [
   })
 }
 
-for (const [locale, title, permissionTitle] of [
-  ['ja-JP', 'ロールと権限', '権限管理'],
-  ['ko-KR', '역할 및 권한', '권한 관리'],
-  ['fr-FR', 'Rôles et permissions', 'Gestion des permissions'],
-  ['ru-RU', 'Роли и разрешения', 'Управление разрешениями'],
+for (const [locale, title, permissionTitle, managementTitle] of [
+  ['ja-JP', 'ロールと権限', '権限管理', 'ロール管理'],
+  ['ko-KR', '역할 및 권한', '권한 관리', '역할 관리'],
+  ['fr-FR', 'Rôles et permissions', 'Gestion des permissions', 'Gestion des rôles'],
+  ['ru-RU', 'Роли и разрешения', 'Управление разрешениями', 'Управление ролями'],
 ]) {
   test(`RBAC pages use native translations in ${locale}`, async ({ page }) => {
     await page.addInitScript((value) => localStorage.setItem('szx-admin-locale', value!), locale)
     await setup(page)
-    await expect(page.locator('.sidebar nav a[href="/roles"]')).toContainText(title!)
+    await expect(page.locator('.sidebar nav a[href="/roles"]')).toContainText(managementTitle!)
     await page.locator('.sidebar nav a[href="/roles"]').click()
+    await page.locator('.roles-page a[href="/roles/permissions"]').click()
     await expect(page.locator('h1')).toHaveText(title!)
     await expect(page.locator('.role-permissions-summary')).toBeVisible()
     await page.locator('.sidebar nav a[href="/permissions"]').click()

@@ -382,13 +382,7 @@
             "required": false,
             "description": "",
             "schema": {
-              "type": "string",
-              "enum": [
-                "operator",
-                "engineer",
-                "admin",
-                "super_admin"
-              ]
+              "type": "string"
             }
           },
           {
@@ -1661,7 +1655,7 @@
         ],
         "summary": "roles 新增",
         "operationId": "post__admin_roles",
-        "description": "需要 `role.create`。默认仅 super_admin 获得 RBAC 管理权限。",
+        "description": "需要 `role.create`。默认仅 super_admin 获得 RBAC 管理权限。 code 必须唯一（包括已归档角色），重复返回 409/2227。创建后原子扩展 super_admin 管理范围并递增授权版本，旧 token 需刷新。",
         "parameters": [
           {
             "$ref": "#/components/parameters/RequestId"
@@ -1827,7 +1821,7 @@
         ],
         "summary": "roles 归档",
         "operationId": "delete__admin_roles_id",
-        "description": "需要 `role.archive`。默认仅 super_admin 获得 RBAC 管理权限。",
+        "description": "需要 `role.archive`。默认仅 super_admin 获得 RBAC 管理权限。 内置角色不可归档（409/2231）；仍有用户引用时返回 409/2229。归档清空权限/范围关联并更新受影响管理者的授权版本，归档后只读，code 不可复用。",
         "parameters": [
           {
             "$ref": "#/components/parameters/RequestId"
@@ -1880,7 +1874,7 @@
         ],
         "summary": "roles 启停",
         "operationId": "patch__admin_roles_id_status",
-        "description": "需要 `role.status`。默认仅 super_admin 获得 RBAC 管理权限。",
+        "description": "需要 `role.status`。默认仅 super_admin 获得 RBAC 管理权限。 超管不可停用，已归档角色不可恢复（409/2231）。",
         "parameters": [
           {
             "$ref": "#/components/parameters/RequestId"
@@ -2125,7 +2119,7 @@
         ],
         "summary": "替换角色 manage-scopes",
         "operationId": "put__admin_roles_id_manage_scopes",
-        "description": "需要 `role.scope.assign`。默认仅 super_admin 获得 RBAC 管理权限。",
+        "description": "需要 `role.scope.assign`。默认仅 super_admin 获得 RBAC 管理权限。 提交全量 target_role_ids，使用 If-Match。super_admin 必须保留全部非归档角色范围，否则返回 409/2233。变更影响授权版本。",
         "parameters": [
           {
             "$ref": "#/components/parameters/RequestId"
@@ -2233,12 +2227,8 @@
           },
           "role": {
             "type": "string",
-            "enum": [
-              "operator",
-              "engineer",
-              "admin",
-              "super_admin"
-            ]
+            "pattern": "^[a-z][a-z0-9_]{1,63}$",
+            "description": "数据库中的角色 code，支持自定义角色"
           },
           "status": {
             "type": "string",
@@ -2284,6 +2274,17 @@
           "login_identifier": {
             "type": "string",
             "description": "统一登录标识，创建后不可修改"
+          },
+          "role_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "登录/刷新用户快照中的角色 ID"
+          },
+          "role_authz_version": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "登录/刷新用户快照中的角色授权版本；变化后客户端清除旧能力缓存"
           }
         },
         "required": [
@@ -2496,12 +2497,8 @@
           },
           "role": {
             "type": "string",
-            "enum": [
-              "operator",
-              "engineer",
-              "admin",
-              "super_admin"
-            ]
+            "pattern": "^[a-z][a-z0-9_]{1,63}$",
+            "description": "数据库中的角色 code，支持自定义角色"
           },
           "status": {
             "type": "string",
@@ -2522,6 +2519,20 @@
             "items": {
               "type": "string"
             }
+          },
+          "manageable_roles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "当前角色管理范围内的非归档角色 code；不替代 user.* 能力"
+          },
+          "assignable_roles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "管理范围内当前启用的角色 code，供创建用户和改角色选择；manageable_roles 另包含停用角色供用户筛选"
           }
         },
         "required": [
@@ -2530,7 +2541,9 @@
           "status",
           "force_password_change",
           "authz_version",
-          "capabilities"
+          "capabilities",
+          "manageable_roles",
+          "assignable_roles"
         ]
       },
       "PasswordChange": {
@@ -2621,12 +2634,8 @@
           },
           "role": {
             "type": "string",
-            "enum": [
-              "operator",
-              "engineer",
-              "admin",
-              "super_admin"
-            ]
+            "pattern": "^[a-z][a-z0-9_]{1,63}$",
+            "description": "数据库中的角色 code，支持自定义角色"
           },
           "password_hash": {
             "type": "string",
@@ -2687,12 +2696,8 @@
         "properties": {
           "role": {
             "type": "string",
-            "enum": [
-              "operator",
-              "engineer",
-              "admin",
-              "super_admin"
-            ]
+            "pattern": "^[a-z][a-z0-9_]{1,63}$",
+            "description": "数据库中的角色 code，支持自定义角色"
           }
         },
         "required": [
@@ -3380,6 +3385,22 @@
           "authz_version": {
             "type": "integer",
             "minimum": 1
+          },
+          "user_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "全部引用此角色的用户数量（含停用用户）"
+          },
+          "permission_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "关联权限总数（含停用权限）"
+          },
+          "manageable": {
+            "type": "boolean",
+            "description": "当前调用者的管理范围是否包含此角色；写操作仍要求对应 capability"
           }
         },
         "required": [
@@ -3390,7 +3411,10 @@
           "system_key",
           "status",
           "version",
-          "authz_version"
+          "authz_version",
+          "user_count",
+          "permission_count",
+          "manageable"
         ],
         "additionalProperties": false
       },

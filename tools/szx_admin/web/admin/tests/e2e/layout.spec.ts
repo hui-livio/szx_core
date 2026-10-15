@@ -39,7 +39,16 @@ async function signInWithRows(page: Page) {
       data = {
         user_id: user.id,
         role: user.role,
-        capabilities: ['user.read', 'audit.read'],
+        capabilities: [
+          'user.read',
+          'audit.read',
+          'behavior.read',
+          'user.create',
+          'user.update',
+          'user.status',
+          'user.unlock',
+          'user.password.reset',
+        ],
         authz_version: 1,
         status: 'active',
         force_password_change: false,

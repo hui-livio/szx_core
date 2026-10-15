@@ -111,7 +111,7 @@ def main():
                     if (root / "service.log").exists():
                         print((root / "service.log").read_text())
                     raise
-                assert sql("SELECT MAX(version) FROM metrics_test.schema_migrations;") == "11"
+                assert sql("SELECT MAX(version) FROM metrics_test.schema_migrations;") == "12"
                 # Only in this disposable DB: disable the bootstrap password-change gate for test login.
                 sql("UPDATE metrics_test.users SET force_password_change=FALSE;")
                 digest = lambda value: hashlib.sha256(value.encode()).hexdigest()
@@ -153,12 +153,14 @@ def main():
                 status, document, _ = call("GET", "/openapi.json")
                 assert status == 200
                 assert "/admin/system/metrics" in document["paths"]
-                print("PASS: migration 11, real metrics/history, default role RBAC, strict queries and deployed OpenAPI")
+                print("PASS: migration 12, real metrics/history, default role RBAC, strict queries and deployed OpenAPI")
                 if args.rbac:
                     from test_admin_permissions import run_permission_checks
                     run_permission_checks(call, sql, login, token)
                     from test_admin_rbac_concurrency import run_rbac_concurrency_checks
                     run_rbac_concurrency_checks(call, sql, token, service, config)
+                    from test_admin_roles import run_role_checks
+                    run_role_checks(call, sql, login, service, config)
 
 
 if __name__ == "__main__":

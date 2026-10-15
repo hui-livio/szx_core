@@ -230,6 +230,9 @@ auto RestApi::error(ErrorCode code, std::string_view requestId) -> HttpResponse
         case ErrorCode::MigrationFailed:
         case ErrorCode::MigrationConflict:
         case ErrorCode::PermissionCodeConflict:
+        case ErrorCode::RoleCodeConflict:
+        case ErrorCode::RoleInUse:
+        case ErrorCode::ProtectedRole:
         case ErrorCode::PermissionInUse:
         case ErrorCode::ProtectedPermission:
         case ErrorCode::SuperAdminSecurityFloor:

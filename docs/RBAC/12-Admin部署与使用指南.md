@@ -210,4 +210,8 @@ Windows Nginx 配置为 `proxy_pass http://localhost:7364;`、WSL 服务经 IPv4
 python scripts/test_admin_metrics.py --service build/bin/szx_admin_service
 ```
 
-该脚本启动临时、仅监听 loopback 的 MySQL/MariaDB 数据目录，验证全新迁移到 11、真实指标快照/历史、角色权限、非法查询参数及已部署的 OpenAPI；退出后清理，绝不连接现有应用库。MySQL 需要 mysql/mysqld，MariaDB 另需 mariadb-install-db；Python 需 cryptography。具体已验证版本见本次交付说明，不以版本检测范围替代跨版本实机测试。
+该脚本启动临时、仅监听 loopback 的 MySQL/MariaDB 数据目录，验证全新迁移到 12、真实指标快照/历史、角色权限、非法查询参数及已部署的 OpenAPI；`--rbac` 另验证自定义角色/权限生命周期、范围、引用保护和并发。退出后清理，绝不连接现有应用库。MySQL 需要 mysql/mysqld，MariaDB 另需 mariadb-install-db；Python 需 cryptography。具体已验证版本见本次交付说明，不以版本检测范围替代跨版本实机测试。
+
+迁移 12 保留迁移 1–11 的原始校验值，移除 users.role 的旧固定角色 CHECK、扩为二进制比较的 VARCHAR(64)，并修复遗留 role_id 不一致。升级前备份数据库并停止旧版本写流量；不能把旧版服务回滚后直接连接已升级库作为安全回滚方案。实际部署环境的备份恢复和升级验收需独立执行。
+
+迁移 12 支持 DDL 已提交但数据修复或日志记录尚未完成时的重启恢复：初始化适配器按当前 schema 判断是否省略已完成的旧 CHECK 删除，随后继续列修改和数据修复，不改迁移 SQL/checksum，不忽略其他数据库错误。恢复测试仅在临时库注入失败并重启验证；现场仍应先备份，不手动删除迁移日志来绕过检查。

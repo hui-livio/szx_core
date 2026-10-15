@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { NewPermission, PermissionRecord, RoleRecord } from './types'
+import type { NewPermission, NewRole, PermissionRecord, RoleRecord } from './types'
 
 const headers = (version: number) => ({ 'If-Match': String(version) })
 export const rbacApi = {
@@ -44,6 +44,40 @@ export const rbacApi = {
     }),
   role: (id: string, signal?: AbortSignal) =>
     api.request<RoleRecord>({ url: `/admin/roles/${encodeURIComponent(id)}`, signal }),
+  createRole: (data: NewRole) =>
+    api.request<RoleRecord>({ url: '/admin/roles', method: 'POST', data }),
+  updateRole: (role: RoleRecord, data: Pick<NewRole, 'name' | 'description'>) =>
+    api.request<RoleRecord>({
+      url: `/admin/roles/${encodeURIComponent(role.id)}`,
+      method: 'PATCH',
+      headers: headers(role.version),
+      data,
+    }),
+  roleStatus: (role: RoleRecord, status: 'active' | 'disabled') =>
+    api.request<RoleRecord>({
+      url: `/admin/roles/${encodeURIComponent(role.id)}/status`,
+      method: 'PATCH',
+      headers: headers(role.version),
+      data: { status },
+    }),
+  archiveRole: (role: RoleRecord) =>
+    api.request<void>({
+      url: `/admin/roles/${encodeURIComponent(role.id)}`,
+      method: 'DELETE',
+      headers: headers(role.version),
+    }),
+  roleScopeIds: (id: string, signal?: AbortSignal) =>
+    api.request<{ target_role_ids: string[] }>({
+      url: `/admin/roles/${encodeURIComponent(id)}/manage-scopes`,
+      signal,
+    }),
+  replaceRoleScopes: (role: RoleRecord, target_role_ids: string[]) =>
+    api.request<RoleRecord>({
+      url: `/admin/roles/${encodeURIComponent(role.id)}/manage-scopes`,
+      method: 'PUT',
+      headers: headers(role.version),
+      data: { target_role_ids },
+    }),
   rolePermissionIds: (id: string, signal?: AbortSignal) =>
     api.request<{ permission_ids: string[] }>({
       url: `/admin/roles/${encodeURIComponent(id)}/permissions`,

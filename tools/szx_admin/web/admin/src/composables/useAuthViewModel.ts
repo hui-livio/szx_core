@@ -1,10 +1,10 @@
 import { computed, onMounted, onUnmounted, reactive, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
-import { isAdmin, passwordPolicy, passwordProblem, roleLabels } from '../domain'
+import { passwordPolicy, passwordProblem, roleLabel } from '../domain'
 import { useTask } from './useTask'
 import { useI18n } from 'vue-i18n'
-import { visiblePages } from '../navigation'
+import { hasPageAccess, visiblePages } from '../navigation'
 
 export function useLoginViewModel() {
   const auth = useAuthStore()
@@ -76,7 +76,7 @@ export function useShellViewModel() {
   const links = computed(() =>
     auth.needsPassword
       ? []
-      : visiblePages(auth.user?.role, auth.can).map((page) => ({ ...page, label: t(page.label) })),
+      : visiblePages(auth.can).map((page) => ({ ...page, label: t(page.label) })),
   )
   const logout = () =>
     task.run(async () => {
@@ -89,7 +89,7 @@ export function useShellViewModel() {
     logout,
     user: computed(() => auth.user),
     title: computed(() => (route.meta.titleKey ? t(String(route.meta.titleKey)) : 'Admin')),
-    role: computed(() => (auth.user ? t(roleLabels[auth.user.role]) : '')),
+    role: computed(() => (auth.user ? roleLabel(auth.user.role) : '')),
     passwordLink: computed(() => !auth.needsPassword),
   }
 }
@@ -98,7 +98,13 @@ export function useSessionNavigation() {
   const auth = useAuthStore()
   const router = useRouter()
   watch(
-    () => [auth.user?.id, auth.user?.authz_version] as const,
+    () =>
+      [
+        auth.user?.id,
+        auth.user?.authz_version,
+        auth.user?.role_id,
+        auth.user?.role_authz_version,
+      ] as const,
     () => {
       if (auth.user && !auth.permissions) void auth.loadPermissions().catch(() => {})
     },
@@ -109,7 +115,12 @@ export function useSessionNavigation() {
     (user) => {
       if (!user) void router.replace('/login')
       else if (user.force_password_change) void router.replace('/change-password')
-      else if (router.currentRoute.value.meta.admin && !isAdmin(user.role))
+    },
+  )
+  watch(
+    () => auth.permissions,
+    (permissions) => {
+      if (auth.user && permissions && !hasPageAccess(router.currentRoute.value.meta, auth.can))
         void router.replace('/home')
     },
   )
@@ -153,11 +164,10 @@ export function useHomeViewModel() {
     ...task,
     load,
     user: computed(() => auth.user),
-    role: computed(() => (auth.user ? t(roleLabels[auth.user.role]) : '')),
+    role: computed(() => (auth.user ? roleLabel(auth.user.role) : '')),
     links: computed(() =>
-      visiblePages(auth.user?.role, auth.can)
+      visiblePages(auth.can)
         .filter((page) => page.to !== '/home')
-        .filter((page) => !('homeCapability' in page) || auth.can(page.homeCapability))
         .map((page) => ({
           to: page.to,
           label: t('homeLabel' in page ? page.homeLabel : page.label),

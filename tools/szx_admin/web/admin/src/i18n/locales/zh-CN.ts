@@ -1,4 +1,36 @@
 export default {
+  roleManagement: {
+    title: '角色管理',
+    subtitle: '管理角色资料、权限及可管理范围，所有写操作均由后端再次授权。',
+    create: '新增角色',
+    edit: '编辑角色',
+    permissions: '配置权限',
+    scopes: '管理范围',
+    search: '搜索角色',
+    searchHint: '名称、代码或说明',
+    code: '角色代码',
+    codeHint: '2–64 位，以小写字母开头，仅允许小写字母、数字和下划线；创建后不可修改或复用。',
+    name: '角色名称',
+    userCount: '用户数',
+    permissionCount: '权限数',
+    view: '查看关联',
+    inUse: '角色仍被用户使用，不能归档。',
+    protected: '内置或已归档角色受保护，不能执行该操作。',
+    codeConflict: '角色代码已存在（含已归档），请换一个代码。',
+    unsaved: '存在未保存修改，确定放弃并离开？',
+    keepEditing: '继续编辑',
+    discard: '放弃修改',
+    authorizationHint:
+      '保存完整权限集合；已停用的关联可解绑，超管必需权限不可移除。变更后会重新验证当前会话。',
+    scopeHint:
+      '范围只决定可管理哪些角色的用户，还需要 user.* 能力。允许管理自身角色不代表可修改自己的角色或禁用自己。',
+    scopeFloor: '超级管理员必须保留所有非归档角色的管理范围，不能取消。',
+    archiveHint:
+      '归档 {code}？角色必须没有用户引用；权限与范围关联将清除，归档后只读且代码不可复用。',
+    confirmCode: '输入角色代码确认',
+    statusHint: '变更 {code} 的状态？相关角色的旧授权令牌将失效。',
+    preserveUnknown: '保留 {count} 个目录未返回的已有关联，不自动删除未知项。',
+  },
   rolePermissions: {
     title: '角色与权限',
     subtitle: '查看所有可访问角色的完整权限关联，不局限于当前账号。',
@@ -9,7 +41,7 @@ export default {
     effective: '生效权限：{count}',
     versions: '版本：{version} · 授权版本：{authz}',
     inactiveRole: '此角色已停用或归档，其关联权限当前均不生效。',
-    readOnly: '本页只读，查看不需要角色权限分配能力；权限变更请进入权限管理。',
+    readOnly: '本页只读，查看不需要分配能力；角色和授权变更请进入角色管理。',
     unknownPermission: '权限详情不可用',
     permissionStatus: '权限状态',
     effectiveState: '实际生效状态',
@@ -24,7 +56,7 @@ export default {
     codeConflict: '权限代码已存在（含已归档），请换一个代码。',
     inUse: '权限仍被角色使用，请先解除关联。',
     resourceProtected: '内置或已归档权限不可修改。',
-    securityFloor: '不能移除超级管理员的必需权限。',
+    securityFloor: '不能移除超级管理员的必需权限或管理范围。',
 
     title: '权限管理',
     subtitle: '管理业务客户端的自定义权限，并为角色配置权限。',
@@ -353,6 +385,7 @@ export default {
     permission_archive: '归档权限',
   },
   errors: {
+    resourceNotFound: '资源不存在，请重新加载后重试。',
     sessionInvalid: '会话已失效，请重新登录。',
     sessionExpired: '会话已过期，请重新登录。',
     sessionRevoked: '会话已被撤销，请重新登录。',

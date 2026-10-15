@@ -14,6 +14,15 @@ export function usePagedQuery<T>(
   const requestId = shallowRef('')
   const pageCount = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))
   let sequence = 0
+  function reset() {
+    sequence++
+    items.value = []
+    page.value = 1
+    total.value = 0
+    busy.value = false
+    error.value = ''
+    requestId.value = ''
+  }
   async function load(target = page.value) {
     const current = ++sequence
     busy.value = true
@@ -35,5 +44,5 @@ export function usePagedQuery<T>(
   onUnmounted(() => {
     sequence++
   })
-  return { items, page, pageSize, total, busy, error, requestId, pageCount, load }
+  return { items, page, pageSize, total, busy, error, requestId, pageCount, load, reset }
 }

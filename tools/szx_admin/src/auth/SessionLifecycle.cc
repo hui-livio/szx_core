@@ -1,6 +1,6 @@
-#include "LoginService.h"
 #include "../audit/AuditRepository.h"
 #include "../infra/DatabaseUnitOfWork.h"
+#include "LoginService.h"
 #include "PasswordHash.h"
 
 #include "Logger.h"
@@ -54,13 +54,16 @@ auto LoginService::issueSession(LoginRepository &repository, LoginUser user, con
     if (!expiry || user.authz_version <= 0)
         return failed<LoginSession>(ErrorCode::InternalFailure);
     const auto roleVersion = repository.roleAuthzVersion(user.role_id.value_or(std::string{}));
-    if (!roleVersion.ok || !user.role_id)
+    if (!user.role_id)
         return failed<LoginSession>(ErrorCode::AuthRequired);
-    const auto issued = jwt_.issue({.subject          = user.id,
-                                    .jti              = SZX::COMMON::Uuid::v4().toString(),
-                                    .authzVersion     = static_cast<std::uint64_t>(user.authz_version),
-                                    .roleId           = *user.role_id,
-                                    .roleAuthzVersion = roleVersion.value});
+    if (!roleVersion.ok)
+        return Result<LoginSession>::Failure(roleVersion.error, {});
+    user.role_authz_version = roleVersion.value;
+    const auto issued       = jwt_.issue({.subject          = user.id,
+                                          .jti              = SZX::COMMON::Uuid::v4().toString(),
+                                          .authzVersion     = static_cast<std::uint64_t>(user.authz_version),
+                                          .roleId           = *user.role_id,
+                                          .roleAuthzVersion = roleVersion.value});
     if (!issued.ok)
         return failed<LoginSession>(ErrorCode::InternalFailure);
     const auto claims = jwt_.verify(issued.value);
@@ -77,14 +80,13 @@ auto LoginService::issueSession(LoginRepository &repository, LoginUser user, con
     const auto now    = TimeHelper::NowTimestamp();
     const auto stamp  = TimeHelper::TimestampToString(now);
     const auto id     = SZX::COMMON::Uuid::v4().toString();
-    const auto stored = repository.insertRefresh(
-        {.id         = id,
-         .user_id    = user.id,
-         .token_hash = hash.value,
-         .family_id  = familyId,
-         .created_at = stamp,
-         .expires_at = refreshExpiry,
-         .ip         = peer});
+    const auto stored = repository.insertRefresh({.id         = id,
+                                                  .user_id    = user.id,
+                                                  .token_hash = hash.value,
+                                                  .family_id  = familyId,
+                                                  .created_at = stamp,
+                                                  .expires_at = refreshExpiry,
+                                                  .ip         = peer});
     if (!stored.ok)
         return Result<LoginSession>::Failure(stored.error, {});
     user.password_hash.clear();
@@ -185,8 +187,8 @@ auto LoginService::cookieSession(const CookieSessionInput &input, bool logout) -
                     denied = ErrorCode::AuthRequired;
                 else
                 {
-                    const auto expiry  = TimeHelper::StringToTimestamp(token->expires_at.substr(0, 19));
-                    const auto created = TimeHelper::StringToTimestamp(token->created_at.substr(0, 19));
+                    const auto expiry      = TimeHelper::StringToTimestamp(token->expires_at.substr(0, 19));
+                    const auto created     = TimeHelper::StringToTimestamp(token->created_at.substr(0, 19));
                     const auto idleTimeout = static_cast<std::int64_t>(config_.refreshIdleTimeoutSeconds) * 1000;
                     const auto idleExpired = !created || *created > now || now - *created >= idleTimeout;
                     if (!expiry || *expiry <= now || idleExpired)
@@ -209,14 +211,13 @@ auto LoginService::cookieSession(const CookieSessionInput &input, bool logout) -
                 }
                 if (denied && eventName == "auth.refresh.success")
                     eventName = "auth.refresh.failure";
-                const auto audited =
-                    audit->append({.id             = SZX::COMMON::Uuid::v4().toString(),
-                                   .actor_user_id  = user ? std::optional<std::string>{user->id} : std::nullopt,
-                                   .target_user_id = user ? std::optional<std::string>{user->id} : std::nullopt,
-                                   .event_name     = eventName,
-                                   .result         = denied ? "denied" : "success",
-                                   .request_id     = input.requestId,
-                                   .ip             = input.peerAddress});
+                const auto audited = audit->append({.id             = SZX::COMMON::Uuid::v4().toString(),
+                                                    .actor_user_id  = user ? std::optional<std::string>{user->id} : std::nullopt,
+                                                    .target_user_id = user ? std::optional<std::string>{user->id} : std::nullopt,
+                                                    .event_name     = eventName,
+                                                    .result         = denied ? "denied" : "success",
+                                                    .request_id     = input.requestId,
+                                                    .ip             = input.peerAddress});
                 if (!audited.ok)
                     return audited;
                 const auto result = unit.commit();

@@ -22,8 +22,10 @@ const {
   conflict,
   draft,
   roles,
+  assignmentRoles,
   passwordHint,
   canAssignRole,
+  canCreate,
   dialogTitle,
   targetStatus,
   search,
@@ -43,7 +45,12 @@ const { busy: saving, error: saveError } = mutation
         <h1>{{ t('users.title') }}</h1>
         <p>{{ t('users.subtitle') }}</p>
       </div>
-      <Button class="primary" @click="open('create')" type="button" variant="primary"
+      <Button
+        v-if="canCreate"
+        class="primary"
+        @click="open('create')"
+        type="button"
+        variant="primary"
         >＋ {{ t('users.create') }}</Button
       >
     </header>
@@ -79,7 +86,7 @@ const { busy: saving, error: saveError } = mutation
         v-model="draft"
         :action="action"
         :user="selected"
-        :roles="roles"
+        :roles="assignmentRoles"
         :password-hint="passwordHint"
         :busy="saving"
         :error="saveError"

@@ -32,7 +32,7 @@ test('version conflict blocks resubmission until the user reloads', async ({ pag
       return reply({
         user_id: user.id,
         role: user.role,
-        capabilities: ['user.read'],
+        capabilities: ['user.read', 'user.update'],
         authz_version: 1,
       })
     if (path.endsWith('/admin/users'))

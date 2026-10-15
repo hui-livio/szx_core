@@ -2,6 +2,40 @@ import en from './en-US'
 
 export default {
   ...en,
+  roleManagement: {
+    title: '역할 관리',
+    subtitle: '역할 정보, 권한 및 관리 범위를 설정합니다. 서버가 모든 변경을 다시 인가합니다.',
+    create: '역할 추가',
+    edit: '역할 편집',
+    permissions: '권한 설정',
+    scopes: '관리 범위',
+    search: '역할 검색',
+    searchHint: '이름, 코드 또는 설명',
+    code: '역할 코드',
+    codeHint:
+      '소문자로 시작하는 2–64자의 소문자, 숫자, 밑줄만 허용됩니다. 생성 후 변경하거나 재사용할 수 없습니다.',
+    name: '역할 이름',
+    userCount: '사용자 수',
+    permissionCount: '권한 수',
+    view: '연결 보기',
+    inUse: '사용자가 사용 중인 역할은 보관할 수 없습니다.',
+    protected: '기본 제공 또는 보관된 역할은 이 작업으로부터 보호됩니다.',
+    codeConflict: '보관된 역할을 포함하여 이미 사용 중인 역할 코드입니다. 다른 코드를 사용하세요.',
+    unsaved: '저장하지 않은 변경을 버리고 이동할까요?',
+    keepEditing: '계속 편집',
+    discard: '변경 버리기',
+    authorizationHint:
+      '전체 권한 집합을 저장합니다. 기존 비활성 연결은 해제할 수 있으나 최고 관리자의 필수 권한은 보호됩니다. 현재 세션을 다시 검증합니다.',
+    scopeHint:
+      '범위는 관리 가능한 사용자의 역할만 결정하며 user.* 권한도 필요합니다. 자신의 역할을 관리할 수 있어도 자신의 역할 변경이나 비활성화는 허용되지 않습니다.',
+    scopeFloor: '최고 관리자는 보관되지 않은 모든 역할의 관리 범위를 유지해야 합니다.',
+    archiveHint:
+      '{code}을(를) 보관할까요? 사용하는 사용자가 없어야 합니다. 권한 및 범위 연결을 제거하고 읽기 전용으로 전환하며 코드는 재사용할 수 없습니다.',
+    confirmCode: '역할 코드를 입력하여 확인',
+    statusHint: '{code}의 상태를 변경할까요? 이 역할의 이전 인가 토큰이 무효화됩니다.',
+    preserveUnknown:
+      '목록에 없는 기존 연결 {count}개를 유지합니다. 알 수 없는 항목은 자동 삭제하지 않습니다.',
+  },
   rolePermissions: {
     title: '역할 및 권한',
     subtitle: '현재 계정뿐 아니라 조회 가능한 역할의 전체 권한 연결을 확인합니다.',
@@ -14,7 +48,7 @@ export default {
     versions: '버전: {version} · 인가 버전: {authz}',
     inactiveRole: '이 역할은 비활성화 또는 보관되어 연결된 모든 권한이 현재 적용되지 않습니다.',
     readOnly:
-      '이 페이지는 읽기 전용이며 권한 지정 능력이 필요하지 않습니다. 변경은 권한 관리에서 진행하세요.',
+      '이 페이지는 읽기 전용이며 권한 지정 능력이 필요하지 않습니다. 역할 및 인가 변경은 역할 관리에서 진행하세요.',
     unknownPermission: '권한 상세 정보 없음',
     permissionStatus: '권한 상태',
     effectiveState: '현재 유효 여부',
@@ -29,7 +63,7 @@ export default {
     codeConflict: '보관된 권한을 포함하여 이미 사용 중인 코드입니다. 다른 코드를 사용하세요.',
     inUse: '역할에서 사용 중인 권한입니다. 먼저 연결을 해제하세요.',
     resourceProtected: '기본 제공 또는 보관된 권한은 수정할 수 없습니다.',
-    securityFloor: '최고 관리자의 필수 권한은 제거할 수 없습니다.',
+    securityFloor: '최고 관리자의 필수 권한이나 관리 범위는 제거할 수 없습니다.',
     title: '권한 관리',
     subtitle: '업무 클라이언트의 사용자 정의 권한과 역할 지정을 관리합니다.',
     create: '권한 추가',
@@ -346,6 +380,7 @@ export default {
   },
   errors: {
     ...en.errors,
+    resourceNotFound: '리소스를 찾을 수 없습니다. 다시 불러온 후 재시도하세요.',
     credentialsChanged: '계정 권한 또는 인증 정보가 변경되었습니다. 다시 로그인하세요.',
   },
   notFound: {

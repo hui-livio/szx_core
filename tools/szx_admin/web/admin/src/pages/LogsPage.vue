@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { LuminaButton as Button } from '../ui/lumina'
-import { ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useLogsViewModel } from '../composables/useLogsViewModel'
 import { useBehaviorEventsViewModel } from '../composables/useBehaviorEventsViewModel'
 import { formatTime } from '../domain'
@@ -11,11 +11,21 @@ import BehaviorEventTable from '../components/logs/BehaviorEventTable.vue'
 import PaginationBar from '../components/PaginationBar.vue'
 import ModalDialog from '../components/ModalDialog.vue'
 import { useI18n } from 'vue-i18n'
+import { useAuthStore } from '../stores/auth'
 const { t } = useI18n()
+const auth = useAuthStore()
+const canAudit = computed(() => auth.can('audit.read'))
+const canBehavior = computed(() => auth.can('behavior.read'))
 
 const audit = useLogsViewModel()
 const behavior = useBehaviorEventsViewModel()
-const activeTab = ref<'audit' | 'behavior'>('audit')
+const activeTab = ref<'audit' | 'behavior'>(canAudit.value ? 'audit' : 'behavior')
+watch([canAudit, canBehavior], () => {
+  if (activeTab.value === 'audit' && !canAudit.value && canBehavior.value)
+    activeTab.value = 'behavior'
+  else if (activeTab.value === 'behavior' && !canBehavior.value && canAudit.value)
+    activeTab.value = 'audit'
+})
 const {
   filters: auditFilters,
   logs,
@@ -62,6 +72,7 @@ const {
     </header>
     <nav class="log-tabs" :aria-label="t('audit.tabs')" role="tablist">
       <Button
+        v-if="canAudit"
         role="tab"
         :aria-selected="activeTab === 'audit'"
         :class="{ active: activeTab === 'audit' }"
@@ -70,6 +81,7 @@ const {
       >
         {{ t('audit.auditTab') }}</Button
       ><Button
+        v-if="canBehavior"
         role="tab"
         :aria-selected="activeTab === 'behavior'"
         :class="{ active: activeTab === 'behavior' }"
@@ -79,7 +91,7 @@ const {
         {{ t('audit.behaviorTab') }}
       </Button>
     </nav>
-    <section v-if="activeTab === 'audit'" class="panel table-panel">
+    <section v-if="activeTab === 'audit' && canAudit" class="panel table-panel">
       <LogFilters
         v-model="auditFilters"
         :busy="busy"
@@ -104,7 +116,7 @@ const {
         @change="load"
       />
     </section>
-    <section v-else class="panel table-panel">
+    <section v-else-if="activeTab === 'behavior' && canBehavior" class="panel table-panel">
       <BehaviorEventFilters
         v-model="behaviorFilters"
         :busy="behaviorBusy"
@@ -145,7 +157,7 @@ const {
       {{ t('common.requestId') }}：{{ behaviorRequestId }}
     </p>
     <ModalDialog
-      v-if="auditSelected && activeTab === 'audit'"
+      v-if="canAudit && auditSelected && activeTab === 'audit'"
       :title="t('audit.detailTitle')"
       @close="closeAudit"
       ><dl class="details-grid">
@@ -188,7 +200,7 @@ const {
       </div></ModalDialog
     >
     <ModalDialog
-      v-if="behaviorSelected && activeTab === 'behavior'"
+      v-if="canBehavior && behaviorSelected && activeTab === 'behavior'"
       :title="t('audit.behaviorDetailTitle')"
       @close="closeBehavior"
       ><dl class="details-grid">

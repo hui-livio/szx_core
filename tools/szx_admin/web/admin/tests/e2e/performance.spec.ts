@@ -353,7 +353,6 @@ test('missing capabilities fail closed without breaking the shell', async ({ pag
   await loaded
   await expect(page.locator('.page-heading h1')).toBeVisible()
   await expect(page.getByRole('link', { name: '机器性能' })).toHaveCount(0)
-  await page.getByRole('link', { name: '用户管理', exact: true }).click()
-  await expect(page).toHaveURL('/users')
+  await expect(page.getByRole('link', { name: '用户管理', exact: true })).toHaveCount(0)
   expect(errors).toEqual([])
 })

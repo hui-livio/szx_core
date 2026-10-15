@@ -6,7 +6,7 @@ import {
 } from '../../ui/lumina'
 import { computed } from 'vue'
 import type { Role, UserStatus } from '../../api/types'
-import { roleLabels, statusLabels } from '../../domain'
+import { roleLabel, statusLabels } from '../../domain'
 import { useI18n } from 'vue-i18n'
 const { t } = useI18n()
 const filters = defineModel<{
@@ -19,7 +19,7 @@ const props = defineProps<{ roles: Role[]; busy: boolean }>()
 const emit = defineEmits<{ search: [] }>()
 const roleOptions = computed(() => [
   { value: '', label: t('users.allRoles') },
-  ...props.roles.map((value) => ({ value, label: t(roleLabels[value]) })),
+  ...props.roles.map((value) => ({ value, label: roleLabel(value) })),
 ])
 const statusOptions = computed(() => [
   { value: '', label: t('users.allStatuses') },

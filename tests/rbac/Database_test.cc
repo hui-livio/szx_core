@@ -1,9 +1,9 @@
+#include "SzxAdmin/Infra/Database.h"
 #include "../../tools/szx_admin/src/infra/DatabaseDialect.h"
 #include "../../tools/szx_admin/src/infra/DatabaseUnitOfWork.h"
 #include "../../tools/szx_admin/src/maintenance/LogMaintenanceService.h"
 #include "../../tools/szx_admin/src/rbac/PermissionCodes.h"
 #include "../../tools/szx_admin/src/telemetry/BehaviorEventWriter.h"
-#include "SzxAdmin/Infra/Database.h"
 #include "SzxAdmin/Infra/ErrorCode.h"
 #include "SzxCrypto/Random.h"
 
@@ -555,7 +555,7 @@ TEST(DatabaseInitializationTest, PreservesPublishedMigrationChecksumsAndExisting
 TEST(DatabaseInitializationTest, DropsLegacyLogTableWithoutRewritingPublishedMigrations)
 {
     const auto migrations = SZX::ADMIN::INFRA::embeddedMigrations();
-    ASSERT_EQ(migrations.size(), 11U);
+    ASSERT_EQ(migrations.size(), 12U);
     FakeDatabaseConnection connection;
     const auto legacy = migrations.first(5);
     for (const auto &migration : legacy.first(4))
@@ -577,7 +577,10 @@ TEST(DatabaseInitializationTest, DropsLegacyLogTableWithoutRewritingPublishedMig
 TEST(DatabaseInitializationTest, RegistersTheDynamicRbacCatalog)
 {
     const auto migrations = SZX::ADMIN::INFRA::embeddedMigrations();
-    ASSERT_EQ(migrations.back().version, 11U);
+    ASSERT_EQ(migrations.back().version, 12U);
+    EXPECT_NE(migrations.back().sql.find("DROP CHECK chk_users_role"), std::string_view::npos);
+    EXPECT_NE(migrations.back().sql.find("MODIFY role VARCHAR(64)"), std::string_view::npos);
+    EXPECT_EQ(migrationChecksum(migrations.back().sql), migrations.back().checksum);
     EXPECT_NE(migrations[5].sql.find("CREATE TABLE IF NOT EXISTS roles"), std::string_view::npos);
     EXPECT_NE(migrations[5].sql.find("CREATE TABLE IF NOT EXISTS permissions"), std::string_view::npos);
     EXPECT_NE(migrations[5].sql.find("role_manage_scopes"), std::string_view::npos);

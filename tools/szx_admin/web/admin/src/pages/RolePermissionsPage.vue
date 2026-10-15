@@ -41,9 +41,17 @@ const sources = computed(() => [
         <h1>{{ t('rolePermissions.title') }}</h1>
         <p>{{ t('rolePermissions.subtitle') }}</p>
       </div>
-      <RouterLink v-if="canManagePermissions" to="/permissions" class="button lumina-smooth-edge">{{
-        t('rbac.title')
-      }}</RouterLink>
+      <div class="actions">
+        <RouterLink to="/roles" class="button lumina-smooth-edge">{{
+          t('roleManagement.title')
+        }}</RouterLink>
+        <RouterLink
+          v-if="canManagePermissions"
+          to="/permissions"
+          class="button lumina-smooth-edge"
+          >{{ t('rbac.title') }}</RouterLink
+        >
+      </div>
     </header>
     <section class="panel table-panel">
       <form class="filters" @submit.prevent="load">

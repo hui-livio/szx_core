@@ -42,7 +42,8 @@ const auditEventLabels: Readonly<Record<string, string>> = {
   'user.password.reset': 'events.user_password_reset',
 }
 
-export const roleLabel = (role: Role): string => translate(roleLabels[role])
+export const roleLabel = (role: Role): string =>
+  Object.hasOwn(roleLabels, role) ? translate(roleLabels[role]!) : role
 export const statusLabel = (status: keyof typeof statusLabels): string =>
   translate(statusLabels[status])
 export const resultLabel = (result: keyof typeof resultLabels): string =>

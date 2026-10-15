@@ -1,6 +1,3 @@
-import type { Role } from './api/types'
-import { isAdmin } from './domain'
-
 const pages = [
   { to: '/home', label: 'shell.dashboard', symbol: '⌂' },
   {
@@ -8,13 +5,11 @@ const pages = [
     label: 'shell.users',
     homeLabel: 'home.enterUsers',
     symbol: '◎',
-    homeCapability: 'user.read',
-    admin: true,
+    capability: 'user.read',
   },
   {
     to: '/roles',
-    label: 'rolePermissions.title',
-    homeLabel: 'rolePermissions.viewAssociations',
+    label: 'roleManagement.title',
     symbol: '▦',
     capability: 'role.read',
   },
@@ -24,22 +19,24 @@ const pages = [
     label: 'shell.auditLogs',
     homeLabel: 'home.viewAudit',
     symbol: '≡',
-    homeCapability: 'audit.read',
-    admin: true,
+    capabilityAny: ['audit.read', 'behavior.read'],
   },
   {
     to: '/system/performance',
     label: 'performance.title',
     symbol: '◴',
     capability: 'system.metrics.read',
-    admin: true,
   },
 ] as const
 
-export function visiblePages(role: Role | undefined, can: (capability: string) => boolean) {
-  return pages.filter(
-    (page) =>
-      (!('admin' in page) || !page.admin || isAdmin(role)) &&
-      (!('capability' in page) || can(page.capability)),
+export function visiblePages(can: (capability: string) => boolean) {
+  return pages.filter((page) => hasPageAccess(page, can))
+}
+
+export function hasPageAccess(meta: Record<string, unknown>, can: (capability: string) => boolean) {
+  return (
+    (typeof meta.capability !== 'string' || can(meta.capability)) &&
+    (!Array.isArray(meta.capabilityAny) ||
+      meta.capabilityAny.some((capability) => typeof capability === 'string' && can(capability)))
   )
 }

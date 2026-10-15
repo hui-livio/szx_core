@@ -6,7 +6,7 @@ import {
 } from '../../ui/lumina'
 import type { User } from '../../api/types'
 import type { UserAction, UserRowView } from '../../composables/useUsersViewModel'
-import { roleLabels, statusLabels, formatTime } from '../../domain'
+import { roleLabel, statusLabels, formatTime } from '../../domain'
 import { useI18n } from 'vue-i18n'
 const { t } = useI18n()
 defineProps<{ users: UserRowView[]; busy: boolean; failed: boolean; canAssignRole: boolean }>()
@@ -34,7 +34,7 @@ const emit = defineEmits<{ action: [action: UserAction, user: User] }>()
     </Column>
     <Column :header="t('common.role')">
       <template #body="{ data }: { data: UserRowView }">
-        <span class="role-badge">{{ t(roleLabels[data.role]) }}</span>
+        <span class="role-badge">{{ roleLabel(data.role) }}</span>
       </template>
     </Column>
     <Column :header="t('common.status')">
@@ -51,7 +51,7 @@ const emit = defineEmits<{ action: [action: UserAction, user: User] }>()
       <template #body="{ data }: { data: UserRowView }">
         <div class="table-actions">
           <Button
-            :disabled="!data.canManage"
+            :disabled="!data.canUpdate"
             @click="emit('action', 'name', data)"
             type="button"
             variant="text"
@@ -67,7 +67,7 @@ const emit = defineEmits<{ action: [action: UserAction, user: User] }>()
             {{ t('users.assignRole') }}</Button
           ><Button
             v-if="data.status === 'locked'"
-            :disabled="!data.canManage"
+            :disabled="!data.canUnlock"
             @click="emit('action', 'unlock', data)"
             type="button"
             variant="text"
@@ -82,7 +82,7 @@ const emit = defineEmits<{ action: [action: UserAction, user: User] }>()
           >
             {{ data.status === 'disabled' ? t('users.enable') : t('users.disable') }}</Button
           ><Button
-            :disabled="!data.canManage"
+            :disabled="!data.canReset"
             @click="emit('action', 'reset', data)"
             type="button"
             variant="text"

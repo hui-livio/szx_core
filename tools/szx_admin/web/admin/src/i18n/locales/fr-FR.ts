@@ -2,6 +2,43 @@ import en from './en-US'
 
 export default {
   ...en,
+  roleManagement: {
+    title: 'Gestion des rôles',
+    subtitle:
+      'Gérez les profils, permissions et périmètres. Le serveur autorise chaque modification.',
+    create: 'Créer un rôle',
+    edit: 'Modifier le rôle',
+    permissions: 'Configurer les permissions',
+    scopes: 'Périmètre de gestion',
+    search: 'Rechercher des rôles',
+    searchHint: 'Nom, code ou description',
+    code: 'Code du rôle',
+    codeHint:
+      '2 à 64 minuscules, chiffres ou traits de soulignement, commençant par une lettre. Le code est immuable et ne peut pas être réutilisé.',
+    name: 'Nom du rôle',
+    userCount: 'Utilisateurs',
+    permissionCount: 'Permissions',
+    view: 'Voir les associations',
+    inUse: 'Des utilisateurs utilisent encore ce rôle ; il ne peut pas être archivé.',
+    protected: 'Les rôles intégrés ou archivés sont protégés contre cette opération.',
+    codeConflict: 'Ce code existe déjà, y compris dans les archives. Choisissez un autre code.',
+    unsaved: 'Abandonner les modifications non enregistrées et quitter ?',
+    keepEditing: 'Continuer à modifier',
+    discard: 'Abandonner les modifications',
+    authorizationHint:
+      'Enregistrez l’ensemble des permissions. Les associations désactivées existantes peuvent être retirées ; les permissions obligatoires du super administrateur sont protégées. La session sera revalidée.',
+    scopeHint:
+      'Le périmètre détermine les rôles des utilisateurs gérables ; les permissions user.* restent nécessaires. Gérer son propre rôle ne permet pas de changer son rôle ni de se désactiver.',
+    scopeFloor:
+      'Le super administrateur doit conserver tous les rôles non archivés dans son périmètre.',
+    archiveHint:
+      'Archiver {code} ? Aucun utilisateur ne doit l’utiliser. Les associations de permissions et de périmètre seront supprimées. Le rôle deviendra en lecture seule et son code ne sera pas réutilisable.',
+    confirmCode: 'Saisir le code du rôle pour confirmer',
+    statusHint:
+      'Changer l’état de {code} ? Les anciens jetons d’autorisation de ce rôle seront invalidés.',
+    preserveUnknown:
+      'Conservation de {count} associations existantes absentes du répertoire ; aucun élément inconnu n’est supprimé automatiquement.',
+  },
   rolePermissions: {
     title: 'Rôles et permissions',
     subtitle:
@@ -15,7 +52,7 @@ export default {
     versions: 'Version : {version} · Version des autorisations : {authz}',
     inactiveRole: 'Ce rôle est désactivé ou archivé. Aucune de ses permissions ne prend effet.',
     readOnly:
-      'Page en lecture seule, sans droit d’attribution requis. Pour modifier les permissions, ouvrez leur gestion.',
+      'Page en lecture seule, sans droit d’attribution requis. Modifiez les rôles et autorisations dans la gestion des rôles.',
     unknownPermission: 'Détails indisponibles',
     permissionStatus: 'État de la permission',
     effectiveState: 'Validité actuelle',
@@ -31,7 +68,7 @@ export default {
     inUse: 'Cette permission est utilisée par des rôles. Supprimez d’abord les associations.',
     resourceProtected: 'Les permissions intégrées ou archivées ne peuvent pas être modifiées.',
     securityFloor:
-      'Les permissions obligatoires du super administrateur ne peuvent pas être retirées.',
+      'Les permissions et périmètres obligatoires du super administrateur ne peuvent pas être retirés.',
     title: 'Gestion des permissions',
     subtitle:
       'Gérez les permissions personnalisées du client métier et leur attribution aux rôles.',
@@ -359,6 +396,7 @@ export default {
   },
   errors: {
     ...en.errors,
+    resourceNotFound: 'Ressource introuvable. Rechargez et réessayez.',
     credentialsChanged: 'Les droits ou les identifiants du compte ont changé. Reconnectez-vous.',
   },
   notFound: {

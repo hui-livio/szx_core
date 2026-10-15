@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Result.hpp"
+#include "SzxAdmin/Infra/ErrorCode.h"
 
 #include <cstdint>
 #include <optional>
@@ -20,6 +21,16 @@ struct RoleRow final
     std::string status;
     std::uint32_t version{};
     std::uint32_t authzVersion{};
+    std::uint64_t userCount{};
+    std::uint64_t permissionCount{};
+    bool manageable{};
+};
+
+struct RoleUsage final
+{
+    std::string id;
+    std::uint64_t userCount{};
+    std::uint64_t permissionCount{};
 };
 
 struct NewRole final
@@ -40,33 +51,40 @@ class RoleRepository
 public:
     virtual ~RoleRepository() = default;
 
-    virtual auto findById(std::string_view id, bool lock = false)
-        -> SZX::COMMON::Result<std::optional<RoleRow>> = 0;
-    virtual auto findByCode(std::string_view code, bool lock = false)
-        -> SZX::COMMON::Result<std::optional<RoleRow>> = 0;
-    virtual auto list(bool includeArchived = false) -> SZX::COMMON::Result<std::vector<RoleRow>> = 0;
-    virtual auto insert(const NewRole &role) -> SZX::COMMON::Result<void> = 0;
-    virtual auto updateProfile(std::string_view id, std::string_view name, std::string_view description,
-                               std::uint32_t version, std::string_view updatedBy) -> SZX::COMMON::Result<void> = 0;
-    virtual auto updateStatus(std::string_view id, std::string_view status, std::uint32_t version,
-                              std::uint32_t authzVersion, std::string_view updatedBy,
-                              std::optional<std::string_view> archivedAt = std::nullopt)
-        -> SZX::COMMON::Result<void> = 0;
+    virtual auto findById(std::string_view id, bool lock = false) -> SZX::COMMON::Result<std::optional<RoleRow>>     = 0;
+    virtual auto findByCode(std::string_view code, bool lock = false) -> SZX::COMMON::Result<std::optional<RoleRow>> = 0;
+    virtual auto list(bool includeArchived = false) -> SZX::COMMON::Result<std::vector<RoleRow>>                     = 0;
+    virtual auto insert(const NewRole &role) -> SZX::COMMON::Result<void>                                            = 0;
+    virtual auto updateProfile(std::string_view id, std::string_view name, std::string_view description, std::uint32_t version,
+                               std::string_view updatedBy) -> SZX::COMMON::Result<void>                              = 0;
+    virtual auto updateStatus(std::string_view id, std::string_view status, std::uint32_t version, std::uint32_t authzVersion,
+                              std::string_view updatedBy, std::optional<std::string_view> archivedAt = std::nullopt)
+        -> SZX::COMMON::Result<void>                                                                                    = 0;
     virtual auto replacePermissions(std::string_view roleId, const std::vector<std::string> &permissionIds,
-                                    std::string_view assignedBy) -> SZX::COMMON::Result<void> = 0;
+                                    std::string_view assignedBy) -> SZX::COMMON::Result<void>                           = 0;
     virtual auto replaceManageScopes(std::string_view roleId, const std::vector<std::string> &targetRoleIds,
-                                     std::string_view assignedBy) -> SZX::COMMON::Result<void> = 0;
-    virtual auto permissionIds(std::string_view roleId) -> SZX::COMMON::Result<std::vector<std::string>> = 0;
-    virtual auto manageScopeIds(std::string_view roleId) -> SZX::COMMON::Result<std::vector<std::string>> = 0;
-    virtual auto hasPermission(std::string_view roleCode, std::string_view permissionCode)
-        -> SZX::COMMON::Result<bool> = 0;
-    virtual auto canManageRole(std::string_view managerCode, std::string_view targetCode)
-        -> SZX::COMMON::Result<bool> = 0;
-    virtual auto manageableRoles(std::string_view managerCode)
-        -> SZX::COMMON::Result<std::vector<std::string>> = 0;
+                                     std::string_view assignedBy) -> SZX::COMMON::Result<void>                          = 0;
+    virtual auto permissionIds(std::string_view roleId) -> SZX::COMMON::Result<std::vector<std::string>>                = 0;
+    virtual auto manageScopeIds(std::string_view roleId) -> SZX::COMMON::Result<std::vector<std::string>>               = 0;
+    virtual auto hasPermission(std::string_view roleCode, std::string_view permissionCode) -> SZX::COMMON::Result<bool> = 0;
+    virtual auto canManageRole(std::string_view managerCode, std::string_view targetCode) -> SZX::COMMON::Result<bool>  = 0;
+    virtual auto manageableRoles(std::string_view managerCode) -> SZX::COMMON::Result<std::vector<std::string>>         = 0;
+    virtual auto usage(std::string_view = {}) -> SZX::COMMON::Result<std::vector<RoleUsage>>
+    {
+        return SZX::COMMON::Result<std::vector<RoleUsage>>::Failure(static_cast<int>(INFRA::ErrorCode::DatabaseQueryFailed), {});
+    }
+    virtual auto managerIds(std::string_view) -> SZX::COMMON::Result<std::vector<std::string>>
+    {
+        return SZX::COMMON::Result<std::vector<std::string>>::Failure(static_cast<int>(INFRA::ErrorCode::DatabaseQueryFailed),
+                                                                      {});
+    }
     virtual auto removeTargetScopes(std::string_view) -> SZX::COMMON::Result<void>
-    { return SZX::COMMON::Result<void>::Success(); }
+    {
+        return SZX::COMMON::Result<void>::Success();
+    }
     virtual auto bumpManagerAuthzVersions(std::string_view) -> SZX::COMMON::Result<void>
-    { return SZX::COMMON::Result<void>::Success(); }
+    {
+        return SZX::COMMON::Result<void>::Success();
+    }
 };
 } // namespace SZX::ADMIN::RBAC

@@ -1,8 +1,9 @@
 #include "UserRepository.h"
 #include "../auth/LoginService.h"
+#include "../user/UserValidation.h"
+#include "JsonHelper.hpp"
 #include "OrmConnection.h"
 #include "SzxAdmin/Infra/ErrorCode.h"
-#include "JsonHelper.hpp"
 #include "UUID.hpp"
 
 #include <algorithm>
@@ -21,13 +22,12 @@ inline constexpr auto get_alias_struct_name(NewUser *)
 {
     return std::string_view{"users"};
 }
-YLT_REFL(UserRow, id, login_identifier, login_identifier_canonical, identifier_type, display_name, role_id, role, status, version, force_password_change, temporary_credential_expires_at,
-         failed_login_count, locked_until, password_changed_at, disabled_at, created_by, authz_version, last_login_at, created_at,
-         updated_at);
+YLT_REFL(UserRow, id, login_identifier, login_identifier_canonical, identifier_type, display_name, role_id, role, status, version,
+         force_password_change, temporary_credential_expires_at, failed_login_count, locked_until, password_changed_at,
+         disabled_at, created_by, authz_version, last_login_at, created_at, updated_at);
 REGISTER_CONFLICT_KEY(UserRow, id)
-YLT_REFL(NewUser, id, login_identifier, login_identifier_canonical, identifier_type,
-         display_name, password_hash, role_id, role, status,
-         force_password_change, temporary_credential_expires_at, created_by);
+YLT_REFL(NewUser, id, login_identifier, login_identifier_canonical, identifier_type, display_name, password_hash, role_id, role,
+         status, force_password_change, temporary_credential_expires_at, created_by);
 } // namespace SZX::ADMIN::USER
 
 namespace SZX::ADMIN::INFRA::DETAIL
@@ -152,8 +152,7 @@ auto MySqlUserRepository::findById(const std::string &id, bool lock) -> Result<s
     }
 }
 
-auto MySqlUserRepository::findByCanonical(const std::string &canonicalValue)
-    -> Result<std::optional<USER::UserRow>>
+auto MySqlUserRepository::findByCanonical(const std::string &canonicalValue) -> Result<std::optional<USER::UserRow>>
 {
     try
     {
@@ -175,10 +174,9 @@ auto MySqlUserRepository::list(const USER::UserFilter &filter) -> Result<USER::U
     {
         if (filter.roles.empty() || filter.limit == 0)
             return Result<USER::UserPage>::Failure(static_cast<int>(ErrorCode::InternalFailure), {});
-        // Roles come from the authorization policy. Emit the small, fixed allowlist
-        // directly so MySQL can evaluate it without parsing JSON for every row.
-        const auto roleLiteral = [](std::string_view role) -> std::string {
-            if (role != "operator" && role != "engineer" && role != "admin" && role != "super_admin")
+        const auto roleLiteral = [](std::string_view role) -> std::string
+        {
+            if (!USER::validRoleCode(role))
                 return {};
             return "'" + std::string{role} + "'";
         };
@@ -192,35 +190,35 @@ auto MySqlUserRepository::list(const USER::UserFilter &filter) -> Result<USER::U
                 rolePredicate += ",";
             rolePredicate += literal;
         }
-        rolePredicate += ")";
-        const auto status = filter.status;
-        const auto search = filter.search;
-        const auto needle = search.empty() ? std::string{} : "%" + escapeLike(search) + "%";
-        const auto limit  = static_cast<std::uint64_t>(filter.limit);
-        const auto offset = filter.offset;
-        const auto pageClause = " LIMIT " + std::to_string(limit) + " OFFSET " + std::to_string(offset);
+        rolePredicate         += ")";
+        const auto status      = filter.status;
+        const auto search      = filter.search;
+        const auto needle      = search.empty() ? std::string{} : "%" + escapeLike(search) + "%";
+        const auto limit       = static_cast<std::uint64_t>(filter.limit);
+        const auto offset      = filter.offset;
+        const auto pageClause  = " LIMIT " + std::to_string(limit) + " OFFSET " + std::to_string(offset);
         const std::string source{" FROM users u WHERE "};
-        const std::string predicate{rolePredicate + " AND (? = '' OR u.status = ?) AND "
+        const std::string predicate{rolePredicate +
+                                    " AND (? = '' OR u.status = ?) AND "
                                     "(? = '' OR u.display_name LIKE ? OR u.login_identifier LIKE ?)"};
 
-        const auto totals =
-            connection_.query_s<std::tuple<std::uint64_t>>("SELECT COUNT(*)" + source + predicate, status, status, search,
-                                                           needle, needle);
+        const auto totals = connection_.query_s<std::tuple<std::uint64_t>>("SELECT COUNT(*)" + source + predicate, status, status,
+                                                                           search, needle, needle);
         if (connection_.has_error() || totals.size() != 1)
             return queryFailed<USER::UserPage>();
 
         USER::UserPage page{.items = {}, .total = std::get<0>(totals.front())};
         if (page.total > offset)
         {
-            auto rows = connection_.query_s<USER::UserRow>(
-                                                           "SELECT u.id, u.login_identifier, u.login_identifier_canonical, "
-                                                           "u.identifier_type, u.display_name, u.role_id, u.role, u.status, "
-                                                           "u.version, u.force_password_change, u.temporary_credential_expires_at, "
-                                                           "u.failed_login_count, u.locked_until, u.password_changed_at, "
-                                                           "u.disabled_at, u.created_by, u.authz_version, u.last_login_at, "
-                                                           "u.created_at, u.updated_at" + source + predicate +
-                                                           std::string{orderBy(filter.sort)} + pageClause,
-                                                           status, status, search, needle, needle);
+            auto rows =
+                connection_.query_s<USER::UserRow>("SELECT u.id, u.login_identifier, u.login_identifier_canonical, "
+                                                   "u.identifier_type, u.display_name, u.role_id, u.role, u.status, "
+                                                   "u.version, u.force_password_change, u.temporary_credential_expires_at, "
+                                                   "u.failed_login_count, u.locked_until, u.password_changed_at, "
+                                                   "u.disabled_at, u.created_by, u.authz_version, u.last_login_at, "
+                                                   "u.created_at, u.updated_at" +
+                                                       source + predicate + std::string{orderBy(filter.sort)} + pageClause,
+                                                   status, status, search, needle, needle);
             if (connection_.has_error())
                 return queryFailed<USER::UserPage>();
             page.items = std::move(rows);
@@ -248,10 +246,12 @@ auto MySqlUserRepository::save(const USER::UserRow &user) -> Result<void>
     try
     {
         using USER::UserRow;
-        const auto count = connection_.update<&UserRow::display_name, &UserRow::role, &UserRow::status, &UserRow::version,
-                                              &UserRow::force_password_change, &UserRow::temporary_credential_expires_at,
-                                              &UserRow::failed_login_count, &UserRow::locked_until, &UserRow::password_changed_at,
-                                              &UserRow::disabled_at, &UserRow::authz_version>(user);
+        const auto count =
+            connection_
+                .update<&UserRow::display_name, &UserRow::role_id, &UserRow::role, &UserRow::status, &UserRow::version,
+                        &UserRow::force_password_change, &UserRow::temporary_credential_expires_at, &UserRow::failed_login_count,
+                        &UserRow::locked_until, &UserRow::password_changed_at, &UserRow::disabled_at, &UserRow::authz_version>(
+                    user);
         return written(count == 1 && !connection_.has_error());
     } catch (...)
     {

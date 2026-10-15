@@ -1,5 +1,5 @@
 szx_add_test(NAME test_rbac_auth SOURCES JwtService_test.cc LIBS szx::rbac_auth szx::crypto)
-szx_add_test(NAME test_rbac_infra SOURCES Infrastructure_test.cc HttpTransport_test.cc RestApi_test.cc LoginService_test.cc UserBoundaries_test.cc AuthorizationPolicy_test.cc SystemMetrics_test.cc PermissionManagement_test.cc LIBS szx::rbac_infra szx::rbac_auth szx::network)
+szx_add_test(NAME test_rbac_infra SOURCES Infrastructure_test.cc HttpTransport_test.cc RestApi_test.cc LoginService_test.cc UserBoundaries_test.cc AuthorizationPolicy_test.cc SystemMetrics_test.cc PermissionManagement_test.cc RoleManagement_test.cc LIBS szx::rbac_infra szx::rbac_auth szx::network)
 if(TARGET test_rbac_infra)
     szx_copy_runtime_dlls(test_rbac_infra)
 endif()

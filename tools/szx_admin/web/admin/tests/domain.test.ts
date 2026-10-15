@@ -6,8 +6,12 @@ import {
   manageableRoles,
   passwordProblem,
   redactDetails,
+  roleLabel,
   toUtcSeconds,
 } from '../src/domain'
+it('displays unknown custom role codes without passing missing translation keys', () => {
+  expect(roleLabel('custom_reviewer')).toBe('custom_reviewer')
+})
 it('hashes exact UTF-8 input without trimming', async () => {
   expect(await hashPassword('abc')).toBe(
     'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad',

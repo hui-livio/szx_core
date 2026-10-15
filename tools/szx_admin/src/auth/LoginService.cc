@@ -38,8 +38,8 @@ auto LoginConfig::validate() const -> Result<void>
     if (issuer.empty() || issuer.size() > 256 || audience.empty() || audience.size() > 256 || privateKeyPath.empty() ||
         publicKeyPath.empty() || refreshLifetimeSeconds < 900 || refreshLifetimeSeconds > 2592000 ||
         refreshIdleTimeoutSeconds < 900 || refreshIdleTimeoutSeconds > refreshLifetimeSeconds || failedLoginLimit < 1 ||
-        failedLoginLimit > 100 || lockSeconds < 1 || lockSeconds > 86400 || attemptsPerMinute < 1 ||
-        attemptsPerMinute > 1000 || (allowedOrigin != "*" && !validHttpOrigin(allowedOrigin)))
+        failedLoginLimit > 100 || lockSeconds < 1 || lockSeconds > 86400 || attemptsPerMinute < 1 || attemptsPerMinute > 1000 ||
+        (allowedOrigin != "*" && !validHttpOrigin(allowedOrigin)))
         return failed<void>(ErrorCode::InvalidConfiguration);
     return Result<void>::Success();
 }
@@ -89,8 +89,12 @@ auto LoginService::initialize() -> Result<void>
             return failed<void>(ErrorCode::InvalidConfiguration);
         }
         JwtSigningKey key{id.value, std::move(privateKey.value), std::move(publicKey.value)};
-        const auto probe = jwt_.issue({.subject = "startup", .jti = SZX::COMMON::Uuid::v4().toString(), .authzVersion = 1,
-                                       .roleId = "startup-role", .roleAuthzVersion = 1}, key);
+        const auto probe = jwt_.issue({.subject          = "startup",
+                                       .jti              = SZX::COMMON::Uuid::v4().toString(),
+                                       .authzVersion     = 1,
+                                       .roleId           = "startup-role",
+                                       .roleAuthzVersion = 1},
+                                      key);
         if (!probe.ok || !jwt_.verify(probe.value, key).ok)
         {
             LOGM_ERROR("szx_admin.auth", "event=jwt_probe_failed");
@@ -122,8 +126,7 @@ auto LoginService::initialize() -> Result<void>
     {
         LOGM_ERROR("szx_admin.auth", "event=key_initialization_exception message={}", error.what());
         return failed<void>(ErrorCode::InternalFailure);
-    }
-    catch (...)
+    } catch (...)
     {
         LOGM_ERROR("szx_admin.auth", "event=key_initialization_exception");
         return failed<void>(ErrorCode::InternalFailure);
@@ -139,9 +142,9 @@ auto LoginService::verifyAccess(std::string_view accessToken) -> Result<AccessCl
         const auto claims = jwt_.verify(accessToken);
         if (!claims.ok || claims.value.subject.empty())
             return failed<AccessClaims>(ErrorCode::AuthRequired);
-        return Result<AccessClaims>::Success({.subject = claims.value.subject,
-                                              .authzVersion = claims.value.authzVersion,
-                                              .roleId = claims.value.roleId,
+        return Result<AccessClaims>::Success({.subject          = claims.value.subject,
+                                              .authzVersion     = claims.value.authzVersion,
+                                              .roleId           = claims.value.roleId,
                                               .roleAuthzVersion = claims.value.roleAuthzVersion});
     } catch (...)
     {
@@ -237,7 +240,7 @@ auto LoginService::login(const LoginInput &input) -> Result<LoginSession>
                 const auto found = repository->find(canonicalValue, identifierType);
                 if (!found.ok)
                     return Result<void>::Failure(found.error, {});
-                auto user                = found.value;
+                auto user    = found.value;
                 auto checked = Result<bool>::Success(false);
                 if (user && user->password_hash.starts_with(kPasswordHashPrefix))
                     checked = verifyClientPasswordHash(crypto_, input.passwordHash, user->password_hash);
@@ -306,7 +309,10 @@ auto LoginService::login(const LoginInput &input) -> Result<LoginSession>
                         TimeHelper::TimestampToString(now + static_cast<std::int64_t>(config_.refreshLifetimeSeconds) * 1000),
                         input.peerAddress);
                     if (!issued.ok)
-                        return Result<void>::Failure(issued.error, {});
+                        return Result<void>::Failure(issued.error == static_cast<int>(ErrorCode::AuthRequired) ?
+                                                         static_cast<int>(ErrorCode::AuthInvalidCredentials) :
+                                                         issued.error,
+                                                     {});
                     session = issued.value;
                 }
                 auto audited = audit->append(event);
@@ -327,14 +333,13 @@ auto LoginService::login(const LoginInput &input) -> Result<LoginSession>
             });
         if (!operation.ok)
         {
-            LOGM_DEBUG("szx_admin.auth", "event=login_operation_failed request_id={} code={}", input.requestId,
-                       operation.error);
+            LOGM_DEBUG("szx_admin.auth", "event=login_operation_failed request_id={} code={}", input.requestId, operation.error);
             return Result<LoginSession>::Failure(operation.error, {});
         }
         if (authenticated)
         {
-            LOGM_INFO("szx_admin.auth", "event=login_success request_id={} user_id={} role={}", input.requestId,
-                      session.user.id, session.user.role);
+            LOGM_INFO("szx_admin.auth", "event=login_success request_id={} user_id={} role={}", input.requestId, session.user.id,
+                      session.user.role);
             return Result<LoginSession>::Success(std::move(session));
         }
         LOGM_DEBUG("szx_admin.auth", "event=login_denied request_id={} reason=invalid_credentials", input.requestId);
@@ -343,8 +348,7 @@ auto LoginService::login(const LoginInput &input) -> Result<LoginSession>
     {
         LOGM_ERROR("szx_admin.auth", "event=login_exception request_id={} message={}", input.requestId, error.what());
         return failed<LoginSession>(ErrorCode::InternalFailure);
-    }
-    catch (...)
+    } catch (...)
     {
         LOGM_ERROR("szx_admin.auth", "event=login_exception request_id={}", input.requestId);
         return failed<LoginSession>(ErrorCode::InternalFailure);

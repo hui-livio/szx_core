@@ -3,6 +3,7 @@ import { useAuthStore } from '../../stores/auth'
 import { rbacApi } from '../../api/rbac'
 import { ApiError, errorMessage } from '../../api/client'
 import type { PermissionRecord, RoleRecord } from '../../api/types'
+import { useRoute } from 'vue-router'
 
 export interface RolePermissionView {
   id: string
@@ -12,8 +13,9 @@ export interface RolePermissionView {
 
 export function useRolePermissions() {
   const auth = useAuthStore()
+  const route = useRoute()
   const roles = shallowRef<RoleRecord[]>([])
-  const roleId = ref('')
+  const roleId = ref(typeof route.query.role === 'string' ? route.query.role : '')
   const selectedRole = shallowRef<RoleRecord>()
   const ids = shallowRef<string[]>([])
   const catalog = shallowRef(new Map<string, PermissionRecord>())
@@ -23,7 +25,11 @@ export function useRolePermissions() {
   const detailError = ref('')
   const loading = ref(false)
   const reading = ref(false)
-  const filters = reactive({ search: '', source: '', includeArchived: false })
+  const filters = reactive({
+    search: '',
+    source: '',
+    includeArchived: route.query.archived === 'true',
+  })
   let listEpoch = 0
   let detailEpoch = 0
   let listRequest: AbortController | undefined

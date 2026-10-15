@@ -380,6 +380,46 @@ auto MySqlRoleRepository::manageableRoles(std::string_view managerCode) -> SZX::
     }
 }
 
+auto MySqlRoleRepository::usage(std::string_view roleId) -> SZX::COMMON::Result<std::vector<RBAC::RoleUsage>>
+{
+    try
+    {
+        const auto rows = connection_.query_s<std::tuple<std::string, std::uint64_t, std::uint64_t>>(
+            "SELECT r.id, (SELECT COUNT(*) FROM users u WHERE u.role_id = r.id OR u.role = r.code), "
+            "(SELECT COUNT(*) FROM role_permissions p WHERE p.role_id = r.id) FROM roles r "
+            "WHERE ? = '' OR r.id = ? ORDER BY r.id",
+            std::string{roleId}, std::string{roleId});
+        if (connection_.has_error())
+            return failed<std::vector<RBAC::RoleUsage>>();
+        std::vector<RBAC::RoleUsage> result;
+        for (const auto &[id, users, permissions] : rows)
+            result.push_back({id, users, permissions});
+        return SZX::COMMON::Result<std::vector<RBAC::RoleUsage>>::Success(std::move(result));
+    } catch (...)
+    {
+        return failed<std::vector<RBAC::RoleUsage>>();
+    }
+}
+
+auto MySqlRoleRepository::managerIds(std::string_view roleId) -> SZX::COMMON::Result<std::vector<std::string>>
+{
+    try
+    {
+        const auto rows = connection_.query_s<std::tuple<std::string>>(
+            "SELECT manager_role_id FROM role_manage_scopes WHERE target_role_id = ? ORDER BY manager_role_id",
+            std::string{roleId});
+        if (connection_.has_error())
+            return failed<std::vector<std::string>>();
+        std::vector<std::string> result;
+        for (const auto &row : rows)
+            result.push_back(std::get<0>(row));
+        return SZX::COMMON::Result<std::vector<std::string>>::Success(std::move(result));
+    } catch (...)
+    {
+        return failed<std::vector<std::string>>();
+    }
+}
+
 auto MySqlRoleRepository::removeTargetScopes(std::string_view roleId) -> SZX::COMMON::Result<void>
 {
     try
@@ -399,7 +439,7 @@ auto MySqlRoleRepository::bumpManagerAuthzVersions(std::string_view roleId) -> S
     {
         return connection_.execute(
                    "UPDATE roles r JOIN role_manage_scopes s ON s.manager_role_id = r.id SET r.version = r.version + 1, r.authz_version = r.authz_version + 1 WHERE s.target_role_id = '" +
-                   std::string{roleId} + "'") ?
+                   std::string{roleId} + "' AND r.id <> '" + std::string{roleId} + "'") ?
             SZX::COMMON::Result<void>::Success() :
             failed<void>();
     } catch (...)

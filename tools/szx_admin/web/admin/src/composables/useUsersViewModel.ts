@@ -14,6 +14,9 @@ export type UserRowView = User & {
   canManage: boolean
   canAssignRole: boolean
   canChangeStatus: boolean
+  canUpdate: boolean
+  canUnlock: boolean
+  canReset: boolean
 }
 export interface UserDraft {
   identity: string
@@ -30,6 +33,15 @@ export const actionLabels: Record<UserAction, string> = {
   status: 'users.statusAction',
   unlock: 'users.unlockAction',
   reset: 'users.resetAction',
+}
+const actionCapabilities: Record<UserAction, string> = {
+  create: 'user.create',
+  details: 'user.read',
+  name: 'user.update',
+  role: 'user.role.assign',
+  status: 'user.status',
+  unlock: 'user.unlock',
+  reset: 'user.password.reset',
 }
 
 export function useUsersViewModel() {
@@ -63,13 +75,14 @@ export function useUsersViewModel() {
     password: '',
     confirmation: '',
   })
-  const roles = computed(() => manageableRoles(auth.user?.role))
+  const roles = computed(
+    () => auth.permissions?.manageable_roles ?? manageableRoles(auth.user?.role),
+  )
+  const assignmentRoles = computed(() => auth.permissions?.assignable_roles ?? roles.value)
   const passwordHint = computed(
     () => passwordPolicy(action.value === 'reset' ? selected.value?.role : draft.role).hint,
   )
-  const canAssignRole = computed(
-    () => auth.user?.role === 'admin' || auth.user?.role === 'super_admin',
-  )
+  const canAssignRole = computed(() => auth.can('user.role.assign'))
   const users = computed<UserRowView[]>(() =>
     query.items.value.map((user) => {
       const canManage = roles.value.includes(user.role)
@@ -78,7 +91,10 @@ export function useUsersViewModel() {
         ...user,
         canManage,
         canAssignRole: canManage && canAssignRole.value && !isSelf,
-        canChangeStatus: canManage && !isSelf,
+        canChangeStatus: canManage && !isSelf && auth.can('user.status'),
+        canUpdate: canManage && auth.can('user.update'),
+        canUnlock: canManage && auth.can('user.unlock'),
+        canReset: canManage && auth.can('user.password.reset'),
       }
     }),
   )
@@ -101,7 +117,7 @@ export function useUsersViewModel() {
     }
   }
   function open(next: UserAction, user?: User) {
-    if (mutation.busy.value) return
+    if (mutation.busy.value || !auth.can(actionCapabilities[next])) return
     clearPassword()
     action.value = next
     selected.value = user ?? null
@@ -109,7 +125,9 @@ export function useUsersViewModel() {
     conflict.value = false
     draft.identity = ''
     draft.displayName = user?.display_name ?? ''
-    draft.role = user?.role ?? 'operator'
+    draft.role =
+      user?.role ??
+      (assignmentRoles.value.includes('operator') ? 'operator' : (assignmentRoles.value[0] ?? ''))
     if (user) void reloadSelected()
   }
   const reloadSelected = () =>
@@ -144,6 +162,7 @@ export function useUsersViewModel() {
       try {
         const operation = action.value
         if (!operation || operation === 'details') return
+        if (!auth.can(actionCapabilities[operation])) throw new ApiError(2204)
         let changed: User
         let requestId: string
         if (operation === 'create') {
@@ -152,7 +171,7 @@ export function useUsersViewModel() {
             throw new Error(translate('errors.identityLength'))
           if (!draft.displayName.trim() || [...draft.displayName].length > 128)
             throw new Error(translate('errors.displayNameLength'))
-          if (!roles.value.includes(draft.role))
+          if (!assignmentRoles.value.includes(draft.role))
             throw new Error(translate('errors.invalidRoleCreate'))
           const passwordHash = await draftPasswordHash(draft.role)
           const response = await adminApi.create({
@@ -173,7 +192,10 @@ export function useUsersViewModel() {
             throw new Error(
               translate(operation === 'role' ? 'errors.selfRole' : 'errors.selfDisable'),
             )
-          if (operation === 'role' && (!canAssignRole.value || !roles.value.includes(draft.role)))
+          if (
+            operation === 'role' &&
+            (!canAssignRole.value || !assignmentRoles.value.includes(draft.role))
+          )
             throw new Error(translate('errors.roleForbidden'))
           if (operation === 'reset') {
             const response = await adminApi.resetPassword(user, await draftPasswordHash(user.role))
@@ -227,8 +249,10 @@ export function useUsersViewModel() {
     conflict,
     draft,
     roles,
+    assignmentRoles,
     passwordHint,
     canAssignRole,
+    canCreate: computed(() => auth.can('user.create')),
     dialogTitle,
     targetStatus,
     search,
