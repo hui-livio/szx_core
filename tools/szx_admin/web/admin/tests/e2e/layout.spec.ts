@@ -399,7 +399,7 @@ test('Aura follows Lumina dark mode in teleported dropdowns and dialogs', async 
   const dialog = page.getByRole('dialog')
   await expect(dialog).toBeVisible()
   expect(
-    await dialog.evaluate((element) => ({
+    await dialog.locator('.lumina-dialog-panel').evaluate((element) => ({
       background: getComputedStyle(element).backgroundColor,
       color: getComputedStyle(element).color,
     })),
@@ -769,7 +769,7 @@ for (const theme of ['light', 'dark']) {
     )
     await page.getByRole('button', { name: '创建用户' }).click()
     const dialog = page.getByRole('dialog')
-    const surface = await dialog.evaluate((element) => {
+    const surface = await dialog.locator('.lumina-dialog-panel').evaluate((element) => {
       const style = getComputedStyle(element)
       return {
         background: style.backgroundColor,
@@ -847,7 +847,10 @@ test('shared popup surfaces remain opaque when runtime component tokens are unav
     document.querySelector('style[data-primevue-style-id="dialog-variables"]')?.remove()
   })
   expect(
-    await page.getByRole('dialog').evaluate((element) => getComputedStyle(element).backgroundColor),
+    await page
+      .getByRole('dialog')
+      .locator('.lumina-dialog-panel')
+      .evaluate((element) => getComputedStyle(element).backgroundColor),
   ).toBe('rgb(255, 255, 255)')
 })
 

@@ -293,3 +293,17 @@ test('disabled custom permission can be unbound and archived without ever re-ena
   expect(state.writes.filter((write) => write.path.endsWith('/status'))).toEqual([])
   await expect(page.getByRole('row').filter({ hasText: 'report.view' })).toHaveCount(0)
 })
+
+test('permission dialogs share Escape dismissal and return focus to the opening action', async ({
+  page,
+}) => {
+  await setup(page)
+  await navigate(page)
+  const opener = page.getByRole('button', { name: '新增权限', exact: false })
+  await opener.click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByLabel('权限代码', { exact: true }).fill('discard.by_escape')
+  await page.keyboard.press('Escape')
+  await expect(dialog).toHaveCount(0)
+  await expect(opener).toBeFocused()
+})

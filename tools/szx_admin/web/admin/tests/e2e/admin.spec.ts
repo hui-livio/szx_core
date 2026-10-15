@@ -706,3 +706,66 @@ test('behavior event dropdown offers returned codes and still accepts custom sea
   await page.getByRole('tab', { name: '安全审计' }).click()
   await expect(page.getByRole('combobox', { name: '事件名称', exact: true })).toHaveValue('')
 })
+
+test('user editor opened while loading can dismiss with Escape after the read completes', async ({
+  page,
+}) => {
+  await mockApi(page)
+  await login(page)
+  let release!: () => void
+  const pending = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  await page.route(`**/api/v1/admin/users/${baseUser.id}`, async (route) => {
+    await pending
+    await route.fallback()
+  })
+  const opener = page.getByRole('button', { name: '编辑', exact: true }).first()
+  await opener.click()
+  const dialog = page.getByRole('dialog')
+  try {
+    await expect(dialog).toHaveAttribute('aria-busy', 'true')
+    await page.keyboard.press('Escape')
+    await expect(dialog).toBeVisible()
+  } finally {
+    release()
+  }
+  await expect(dialog).toHaveAttribute('aria-busy', 'false')
+  await dialog.getByLabel('展示名', { exact: true }).focus()
+  await page.keyboard.press('Escape')
+  await expect(dialog).toHaveCount(0)
+  await expect(opener).toBeFocused()
+})
+
+test('audit and behavior details consistently dismiss with Escape and restore focus', async ({
+  page,
+}) => {
+  await mockApi(page)
+  await login(page)
+  await page.getByRole('link', { name: '审计日志', exact: true }).click()
+  for (const tab of ['安全审计', '用户行为']) {
+    await page.getByRole('tab', { name: tab, exact: true }).click()
+    const opener = page.getByRole('button', { name: '查看详情', exact: true }).first()
+    await opener.click()
+    const dialog = page.getByRole('dialog')
+    await expect(dialog.locator('.lumina-dialog-panel')).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(dialog).toHaveCount(0)
+    await expect(opener).toBeFocused()
+  }
+})
+
+test('Escape closes a temporary-credential notice and clears the one-time secret', async ({
+  page,
+}) => {
+  await mockApi(page)
+  await login(page)
+  await page.getByRole('button', { name: '创建用户' }).click()
+  await page.getByLabel('登录标识', { exact: true }).fill('esc-user')
+  await page.getByLabel('展示名', { exact: true }).fill('Escape user')
+  await page.getByRole('button', { name: '确认', exact: true }).click()
+  await expect(page.getByTestId('temporary-credential')).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await expect(page.getByTestId('temporary-credential')).toHaveCount(0)
+})

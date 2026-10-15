@@ -306,10 +306,23 @@
 
 .p-dialog.lumina-dialog {
   color: var(--text);
-  background: var(--surface);
-  border: 1px solid var(--lg-line);
+  background: transparent;
+  border: 0;
   border-radius: var(--lg-r-4xl);
-  box-shadow: var(--lg-sh-card);
+  box-shadow: none;
+}
+
+.lumina-dialog-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: inherit;
+  border-color: var(--lg-line);
+}
+
+.lumina-dialog-panel > .p-dialog-header,
+.lumina-dialog-panel > .p-dialog-footer {
+  flex-shrink: 0;
 }
 
 .p-dialog.lumina-dialog .p-dialog-header {
@@ -317,6 +330,9 @@
 }
 
 .p-dialog.lumina-dialog .p-dialog-content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
   padding: 0 var(--lg-s12) var(--lg-s12);
 }
 

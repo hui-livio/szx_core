@@ -13,6 +13,8 @@ const { t } = useI18n()
     :close-label="t('common.close')"
     @close="emit('close')"
   >
+    <template v-if="$slots.header" #header><slot name="header" /></template>
     <slot />
+    <template v-if="$slots.footer" #footer><slot name="footer" /></template>
   </LuminaDialog>
 </template>

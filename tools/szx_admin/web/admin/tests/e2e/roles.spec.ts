@@ -468,3 +468,26 @@ test('mobile role table scrolls internally and role metadata failures block writ
     page.getByRole('dialog').getByRole('button', { name: '确认', exact: true }),
   ).toBeDisabled()
 })
+
+test('role editor uses the common Escape close path without bypassing unsaved-change protection', async ({
+  page,
+}) => {
+  await setup(page)
+  await openRoles(page)
+  const opener = row(page).getByRole('button', { name: '编辑', exact: true })
+  await opener.click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog.getByLabel('角色名称', { exact: true })).toHaveValue('审核员')
+  await page.keyboard.press('Escape')
+  await expect(dialog).toHaveCount(0)
+  await expect(opener).toBeFocused()
+  await opener.click()
+  await dialog.getByLabel('角色名称', { exact: true }).fill('未保存的角色名')
+  await page.keyboard.press('Escape')
+  await expect(dialog.getByText('存在未保存修改，确定放弃并离开？')).toBeVisible()
+  await dialog.getByRole('button', { name: '继续编辑', exact: true }).click()
+  await expect(dialog.getByLabel('角色名称', { exact: true })).toHaveValue('未保存的角色名')
+  await page.keyboard.press('Escape')
+  await dialog.getByRole('button', { name: '放弃修改', exact: true }).click()
+  await expect(dialog).toHaveCount(0)
+})

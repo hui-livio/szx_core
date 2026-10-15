@@ -31,6 +31,13 @@ const submissions = ref(0)
 const date = ref('')
 const page = ref(1)
 const open = ref(false)
+const nestedOpen = ref(false)
+const dialogText = ref('')
+const dialogChoice = ref('blue')
+const dialogEditable = ref('')
+const dialogDate = ref('')
+const dialogMenu = ref<InstanceType<typeof LuminaPopupMenu>>()
+const dialogMenuOpen = ref(false)
 const busy = ref(false)
 const options = [
   { value: 'blue', label: 'Blue' },
@@ -198,6 +205,48 @@ const rows = [
       @close="open = false"
     >
       <p>Business-independent dialog content</p>
+      <LuminaInput v-model="dialogText" aria-label="Dialog text" />
+      <LuminaSelect
+        v-model="dialogChoice"
+        :options="options"
+        option-label="label"
+        option-value="value"
+        aria-label="Dialog choice"
+      />
+      <LuminaSelect
+        v-model="dialogEditable"
+        :options="options"
+        option-label="label"
+        option-value="value"
+        editable
+        aria-label="Dialog editable choice"
+      />
+      <LuminaDateTimePicker v-model="dialogDate" label="Dialog date" invalid-text="Invalid date" />
+      <LuminaButton
+        label="Dialog popup"
+        @click="dialogMenu?.toggle($event)"
+        aria-haspopup="menu"
+        aria-controls="fixture-dialog-menu"
+        :aria-expanded="dialogMenuOpen"
+      />
+      <LuminaPopupMenu
+        ref="dialogMenu"
+        id="fixture-dialog-menu"
+        aria-label="Dialog popup"
+        :model="[{ label: 'Dialog action' }]"
+        @show="dialogMenuOpen = true"
+        @hide="dialogMenuOpen = false"
+      />
+      <LuminaButton label="Toggle dialog busy" @click="busy = !busy" />
+      <LuminaButton label="Open nested dialog" @click="nestedOpen = true" />
+      <LuminaDialog
+        v-if="nestedOpen"
+        title="Nested dialog"
+        close-label="Close nested"
+        @close="nestedOpen = false"
+      >
+        <LuminaInput v-model="dialogText" aria-label="Nested text" />
+      </LuminaDialog>
       <template #footer><span data-testid="dialog-footer">Custom footer slot</span></template>
     </LuminaDialog>
   </main>

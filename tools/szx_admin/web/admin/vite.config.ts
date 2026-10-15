@@ -18,6 +18,20 @@ export default defineConfig(({ mode, command }) => {
         },
       },
     ],
+    build: {
+      rolldownOptions: {
+        output: {
+          codeSplitting: {
+            groups: [
+              // Keep the renderer separate from ECharts so the lazy metrics
+              // route does not combine both libraries into one oversized chunk.
+              { name: 'chart-renderer', test: /[\\/]node_modules[\\/]zrender[\\/]/, priority: 20 },
+              { name: 'charts', test: /[\\/]node_modules[\\/]echarts[\\/]/, priority: 10 },
+            ],
+          },
+        },
+      },
+    },
     server: {
       host: 'localhost',
       port: 5173,
