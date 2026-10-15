@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
+import { expectHeaderAboveRowControls } from './table'
 import type { RoleRecord } from '../../src/api/types'
 
 const rights = [
@@ -14,7 +15,7 @@ const rights = [
   'user.create',
   'user.role.assign',
 ]
-async function setup(page: Page, capabilities = rights, actorRole = 'super_admin') {
+async function setup(page: Page, capabilities = rights, actorRole = 'super_admin', extraRows = 0) {
   let activeCapabilities = [...capabilities]
   let expiredRead = false
   const writes: { method: string; path: string; data: unknown; version?: string }[] = []
@@ -72,6 +73,9 @@ async function setup(page: Page, capabilities = rights, actorRole = 'super_admin
       manageable: true,
     },
   ]
+  for (let i = 0; i < extraRows; i++) {
+    rows.push({ ...rows[1]!, id: `extra-${i}`, code: `extra_${i}`, name: `额外角色 ${i}` })
+  }
   const assignments: Record<string, string[]> = {
     root: ['system'],
     viewer: ['system', 'disabled', 'unknown'],
@@ -491,3 +495,19 @@ test('role editor uses the common Escape close path without bypassing unsaved-ch
   await dialog.getByRole('button', { name: '放弃修改', exact: true }).click()
   await expect(dialog).toHaveCount(0)
 })
+
+for (const width of [1440, 390]) {
+  test(`role actions scroll behind the header at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 844 })
+    await setup(page, rights, 'super_admin', 20)
+    await page.locator('.sidebar nav a[href="/roles"]').click()
+    const table = page.locator('.roles-page .table-scroll')
+    await expect(table.locator('tbody tr')).toHaveCount(24)
+    for (const theme of ['light', 'dark']) {
+      await page.evaluate((theme) => {
+        document.documentElement.dataset.theme = theme
+      }, theme)
+      await expectHeaderAboveRowControls(table)
+    }
+  })
+}

@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
+import { expectHeaderAboveRowControls } from './table'
 import type { PermissionRecord, RoleRecord } from '../../src/api/types'
 
 const builtIn: PermissionRecord = {
@@ -25,11 +26,20 @@ const custom: PermissionRecord = {
   required_for_super_admin: false,
   version: 1,
 }
-async function setup(page: Page, allow = true, readOnly = false, disabledBinding = false) {
+async function setup(
+  page: Page,
+  allow = true,
+  readOnly = false,
+  disabledBinding = false,
+  extraRows = 0,
+) {
   let items: PermissionRecord[] = [
     { ...builtIn },
     { ...custom, status: disabledBinding ? 'disabled' : 'active' },
   ]
+  for (let i = 0; i < extraRows; i++) {
+    items.unshift({ ...custom, id: `scroll-${i}`, code: `scroll.item_${i}` })
+  }
   if (disabledBinding)
     items.push({
       ...custom,
@@ -307,3 +317,19 @@ test('permission dialogs share Escape dismissal and return focus to the opening 
   await expect(dialog).toHaveCount(0)
   await expect(opener).toBeFocused()
 })
+
+for (const width of [1440, 390]) {
+  test(`permission actions scroll behind the header at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 844 })
+    await setup(page, true, false, false, 22)
+    await navigate(page)
+    const table = page.locator('.permissions-page .table-scroll')
+    await expect(table.locator('tbody tr')).toHaveCount(24)
+    for (const theme of ['light', 'dark']) {
+      await page.evaluate((theme) => {
+        document.documentElement.dataset.theme = theme
+      }, theme)
+      await expectHeaderAboveRowControls(table)
+    }
+  })
+}

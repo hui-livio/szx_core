@@ -1,4 +1,5 @@
 import { chooseOption } from './select'
+import { expectHeaderAboveRowControls } from './table'
 import { test, expect, type Locator, type Page } from '@playwright/test'
 
 // Layout checks must exercise visible native scrollbars, including in headless Chromium.
@@ -806,6 +807,30 @@ test('primary actions keep the brand gradient across login, users, dialogs and l
   await page.getByRole('tab', { name: '用户行为' }).click()
   await gradient(page.getByRole('button', { name: '查询事件', exact: true }))
 })
+
+for (const viewport of [
+  { width: 1440, height: 900 },
+  { width: 390, height: 844 },
+]) {
+  for (const theme of ['light', 'dark']) {
+    test(`editable user actions stay behind the sticky table header at ${viewport.width}px in ${theme} theme`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(viewport)
+      await signInWithRows(page)
+      await page.evaluate((theme) => {
+        document.documentElement.dataset.theme = theme
+      }, theme)
+      await expectHeaderAboveRowControls(page.locator('.users-page .table-scroll'))
+      await page.locator('.sidebar a[href="/logs"]').click()
+      await expect(page.locator('.logs-page .table-scroll tbody tr')).toHaveCount(20)
+      await expectHeaderAboveRowControls(page.locator('.logs-page .table-scroll'))
+      await page.getByRole('tab', { name: '用户行为', exact: true }).click()
+      await expect(page.locator('.logs-page .table-scroll tbody tr')).toHaveCount(20)
+      await expectHeaderAboveRowControls(page.locator('.logs-page .table-scroll'))
+    })
+  }
+}
 
 test('shared popup surfaces remain opaque when runtime component tokens are unavailable', async ({
   page,

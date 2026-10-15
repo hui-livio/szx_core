@@ -294,6 +294,14 @@
   border-bottom: 1px solid var(--line);
 }
 
+/* PrimeVue already positions the header group. Keep the group, rather than
+   individual cells, above relative-positioned row buttons while scrolling. */
+.lumina-table .table-scroll > .p-datatable-table > .p-datatable-thead {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
 .lumina-table .p-datatable-tbody > tr > td {
   padding: var(--lg-s7) var(--lg-s9);
   border: 0;

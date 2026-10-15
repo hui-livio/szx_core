@@ -333,13 +333,6 @@
     overscroll-behavior: contain;
   }
 
-  .data-page .table-scroll th {
-    position: sticky;
-    top: 0;
-    z-index: 1;
-    background: var(--table-header-background);
-  }
-
   .log-tabs button {
     border-color: transparent;
     background: transparent;

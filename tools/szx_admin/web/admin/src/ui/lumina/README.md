@@ -88,6 +88,8 @@ const options = [
 
 `LuminaTable` 保留 DataTable 的属性、事件和插槽，默认最小表格宽度为 0，可用 `min-width` 指定数值像素或 CSS 长度。通用外观限定于 `.lumina-table`，不会覆盖日历表格。表格如何撑满工作区、分页/排序是否走服务端，由应用决定。
 
+业务滚动表格通过 `tableContainer` 添加 `table-scroll` 类时，公共样式统一将整个 `thead` 固定在滚动容器顶部并设置层级，遮住滚动到表头后方的行内按钮；调用方不要再对 `th` 单独设置 sticky，避免嵌套定位和按钮覆盖表头。
+
 `LuminaColumn` 是 PrimeVue Column 的导出别名，不增加渲染包装：它是配置节点，需要保留原生身份，保证 DataTable 的列发现、注入和 body 插槽正常工作。业务行类型和字段内容不属于 UI 模块。
 
 ## 对话框与分页
