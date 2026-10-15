@@ -201,6 +201,7 @@ export default {
   language: { switch: 'Switch language', current: 'Language' },
   shell: {
     ...zh.shell,
+    accountMenu: 'Account menu',
     identityManagement: 'Identity & access management',
     adminConsole: 'Admin console',
     mainNavigation: 'Main navigation',

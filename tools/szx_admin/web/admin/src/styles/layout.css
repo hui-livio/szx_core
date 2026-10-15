@@ -31,6 +31,10 @@
   overflow-y: auto;
 }
 
+#mobile-topbar {
+  display: none;
+}
+
 .brand {
   display: flex;
   align-items: center;
@@ -180,12 +184,14 @@
   --lumina-edge-color: var(--lg-line);
   box-shadow: var(--lumina-edge-shadow);
   border-radius: var(--lg-r-full);
-  padding: 0 var(--lg-s4);
+  padding: 0;
 }
 
 .language-switcher .p-select {
-  min-width: calc(var(--k) * 86px);
-  width: calc(var(--k) * 86px);
+  min-width: var(--lg-control-px, var(--lg-h-ctrl));
+  min-height: var(--lg-control-px, var(--lg-h-ctrl));
+  width: var(--lg-control-px, var(--lg-h-ctrl));
+  height: var(--lg-control-px, var(--lg-h-ctrl));
   flex: none;
   padding: 0;
   color: var(--text);
@@ -215,20 +221,24 @@
 }
 
 .language-switcher .p-select-label {
-  padding: var(--lg-s3) var(--lg-s2) var(--lg-s3) 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: stretch;
+  padding: 0;
   font-size: var(--lg-fs-2xs);
   outline: none;
 }
 
+.language-switcher .language-value,
 .language-switcher .p-select-dropdown {
-  width: var(--lg-s9);
+  display: none;
 }
 
-.language-icon {
-  flex-shrink: 0;
-  white-space: nowrap;
-  font-weight: var(--lg-fw-b);
-  letter-spacing: -1px;
+.language-button-icon {
+  display: block;
+  width: var(--lg-icon-px, var(--lg-ico-lg));
+  height: var(--lg-icon-px, var(--lg-ico-lg));
 }
 
 .account small {
@@ -446,6 +456,24 @@
     padding: var(--lg-s7);
   }
 
+  .sidebar-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--lg-s5);
+  }
+
+  .sidebar-header .brand {
+    flex-shrink: 0;
+  }
+
+  #mobile-topbar {
+    display: block;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
   .nav-label,
   .sidebar-bottom {
     display: none;
@@ -466,9 +494,17 @@
   }
 
   .topbar {
-    min-height: calc(var(--k) * 68px);
-    margin-top: var(--lg-s5);
-    justify-content: flex-start;
+    min-height: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    justify-content: flex-end;
+  }
+
+  .topbar .account {
+    justify-content: flex-end;
+    gap: var(--lg-s3);
   }
 
   .main {

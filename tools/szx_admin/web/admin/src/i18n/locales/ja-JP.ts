@@ -201,6 +201,7 @@ export default {
 
   shell: {
     ...zh.shell,
+    accountMenu: 'アカウントメニュー',
     identityManagement: 'ID・アクセス管理',
     adminConsole: '管理コンソール',
     mainNavigation: 'メインナビゲーション',

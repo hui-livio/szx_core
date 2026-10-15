@@ -184,6 +184,7 @@ export default {
   },
   language: { switch: '切换语言', current: '语言' },
   shell: {
+    accountMenu: '账号菜单',
     identityManagement: '身份与访问管理',
     adminConsole: '管理控制台',
     mainNavigation: '主导航',

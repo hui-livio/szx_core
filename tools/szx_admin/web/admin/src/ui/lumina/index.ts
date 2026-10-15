@@ -1,5 +1,6 @@
 export { default as LuminaButton } from './components/LuminaButton.vue'
 export { default as LuminaInput } from './components/LuminaInput.vue'
+export { default as LuminaPopupMenu } from './components/LuminaPopupMenu.vue'
 export { default as LuminaSelect } from './components/LuminaSelect.vue'
 export { default as LuminaTable } from './components/LuminaTable.vue'
 // Column is configuration, not a rendered control. Preserve its native identity

@@ -190,9 +190,15 @@ npm run format:check
 <LuminaMark text="超" variant="brand" :size="36" radius="50%" :font-size="16" :font-weight="500" />
 ```
 
-未提供 label 时是装饰元素；提供 label 时使用 img 语义供辅助技术读取。当前登录页、侧栏 S 标记和顶部用户标记都复用它；应用中的用户头像同样使用 brand 渐变与白色文字，仅尺寸与圆角不同。
+所有标记默认禁止选中文本。`interactive` 默认 `false`：未提供 label 时是装饰元素；提供 label 时使用 img 语义供辅助技术读取。显式设置 `interactive` 时复用 `LuminaButton`，提供原生按钮点击、Enter/Space、hover 边框和 focus-visible 聚焦反馈；此时必须提供 label 作为按钮名称，可用 `disabled` 禁用。当前登录页、侧栏 S 标记和顶部用户标记都复用它；应用中的用户头像同样使用 brand 渐变与白色文字，仅尺寸与圆角不同。
 
 圆形外观开关的尺寸及 SVG viewport 通过 `useLuminaScale()` 对齐物理像素；使用柔和内描边、geometricPrecision 与不随缩放改变宽度的圆角 SVG 描线，降低小尺寸/非整数显示缩放下的硬边锯齿。明暗 hover、active 和 soft 表面使用语义化 token，应用不直接复用浅色底色。
+
+## 吸附弹出菜单
+
+`LuminaPopupMenu` 复用 PrimeVue Menu 的键盘导航、外部点击关闭与视口避让，接收只读 `model`（MenuItem 数组），通过组件引用调用 `toggle(event)` / `show(event)` / `hide()`。使用者负责提供可访问的菜单名称及触发按钮的 `aria-haspopup`、`aria-controls`、`aria-expanded`。
+
+菜单和 `LuminaSelect` 在完成定位后共用轻量三角：7px 缩放尺寸、圆润尖角、与面板一致的底色及描边，6px 缩放间距；默认弹层和三角均相对触发控件水平居中；只有居中会超出视口安全边距时才偏移弹层，三角仍尽量对齐按钮中心，靠近圆角时保留安全内缩。三角随上翻/下翻切换方向。选项滚动区独立裁剪，避免三角或原生滚动条破坏圆角。
 
 ## 柔化交互描边
 

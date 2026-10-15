@@ -206,6 +206,7 @@ export default {
   language: { switch: 'Changer de langue', current: 'Langue' },
   shell: {
     ...en.shell,
+    accountMenu: 'Menu du compte',
     identityManagement: 'Gestion des identités et des accès',
     adminConsole: 'Console d’administration',
     mainNavigation: 'Navigation principale',

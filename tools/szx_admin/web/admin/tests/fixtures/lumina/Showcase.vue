@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import {
   LuminaButton,
   LuminaMark,
+  LuminaPopupMenu,
   LuminaPanel,
   LuminaCard,
   LuminaCardGrid,
@@ -22,6 +23,8 @@ useLuminaScale()
 const gridCount = ref(7)
 const gridNarrow = ref(false)
 const name = ref('')
+const markClicks = ref(0)
+const popup = ref<InstanceType<typeof LuminaPopupMenu>>()
 const colour = ref('blue')
 const customChoice = ref('')
 const submissions = ref(0)
@@ -44,6 +47,30 @@ const rows = [
     <h1>Standalone Lumina controls</h1>
     <LuminaMark label="Reusable S mark" :size="48" :radius="6" :font-size="24" :font-weight="400" />
     <LuminaMark label="Reusable user mark" text="U" variant="soft" :size="48" radius="50%" />
+    <LuminaMark
+      label="Interactive brand mark"
+      interactive
+      :size="32"
+      radius="50%"
+      :disabled="busy"
+      @click="markClicks++"
+    />
+    <LuminaMark
+      label="Interactive soft mark"
+      interactive
+      variant="soft"
+      :size="32"
+      radius="50%"
+      @click="markClicks++"
+    />
+    <LuminaMark label="Disabled mark" interactive disabled :size="32" @click="markClicks++" />
+    <output data-testid="mark-clicks">{{ markClicks }}</output>
+    <LuminaButton label="Open popup menu" @click="popup?.toggle($event)" />
+    <LuminaPopupMenu
+      ref="popup"
+      aria-label="Reusable popup menu"
+      :model="[{ label: 'Popup action', command: () => markClicks++ }]"
+    />
     <LuminaPanel data-testid="glass-panel" :radius="18" :padding="16"
       ><p>Reusable glass panel slot</p></LuminaPanel
     >

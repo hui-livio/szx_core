@@ -90,6 +90,75 @@ test('shared logo and user marks honor size and configurable radius', async ({ p
   ).toBe('500')
 })
 
+test('marks are non-selectable and button interaction is disabled by default', async ({ page }) => {
+  await page.goto(fixture)
+  for (const label of ['Reusable S mark', 'Reusable user mark']) {
+    const mark = page.getByRole('img', { name: label })
+    expect(
+      await mark.evaluate((element) => ({
+        tag: element.tagName,
+        selectable: getComputedStyle(element).userSelect,
+      })),
+    ).toEqual({ tag: 'SPAN', selectable: 'none' })
+    await expect(page.getByRole('button', { name: label, exact: true })).toHaveCount(0)
+  }
+  for (const label of ['Interactive brand mark', 'Interactive soft mark']) {
+    const mark = page.getByRole('button', { name: label, exact: true })
+    expect(
+      await mark.evaluate((element) => ({
+        width: element.getBoundingClientRect().width,
+        height: element.getBoundingClientRect().height,
+        selectable: getComputedStyle(element).userSelect,
+      })),
+    ).toEqual({ width: 32, height: 32, selectable: 'none' })
+    const before = await mark.evaluate((element) => ({
+      border: getComputedStyle(element).borderColor,
+      shadow: getComputedStyle(element).boxShadow,
+    }))
+    await mark.hover()
+    const hover = await mark.evaluate((element) => ({
+      border: getComputedStyle(element).borderColor,
+      shadow: getComputedStyle(element).boxShadow,
+    }))
+    expect(hover).not.toEqual(before)
+    await mark.focus()
+    await mark.press('Enter')
+    await mark.press('Space')
+  }
+  await expect(page.getByTestId('mark-clicks')).toHaveText('4')
+  await expect(page.getByRole('button', { name: 'Disabled mark', exact: true })).toBeDisabled()
+})
+
+for (const side of ['bottom', 'top'] as const) {
+  test(`reusable popup arrow follows viewport collision placement: ${side}`, async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.goto(fixture)
+    const trigger = page.getByRole('button', { name: 'Open popup menu', exact: true })
+    await trigger.evaluate((element, side) => {
+      Object.assign((element as HTMLElement).style, {
+        position: 'fixed',
+        right: '12px',
+        top: side === 'top' ? 'auto' : '12px',
+        bottom: side === 'top' ? '12px' : 'auto',
+        zIndex: '10',
+      })
+    }, side)
+    await trigger.click()
+    const popup = page.locator('.lumina-popup-menu')
+    await expect(popup).toHaveAttribute('data-side', side)
+    const bounds = await popup.boundingBox()
+    expect(bounds!.x).toBeGreaterThanOrEqual(0)
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(390)
+    expect(await popup.evaluate((element) => getComputedStyle(element, '::before').content)).toBe(
+      '""',
+    )
+    await page.keyboard.press('ArrowDown')
+    await page.keyboard.press('Enter')
+    await expect(page.getByTestId('mark-clicks')).toHaveText('1')
+    await expect(popup).toHaveCount(0)
+  })
+}
+
 test('generic panels switch glass effects without resizing and keep solid surfaces opaque', async ({
   page,
 }) => {

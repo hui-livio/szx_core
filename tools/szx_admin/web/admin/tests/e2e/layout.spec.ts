@@ -96,7 +96,8 @@ async function expectOnlyTableToScroll(page: Page) {
   const topGap = await page.locator('.page-heading').evaluate((element) => {
     return (
       element.getBoundingClientRect().top -
-      document.querySelector('.topbar')!.getBoundingClientRect().bottom
+      document.querySelector(innerWidth <= 720 ? '.sidebar' : '.topbar')!.getBoundingClientRect()
+        .bottom
     )
   })
   expect(topGap).toBeLessThan(24)
@@ -166,11 +167,163 @@ for (const viewport of [
   })
 }
 
+for (const width of [320, 390, 701, 720]) {
+  test(`narrow header contains account actions and an icon language menu at ${width}px`, async ({
+    page,
+  }) => {
+    const errors: string[] = []
+    page.on('pageerror', (error) => errors.push(error.message))
+    await page.setViewportSize({ width, height: 844 })
+    await signInWithRows(page)
+    const header = page.locator('.sidebar-header')
+    const topbar = header.locator('.topbar')
+    await expect(topbar).toBeVisible()
+    await expect(page.locator('.workspace > .topbar')).toHaveCount(0)
+    await expect(header.locator('.avatar')).toBeVisible()
+    await expect(header.getByRole('link', { name: '修改密码', exact: true })).toHaveCount(0)
+    await expect(header.getByRole('button', { name: '退出', exact: true })).toHaveCount(0)
+    await expect(header.getByRole('button', { name: '账号菜单', exact: true })).toBeVisible()
+    const bounds = await header.evaluate((element) => {
+      const brand = element.querySelector('.brand')!.getBoundingClientRect()
+      const actions = element.querySelector('.topbar')!.getBoundingClientRect()
+      const navigation = document.querySelector('.sidebar nav')!.getBoundingClientRect()
+      return { brand: brand.toJSON(), actions: actions.toJSON(), navigation: navigation.toJSON() }
+    })
+    expect(bounds.actions.bottom).toBeLessThanOrEqual(bounds.navigation.top)
+    if (width >= 701) {
+      expect(bounds.actions.left).toBeGreaterThan(bounds.brand.right)
+      expect(
+        Math.abs(
+          (bounds.actions.top + bounds.actions.bottom) / 2 -
+            (bounds.brand.top + bounds.brand.bottom) / 2,
+        ),
+      ).toBeLessThan(2)
+    }
+    if (width === 701) {
+      await page.screenshot({ path: 'test-results/narrow-header.png' })
+    }
+    const language = header.locator('.language-switcher').getByRole('combobox')
+    await expect(language.locator('.language-button-icon')).toBeVisible()
+    await expect(language.locator('.language-value')).toBeHidden()
+    await expect(header.locator('.language-icon')).toBeHidden()
+    const size = await header.locator('.language-switcher .p-select').boundingBox()
+    expect(Math.abs(size!.width - size!.height)).toBeLessThanOrEqual(1)
+    await language.click()
+    await expect(page.getByRole('option')).toHaveCount(6)
+    const menu = await page.locator('.p-select-overlay').boundingBox()
+    expect(menu!.x).toBeGreaterThanOrEqual(0)
+    expect(menu!.x + menu!.width).toBeLessThanOrEqual(width)
+    await page.getByRole('option', { name: 'English', exact: true }).click()
+    await expect(page.locator('html')).toHaveAttribute('lang', 'en-US')
+    await expect(page.getByRole('option')).toHaveCount(0)
+    await language.focus()
+    await language.press('ArrowDown')
+    await expect(page.getByRole('option')).toHaveCount(6)
+    await language.press('Escape')
+    await expect(page.getByRole('option')).toHaveCount(0)
+    await language.click()
+    await header.locator('.brand').click()
+    await expect(page.getByRole('option')).toHaveCount(0)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+      width,
+    )
+    // Reparent the same controls on resize without losing the selected language or preferences.
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await expect(page.locator('.workspace > .topbar')).toBeVisible()
+    await expect(page.locator('.topbar .language-value')).toBeHidden()
+    await expect(page.locator('.topbar .language-value')).toHaveText('English')
+    await expect(page.locator('.topbar .language-button-icon')).toBeVisible()
+    await page.setViewportSize({ width, height: 844 })
+    await expect(topbar).toBeVisible()
+    await expect(header.locator('.language-switcher .p-select')).toHaveAttribute('title', /English/)
+    await page.route('**/api/v1/auth/logout', (route) => route.fulfill({ status: 204 }))
+    await header.locator('.avatar').click()
+    await page.getByRole('menuitem', { name: 'Log out', exact: true }).click()
+    await expect(page).toHaveURL('/login')
+    await expect(page.locator('.language-switcher .p-select')).toHaveAttribute('title', /English/)
+    expect(errors).toEqual([])
+  })
+}
+
+for (const viewport of [
+  { width: 1440, height: 900 },
+  { width: 701, height: 406 },
+  { width: 390, height: 844 },
+]) {
+  test(`avatar menu keeps account actions hidden until opened at ${viewport.width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(viewport)
+    await signInWithRows(page)
+    const avatar = page.getByRole('button', { name: '账号菜单', exact: true })
+    await expect(avatar).toHaveAttribute('aria-expanded', 'false')
+    await expect(page.getByRole('menuitem')).toHaveCount(0)
+    await avatar.focus()
+    await avatar.press('Enter')
+    const menu = page.getByRole('menu', { name: '账号菜单', exact: true })
+    await expect(menu).toBeVisible()
+    await expect(avatar).toHaveAttribute('aria-expanded', 'true')
+    await expect(menu.getByRole('menuitem')).toHaveCount(2)
+    const arrow = await page.locator('.account-menu').evaluate((element) => {
+      const rect = element.getBoundingClientRect()
+      const trigger = document.querySelector('.avatar')!.getBoundingClientRect()
+      const style = getComputedStyle(element, '::before')
+      return {
+        x: rect.left + parseFloat(style.left),
+        anchor: trigger.left + trigger.width / 2,
+        width: parseFloat(style.width),
+        background: style.backgroundColor,
+        surface: getComputedStyle(element).backgroundColor,
+        left: rect.left,
+        right: rect.right,
+      }
+    })
+    expect(Math.abs(arrow.x - arrow.anchor)).toBeLessThan(2)
+    expect(arrow.width).toBeLessThan(9)
+    expect(arrow.width).toBeGreaterThan(5)
+    expect(arrow.background).toBe(arrow.surface)
+    expect(arrow.left).toBeGreaterThanOrEqual(0)
+    expect(arrow.right).toBeLessThanOrEqual(viewport.width)
+    const centered = arrow.anchor - (arrow.right - arrow.left) / 2
+    if (centered >= 8 && centered + (arrow.right - arrow.left) <= viewport.width - 8) {
+      expect(Math.abs((arrow.left + arrow.right) / 2 - arrow.anchor)).toBeLessThan(2)
+    }
+    await page.screenshot({ path: `test-results/account-menu-${viewport.width}.png` })
+    await page.keyboard.press('Escape')
+    await expect(menu).toHaveCount(0)
+    await expect(avatar).toBeFocused()
+    await avatar.click()
+    await page.locator('.brand').click()
+    await expect(menu).toHaveCount(0)
+    await avatar.click()
+    await page.getByRole('menuitem', { name: '修改密码', exact: true }).click()
+    await expect(page).toHaveURL('/change-password')
+    await expect(menu).toHaveCount(0)
+    let logoutWrites = 0
+    await page.route('**/api/v1/auth/logout', async (route) => {
+      logoutWrites += 1
+      await route.fulfill(logoutWrites === 1 ? { status: 503, json: {} } : { status: 204 })
+    })
+    await avatar.click()
+    await page.getByRole('menuitem', { name: '退出', exact: true }).click()
+    await expect(page.locator('.main > .alert.error')).toBeVisible()
+    await expect(avatar).toBeEnabled()
+    await expect(page).toHaveURL('/change-password')
+    await avatar.click()
+    await page.getByRole('menuitem', { name: '退出', exact: true }).click()
+    await expect(page).toHaveURL('/login')
+    await expect(page.getByRole('menu')).toHaveCount(0)
+    expect(logoutWrites).toBe(2)
+  })
+}
+
 test('language focus surrounds the complete component and effects start disabled', async ({
   page,
 }) => {
   await page.goto('/login')
   const select = page.locator('.language-switcher').getByRole('combobox')
+  await expect(select.locator('.language-button-icon')).toBeVisible()
+  await expect(select.locator('.language-value')).toBeHidden()
   await select.focus()
   expect(
     await select.evaluate((element) => {
@@ -189,6 +342,8 @@ test('language focus surrounds the complete component and effects start disabled
   })
   await select.click()
   await expect(page.getByRole('option')).toHaveCount(6)
+  await expect(page.locator('.p-select-overlay')).toHaveClass(/lumina-popup-arrow/)
+  await page.screenshot({ path: 'test-results/language-popup-refined.png' })
   await expect(page.getByRole('option', { name: 'English', exact: true })).toHaveCount(1)
   await page.getByRole('option', { name: 'English', exact: true }).click()
   await expect(page.locator('.login-submit')).toContainText('Sign in')
@@ -327,6 +482,7 @@ test.describe('dropdown scrollbar clipping', () => {
         const overlay = page.locator('.p-select-overlay')
         const scroller = overlay.locator('.p-select-list-container')
         await expect(overlay).toBeVisible()
+        await expect(overlay).toHaveClass(/lumina-popup-arrow/)
         const clipping = await overlay.evaluate((element) => {
           const style = getComputedStyle(element)
           const scroller = element.querySelector('.p-select-list-container')!
@@ -335,10 +491,12 @@ test.describe('dropdown scrollbar clipping', () => {
             overflowY: style.overflowY,
             radius: style.borderTopRightRadius,
             scrollRadius: getComputedStyle(scroller).borderTopRightRadius,
+            clip: getComputedStyle(scroller).clipPath,
           }
         })
-        expect(clipping.overflowX).toBe('hidden')
-        expect(clipping.overflowY).toBe('hidden')
+        expect(clipping.overflowX).toBe('visible')
+        expect(clipping.overflowY).toBe('visible')
+        expect(clipping.clip).not.toBe('none')
         expect(parseFloat(clipping.radius)).toBeGreaterThan(0)
         expect(clipping.scrollRadius).toBe(clipping.radius)
         const screenshot = await page.screenshot()
@@ -456,7 +614,8 @@ for (const viewport of [
             : range.getBoundingClientRect()
         const root = element.closest('.p-select')!
         const rect = root.getBoundingClientRect()
-        const arrow = root.querySelector('.p-select-dropdown')!.getBoundingClientRect()
+        const arrow = (root.querySelector('.language-button-icon') ??
+          root.querySelector('.p-select-dropdown'))!.getBoundingClientRect()
         const center = rect.top + rect.height / 2
         return {
           text: text.top + text.height / 2 - center,
@@ -1033,7 +1192,8 @@ test('dark password information notice keeps a dark semantic surface and readabl
 }) => {
   await signInWithRows(page)
   await page.getByRole('switch', { name: '深色主题', exact: true }).click()
-  await page.locator('.topbar a[href="/change-password"]').click()
+  await page.locator('.topbar .avatar').click()
+  await page.getByRole('menuitem', { name: '修改密码', exact: true }).click()
   const notice = page.locator('.form-stack .alert.info')
   await expect(notice).toContainText('修改密码后')
   expect(
@@ -1074,7 +1234,8 @@ test('login, authenticated shell and logout retain one appearance and language s
   await page.getByRole('switch', { name: 'Dark theme', exact: true }).click()
   await page.getByRole('switch', { name: 'Performance mode', exact: true }).click()
   await page.route('**/api/v1/auth/logout', (route) => route.fulfill({ status: 204 }))
-  await page.locator('.topbar .text-button').click()
+  await page.locator('.topbar .avatar').click()
+  await page.getByRole('menuitem', { name: 'Log out', exact: true }).click()
   await expect(page).toHaveURL('/login')
   await expect(page.getByRole('switch', { name: 'Dark theme', exact: true })).toHaveAttribute(
     'aria-checked',

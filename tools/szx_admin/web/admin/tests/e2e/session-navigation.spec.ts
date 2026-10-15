@@ -108,7 +108,8 @@ for (const role of ['super_admin', 'operator']) {
       await expect(page.getByRole('button', { name: '加载中…' })).toBeDisabled()
       response.release()
       await expect(page.getByRole('button', { name: '刷新权限' })).toBeEnabled()
-      await page.locator('.topbar').getByRole('button', { name: '退出', exact: true }).click()
+      await page.locator('.topbar .avatar').click()
+      await page.getByRole('menuitem', { name: '退出', exact: true }).click()
       await expect(page).toHaveURL('/login')
       await expect(page.locator('.login-page')).toBeVisible()
       await expect(page.locator('.app-shell')).toHaveCount(0)
@@ -154,3 +155,14 @@ for (const role of ['operator', 'engineer', 'admin', 'super_admin']) {
     await expect(protectedLinks).toHaveCount(role === 'admin' || role === 'super_admin' ? 1 : 0)
   })
 }
+
+test('forced password flow exposes only sign-out in the avatar menu', async ({ page }) => {
+  await mockSession(page, 'operator', true)
+  await submitLogin(page)
+  await expect(page).toHaveURL('/change-password')
+  await page.getByRole('button', { name: '账号菜单', exact: true }).click()
+  await expect(page.getByRole('menuitem', { name: '修改密码', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('menuitem', { name: '退出', exact: true })).toBeVisible()
+  await page.getByRole('menuitem', { name: '退出', exact: true }).click()
+  await expect(page).toHaveURL('/login')
+})

@@ -130,7 +130,7 @@
 
 .p-select-overlay {
   font-size: var(--lg-fs-sm);
-  /* Clip native scrollbar tracks to the overlay without clipping its outer shadow. */
+  /* Raw Select fallback; arrow-enabled panels clip their list separately below. */
   overflow: hidden;
 }
 
@@ -415,6 +415,8 @@
 }
 
 .lumina-mark {
+  -webkit-user-select: none;
+  user-select: none;
   display: inline-grid;
   place-items: center;
   flex-shrink: 0;
@@ -439,4 +441,114 @@
   background: var(--lg-soft-surface);
   color: var(--accent);
   border: 1px solid var(--lg-soft-border);
+}
+
+/* Button interaction is opt-in; static marks retain their image/span semantics. */
+.lumina-mark-button.p-button {
+  min-height: var(--lumina-mark-size);
+  padding: 0;
+}
+
+.lumina-mark-brand.p-button,
+.lumina-mark-brand.p-button:not(:disabled):hover {
+  background: var(--lg-gradient-brand);
+  color: white;
+}
+
+.lumina-mark-soft.p-button,
+.lumina-mark-soft.p-button:not(:disabled):hover {
+  background: var(--lg-soft-surface);
+  color: var(--accent);
+}
+
+.lumina-mark-button.p-button:not(:disabled):hover {
+  border-color: var(--lg-edge-hover);
+  --lumina-edge-color: var(--lg-edge-hover);
+  box-shadow: var(--lumina-edge-shadow), var(--lg-sh-2);
+}
+
+.lumina-mark-button.p-button:focus-visible {
+  outline: none;
+  border-color: var(--lg-edge-focus);
+  --lumina-edge-color: var(--lg-edge-focus);
+  box-shadow: var(--lumina-edge-shadow), var(--lg-ring-focus);
+}
+
+.lumina-popup-menu.p-menu {
+  min-width: calc(var(--k) * 160px);
+  max-width: calc(100vw - 16px);
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--lg-line);
+  border-radius: var(--lg-r-2xl);
+  box-shadow: var(--lg-sh-4);
+}
+
+.lumina-popup-menu .p-menu-list {
+  padding: var(--lg-s2);
+  border-radius: inherit;
+}
+
+/* Keyboard focus is shown by the active menu item's rounded highlight, not a
+   square native outline around the entire popup that intersects the arrow. */
+.lumina-popup-menu .p-menu-list:focus-visible {
+  outline: none;
+}
+
+.lumina-popup-menu .p-menu-item-content {
+  border-radius: var(--lg-r-xl);
+}
+
+.lumina-popup-menu .p-menu-item-link {
+  min-height: var(--lg-h-ctrl);
+  padding: var(--lg-s4) var(--lg-s6);
+  color: var(--text);
+  font-size: var(--lg-fs-sm);
+}
+
+.lumina-popup-menu .p-menu-item:not(.p-disabled) > .p-menu-item-content:hover,
+.lumina-popup-menu .p-menu-item.p-focus > .p-menu-item-content {
+  background: var(--lg-hover-surface);
+}
+
+/* The portal keeps its anchored arrow outside the rounded menu surface. */
+.lumina-popup-arrow {
+  --lumina-popup-arrow-size: calc(var(--k) * 7px);
+  overflow: visible;
+  margin-top: var(--lg-s2);
+}
+
+.lumina-popup-arrow::before {
+  content: '';
+  position: absolute;
+  left: var(--lumina-popup-anchor-x, 20px);
+  top: calc(var(--lumina-popup-arrow-size) * -0.5 - 0.5px);
+  width: var(--lumina-popup-arrow-size);
+  height: var(--lumina-popup-arrow-size);
+  border-top-left-radius: 1px;
+  background: var(--surface);
+  border-top: 1px solid var(--lg-line);
+  border-left: 1px solid var(--lg-line);
+  transform: translateX(-50%) rotate(45deg);
+  pointer-events: none;
+}
+
+.lumina-popup-arrow[data-side='top'] {
+  margin-top: calc(-1 * var(--lg-s2));
+}
+
+.lumina-popup-arrow[data-side='top']::before {
+  top: auto;
+  bottom: calc(var(--lumina-popup-arrow-size) * -0.5 - 0.5px);
+  transform: translateX(-50%) rotate(225deg);
+}
+
+/* The arrow must escape the surface, while native scrollbars remain clipped to
+   the list's rounded corners (including classic non-overlay scrollbars). */
+.p-select-overlay.lumina-popup-arrow .p-select-list-container {
+  clip-path: inset(0 round var(--lg-r-2xl));
+}
+
+.p-select-overlay.lumina-popup-arrow .p-select-header {
+  border-radius: var(--lg-r-2xl) var(--lg-r-2xl) 0 0;
 }
