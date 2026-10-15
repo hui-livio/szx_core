@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@primeuix/themes": "2.0.3",
+    "@primeuix/utils": "0.6.4",
     "axios": "^1.20.0",
     "echarts": "6.1.0",
     "pinia": "^4.0.3",

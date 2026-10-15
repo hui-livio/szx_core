@@ -90,6 +90,10 @@ const options = [
 
 业务滚动表格通过 `tableContainer` 添加 `table-scroll` 类时，公共样式统一将整个 `thead` 固定在滚动容器顶部并设置层级，遮住滚动到表头后方的行内按钮；调用方不要再对 `th` 单独设置 sticky，避免嵌套定位和按钮覆盖表头。
 
+`LuminaTable` 对普通行数据维护私有内容快照：收到字段内容相同的新数组时复用传给 DataTable 的数组；提供唯一 `data-key`（字段、嵌套字段或返回字符串的函数）时，未变化的行在增删和重排后也保持引用。没有 data-key 时按下标匹配。嵌套响应式字段原地修改仍能触发更新。表格的列插槽、排序、加载态、语言和按钮事件继续更新，不使用冻结整表的 v-memo；调用方主动将 value 清空仍会立即显示空态，权限撤销及查询边界不被缓存绕过。
+
+比较支持普通对象、数组、Date 和二进制缓冲区的内容，保留函数身份，不使用会丢失回调、undefined 或日期语义的 JSON 序列化。业务行应使用普通 DTO；其他类实例按引用比较，改变其内部状态时需替换实例。组件复用的是此前收到的等价行，调用方应通过事件和自身数据源更新业务状态，不应依赖插槽行与最近一次响应对象的引用相等。
+
 `LuminaColumn` 是 PrimeVue Column 的导出别名，不增加渲染包装：它是配置节点，需要保留原生身份，保证 DataTable 的列发现、注入和 body 插槽正常工作。业务行类型和字段内容不属于 UI 模块。
 
 ## 对话框与分页
@@ -247,6 +251,8 @@ glass 自动响应根节点的 `data-fx`：lite（或未设置 full）关闭毛�
 ```
 
 `LuminaChart` 接收 `LuminaChartOption`（从本目录入口导出）、必需的可访问名称 `label` 和可选 `animation`。按需注册 line/pie、grid/tooltip、SVG renderer；不加载 Canvas renderer 或 ECharts 全量入口。实例只初始化一次，option 更新调用 setOption，ResizeObserver 处理容器缩放，卸载时释放图表和所有监听器。
+
+`LuminaChart` 在真正调用 `setOption` 后保存输入快照，下一次 option 内容和有效外观未变时不重复提交。option 里的函数按引用比较：普通重建对象可跳过，相同源码的新函数仍会更新；调用方应保持无变化的 formatter 引用稳定，语言或闭包语义变化时提供新回调。主题、有效动画/减少动态效果偏好会参与更新判定，容器尺寸变化仍通过 ResizeObserver 调用 resize。快照不交给 ECharts，也不改写调用方 option；初次挂载和卸载后重建始终初始化图表。
 
 图表监听根节点 data-theme/data-fx；使用当前文本/表面色，tooltip 限定在图表内，避免覆盖 Card 圆角；lite 或 prefers-reduced-motion 下禁用动画，调用方也可显式 animation=false。曲线、环图数据与刷新策略属于业务层，组件不自带 API/采集/历史存储。ECharts 作为固定版本 Apache-2.0 依赖保留在应用 package-lock 中，此目录仍不生成独立 npm 包。
 

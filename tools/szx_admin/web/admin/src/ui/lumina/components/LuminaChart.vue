@@ -5,6 +5,7 @@ import { LineChart, PieChart } from 'echarts/charts'
 import { GridComponent, TooltipComponent } from 'echarts/components'
 import { SVGRenderer } from 'echarts/renderers'
 import type { LuminaChartOption } from '../types/chart'
+import { createUpdateSnapshot } from '../utils/updateSnapshot'
 
 use([LineChart, PieChart, GridComponent, TooltipComponent, SVGRenderer])
 const props = withDefaults(
@@ -17,6 +18,7 @@ let resize: ResizeObserver | undefined
 let resizeFrame: number | undefined
 let appearance: MutationObserver | undefined
 let motion: MediaQueryList | undefined
+const rendered = createUpdateSnapshot()
 
 function update() {
   if (!host.value || !chart) return
@@ -26,6 +28,8 @@ function update() {
   const surface = css.getPropertyValue('--surface').trim() || '#fff'
   const full = document.documentElement.dataset.fx === 'full'
   const animation = props.animation && full && !motion?.matches
+  const input = [props.option, text, muted, surface, css.fontFamily, animation]
+  if (rendered.matches(input)) return
   chart.setOption(
     {
       color: ['#8870ee', '#47b8aa', '#edb768'],
@@ -46,6 +50,9 @@ function update() {
     },
     { notMerge: true, lazyUpdate: true },
   )
+  // Commit only after setOption succeeds, and never hand its mutable option
+  // object back to callers or use chart-owned data as a comparison baseline.
+  rendered.commit(input)
 }
 onMounted(() => {
   if (!host.value) return

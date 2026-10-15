@@ -15,6 +15,7 @@ async function setup(page: Page, role = 'admin', permission = true, diskPaths = 
   let instance = 'instance-a'
   let memoryUnavailable = false
   let fail = false
+  let diskUsed = 6 * 1024 ** 3
   const user = {
     id: 'admin',
     login_identifier: 'admin',
@@ -79,7 +80,7 @@ async function setup(page: Page, role = 'admin', permission = true, diskPaths = 
           id: path,
           path,
           sampled_at: Date.now(),
-          capacity: { ...metric(60), free_bytes: 10 * 1024 ** 3 },
+          capacity: { ...metric(60), used_bytes: diskUsed, free_bytes: 10 * 1024 ** 3 },
         })),
       })
     }
@@ -102,6 +103,9 @@ async function setup(page: Page, role = 'admin', permission = true, diskPaths = 
     },
     fail: () => {
       fail = true
+    },
+    changeDiskCapacity: () => {
+      diskUsed += 1024 ** 3
     },
     setVolumes: (paths: string[]) => {
       diskPaths = paths
@@ -355,4 +359,48 @@ test('missing capabilities fail closed without breaking the shell', async ({ pag
   await expect(page.getByRole('link', { name: '机器性能' })).toHaveCount(0)
   await expect(page.getByRole('link', { name: '用户管理', exact: true })).toHaveCount(0)
   expect(errors).toEqual([])
+})
+
+test('unchanged disk charts skip repeated polling updates but retain data, locale and theme changes', async ({
+  page,
+}) => {
+  const state = await setup(
+    page,
+    'admin',
+    true,
+    Array.from({ length: 32 }, (_, index) => `/volume-${index}`),
+  )
+  await page.locator('.sidebar nav').getByRole('link', { name: '机器性能', exact: true }).click()
+  await expect(page.locator('.lumina-chart svg')).toHaveCount(34)
+  await page.evaluate(async () => {
+    const path = '/tests/fixtures/lumina/chartUpdates.ts'
+    const { trackChartUpdates } = await import(path)
+    trackChartUpdates()
+  })
+  const diskCounts = () =>
+    page
+      .locator('.lumina-chart')
+      .evaluateAll((elements) =>
+        elements
+          .filter((element) => element.getAttribute('aria-label')?.includes('/volume-'))
+          .map((element) => Number((element as HTMLElement).dataset.setOptionCount ?? 0)),
+      )
+  const initial = state.count()
+  await expect.poll(state.count, { timeout: 10_000 }).toBeGreaterThanOrEqual(initial + 3)
+  expect(await diskCounts()).toEqual(Array(32).fill(0))
+  expect(
+    await page
+      .getByRole('img', { name: 'CPU 使用率趋势', exact: true })
+      .getAttribute('data-set-option-count'),
+  ).not.toBe('0')
+  state.changeDiskCapacity()
+  await expect.poll(diskCounts).toEqual(Array(32).fill(1))
+  await page.getByRole('button', { name: '暂停', exact: true }).click()
+  await page.getByRole('switch', { name: '深色主题', exact: true }).click()
+  await expect.poll(diskCounts).toEqual(Array(32).fill(2))
+  await page.locator('.language-switcher').getByRole('combobox').click()
+  await page.getByRole('option', { name: 'English', exact: true }).click()
+  await expect.poll(diskCounts).toEqual(Array(32).fill(3))
+  await expect(page.getByRole('img', { name: 'CPU usage trend', exact: true })).toBeVisible()
+  await expect(page.locator('.lumina-chart')).toHaveCount(34)
 })

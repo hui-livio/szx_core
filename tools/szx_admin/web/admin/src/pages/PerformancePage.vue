@@ -20,11 +20,31 @@ const { snapshot, visibleSamples, error, paused, hidden, windowSeconds, now, sta
 const windows = computed(() =>
   [300, 900].map((value) => ({ value, label: t('performance.window', { minutes: value / 60 }) })),
 )
+const numberFormatter = computed(
+  () => new Intl.NumberFormat(locale.value, { maximumFractionDigits: 1 }),
+)
+const timeFormatter = computed(
+  () => new Intl.DateTimeFormat(locale.value, { hour: '2-digit', minute: '2-digit' }),
+)
 const percent = (value: number | null | undefined) =>
-  value == null
-    ? '—'
-    : `${new Intl.NumberFormat(locale.value, { maximumFractionDigits: 1 }).format(value)}%`
-const bytes = (value: number | null | undefined) => formatBytes(value ?? null, locale.value)
+  value == null ? '—' : `${numberFormatter.value.format(value)}%`
+const bytes = (value: number | null | undefined) =>
+  formatBytes(value ?? null, locale.value, numberFormatter.value)
+// Stable callback identities let the public chart detect equivalent options.
+const percentTooltip = computed(() => {
+  const formatter = numberFormatter.value
+  return (value: unknown) => (typeof value === 'number' ? `${formatter.format(value)}%` : '—')
+})
+const bytesTooltip = computed(() => {
+  const currentLocale = locale.value
+  const formatter = numberFormatter.value
+  return (value: unknown) =>
+    formatBytes(typeof value === 'number' ? value : null, currentLocale, formatter)
+})
+const timeAxisLabel = computed(() => {
+  const formatter = timeFormatter.value
+  return (value: number) => formatter.format(value)
+})
 const state = (metric?: MachineMetric) =>
   !metric
     ? 'loading'
@@ -46,7 +66,7 @@ function trend(key: 'cpu' | 'memory'): LuminaChartOption {
     grid: { left: 36, right: 12, top: 12, bottom: 26 },
     tooltip: {
       trigger: 'axis',
-      valueFormatter: (value) => percent(typeof value === 'number' ? value : null),
+      valueFormatter: percentTooltip.value,
     },
     xAxis: {
       type: 'time',
@@ -54,10 +74,7 @@ function trend(key: 'cpu' | 'memory'): LuminaChartOption {
       axisTick: { show: false },
       axisLabel: {
         color: '#8993b2',
-        formatter: (value: number) =>
-          new Intl.DateTimeFormat(locale.value, { hour: '2-digit', minute: '2-digit' }).format(
-            value,
-          ),
+        formatter: timeAxisLabel.value,
       },
     },
     yAxis: {
@@ -88,14 +105,35 @@ function trend(key: 'cpu' | 'memory'): LuminaChartOption {
 const cpuOption = computed(() => trend('cpu'))
 const cardCount = computed(() => 2 + (snapshot.value?.disks.length ?? 0))
 const memoryOption = computed(() => trend('memory'))
-const diskOptions = computed(
-  () => new Map((snapshot.value?.disks ?? []).map((disk) => [disk.id, capacity(disk.capacity)])),
-)
+interface DiskChart {
+  used: number
+  free: number
+  locale: string
+  option: LuminaChartOption
+}
+const diskOptions = computed((previous: Map<string, DiskChart> | undefined) => {
+  const disks = snapshot.value?.disks ?? []
+  const currentLocale = locale.value
+  let unchanged = previous?.size === disks.length
+  const next = new Map<string, DiskChart>()
+  for (const disk of disks) {
+    const used = disk.capacity.used_bytes ?? 0
+    const free = disk.capacity.free_bytes ?? 0
+    const old = previous?.get(disk.id)
+    if (old && old.used === used && old.free === free && old.locale === currentLocale) {
+      next.set(disk.id, old)
+    } else {
+      unchanged = false
+      next.set(disk.id, { used, free, locale: currentLocale, option: capacity(disk.capacity) })
+    }
+  }
+  return unchanged && previous ? previous : next
+})
 function capacity(metric: MachineMetric): LuminaChartOption {
   return {
     tooltip: {
       trigger: 'item',
-      valueFormatter: (value) => bytes(typeof value === 'number' ? value : null),
+      valueFormatter: bytesTooltip.value,
     },
     series: [
       {
@@ -197,7 +235,7 @@ function capacity(metric: MachineMetric): LuminaChartOption {
     >
       <div class="performance-value">{{ percent(disk.capacity.usage_percent) }}</div>
       <LuminaChart
-        :option="diskOptions.get(disk.id)!"
+        :option="diskOptions.get(disk.id)!.option"
         :label="t('performance.diskCapacity', { path: disk.path })"
       />
       <dl class="performance-details">
