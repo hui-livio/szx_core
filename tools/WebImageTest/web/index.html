@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Web Image Lab · SZX</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="/styles.css" />
+    <script type="module" src="/app.js"></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark">S</span>
+        <div>Web Image <strong>LAB</strong><small>OpenCV · HTTP · Native JavaScript</small></div>
+      </div>
+      <span class="chip" id="renderer-name">初始化绘制器…</span>
+    </header>
+    <main>
+      <section class="viewer-panel" aria-label="图片查看器">
+        <div class="toolbar">
+          <div class="image-source">
+            <label for="image-select">图片</label>
+            <select id="image-select" aria-label="选择图片" disabled>
+              <option value="">正在查询列表…</option>
+            </select>
+            <button id="refresh-images" type="button">刷新列表</button>
+            <label for="display-mode">显示模式</label>
+            <select id="display-mode" aria-label="显示模式">
+              <option value="tiles">瓦片模式</option>
+              <option value="full">整图模式（非瓦片）</option>
+            </select>
+          </div>
+          <button id="load-image" class="primary" type="button">获取内存图片</button>
+          <div class="tools" role="group" aria-label="画面操作">
+            <button id="zoom-out" type="button" aria-label="缩小" title="缩小 (-)">−</button>
+            <output id="zoom-value" aria-label="当前缩放">—</output>
+            <button id="zoom-in" type="button" aria-label="放大" title="放大 (+)">+</button>
+            <button id="fit-image" type="button" title="适应窗口 (0)">适应窗口</button>
+            <button id="actual-size" type="button" title="一个图片像素对应一个 CSS 像素 (1)">
+              1:1
+            </button>
+            <button id="fullscreen" type="button">全屏</button>
+          </div>
+        </div>
+        <div
+          id="viewport"
+          class="viewport"
+          tabindex="0"
+          role="region"
+          aria-label="图片画布，可滚轮缩放、拖动平移，双击适应窗口"
+        >
+          <canvas id="image-canvas" aria-label="从服务内存获取的图片"></canvas>
+          <div id="empty-state" class="empty-state">
+            <span class="empty-icon" aria-hidden="true">▧</span>
+            <h1>让图片留在显存，让操作更轻</h1>
+            <p>选择目录中的图片和显示模式，再点击“获取内存图片”。</p>
+            <small>不使用 Vue · 不持续刷新 · 不在每次请求中读盘</small>
+          </div>
+        </div>
+        <footer class="viewer-footer">
+          <span id="image-info">尚未载入图片</span
+          ><span>滚轮缩放 · 拖动平移 · 双指缩放 · 双击适应</span>
+        </footer>
+      </section>
+      <aside class="info-panel">
+        <span class="eyebrow">IMAGE PIPELINE</span>
+        <h2>一次载入，按需绘制</h2>
+        <ol>
+          <li>
+            <strong>OpenCV 解码</strong>
+            <p>所选图片按需读入 cv::Mat，单工作线程加载，最多缓存一张。</p>
+          </li>
+          <li>
+            <strong>HTTP 二进制响应</strong>
+            <p>直接获取 PNG，不使用 Base64 或 JSON 包装图片。</p>
+          </li>
+          <li>
+            <strong>GPU 纹理复用</strong>
+            <p>瓦片模式按可见区域加载；整图模式直接加载原图，纹理超限时使用 Canvas2D。</p>
+          </li>
+          <li>
+            <strong>空闲零循环</strong>
+            <p>仅交互、图片载入或尺寸变化时合并绘制，没有常驻渲染循环。</p>
+          </li>
+        </ol>
+        <div class="status-box">
+          <span class="eyebrow">STATUS</span>
+          <p id="status" role="status" aria-live="polite">就绪，请获取图片。</p>
+        </div>
+        <dl>
+          <div>
+            <dt>图片接口</dt>
+            <dd><code>GET /api/image</code></dd>
+          </div>
+          <div>
+            <dt>图片信息</dt>
+            <dd><code>GET /api/image/info</code></dd>
+          </div>
+        </dl>
+      </aside>
+    </main>
+  </body>
+</html>

@@ -61,6 +61,7 @@ else()
     set(_SZX_COMPONENTS_DEFAULT_COMPRESSION OFF)
 endif()
 
+option(SZX_COMPONENTS_BUILD_WEB_IMAGE_TEST "Build the plain-JavaScript HTTP image viewer (requires OpenCV)" OFF)
 option(SZX_COMPONENTS_BUILD_NETWORK "Build the HTTP/TCP/WebSocket network component" ${SZX_COMPONENTS_STANDALONE_BUILD})
 option(SZX_COMPONENTS_BUILD_RBAC "Build the RBAC admin backend (requires network and MySQL)" ${_SZX_COMPONENTS_DEFAULT_RBAC})
 option(SZX_COMPONENTS_BUILD_TESTS "Build component smoke tests" ${_SZX_COMPONENTS_DEFAULT_TESTS})
