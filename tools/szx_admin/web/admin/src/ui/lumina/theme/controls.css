@@ -411,20 +411,23 @@
   border-radius: var(--lg-r-full);
 }
 
-.lumina-preference-button.p-button[aria-checked='true'] {
-  background: var(--lg-brand-100);
+.lumina-preference-button.p-button[aria-checked='true'],
+.lumina-preference-button.p-button[aria-checked='true']:not(:disabled):hover {
+  background: var(--lg-gradient-brand);
   border-color: transparent;
-  color: var(--accent);
+  color: #fff;
+  box-shadow: var(--lumina-edge-shadow), var(--lg-sh-5);
+}
+
+.lumina-preference-button.p-button[aria-checked='true'].lumina-smooth-edge,
+.lumina-preference-button.p-button[aria-checked='true'].lumina-smooth-edge:not(:disabled):hover {
+  --lumina-edge-color: transparent;
+  box-shadow: var(--lumina-edge-shadow), var(--lg-sh-5);
 }
 
 .lumina-preference-button svg {
   width: var(--lg-icon-px, 20px);
   height: var(--lg-icon-px, 20px);
-}
-
-[data-theme='dark'] .lumina-preference-button.p-button[aria-checked='true'] {
-  background: var(--lg-brand-900);
-  color: var(--lg-brand-200);
 }
 
 .lumina-preference-button svg path,

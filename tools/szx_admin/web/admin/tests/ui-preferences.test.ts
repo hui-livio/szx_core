@@ -46,3 +46,26 @@ it('blocked storage does not prevent shared in-memory preference updates', () =>
   expect(store.theme).toBe('dark')
   expect(store.effects).toBe('full')
 })
+
+it('custom brand persists across store initialization without changing default colors', () => {
+  const data = new Map<string, string>()
+  vi.stubGlobal('localStorage', {
+    getItem: (key: string) => data.get(key) ?? null,
+    setItem: (key: string, value: string) => data.set(key, value),
+  })
+  const first = useUiPreferencesStore(createPinia())
+  first.initialize()
+  expect(first.brand).toBeNull()
+  first.setBrand('#123ABC')
+  expect(first.brand).toBe('#123abc')
+  expect(data.get('szx-admin-brand')).toBe('#123abc')
+  first.setBrand('invalid')
+  expect(first.brand).toBe('#123abc')
+  const restored = useUiPreferencesStore(createPinia())
+  restored.initialize()
+  expect(restored.brand).toBe('#123abc')
+  restored.setBrand(null)
+  const defaults = useUiPreferencesStore(createPinia())
+  defaults.initialize()
+  expect(defaults.brand).toBeNull()
+})

@@ -1,7 +1,9 @@
 @layer lumina, primevue, app;
 @import url('./theme/glass/theme.css') layer(lumina);
+@import url('./theme/background.css') layer(app);
 @import url('./theme/tokens.css') layer(app);
 @import url('./theme/controls.css') layer(app);
 @import url('./theme/edges.css') layer(app);
 @import url('./theme/panels.css') layer(app);
 @import url('./theme/scrollbars.css') layer(app);
+@import url('./theme/brand.css') layer(app);

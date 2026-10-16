@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { LuminaButton as Button } from '../ui/lumina'
+import { LuminaPanel, LuminaButton as Button } from '../ui/lumina'
 import { useHomeViewModel } from '../composables/useAuthViewModel'
 import { formatTime } from '../domain'
 import { useI18n } from 'vue-i18n'
@@ -14,7 +14,7 @@ const { t } = useI18n()
     </div>
     <span class="role-badge">{{ role }}</span>
   </header>
-  <section class="panel">
+  <LuminaPanel as="section" class="panel" radius="var(--lg-r-3xl)" padding="var(--lg-s11)">
     <h2>{{ t('home.accountOverview') }}</h2>
     <dl class="details-grid">
       <div>
@@ -39,8 +39,8 @@ const { t } = useI18n()
         t('shell.password')
       }}</RouterLink>
     </div>
-  </section>
-  <section class="panel">
+  </LuminaPanel>
+  <LuminaPanel as="section" class="panel" radius="var(--lg-r-3xl)" padding="var(--lg-s11)">
     <div class="section-heading">
       <h2>{{ t('home.myPermissions') }}</h2>
       <Button :disabled="busy" @click="load" type="button">
@@ -52,7 +52,7 @@ const { t } = useI18n()
       <span v-for="item in capabilities" :key="item.code">✓ {{ item.label }}</span>
     </div>
     <p class="hint">{{ t('home.businessHint') }}</p>
-  </section>
+  </LuminaPanel>
 </template>
 <style scoped>
 .home-navigation {

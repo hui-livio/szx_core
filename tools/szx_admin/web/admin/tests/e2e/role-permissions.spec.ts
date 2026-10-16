@@ -1,3 +1,4 @@
+import { expectThemedPanels } from './surface'
 import { test, expect, type Page } from '@playwright/test'
 import type { PermissionRecord, RoleRecord } from '../../src/api/types'
 
@@ -399,3 +400,11 @@ for (const [locale, title, permissionTitle, managementTitle] of [
     await expect(page.locator('.table-scroll tbody tr')).toHaveCount(3)
   })
 }
+
+test('page panels share the login theme material in light/dark and lite/full modes', async ({
+  page,
+}) => {
+  await setup(page)
+  await openAssociations(page)
+  await expectThemedPanels(page, '.table-panel')
+})

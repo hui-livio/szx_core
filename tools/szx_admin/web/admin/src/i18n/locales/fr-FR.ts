@@ -148,6 +148,10 @@ export default {
     permission: 'Consulter les performances',
   },
   appearance: {
+    customize: 'Personnaliser la couleur du thème',
+    brand: 'Couleur du thème',
+    resetBrand: 'Rétablir les couleurs par défaut',
+
     theme: 'Thème sombre',
     performance: 'Mode performance',
     light: 'Thème clair : passer au thème sombre',

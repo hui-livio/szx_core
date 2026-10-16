@@ -141,6 +141,10 @@ export default {
     permission: '머신 성능 조회',
   },
   appearance: {
+    customize: '테마 색상 사용자 지정',
+    brand: '테마 색상',
+    resetBrand: '기본 색상 복원',
+
     theme: '어두운 테마',
     performance: '성능 모드',
     light: '밝은 테마: 어두운 테마로 전환',

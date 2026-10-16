@@ -10,8 +10,9 @@
     "typecheck": "vue-tsc -b",
     "test": "vitest run",
     "test:e2e": "playwright test",
-    "format": "prettier --write src tests *.ts *.json README.md",
-    "format:check": "prettier --check src tests *.ts *.json README.md"
+    "format": "prettier --write src tests scripts *.html *.ts *.json README.md",
+    "format:check": "prettier --check src tests scripts *.html *.ts *.json README.md",
+    "profile:background": "node scripts/profile-background.mjs"
   },
   "dependencies": {
     "@primeuix/themes": "2.0.3",

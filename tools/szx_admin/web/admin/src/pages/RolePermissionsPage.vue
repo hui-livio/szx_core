@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
+  LuminaPanel,
   LuminaButton as Button,
   LuminaInput as Input,
   LuminaSelect as Select,
@@ -53,7 +54,7 @@ const sources = computed(() => [
         >
       </div>
     </header>
-    <section class="panel table-panel">
+    <LuminaPanel as="section" class="panel table-panel" radius="var(--lg-r-3xl)" padding="0">
       <form class="filters" @submit.prevent="load">
         <label
           >{{ t('rolePermissions.chooseRole') }}
@@ -187,7 +188,7 @@ const sources = computed(() => [
                 : t('rolePermissions.noAssignments')
         }}</template>
       </Table>
-    </section>
+    </LuminaPanel>
   </div>
 </template>
 <style scoped>

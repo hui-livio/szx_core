@@ -15,10 +15,10 @@ it.each([
   ['fr-FR', fr],
   ['ru-RU', ru],
 ] as const)(
-  'provides explicit RBAC translations with matching placeholders in %s',
+  'provides explicit RBAC/appearance translations with matching placeholders in %s',
   (locale, messages) => {
     const source = readFileSync(`src/i18n/locales/${locale}.ts`, 'utf8')
-    for (const section of ['roleManagement', 'rolePermissions', 'rbac'] as const) {
+    for (const section of ['roleManagement', 'rolePermissions', 'rbac', 'appearance'] as const) {
       expect(source).toContain(`${section}: {`)
       expect(Object.keys(messages[section]).sort()).toEqual(Object.keys(zh[section]).sort())
       for (const key of Object.keys(zh[section])) {

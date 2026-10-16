@@ -142,6 +142,10 @@ export default {
     permission: 'Read machine performance',
   },
   appearance: {
+    customize: 'Customize theme color',
+    brand: 'Theme color',
+    resetBrand: 'Restore default colors',
+
     theme: 'Dark theme',
     performance: 'Performance mode',
     light: 'Light theme: switch to dark',

@@ -57,9 +57,9 @@ src/ui/lumina/
 
 CSS 层顺序保持 `lumina → primevue → app`。安装使用 `createLuminaUi()`，组件按需导入，样式显式引入；详细说明见 [Lumina UI 接入说明](src/ui/lumina/README.md)。依赖仍固定为 PrimeVue `4.5.5`、`@primeuix/themes` `2.0.3`，未新增依赖。
 
-主题仍使用 `<html data-theme="light|dark" data-fx="lite|full">`，默认低特效和 Ripple 关闭，尊重系统减少动态效果偏好。缩放由 `useLuminaScale()` 管理。日期时间保持 24 小时制、秒精度和本地字符串模型，后台继续通过 `toUtcSeconds` 生成 UTC 查询参数。主操作按钮统一使用 `variant="primary"`。品牌 S 和用户头像复用 `LuminaMark`，统一蓝紫渐变底色与白色前景，支持独立配置尺寸与圆角；暗色 hover/active 使用专属语义色，不出现浅色块。圆形开关按物理像素对齐并使用柔和 SVG 描线。
+主题仍使用 `<html data-theme="light|dark" data-fx="lite|full">`，默认低特效和 Ripple 关闭（完整动效保留粒子与光晕），尊重系统减少动态效果偏好。缩放由 `useLuminaScale()` 管理。日期时间保持 24 小时制、秒精度和本地字符串模型，后台继续通过 `toUtcSeconds` 生成 UTC 查询参数。主操作按钮统一使用 `variant="primary"`。品牌 S 和用户头像复用 `LuminaMark`，统一蓝紫渐变底色与白色前景，支持独立配置尺寸与圆角；暗色 hover/active 使用专属语义色，不出现浅色块。圆形开关按物理像素对齐并使用柔和 SVG 描线。
 
-开发中修改 `src/ui/lumina/theme/` preset 时完整刷新页面，重新初始化样式注册表；会话不持久化，需要重新登录。登录页和顶部栏均提供紧凑的语言入口、性能模式与深色主题开关；两处共享 `ui-preferences` Pinia store，登录、退出及组件重建不会重置状态，开发热更新也保留当前选择；主题/特效偏好分别保存到 `szx-admin-theme` 和 `szx-admin-effects`，只在用户切换时写入，默认浅色 + 低特效。登录卡片使用通用 `LuminaPanel` 响应性能开关，普通内容面板可使用 `variant="solid"`；玻璃模式切换不改变内容布局。浏览器禁用存储时仍可切换当前页面，系统减少动态效果偏好始终优先。验证用的独立页面位于 `tests/fixtures/lumina/`，不接入后台路由、Pinia 或 API，不进入生产构建。
+开发中修改 `src/ui/lumina/theme/` preset 时完整刷新页面，重新初始化样式注册表；会话不持久化，需要重新登录。登录页和顶部栏均提供紧凑的语言入口、性能模式与深色主题开关；两处共享 `ui-preferences` Pinia store，登录、退出及组件重建不会重置状态，开发热更新也保留当前选择；主题/特效偏好分别保存到 `szx-admin-theme` 和 `szx-admin-effects`，可选自定义主题色保存到 `szx-admin-brand`，只在用户切换时写入，默认浅色 + 低特效。登录卡片、首页、用户/权限/角色管理、日志、修改密码及 404 页面统一使用通用 `LuminaPanel` 的 glass 材质；性能指标 `LuminaCard` 显式使用相同 glass 材质，均响应深浅色及性能开关。浮层、弹窗与粘性表头仍保留不透明语义表面保证可读性；玻璃模式采用半透明表面与高光模拟，不执行背景模糊采样；切换不改变内容布局。浏览器禁用存储时仍可切换当前页面，系统减少动态效果偏好始终优先。验证用的独立页面位于 `tests/fixtures/lumina/`，不接入后台路由、Pinia 或 API，不进入生产构建。
 
 ## 页面和行为
 
@@ -93,9 +93,9 @@ Access/CSRF token 仅保存在 API 客户端闭包内，refresh token 由 HttpOn
 
 ## 页面主题
 
-全站使用 Lumina Glass 的靛紫渐变、静态光晕、玻璃层和字体令牌，主题及字体从 `/mnt/d/share/lumina-glass` 引入并保存在 `src/ui/lumina/theme/glass/`，构建与部署不依赖该外部目录。字体许可证与归属说明随字体一起保留。
+全站默认保留 Lumina Glass 的靛紫渐变、光晕、玻璃质感和字体令牌，主题及字体从 `/mnt/d/share/lumina-glass` 引入并保存在 `src/ui/lumina/theme/glass/`，构建与部署不依赖该外部目录。字体许可证与归属说明随字体一起保留。
 
-入口 HTML 默认设置 `data-theme="light"`、`data-fx="lite"`，首屏即关闭动画、过渡、平滑滚动与毛玻璃，保留静态主题视觉；系统减少动态效果偏好同样禁用动画与过渡。后台布局适配手机与桌面，并沿用主题的连续比例 `--k`（限制为 0.92–1.5）；管理页面需要正常滚动，因此不使用演示登录卡片的高度压缩约束。
+入口 HTML 默认设置 `data-theme="light"`、`data-fx="lite"`，内联引导脚本在首帧前恢复已保存的深浅色及动效档位；无偏好时关闭动画、过渡、平滑滚动与毛玻璃，保留静态主题视觉；系统减少动态效果偏好同样禁用动画与过渡。后台布局适配手机与桌面，并沿用主题的连续比例 `--k`（限制为 0.92–1.5）；管理页面需要正常滚动，因此不使用演示登录卡片的高度压缩约束。
 
 业务组件复用原有样式类，通用控件适配集中在 `src/ui/lumina/`，后台布局保留在 `src/style.css` 和 `src/styles/layout.css`。后台工作区固定在视口内，顶部栏和页脚保持可见；用户管理、安全审计和用户行为页面仅在数据表格内滚动，表头和分页保持可见。窄屏与较矮窗口限制筛选区域高度并允许其单独滚动，底部采用紧凑间距，为表格保留更多空间。各子工作区移除主标题上方的重复小标题，并采用统一的紧凑顶部间距。
 
@@ -104,6 +104,29 @@ Access/CSRF token 仅保存在 API 客户端闭包内，refresh token 由 HttpOn
 所有业务弹窗统一复用公共 `LuminaDialog`，由 `LuminaPanel` 提供内容面板。Esc 与关闭按钮走同一关闭请求，实时检查忙碌状态；打开时正在加载的弹窗在加载结束后也能用 Esc 关闭。嵌套时每次只关闭最上层，存在下拉、日历或菜单时优先关闭子弹层，再按 Esc 关闭父框。关闭后恢复触发按钮焦点，保存中的关闭保护与未保存修改确认继续生效。
 
 表格和图表在公共控件层跳过内容未变的更新：表格复用等价的行数组及未变行，图表比较 option、回调身份和有效外观后再提交 `setOption`。机器性能页按磁盘 ID 与图表实际使用的容量值缓存 option，CPU/内存轮询不会重复更新未变的磁盘饼图；语言、主题和容量变化仍会更新。数字与坐标轴时间格式化器按语言复用。调用方主动清空表格时不保留历史行，避免越过权限及查询边界。
+
+### 背景动效与低占用策略
+
+参考 `/mnt/d/share/client` 的样式更新，但不整目录覆盖：保留 admin 的默认主题色、多语言、权限/接口契约、表格稳定行、图表更新快照及本地字体许可证。侧栏移除重复品牌说明与不代表真实连接状态的绿点。缩放保留原有 0.92–1.5 可读性下限，增加 rAF 合并、DPR 与 visualViewport 变化处理；卡片宽度阈值与 `--k` 同比例缩放。
+
+- 完整动效包含 3 个漂浮光晕、桌面最多 8 个上升粒子、窄屏最多 5 个粒子；精细指针设备提供鼠标跟随光晕。
+- 全部背景共用一个最高 30 FPS 的时钟（定时器 + rAF），不改变业务 UI 的刷新率。每帧只写 `transform` / `opacity`，不触发 Vue 响应式渲染，也不读取布局；慢帧直接按时间定位，不补帧。
+- 光球最长边不超过 480 CSS px / 768 物理像素；跟随光晕不超过 280 CSS px / 448 物理像素。使用静态径向渐变，不使用全屏噪声滤镜、运动缩放、粒子 blur/box-shadow 或 canvas 渲染循环。
+- 低特效、后台标签页和系统减少动态效果均停止计时器/rAF、移除指针监听、释放 `will-change` 提示并隐藏粒子/跟随光晕，只留静态背景。卸载清理全部观察器、媒体查询和事件订阅。
+- `LuminaPanel` 使用共享的 `--lg-panel-background` / `--lg-panel-highlight` 令牌，按主题与动效档位变化；高光合并到背景，不单建覆盖内容的伪元素层。表格普通行与 table 背景透明以露出面板，hover、选中态、粘性表头及浮层继续保持语义表面；完整模式也不进行移动背景的 `backdrop-filter` 采样。
+
+主题色不会自动改成参考 client 的蓝青色。登录页和顶栏的调色板入口支持自定义主色、明暗模式共享、刷新恢复及一键恢复默认；空偏好不会覆盖出厂 token。明亮自定义色自动匹配深色前景。色阶通过 UI 模块的 `applyLuminaBrand()` 生成，业务页面继续复用 PrimeVue/Lumina token，不引入新的组件库。
+
+背景专项验证位于 `tests/e2e/background.spec.ts`、`tests/ui/background.test.ts` 与 `tests/ui/brand.test.ts`；各子页面的四种主题/动效组合由共享 `tests/e2e/surface.ts` 断言，并保留桌面/移动表格滚动回归。可复现的渲染代理指标采样：
+
+```sh
+# 终端 1：启动开发服务器（不可同时运行使用相同端口的 Playwright webServer）
+npm run dev -- --port 5183 --strictPort
+# 终端 2：可选参考目录只用于本地比较，构建/运行不依赖它
+npm run profile:background -- --reference /mnt/d/share/client
+```
+
+结果位于 `test-results/background-profile/`，包含 1080p/4K、DPR=2 下的完整动效/低特效截图、Chromium timeline trace 和 `summary.json`。脚本记录主线程耗时、Paint/RasterTask 数量、图层面积和精灵面积估算；参考项重建 client 的 3 个光球、14 个粒子、跟随光晕、网格与噪声 CSS，不加载 client 业务。这些是隔离背景场景的浏览器渲染代理指标，**不是显卡利用率或实测显存**；生产机器仍需用目标显卡、分辨率及完整页面进行 DevTools/系统 GPU 验收。不要将面积变化百分比直接当作 GPU 利用率降幅。
 
 ## 验证
 

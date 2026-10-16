@@ -8,10 +8,12 @@ export function initializeUiPreferences(pinia: Pinia) {
 
 export function useUiPreferences() {
   const store = useUiPreferencesStore()
-  const { theme, effects } = storeToRefs(store)
+  const { theme, effects, brand } = storeToRefs(store)
   return {
     theme: readonly(theme),
     effects: readonly(effects),
+    brand: readonly(brand),
+    setBrand: store.setBrand,
     setTheme: store.setTheme,
     setEffects: store.setEffects,
   }

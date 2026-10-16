@@ -19,7 +19,7 @@ export { computeLuminaScale, snapLuminaPixels, useLuminaScale } from './composab
 export { formatDateTimeLocal, parseDateTimeLocal } from './utils/dateTime'
 
 export { default as LuminaAppearanceControls } from './components/LuminaAppearanceControls.vue'
-export { applyLuminaAppearance } from './theme/appearance'
+export { applyLuminaAppearance, applyLuminaBrand, LUMINA_DEFAULT_BRAND } from './theme/appearance'
 export type { LuminaTheme, LuminaEffects } from './theme/appearance'
 
 export { default as LuminaMark } from './components/LuminaMark.vue'
