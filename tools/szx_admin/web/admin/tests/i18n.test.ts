@@ -30,6 +30,13 @@ it.each([
         )
       }
     }
+    for (const key of ['pageSize', 'customPageSize', 'applyPageSize', 'pageSizeHint'] as const) {
+      expect(messages.common[key].trim()).not.toBe('')
+      if (locale !== 'zh-CN') expect(messages.common[key]).not.toBe(zh.common[key])
+      expect([...messages.common[key].matchAll(/\{\w+\}/g)].map((m) => m[0]).sort()).toEqual(
+        [...zh.common[key].matchAll(/\{\w+\}/g)].map((m) => m[0]).sort(),
+      )
+    }
     expect(source).toContain('rbac_permission_changed:')
     expect(source).toContain('rbac_role_changed:')
   },

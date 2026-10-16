@@ -155,6 +155,11 @@ export default {
     second: '秒',
   },
   common: {
+    customPageSize: '自定义条数',
+    pageSize: '每页条数',
+    applyPageSize: '应用',
+    pageSizeHint: '请输入 {min}–{max} 的整数，按回车或点击应用',
+
     close: '关闭',
     cancel: '取消',
     confirm: '确认',

@@ -25,6 +25,7 @@ RangeSlider {
     property string valueSuffix: ""
     property int valuePrecision: -1  // -1 自动，>=0 固定小数位
     property int sideEditorWidth: 60
+    property bool keyboardTracking: false
     enum ValueDisplayMode {
         AboveHandles,
         SideValues
@@ -37,7 +38,7 @@ RangeSlider {
     property bool _sideEditorsReady: false
     property bool _syncingSideEditors: false
     property bool _rangeChangePending: false
-    /// 两端之间的最小距离；默认一个步长，保证右值始终严格大于左值。
+    /// 两端之间的最小距离；默认一个步长，设为 0 可选择相等的上下限。
     property real minimumSeparation: Math.max(Number(stepSize), 0.000001)
 
     // ── 信号 ─────────────────────────────────────────────────────────
@@ -231,7 +232,7 @@ RangeSlider {
     }
 
     function _enforceMinimumSeparation(firstChanged) {
-        const gap = Math.min(Math.max(minimumSeparation, 0.000001), Math.max(0, to - from));
+        const gap = Math.min(Math.max(minimumSeparation, 0), Math.max(0, to - from));
         if (second.value - first.value >= gap)
             return;
         if (firstChanged)
@@ -272,6 +273,8 @@ RangeSlider {
 
     UTSpinBox {
         id: sideLeftInteger
+        objectName: "sideLeftInteger"
+        keyboardTracking: root.keyboardTracking
         z: 10
         visible: root._showsSideValues && root._usesIntegerEditors
         anchors.left: parent.left
@@ -291,6 +294,8 @@ RangeSlider {
 
     UTDoubleSpinBox {
         id: sideRightDecimal
+        objectName: "sideRightDecimal"
+        keyboardTracking: root.keyboardTracking
         z: 10
         visible: root._showsSideValues && !root._usesIntegerEditors
         anchors.right: parent.right
@@ -310,6 +315,8 @@ RangeSlider {
 
     UTDoubleSpinBox {
         id: sideLeftDecimal
+        objectName: "sideLeftDecimal"
+        keyboardTracking: root.keyboardTracking
         z: 10
         visible: root._showsSideValues && !root._usesIntegerEditors
         anchors.left: parent.left
@@ -329,6 +336,8 @@ RangeSlider {
 
     UTSpinBox {
         id: sideRightInteger
+        objectName: "sideRightInteger"
+        keyboardTracking: root.keyboardTracking
         z: 10
         visible: root._showsSideValues && root._usesIntegerEditors
         anchors.right: parent.right

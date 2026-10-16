@@ -171,6 +171,11 @@ export default {
   },
   common: {
     ...zh.common,
+    customPageSize: 'Custom page size',
+    pageSize: 'Rows per page',
+    applyPageSize: 'Apply',
+    pageSizeHint: 'Enter an integer from {min} to {max}, then press Enter or Apply',
+
     close: 'Close',
     cancel: 'Cancel',
     confirm: 'Confirm',

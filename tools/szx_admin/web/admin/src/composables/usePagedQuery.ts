@@ -1,6 +1,7 @@
 import { computed, onUnmounted, shallowRef } from 'vue'
 import type { Envelope, Page } from '../api/types'
 import { errorMessage } from '../api/client'
+import { parseLuminaPageSize } from '../ui/lumina/utils/pageSize'
 
 export function usePagedQuery<T>(
   fetchPage: (page: number, size: number) => Promise<Envelope<Page<T>>>,
@@ -41,8 +42,27 @@ export function usePagedQuery<T>(
       if (current === sequence) busy.value = false
     }
   }
+  async function setPageSize(size: number) {
+    // Match the REST pagination contract (1–100); never send invalid/partial input.
+    if (parseLuminaPageSize(size, 1, 100) === null || size === pageSize.value) return
+    pageSize.value = size
+    page.value = 1
+    await load(1)
+  }
   onUnmounted(() => {
     sequence++
   })
-  return { items, page, pageSize, total, busy, error, requestId, pageCount, load, reset }
+  return {
+    items,
+    page,
+    pageSize,
+    total,
+    busy,
+    error,
+    requestId,
+    pageCount,
+    load,
+    reset,
+    setPageSize,
+  }
 }

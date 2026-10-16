@@ -61,6 +61,10 @@ Item {
     // click; callers that need edge-only read-only hit testing leave this off.
     property bool allowInteriorSelection: false
     property bool creationEnabled: false
+    property real minimumCreationSize: 2
+    property bool alignCreatedRectangles: false
+    /// Preserve every covered image pixel when committing resized/moved ROIs.
+    property bool alignEditedRectangles: false
     property bool shiftDeleteEnabled: false
     property bool viewportInteractionEnabled: false
     property string createGroupKey: "general"
@@ -89,6 +93,7 @@ Item {
     signal rectangleClicked(string key)
     signal rectangleSelected(string key)
     signal rectangleRightClicked(string key)
+    signal rectangleContextMenuRequested(string key, point position)
     signal rectangleDeleteRequested(string key)
     signal rectangleUpdated(string key, var rectangle)
     signal rectangleEditFinished(string key, var rectangle)
@@ -100,7 +105,8 @@ Item {
     signal viewportPanFinished()
     signal viewportWheel(real x, real y, real delta)
 
-    focus: editable
+    // Editing availability also changes when preview images are refreshed.
+    // Only pointer interaction should move focus from a parameter editor.
 
     function resetState() {
         positionOverrides = ({});
@@ -193,6 +199,9 @@ Item {
     // without a key keep the original reset-on-data-change behavior.
     onGroupsChanged: reconcileGroups(groups)
     onSessionKeyChanged: resetState()
+    onEditableChanged: if (!editable) draftRectangle = null
+    onCreationEnabledChanged: if (!creationEnabled) draftRectangle = null
+    onVisibleChanged: if (!visible) draftRectangle = null
 
     function imagePoint(viewX, viewY) {
         const scale = Math.max(imageScale, 0.0001);
@@ -499,6 +508,14 @@ Item {
         }
     }
 
+    function beginDraft(point) {
+        if (!editable || !creationEnabled)
+            return;
+        forceActiveFocus();
+        const image = imagePoint(point.x, point.y);
+        draftRectangle = {startX: image.x, startY: image.y, x: image.x, y: image.y, width: 0, height: 0};
+    }
+
     function updateDraft(point) {
         if (!draftRectangle)
             return;
@@ -519,14 +536,16 @@ Item {
             return;
         const draft = draftRectangle;
         draftRectangle = null;
-        if (draft.width < 2 || draft.height < 2)
+        if (draft.width < minimumCreationSize || draft.height < minimumCreationSize)
             return;
+        const x = alignCreatedRectangles ? Math.floor(draft.x) : Math.round(draft.x);
+        const y = alignCreatedRectangles ? Math.floor(draft.y) : Math.round(draft.y);
         rectangleCreated({
             key: "draft:" + Date.now(),
-            x: Math.round(draft.x),
-            y: Math.round(draft.y),
-            width: Math.round(draft.width),
-            height: Math.round(draft.height),
+            x: x,
+            y: y,
+            width: alignCreatedRectangles ? Math.ceil(draft.x + draft.width) - x : Math.round(draft.width),
+            height: alignCreatedRectangles ? Math.ceil(draft.y + draft.height) - y : Math.round(draft.height),
             label: createLabel,
             groupKey: createGroupKey
         });
@@ -574,11 +593,15 @@ Item {
             y1 = Math.max(0, Math.min(imageSourceSize.height, y1));
             y2 = Math.max(0, Math.min(imageSourceSize.height, y2));
         }
+        const left = Math.min(x1, x2);
+        const top = Math.min(y1, y2);
+        const x = alignEditedRectangles ? Math.floor(left) : Math.round(left);
+        const y = alignEditedRectangles ? Math.floor(top) : Math.round(top);
         return {
-            x: Math.round(Math.min(x1, x2)),
-            y: Math.round(Math.min(y1, y2)),
-            width: Math.round(Math.abs(x2 - x1)),
-            height: Math.round(Math.abs(y2 - y1))
+            x: x,
+            y: y,
+            width: alignEditedRectangles ? Math.ceil(Math.max(x1, x2)) - x : Math.round(Math.abs(x2 - x1)),
+            height: alignEditedRectangles ? Math.ceil(Math.max(y1, y2)) - y : Math.round(Math.abs(y2 - y1))
         };
     }
 
@@ -627,8 +650,7 @@ Item {
                 mouse.accepted = false;
                 return;
             }
-            const point = root.imagePoint(mouse.x, mouse.y);
-            root.draftRectangle = { startX: point.x, startY: point.y, x: point.x, y: point.y, width: 0, height: 0 };
+            root.beginDraft(Qt.point(mouse.x, mouse.y));
         }
         onPositionChanged: function (mouse) {
             if (panning && pressed)
@@ -642,6 +664,13 @@ Item {
                 root.viewportPanFinished();
             } else {
                 root.finishDraft();
+            }
+        }
+        onCanceled: {
+            root.draftRectangle = null;
+            if (panning) {
+                panning = false;
+                root.viewportPanFinished();
             }
         }
         onWheel: function (wheel) {
@@ -967,9 +996,16 @@ Item {
                     }
 
                     function updateEdit(viewPoint) {
-                        if (editHandle.length === 0 || !editStart)
+                        if (!overlayRoot || editHandle.length === 0 || !editStart)
                             return;
-                        const next = overlayRoot.transformRectangle(editStart, editHandle, overlayRoot.imagePoint(viewPoint.x, viewPoint.y));
+                        const point = overlayRoot.imagePoint(viewPoint.x, viewPoint.y);
+                        // Keep the initial grip offset so pressing either half
+                        // of a corner handle does not snap the ROI to the pointer.
+                        if (editHandle !== "move") {
+                            point.x += editStart.x + (editHandle === "tr" || editHandle === "br" ? editStart.width : 0) - editStart.startX;
+                            point.y += editStart.y + (editHandle === "bl" || editHandle === "br" ? editStart.height : 0) - editStart.startY;
+                        }
+                        const next = overlayRoot.transformRectangle(editStart, editHandle, point);
                         if (next.width >= 2 && next.height >= 2)
                             editOverride = next;
                     }
@@ -983,6 +1019,10 @@ Item {
                             }
                             UTLogger.debug("Rectangle edited: " + rectKey, "UIToolkits.MultiRectOverlay");
                         }
+                        cancelEdit();
+                    }
+
+                    function cancelEdit() {
                         editOverride = null;
                         editHandle = "";
                         editStart = null;
@@ -1055,22 +1095,47 @@ Item {
                     }
 
                     Rectangle {
-                        anchors.right: parent.right
-                        anchors.top: parent.top
-                        anchors.margins: 3
-                        visible: rectItem.recognizedText.length > 0
+                        id: characterBadge
+                        // Keep text above every ROI, independently of the
+                        // character frame's stacking order and selection.
+                        parent: rectItem.overlayRoot
+                        visible: rectItem.visible && rectItem.recognizedText.length > 0
                         width: characterLabel.implicitWidth + 8
                         height: characterLabel.implicitHeight + 4
+                        readonly property real imageWidth: rectItem.overlayRoot
+                                ? (rectItem.overlayRoot.imageSourceSize.width > 0
+                                   ? rectItem.overlayRoot.imageSourceSize.width
+                                   : rectItem.overlayRoot.width / Math.max(0.001, rectItem.overlayRoot.imageScale)) : 0
+                        readonly property real imageHeight: rectItem.overlayRoot
+                                ? (rectItem.overlayRoot.imageSourceSize.height > 0
+                                   ? rectItem.overlayRoot.imageSourceSize.height
+                                   : rectItem.overlayRoot.height / Math.max(0.001, rectItem.overlayRoot.imageScale)) : 0
+                        readonly property real textX: rectItem.displayX + rectItem.displayWidth + 6 + characterLabel.implicitWidth > imageWidth
+                                ? Math.max(0, rectItem.displayX - characterLabel.implicitWidth - 6)
+                                : rectItem.displayX + rectItem.displayWidth + 6
+                        readonly property real textY: {
+                            let value = rectItem.displayY - 2;
+                            if (value + characterLabel.implicitHeight > imageHeight)
+                                value = Math.max(0, imageHeight - characterLabel.implicitHeight);
+                            if (value < 0)
+                                value = Math.min(imageHeight - characterLabel.implicitHeight,
+                                                 rectItem.displayY + rectItem.displayHeight + 6);
+                            return value;
+                        }
+                        x: rectItem.overlayRoot ? rectItem.overlayRoot.imagePosition.x + (textX - 4) * scale : 0
+                        y: rectItem.overlayRoot ? rectItem.overlayRoot.imagePosition.y + (textY - 2) * scale : 0
+                        scale: rectItem.overlayRoot ? rectItem.overlayRoot.imageScale : 1
+                        transformOrigin: Item.TopLeft
                         color: "#A0000000"
                         radius: 2
-                        z: 3
+                        z: 220
 
                         Text {
                             id: characterLabel
                             anchors.centerIn: parent
                             text: rectItem.recognizedText
                             color: "#FFF176"
-                            font.pixelSize: 13
+                            font.pointSize: 11
                             font.bold: true
                             font.family: UTTheme.fontFamily
                         }
@@ -1079,6 +1144,10 @@ Item {
                     Loader {
                         active: rectItem.rectangleEditable && rectItem.selected
                         anchors.fill: rectItem
+                        anchors.margins: rectItem.overlayRoot ? -rectItem.overlayRoot.handleSize / 2 : 0
+                        // The Loader owns the handles' stacking context. Its
+                        // children must sit above the full-ROI move MouseArea.
+                        z: 4
                         sourceComponent: handlesComponent
                     }
 
@@ -1089,13 +1158,15 @@ Item {
                             model: ["tl", "tr", "br", "bl"]
 
                         delegate: Rectangle {
+                            id: cornerHandle
+
                             required property string modelData
 
                             readonly property string handleName: modelData
                             width: rectItem.overlayRoot ? rectItem.overlayRoot.handleSize : 0
                             height: rectItem.overlayRoot ? rectItem.overlayRoot.handleSize : 0
-                            x: handleName === "tl" || handleName === "bl" ? -width / 2 : parent.width - width / 2
-                            y: handleName === "tl" || handleName === "tr" ? -height / 2 : parent.height - height / 2
+                            x: handleName === "tl" || handleName === "bl" ? 0 : parent.width - width
+                            y: handleName === "tl" || handleName === "tr" ? 0 : parent.height - height
                             visible: rectItem.rectangleEditable && rectItem.selected
                             color: rectItem.selected ? rectItem.resolvedSelectedColor() : rectItem.rectColor
                             border.color: "#101010"
@@ -1105,19 +1176,38 @@ Item {
                             MouseArea {
                                 anchors.fill: parent
                                 acceptedButtons: Qt.LeftButton
-                                cursorShape: handleName === "tl" || handleName === "br" ? Qt.SizeFDiagCursor : Qt.SizeBDiagCursor
+                                preventStealing: true
+                                cursorShape: cornerHandle.handleName === "tl" || cornerHandle.handleName === "br" ? Qt.SizeFDiagCursor : Qt.SizeBDiagCursor
 
                                 onPressed: function (mouse) {
-                                    const point = parent.mapToItem(rectItem.overlayRoot, mouse.x, mouse.y);
-                                    rectItem.beginEdit(handleName, point);
+                                    const point = cornerHandle.mapToItem(rectItem.overlayRoot, mouse.x, mouse.y);
+                                    if ((mouse.modifiers & Qt.ControlModifier) && rectItem.overlayRoot.creationEnabled)
+                                        rectItem.overlayRoot.beginDraft(point);
+                                    else
+                                        rectItem.beginEdit(cornerHandle.handleName, point);
                                 }
                                 onPositionChanged: function (mouse) {
                                     if (pressed) {
-                                        const point = parent.mapToItem(rectItem.overlayRoot, mouse.x, mouse.y);
-                                        rectItem.updateEdit(point);
+                                        const point = cornerHandle.mapToItem(rectItem.overlayRoot, mouse.x, mouse.y);
+                                        if (rectItem.overlayRoot.draftRectangle)
+                                            rectItem.overlayRoot.updateDraft(rectItem.overlayRoot.imagePoint(point.x, point.y));
+                                        else
+                                            rectItem.updateEdit(point);
                                     }
                                 }
-                                onReleased: rectItem.finishEdit()
+                                onReleased: function (mouse) {
+                                    const point = cornerHandle.mapToItem(rectItem.overlayRoot, mouse.x, mouse.y);
+                                    if (rectItem.overlayRoot.draftRectangle) {
+                                        rectItem.overlayRoot.finishDraft();
+                                    } else {
+                                        rectItem.updateEdit(point);
+                                        rectItem.finishEdit();
+                                    }
+                                }
+                                onCanceled: {
+                                    rectItem.overlayRoot.draftRectangle = null;
+                                    rectItem.cancelEdit();
+                                }
                             }
                         }
                         }
@@ -1167,19 +1257,21 @@ Item {
                             }
                             if (mouse.button === Qt.RightButton) {
                                 rectItem.select();
+                                const point = rectItem.mapToItem(rectItem.overlayRoot, mouse.x, mouse.y);
+                                rectItem.overlayRoot.rectangleContextMenuRequested(rectItem.rectKey, point);
                                 rectItem.overlayRoot.rectangleRightClicked(rectItem.rectKey);
+                                return;
+                            }
+                            if (mouse.button === Qt.LeftButton && (mouse.modifiers & Qt.ControlModifier)
+                                    && rectItem.overlayRoot.editable && rectItem.overlayRoot.creationEnabled) {
+                                const point = rectItem.mapToItem(rectItem.overlayRoot, mouse.x, mouse.y);
+                                rectItem.overlayRoot.beginDraft(point);
                                 return;
                             }
                             if (mouse.button === Qt.LeftButton && (mouse.modifiers & Qt.ShiftModifier)
                                     && rectItem.rectangleEditable && rectItem.overlayRoot.shiftDeleteEnabled) {
                                 rectItem.select();
                                 rectItem.overlayRoot.rectangleDeleteRequested(rectItem.rectKey);
-                                return;
-                            }
-                            if (rectItem.rectangleEditable && rectItem.overlayRoot.creationEnabled && (mouse.modifiers & Qt.ControlModifier)) {
-                                const point = rectItem.mapToItem(rectItem.overlayRoot, mouse.x, mouse.y);
-                                const imagePoint = rectItem.overlayRoot.imagePoint(point.x, point.y);
-                                rectItem.overlayRoot.draftRectangle = { startX: imagePoint.x, startY: imagePoint.y, x: imagePoint.x, y: imagePoint.y, width: 0, height: 0 };
                                 return;
                             }
                             if (rectItem.rectangleEditable) {
@@ -1203,6 +1295,10 @@ Item {
                                 rectItem.overlayRoot.finishDraft();
                             else
                                 rectItem.finishEdit();
+                        }
+                        onCanceled: {
+                            rectItem.overlayRoot.draftRectangle = null;
+                            rectItem.cancelEdit();
                         }
                     }
 
@@ -1230,6 +1326,7 @@ Item {
         width: (draft ? draft.width : 0) * root.imageScale
         height: (draft ? draft.height : 0) * root.imageScale
         visible: draft !== null
+        z: 250
         color: "transparent"
         border.color: "#ffffff"
         border.width: 2

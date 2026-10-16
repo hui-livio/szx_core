@@ -69,13 +69,8 @@ FocusScope {
                 return spinBox.value;
             return root.toInteger(Math.max(root.from, Math.min(root.to, parsed)));
         }
-        // UTSpinBox's custom TextInput reliably emits valueChanged for wheel,
-        // keyboard and accepted text edits; valueModified is not emitted on
-        // every one of those paths.  Forward the actual value transition.
-        onValueChanged: {
+        onValueModified: {
             const next = value / root.scaleFactor;
-            if (Math.abs(next - root.effectiveValue) < 0.0000001)
-                return;
             root.value = next;
             root.valueModified(next);
         }

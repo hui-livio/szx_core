@@ -35,7 +35,7 @@ const {
   closeCredential,
   submit,
 } = useUsersViewModel()
-const { page, pageSize, pageCount, total, busy, error, requestId, load } = query
+const { page, pageSize, pageCount, total, busy, error, requestId, load, setPageSize } = query
 const { busy: saving, error: saveError } = mutation
 </script>
 <template>
@@ -78,6 +78,7 @@ const { busy: saving, error: saveError } = mutation
         :total="total"
         :busy="busy"
         @change="load"
+        @change:size="setPageSize"
       />
     </LuminaPanel>
     <p v-if="requestId" class="request-id">{{ t('common.requestId') }}：{{ requestId }}</p>
