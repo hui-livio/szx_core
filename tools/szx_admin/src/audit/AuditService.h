@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../user/ActorContext.h"
+#include "../rbac/AuthorizationService.h"
 #include "AuditRepository.h"
 
 #include "SzxAdmin/Infra/Database.h"
@@ -38,6 +39,6 @@ private:
     auto query(const USER::ActorContext &actor, const AuditQuery &query) -> SZX::COMMON::Result<AuditPage>;
 
     INFRA::DatabasePool &database_;
-    AUTH::LoginService &auth_;
+    RBAC::AuthorizationService authorization_;
 };
 } // namespace SZX::ADMIN::AUDIT

@@ -1,12 +1,14 @@
+#include "../audit/AuditRepository.h"
 #include "../auth/LoginRepository.h"
 #include "../auth/LoginService.h"
 #include "../auth/PasswordHash.h"
-#include "../audit/AuditRepository.h"
+#include "../infra/DatabaseUnitOfWork.h"
+#include "../rbac/PermissionCodes.h"
+#include "../rbac/RoleRepository.h"
 #include "AuditDetails.h"
 #include "UserService.h"
 #include "UserValidation.h"
 
-#include "Defer.hpp"
 #include "JsonHelper.hpp"
 #include "SzxAdmin/Infra/ErrorCode.h"
 #include "SzxCrypto/Hash.h"
@@ -57,14 +59,14 @@ auto writeAudit(AUDIT::AuditRepository &audit, const ActorContext &context, cons
                 const std::string &targetId, std::string_view event, std::string_view result, const Json &details) -> Result<void>
 {
     return audit.append({.id             = SZX::COMMON::Uuid::v4().toString(),
-                                 .actor_user_id  = actorId,
-                                 .target_user_id = targetId,
-                                 .event_name     = std::string{event},
-                                 .result         = std::string{result},
-                                 .request_id     = context.requestId,
-                                 .ip             = context.peerAddress,
-                                 .user_agent     = context.userAgent,
-                                 .details_json   = details.dump()});
+                         .actor_user_id  = actorId,
+                         .target_user_id = targetId,
+                         .event_name     = std::string{event},
+                         .result         = std::string{result},
+                         .request_id     = context.requestId,
+                         .ip             = context.peerAddress,
+                         .user_agent     = context.userAgent,
+                         .details_json   = details.dump()});
 }
 
 auto reloadUser(UserRepository &users, UserRow &target) -> Result<void>
@@ -123,61 +125,65 @@ auto UserService::create(const ActorContext &context, const CreateUserInput &inp
     {
         if (!validContext(context.requestId, context.peerAddress))
             return failed<CredentialIssue>(ErrorCode::ValidationError);
-        if (input.uid.has_value() == input.username.has_value())
-            return failed<CredentialIssue>(ErrorCode::UserIdentityOneOfRequired);
-        if (!validDisplayName(input.displayName) || !POLICY::validRole(input.role))
+        if (input.loginIdentifier.empty())
+            return failed<CredentialIssue>(ErrorCode::ValidationError);
+        if (!validDisplayName(input.displayName) || !validRoleCode(input.role))
             return failed<CredentialIssue>(ErrorCode::ValidationError);
         if (input.passwordHash && !AUTH::validClientPasswordHash(*input.passwordHash))
             return failed<CredentialIssue>(ErrorCode::ValidationError);
-        // uid keeps its case; usernames additionally use invariant lowercase for the canonical column.
-        const auto display = AUTH::canonicalIdentifier(input.uid ? *input.uid : *input.username, false);
-        if (!display.ok)
-            return Result<CredentialIssue>::Failure(display.error, {});
-        const auto canonical = input.uid ? display : AUTH::canonicalIdentifier(*input.username, true);
-        if (!canonical.ok)
-            return Result<CredentialIssue>::Failure(canonical.error, {});
+        bool isUid{};
+        std::string displayValue;
+        std::string canonicalValue;
+        {
+            const auto normalized = AUTH::normalizeLoginIdentifier(input.loginIdentifier, AUTH::IdentifierType::Username);
+            if (!normalized.ok)
+                return Result<CredentialIssue>::Failure(normalized.error, {});
+            isUid          = false;
+            displayValue   = normalized.value.displayValue;
+            canonicalValue = normalized.value.canonicalValue;
+        }
         CredentialIssue output;
         const auto operation = database_.withConnection(
             [&](INFRA::DatabaseConnection &connection) -> Result<void>
             {
-                auto *users    = connection.userRepository();
-                auto *sessions = connection.loginRepository();
-                auto *audit    = connection.auditRepository();
+                INFRA::DatabaseUnitOfWork unit(connection);
+                auto *users    = unit.users();
+                auto *sessions = unit.sessions();
+                auto *audit    = unit.audit();
                 if (!users || !sessions || !audit)
                     return failed<void>(ErrorCode::DatabaseQueryFailed);
-                const auto begun = connection.begin();
+                const auto begun = unit.begin();
                 if (!begun.ok)
                     return begun;
-                bool committed{};
-                defer
-                {
-                    if (!committed)
-                    {
-                        try
-                        {
-                            (void)connection.rollback();
-                        } catch (...)
-                        {
-                        }
-                    }
-                };
                 // Serialize identity reservations across service instances before
-                // acquiring any user row locks. UID and username share login input.
+                // acquiring any user row locks.
                 const auto namespaceLock = connection.bootstrapCompleted();
                 if (!namespaceLock.ok)
                     return Result<void>::Failure(namespaceLock.error, {});
                 if (!namespaceLock.value)
                     return failed<void>(ErrorCode::DatabaseQueryFailed);
-                const auto actor = resolve(context, *users, true);
+                auto *roles      = unit.roles();
+                const auto actor = resolve(context, *users, true, roles);
                 if (!actor.ok)
                     return Result<void>::Failure(actor.error, {});
-                if (!POLICY::allows(actor.value.role, POLICY::Capability::UserCreate))
+                if (!roles)
+                    return failed<void>(ErrorCode::DatabaseQueryFailed);
+                const auto allowed = authorization_.allows(*roles, actor.value.user.role, RBAC::PERMISSIONS::UserCreate);
+                if (!allowed.ok)
+                    return Result<void>::Failure(allowed.error, {});
+                const auto manageable = roles->canManageRole(actor.value.user.role, input.role);
+                if (!manageable.ok)
+                    return Result<void>::Failure(manageable.error, {});
+                if (!allowed.value || !manageable.value)
                     return failed<void>(ErrorCode::Forbidden);
-                if (!POLICY::mayTarget(actor.value.role, input.role))
-                    return failed<void>(ErrorCode::Forbidden);
-                const auto uid      = input.uid ? canonical.value : std::string{};
-                const auto username = input.uid ? std::string{} : canonical.value;
-                const auto existing = users->findByCanonical(uid, username);
+                std::optional<std::string> roleId;
+                const auto targetRole = roles->findByCode(input.role, true);
+                if (!targetRole.ok)
+                    return Result<void>::Failure(targetRole.error, {});
+                if (!targetRole.value || targetRole.value->status != "active")
+                    return failed<void>(ErrorCode::ValidationError);
+                roleId              = targetRole.value->id;
+                const auto existing = users->findByCanonical(canonicalValue);
                 if (!existing.ok)
                     return Result<void>::Failure(existing.error, {});
                 if (existing.value)
@@ -192,28 +198,28 @@ auto UserService::create(const ActorContext &context, const CreateUserInput &inp
                     input.passwordHash ? std::optional<std::string>{} : std::optional{expiry(kTemporaryCredentialSeconds)};
                 const NewUser row{
                     .id                              = SZX::COMMON::Uuid::v4().toString(),
-                    .uid                             = input.uid ? std::optional{display.value} : std::nullopt,
-                    .uid_canonical                   = input.uid ? std::optional{canonical.value} : std::nullopt,
-                    .username                        = input.uid ? std::nullopt : std::optional{display.value},
-                    .username_canonical              = input.uid ? std::nullopt : std::optional{canonical.value},
+                    .login_identifier                = displayValue,
+                    .login_identifier_canonical      = canonicalValue,
+                    .identifier_type                 = isUid ? "uid" : "username",
                     .display_name                    = input.displayName,
                     .password_hash                   = credential.value.second,
+                    .role_id                         = roleId,
                     .role                            = input.role,
                     .status                          = "active",
                     .force_password_change           = true,
                     .temporary_credential_expires_at = expiresAt,
-                    .created_by                      = actor.value.id,
+                    .created_by                      = actor.value.user.id,
                 };
                 if (const auto inserted = users->insert(row); !inserted.ok)
                 {
                     // Also translate uniqueness failures from writers outside this service.
-                    const auto raced = users->findByCanonical(uid, username);
+                    const auto raced = users->findByCanonical(canonicalValue);
                     if (raced.ok && raced.value)
                         return failed<void>(ErrorCode::UserIdentityConflict);
                     return Result<void>::Failure(inserted.error, {});
                 }
-                const auto audited = writeAudit(*audit, context, actor.value.id, row.id, "user.created", "success",
-                                                Json{{"role", row.role}, {"identity", input.uid ? "uid" : "username"}});
+                const auto audited = writeAudit(*audit, context, actor.value.user.id, row.id, "user.created", "success",
+                                                Json{{"role", row.role}, {"identity", isUid ? "uid" : "username"}});
                 if (!audited.ok)
                     return audited;
                 const auto stored = users->findById(row.id);
@@ -221,9 +227,8 @@ auto UserService::create(const ActorContext &context, const CreateUserInput &inp
                     return Result<void>::Failure(stored.error, {});
                 if (!stored.value)
                     return failed<void>(ErrorCode::InternalFailure);
-                const auto result = connection.commit();
-                committed         = result.ok;
-                if (committed)
+                const auto result = unit.commit();
+                if (result.ok)
                     output = {.user                         = *stored.value,
                               .temporaryCredential          = credential.value.first,
                               .temporaryCredentialExpiresAt = expiresAt ?
@@ -250,28 +255,16 @@ auto UserService::updateProfile(const ActorContext &context, const std::string &
         const auto operation = database_.withConnection(
             [&](INFRA::DatabaseConnection &connection) -> Result<void>
             {
-                auto *users    = connection.userRepository();
-                auto *sessions = connection.loginRepository();
-                auto *audit    = connection.auditRepository();
+                INFRA::DatabaseUnitOfWork unit(connection);
+                auto *users    = unit.users();
+                auto *sessions = unit.sessions();
+                auto *audit    = unit.audit();
                 if (!users || !sessions || !audit)
                     return failed<void>(ErrorCode::DatabaseQueryFailed);
-                const auto begun = connection.begin();
+                const auto begun = unit.begin();
                 if (!begun.ok)
                     return begun;
-                bool committed{};
-                defer
-                {
-                    if (!committed)
-                    {
-                        try
-                        {
-                            (void)connection.rollback();
-                        } catch (...)
-                        {
-                        }
-                    }
-                };
-                const auto authorized = authorize(context, *users, id, POLICY::Capability::UserUpdate, version);
+                const auto authorized = authorize(context, *users, id, RBAC::PERMISSIONS::UserUpdate, version, unit.roles());
                 if (!authorized.ok)
                     return Result<void>::Failure(authorized.error, {});
                 auto target = authorized.value.target;
@@ -292,9 +285,8 @@ auto UserService::updateProfile(const ActorContext &context, const std::string &
                 const auto refreshed = reloadUser(*users, target);
                 if (!refreshed.ok)
                     return refreshed;
-                const auto result = connection.commit();
-                committed         = result.ok;
-                if (committed)
+                const auto result = unit.commit();
+                if (result.ok)
                     output = target;
                 return result;
             });
@@ -317,28 +309,16 @@ auto UserService::changeStatus(const ActorContext &context, const std::string &i
         const auto operation = database_.withConnection(
             [&](INFRA::DatabaseConnection &connection) -> Result<void>
             {
-                auto *users    = connection.userRepository();
-                auto *sessions = connection.loginRepository();
-                auto *audit    = connection.auditRepository();
+                INFRA::DatabaseUnitOfWork unit(connection);
+                auto *users    = unit.users();
+                auto *sessions = unit.sessions();
+                auto *audit    = unit.audit();
                 if (!users || !sessions || !audit)
                     return failed<void>(ErrorCode::DatabaseQueryFailed);
-                const auto begun = connection.begin();
+                const auto begun = unit.begin();
                 if (!begun.ok)
                     return begun;
-                bool committed{};
-                defer
-                {
-                    if (!committed)
-                    {
-                        try
-                        {
-                            (void)connection.rollback();
-                        } catch (...)
-                        {
-                        }
-                    }
-                };
-                const auto authorized = authorize(context, *users, id, POLICY::Capability::UserStatus, version);
+                const auto authorized = authorize(context, *users, id, RBAC::PERMISSIONS::UserStatus, version, unit.roles());
                 if (!authorized.ok)
                     return Result<void>::Failure(authorized.error, {});
                 if (status == "disabled" && authorized.value.actor.id == authorized.value.target.id)
@@ -371,17 +351,16 @@ auto UserService::changeStatus(const ActorContext &context, const std::string &i
                     const auto revoked = sessions->revokeRefresh(target.id, stamp, "status_changed");
                     if (!revoked.ok)
                         return revoked;
-                    const auto audited = writeAudit(*audit, context, authorized.value.actor.id, target.id,
-                                                    "user.status.changed", "success", Json{{"from", previous}, {"to", status}});
+                    const auto audited = writeAudit(*audit, context, authorized.value.actor.id, target.id, "user.status.changed",
+                                                    "success", Json{{"from", previous}, {"to", status}});
                     if (!audited.ok)
                         return audited;
                 }
                 const auto refreshed = reloadUser(*users, target);
                 if (!refreshed.ok)
                     return refreshed;
-                const auto result = connection.commit();
-                committed         = result.ok;
-                if (committed)
+                const auto result = unit.commit();
+                if (result.ok)
                     output = target;
                 return result;
             });
@@ -402,28 +381,16 @@ auto UserService::unlock(const ActorContext &context, const std::string &id, std
         const auto operation = database_.withConnection(
             [&](INFRA::DatabaseConnection &connection) -> Result<void>
             {
-                auto *users    = connection.userRepository();
-                auto *sessions = connection.loginRepository();
-                auto *audit    = connection.auditRepository();
+                INFRA::DatabaseUnitOfWork unit(connection);
+                auto *users    = unit.users();
+                auto *sessions = unit.sessions();
+                auto *audit    = unit.audit();
                 if (!users || !sessions || !audit)
                     return failed<void>(ErrorCode::DatabaseQueryFailed);
-                const auto begun = connection.begin();
+                const auto begun = unit.begin();
                 if (!begun.ok)
                     return begun;
-                bool committed{};
-                defer
-                {
-                    if (!committed)
-                    {
-                        try
-                        {
-                            (void)connection.rollback();
-                        } catch (...)
-                        {
-                        }
-                    }
-                };
-                const auto authorized = authorize(context, *users, id, POLICY::Capability::UserUnlock, version);
+                const auto authorized = authorize(context, *users, id, RBAC::PERMISSIONS::UserUnlock, version, unit.roles());
                 if (!authorized.ok)
                     return Result<void>::Failure(authorized.error, {});
                 auto target = authorized.value.target;
@@ -442,16 +409,15 @@ auto UserService::unlock(const ActorContext &context, const std::string &id, std
                 const auto revoked = sessions->revokeRefresh(target.id, stamp, "unlocked");
                 if (!revoked.ok)
                     return revoked;
-                const auto audited = writeAudit(*audit, context, authorized.value.actor.id, target.id, "user.unlocked",
-                                                "success", Json::object());
+                const auto audited =
+                    writeAudit(*audit, context, authorized.value.actor.id, target.id, "user.unlocked", "success", Json::object());
                 if (!audited.ok)
                     return audited;
                 const auto refreshed = reloadUser(*users, target);
                 if (!refreshed.ok)
                     return refreshed;
-                const auto result = connection.commit();
-                committed         = result.ok;
-                if (committed)
+                const auto result = unit.commit();
+                if (result.ok)
                     output = target;
                 return result;
             });
@@ -467,42 +433,40 @@ auto UserService::assignRole(const ActorContext &context, const std::string &id,
 {
     try
     {
-        if (!validContext(context.requestId, context.peerAddress) || !validUuid(id) || !POLICY::validRole(role))
+        if (!validContext(context.requestId, context.peerAddress) || !validUuid(id) || !validRoleCode(role))
             return failed<UserRow>(ErrorCode::ValidationError);
         UserRow output;
         const auto operation = database_.withConnection(
             [&](INFRA::DatabaseConnection &connection) -> Result<void>
             {
-                auto *users    = connection.userRepository();
-                auto *sessions = connection.loginRepository();
-                auto *audit    = connection.auditRepository();
+                INFRA::DatabaseUnitOfWork unit(connection);
+                auto *users    = unit.users();
+                auto *sessions = unit.sessions();
+                auto *audit    = unit.audit();
                 if (!users || !sessions || !audit)
                     return failed<void>(ErrorCode::DatabaseQueryFailed);
-                const auto begun = connection.begin();
+                const auto begun = unit.begin();
                 if (!begun.ok)
                     return begun;
-                bool committed{};
-                defer
-                {
-                    if (!committed)
-                    {
-                        try
-                        {
-                            (void)connection.rollback();
-                        } catch (...)
-                        {
-                        }
-                    }
-                };
-                const auto authorized = authorize(context, *users, id, POLICY::Capability::UserRoleAssign, version);
+                const auto authorized = authorize(context, *users, id, RBAC::PERMISSIONS::UserRoleAssign, version, unit.roles());
                 if (!authorized.ok)
                     return Result<void>::Failure(authorized.error, {});
                 if (authorized.value.actor.id == authorized.value.target.id)
                     return failed<void>(ErrorCode::Forbidden);
                 auto target = authorized.value.target;
                 // The new role must also be inside the actor's manageable set.
-                if (!POLICY::mayTarget(authorized.value.actor.role, role))
+                if (!unit.roles())
+                    return failed<void>(ErrorCode::DatabaseQueryFailed);
+                const auto manageable = unit.roles()->canManageRole(authorized.value.actor.role, role);
+                if (!manageable.ok)
+                    return Result<void>::Failure(manageable.error, {});
+                if (!manageable.value)
                     return failed<void>(ErrorCode::Forbidden);
+                const auto targetRole = unit.roles()->findByCode(role, true);
+                if (!targetRole.ok)
+                    return Result<void>::Failure(targetRole.error, {});
+                if (!targetRole.value || targetRole.value->status != "active")
+                    return failed<void>(ErrorCode::ValidationError);
                 if (target.role != role)
                 {
                     if (target.role == "super_admin" && target.status == "active" && authorized.value.activeSuperAdmins <= 1)
@@ -510,6 +474,7 @@ auto UserService::assignRole(const ActorContext &context, const std::string &id,
                     const auto stamp    = now();
                     const auto previous = target.role;
                     target.role         = role;
+                    target.role_id      = targetRole.value->id;
                     if (!bumpVersion(target, true))
                         return failed<void>(ErrorCode::InternalFailure);
                     const auto saved = users->save(target);
@@ -526,9 +491,8 @@ auto UserService::assignRole(const ActorContext &context, const std::string &id,
                 const auto refreshed = reloadUser(*users, target);
                 if (!refreshed.ok)
                     return refreshed;
-                const auto result = connection.commit();
-                committed         = result.ok;
-                if (committed)
+                const auto result = unit.commit();
+                if (result.ok)
                     output = target;
                 return result;
             });
@@ -552,28 +516,17 @@ auto UserService::resetPassword(const ActorContext &context, const std::string &
         const auto operation = database_.withConnection(
             [&](INFRA::DatabaseConnection &connection) -> Result<void>
             {
-                auto *users    = connection.userRepository();
-                auto *sessions = connection.loginRepository();
-                auto *audit    = connection.auditRepository();
+                INFRA::DatabaseUnitOfWork unit(connection);
+                auto *users    = unit.users();
+                auto *sessions = unit.sessions();
+                auto *audit    = unit.audit();
                 if (!users || !sessions || !audit)
                     return failed<void>(ErrorCode::DatabaseQueryFailed);
-                const auto begun = connection.begin();
+                const auto begun = unit.begin();
                 if (!begun.ok)
                     return begun;
-                bool committed{};
-                defer
-                {
-                    if (!committed)
-                    {
-                        try
-                        {
-                            (void)connection.rollback();
-                        } catch (...)
-                        {
-                        }
-                    }
-                };
-                const auto authorized = authorize(context, *users, id, POLICY::Capability::UserPasswordReset, version);
+                const auto authorized =
+                    authorize(context, *users, id, RBAC::PERMISSIONS::UserPasswordReset, version, unit.roles());
                 if (!authorized.ok)
                     return Result<void>::Failure(authorized.error, {});
                 const auto admitted = auth_.admitCredentialIssue(context.peerAddress);
@@ -610,9 +563,8 @@ auto UserService::resetPassword(const ActorContext &context, const std::string &
                 const auto refreshed = reloadUser(*users, target);
                 if (!refreshed.ok)
                     return refreshed;
-                const auto result = connection.commit();
-                committed         = result.ok;
-                if (committed)
+                const auto result = unit.commit();
+                if (result.ok)
                     output = {.user                         = target,
                               .temporaryCredential          = credential.value.first,
                               .temporaryCredentialExpiresAt = expiresAt ?

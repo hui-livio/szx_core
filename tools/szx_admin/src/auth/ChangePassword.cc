@@ -1,8 +1,8 @@
 #include "LoginService.h"
 #include "PasswordHash.h"
 #include "../audit/AuditRepository.h"
+#include "../infra/DatabaseUnitOfWork.h"
 
-#include "Defer.hpp"
 #include "SzxAdmin/Infra/ErrorCode.h"
 #include "TimeHelper.hpp"
 #include "UUID.hpp"
@@ -42,26 +42,14 @@ auto LoginService::changePassword(const ChangePasswordInput &input) -> Result<Ch
         const auto operation = database_.withConnection(
             [&](INFRA::DatabaseConnection &connection) -> Result<void>
             {
-                auto *repository = connection.loginRepository();
-                auto *audit      = connection.auditRepository();
+                INFRA::DatabaseUnitOfWork unit(connection);
+                auto *repository = unit.sessions();
+                auto *audit      = unit.audit();
                 if (!repository || !audit)
                     return failed<void>(ErrorCode::DatabaseQueryFailed);
-                const auto begun = connection.begin();
+                const auto begun = unit.begin();
                 if (!begun.ok)
                     return begun;
-                bool committed{};
-                defer
-                {
-                    if (!committed)
-                    {
-                        try
-                        {
-                            (void)connection.rollback();
-                        } catch (...)
-                        {
-                        }
-                    }
-                };
                 const auto found = repository->findById(claims.value.subject);
                 if (!found.ok)
                     return Result<void>::Failure(found.error, {});
@@ -88,8 +76,7 @@ auto LoginService::changePassword(const ChangePasswordInput &input) -> Result<Ch
                     const auto audited = audit->append(event);
                     if (!audited.ok)
                         return audited;
-                    const auto result = connection.commit();
-                    committed         = result.ok;
+                    const auto result = unit.commit();
                     return result.ok ? failed<void>(ErrorCode::AuthInvalidCredentials) : result;
                 }
                 if (user.version == (std::numeric_limits<int>::max)() || user.authz_version == (std::numeric_limits<int>::max)())
@@ -115,9 +102,8 @@ auto LoginService::changePassword(const ChangePasswordInput &input) -> Result<Ch
                 const auto audited = audit->append(event);
                 if (!audited.ok)
                     return audited;
-                const auto result = connection.commit();
-                committed         = result.ok;
-                if (committed)
+                const auto result = unit.commit();
+                if (result.ok)
                     output = {.version = user.version, .authzVersion = user.authz_version};
                 return result;
             });

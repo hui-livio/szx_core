@@ -128,7 +128,7 @@ version 用于并发更新，冲突后应重新获取用户并使用新版本提
 | uid | string | UID 账号才有 | UID 登录标识，区分大小写 |
 | username | string | 用户名账号才有 | 展示值；匹配使用规范化后的小写值 |
 | display_name | string | 必有 | 展示名 |
-| role | string | 必有 | operator / engineer / admin / super_admin |
+| role | string | 必有 | 数据库角色 code，支持内置及自定义角色 |
 | status | string | 必有 | active / disabled / locked |
 | force_password_change | boolean | 必有 | 仅待改密超管为 true |
 | password_change_recommended | boolean | 必有 | 待改密非超管为 true，可跳过提示 |
@@ -388,7 +388,7 @@ Content-Type: application/json
 | page | integer | 否 | 默认 1；范围 1–4294967295 |
 | page_size | integer | 否 | 默认 20；范围 1–100 |
 | search | string | 否 | 最多 128 个 Unicode 字符，无控制字符；搜索 uid、username、display_name |
-| role | string | 否 | operator / engineer / admin / super_admin |
+| role | string | 否 | 调用者管理范围内的数据库角色 code，可筛选停用角色 |
 | status | string | 否 | active / disabled / locked |
 | sort | string | 否 | 默认 -created_at；白名单见下文 |
 
@@ -418,7 +418,7 @@ Authorization: Bearer <access-token>
 | uid | string | 与 username 二选一 | 规范化后 1–64 个 Unicode 字符；保留大小写 |
 | username | string | 与 uid 二选一 | 规范化后 1–64 个 Unicode 字符；按小写 canonical 判重 |
 | display_name | string | 是 | 1–128 个 Unicode 字符，无控制字符，不得全为空格 |
-| role | string | 是 | 四种角色之一，且调用者有权创建 |
+| role | string | 是 | 当前启用且在调用者管理范围内的角色 code，支持自定义角色 |
 
 可选 Body 字段 `password_hash` 为初始密码 UTF-8 SHA-256 摘要，必须是 64 位小写十六进制字符串；空字符串、null 和其他类型均返回 `422 / 2206`。省略时沿用自动生成临时密码的行为。前端按目标角色校验指定密码：操作员/技术员（engineer）至少 6 个 Unicode 字符，允许纯数字或纯字母；管理员/超级管理员至少 8 个 Unicode 字符且包含字母和数字。两次输入须一致；服务端仅收到摘要，校验摘要格式并加盐存储。
 
@@ -753,3 +753,96 @@ openssl pkey -in jwt-private.pem -pubout -out jwt-public.pem
 密钥放在静态目录之外；重启加载相同密钥可保留未过期 token 的可验证性。也可用仓库 `szx_license_issuer keygen` 生成专用密钥对，不与许可证签发共用密钥。
 
 服务端将客户端 SHA-256 摘要再经随机盐 Argon2id 哈希后保存，格式为 `sha256-v1:<Argon2id PHC>`。旧原密码 Argon2id 凭据不能直接转换；仅仍使用默认初始凭据且待改密的初始超管可在成功登录时自动升级，其他旧账号需明确重置密码。访问日志不记录 query、Authorization 或请求体，只保留 request ID、方法、路径和状态。
+
+## 机器性能接口
+
+监控对象是 **`szx_admin_service` 所在机器**，不是浏览器所在机器。两个接口均需 Bearer 认证和 `system.metrics.read` 权限；迁移 11 为 `admin` / `super_admin` 授权，更新其 `authz_version`，升级后旧会话可能需重新登录。接口不缓存（`Cache-Control: no-store`），不接受任意磁盘路径参数。
+
+| 方法 | 路径 | 用途 |
+| --- | --- | --- |
+| GET | `/api/v1/admin/system/metrics` | 当前 CPU、物理内存与本地卷容量快照 |
+| GET | `/api/v1/admin/system/metrics/history?window_seconds=300` | 最近 1–900 秒的 CPU/内存历史，默认 300 秒 |
+
+沿用 `{data, request_id}` 成功信封以及原有错误信封：401 未认证、403 缺少权限、422 参数错误、503/2216 采集服务未运行。拒绝未知参数、非正整数或超过 900 的时间窗口。指标的局部采集失败不使整个快照失败。
+
+Metrics 的成功响应采用 `SystemMetricsDto.h` 中的强类型 DTO，使用 `SZX_REFL` 注册反射，由项目 `SZX::COMMON::Serializer::to_json`（iguana）一次生成完整 `{data, request_id}` JSON。采集服务只返回 DTO；HTTP 层不手工构建指标 JSON，也不先序列化再解析/重建 JSON。`null`、空数组、路径转义和 64 位数值保持既有协议，错误响应沿用公共 RestApi 错误契约。
+
+快照 `data` 字段：
+
+- `instance_id`：每次启动采集器生成的 UUID；同一实例内 `sequence` 从 1 递增，用于去重和识别重启。
+- `sampled_at`：UTC Unix 毫秒；`platform`：`windows` / `linux`；`logical_cpus`：逻辑处理器数量。
+- `sample_interval_ms=2000`，`disk_interval_ms=30000`。
+- `cpu` / `memory`：`status`、`error_code`、`usage_percent`、`total_bytes`、`used_bytes`、`available_bytes`、`free_bytes`。
+- `disks[]`：最多 32 个去重后的本地卷，`id`、`path`、自己的 `sampled_at` 和 `capacity`（与指标字段一致）。磁盘采样时间不得用快照时间替代。
+
+`status` 为 `ok`、`warming_up` 或 `unavailable`；CPU 首次需要差分采样，返回 `warming_up` / 空使用率，不伪造 0%。失败返回 `unavailable` / `error_code=2216`，相关数值保持 `null`；其余情况下 `error_code=null`。CPU 只有使用率有意义，容量字段为空。
+
+内存按物理内存统计：`used=total-available`，Linux `MemAvailable` 包含可回收缓存，不能当成原始 `MemFree`；内存 `free_bytes=null`。磁盘 `used=total-free`，`available` 为服务运行身份/配额下可用空间，两者分别展示。暂不包含 GPU、磁盘读写/IOPS、进程排名或远程机器。
+
+历史 `data` 为 `{instance_id, sample_interval_ms, window_seconds, samples[]}`；每个样本含 `sequence`、`sampled_at`、`cpu`、`memory`。历史仅在内存中保留最近约 15 分钟，最多 450 条，重启清空。前端遇到实例变化或序列缺口重新拉取历史，禁止跨实例拼接曲线。
+
+### 采集配置与平台
+
+```yaml
+metrics:
+  diskPaths: []
+```
+
+空列表自动发现本地卷；配置绝对路径可限定监控范围（Linux 例如 `/`、`/data`；Windows 例如 `'C:\'`、`'D:\'`）。同一卷去重，最多 32 条，不探测网络或伪文件系统。Linux 目前支持 ext2/3/4、xfs、btrfs、zfs、overlay、f2fs、vfat、exfat、ntfs3；其他类型需显式扩展本地文件系统白名单。缺失/不支持的配置路径显示不可用而非成功零容量。
+
+Linux 使用 `/proc/stat`、`/proc/meminfo`、挂载表与 `statvfs`；Windows 使用 PDH 英文 aggregate 计数器（覆盖处理器组）、`GlobalMemoryStatusEx`、`GetDiskFreeSpaceExW`，链接 Pdh。采集线程共享缓存，不随网页暂停而停止；磁盘采集可能受底层本地文件系统延迟影响。
+
+### 前端与复用边界
+
+入口 `/admin/system/performance`（Vue 内部路由 `/system/performance`），侧栏“机器性能”。每个指标/磁盘卷一张 Card，响应式平铺；CPU/内存使用 ECharts 趋势，磁盘使用容量环图。可选 5/15 分钟窗口、暂停/继续、展示过期/不可用状态。离页、登出或隐藏标签页取消轮询；恢复刷新补齐历史；不重叠请求，错误时有界退避。
+
+`src/ui/lumina/components/LuminaCard.vue` 复用 LuminaPanel，提供 header/actions/default/footer/state 插槽与 title/subtitle/radius/padding/variant/state 属性。`LuminaChart.vue` 按需注册 ECharts 模块，SVG 渲染、ResizeObserver、自身销毁清理；主题、低特效和系统 reduced-motion 自动生效。这两个组件只依赖 Vue / ECharts / 同目录 UI，不依赖业务 API、Pinia、路由或 i18n，仍放独立目录，不构建独立 npm 库。
+
+## 第二阶段：自定义权限管理
+
+新增前端 `/admin/permissions`（内部 `/permissions`），接通已注册的 RBAC 接口；Swagger 同步包含角色与权限全部资源路径。
+
+| 方法 | 路径 | 能力 |
+| --- | --- | --- |
+| GET / POST | `/api/v1/admin/permissions` | permission.read / permission.create |
+| GET / PATCH / DELETE | `/api/v1/admin/permissions/{id}` | permission.read / permission.update / permission.archive |
+| PATCH | `/api/v1/admin/permissions/{id}/status` | permission.status |
+| GET | `/api/v1/admin/roles`、`/api/v1/admin/roles/{id}` | role.read |
+| GET / PUT | `/api/v1/admin/roles/{id}/permissions` | role.read / role.permission.assign |
+
+列表为 `{data:{items:[]},request_id}`，可选 `include_archived=true`。权限字段含 id/code/name/description/module/enforcement/source/status/required_for_super_admin/version，成功响应使用反射 DTO 与 iguana，不手工构造权限 JSON。
+
+POST 接收 code/name/module/可选 description，返回 201 和 version=1；自定义权限固定 client/custom/active，不能指定 source/enforcement/status，不允许保留的 auth/user/role/permission/audit/behavior/system 前缀。PATCH 只接受 name/description。所有变更使用 If-Match；版本冲突 409/2209，重复 code（含归档）409/2228，未知字段/非法数据 422/2206，内置或不可恢复资源 409/2232。DELETE 返回 204；必须先解除全部角色关联，仍有关联返回 409/2230。
+
+自定义权限不是新的服务端权限注册：业务客户端调用 `/client/me/permissions` 获取 capabilities 决定业务功能；服务端路由仍由代码注册权限保护。角色权限 PUT 提交完整 permission_ids 集合，前端可改动活跃自定义项并移除已有停用项，保留系统及未知关联；超管 required_for_super_admin 权限不允许移除，系统权限由受控服务端代码发布。启停权限或替换角色集合更新角色 authz_version，旧 access token 下次请求被拒绝，客户端需刷新/重新认证获取新授权。审计与业务变更在同一事务中提交；审计失败回滚写入。
+
+第二阶段新增的错误码遵循 V1.2 设计，不改变原有用户/会话错误码：
+
+| 码 | 名称 | HTTP | 含义 |
+| --- | --- | --- | --- |
+| 2228 | PERMISSION_CODE_CONFLICT | 409 | 权限代码已存在，包括归档占用 |
+| 2230 | PERMISSION_IN_USE | 409 | 权限仍被角色引用，不能归档 |
+| 2232 | PROTECTED_PERMISSION | 409 | 内置或已归档权限不可变更 |
+| 2233 | SUPER_ADMIN_SECURITY_FLOOR | 409 | 尝试移除超管必需权限 |
+
+## 角色管理与动态角色（2026-10-14）
+
+角色管理位于 `/roles`，完整只读关联页位于 `/roles/permissions`。服务端角色接口均在 `/api/v1/admin` 下：
+
+| 方法 | 路径 | 能力 |
+| --- | --- | --- |
+| GET / POST | `/roles` | role.read / role.create |
+| GET / PATCH / DELETE | `/roles/{id}` | role.read / role.update / role.archive |
+| PATCH | `/roles/{id}/status` | role.status |
+| GET / PUT | `/roles/{id}/permissions` | role.read / role.permission.assign |
+| GET / PUT | `/roles/{id}/manage-scopes` | role.read / role.scope.assign |
+
+创建只接受 code/name/可选 description，code 为 `^[a-z][a-z0-9_]{1,63}$`；编辑只接受 name/description。code 不可更改或复用，重复（含归档）返回 `409 / 2227`。内置角色不可归档，super_admin 不可停用，已归档不可恢复或编辑（`409 / 2231`）；有用户引用时归档返回 `409 / 2229`。归档清除权限及双向管理范围并失效受影响管理者授权；审计失败整体回滚。
+
+角色响应包含 id/code/name/description/system_key/status/version/authz_version，以及 user_count、permission_count、manageable。目录为 items 集合，可选 include_archived，不伪称已有分页/更新时间。写操作使用 If-Match 并重新授权。
+
+权限 PUT 提交完整 permission_ids；不可新绑定停用项，已绑定停用项可以解绑；超管必需权限不可移除。范围 PUT 提交完整 target_role_ids；super_admin 必须覆盖全部非归档角色。安全底线返回 `409 / 2233`。范围不替代 user.* 能力，也不放开自我改角色或禁用限制。
+
+创建角色会原子扩展 super_admin 范围、递增其授权版本；变更授权/状态/范围后旧 access token 失效。登录/刷新用户快照包含 role_id/role_authz_version，客户端据此清除旧能力缓存。停用或归档角色不能登录或刷新会话。`/client/me/permissions` 增加 manageable_roles 与 assignable_roles；用户筛选使用前者，创建/改角色选择后者。更新用户角色同时写 role 与 role_id。
+
+新错误码：2227 ROLE_CODE_CONFLICT、2229 ROLE_IN_USE、2231 PROTECTED_ROLE，均为 HTTP 409。角色审计事件仍为 rbac.role.changed，目标类型/ID 存 details_json。

@@ -3,7 +3,7 @@
   "info": {
     "title": "SZX Admin API",
     "version": "1.0.0",
-    "description": "单项目 RBAC · 18 个接口操作 · 四个固定角色。\n\n展开接口查看参数、示例和错误码，点击 **Try it out → Execute** 调用当前服务。\n\n**鉴权流程**：登录请求中的 password_hash 必须是原始密码 UTF-8 的 SHA-256 小写摘要。登录后复制 access_token 到 **Authorize / bearerAuth**（不用加 Bearer 前缀）。refresh Cookie 由浏览器管理；刷新/登出手动填写最新 csrf_token。Swagger 不自动登录或刷新，会话凭据不持久保存。refresh token 默认空闲期限为 30 分钟，会话族绝对期限为 7 天；成功刷新重置空闲窗口但不延长绝对期限。\n\n修改用户需填写 **If-Match**；管理员仅管理操作员/工程师，不能给自己分配角色或禁用自己。操作员/工程师新密码至少6位；管理员/超管至少8位并含字母和数字。\n\n响应时间为 UTC 毫秒；日志查询 from/to 为 UTC 秒精度字符串。行为事件不按分钟限流，成功 202 仅表示进入有界内存队列，后台按批次延迟写入；队列满返回 503/2225。生产使用 HTTPS；Cookie/Origin 规则与管理后台相同。\n\nauth.allowedOrigin 默认 * 允许 HTTP/HTTPS 来源跨域携带凭据，也可配置单一来源限制；拒绝 Origin: null。refresh Cookie 使用 HttpOnly、Secure、SameSite=None。跨站调用使用 HTTPS 并启用 credentials，刷新/登出仍校验 X-CSRF-Token。所有响应设置 CSP、禁止 iframe 嵌入和 MIME 嗅探等安全头。"
+    "description": "单项目数据库驱动 RBAC · 36 个接口操作 · 四个固定角色。\n\n展开接口查看参数、示例和错误码，点击 **Try it out → Execute** 调用当前服务。\n\n**鉴权流程**：登录请求中的 password_hash 必须是原始密码 UTF-8 的 SHA-256 小写摘要。登录后复制 access_token 到 **Authorize / bearerAuth**（不用加 Bearer 前缀）。refresh Cookie 由浏览器管理；刷新/登出手动填写最新 csrf_token。Swagger 不自动登录或刷新，会话凭据不持久保存。refresh token 默认空闲期限为 30 分钟，会话族绝对期限为 7 天；成功刷新重置空闲窗口但不延长绝对期限。\n\n修改用户需填写 **If-Match**；管理员仅管理操作员/工程师，不能给自己分配角色或禁用自己。操作员/工程师新密码至少6位；管理员/超管至少8位并含字母和数字。\n\n响应时间为 UTC 毫秒；日志查询 from/to 为 UTC 秒精度字符串。行为事件不按分钟限流，成功 202 仅表示进入有界内存队列，后台按批次延迟写入；队列满返回 503/2225。生产使用 HTTPS；Cookie/Origin 规则与管理后台相同。\n\nauth.allowedOrigin 默认 * 允许 HTTP/HTTPS 来源跨域携带凭据，也可配置单一来源限制；拒绝 Origin: null。refresh Cookie 使用 HttpOnly、Secure、SameSite=None。跨站调用使用 HTTPS 并启用 credentials，刷新/登出仍校验 X-CSRF-Token。所有响应设置 CSP、禁止 iframe 嵌入和 MIME 嗅探等安全头。"
   },
   "servers": [
     {
@@ -31,6 +31,14 @@
     {
       "name": "客户端",
       "description": "当前权限与业务行为上报"
+    },
+    {
+      "name": "机器性能",
+      "description": "Windows/Linux 服务端机器的 CPU、物理内存及本地磁盘容量；system.metrics.read 权限"
+    },
+    {
+      "name": "RBAC 管理",
+      "description": "数据库驱动角色与权限管理；自定义权限为 client enforcement，不自动保护服务端路由。内置资源与超管安全底线受保护。"
     }
   ],
   "security": [
@@ -105,7 +113,7 @@
         ],
         "operationId": "login",
         "summary": "登录并签发会话",
-        "description": "**鉴权：** 无 Bearer；提交登录凭据。\n\n| Body 字段 | 类型 | 必填 | 约束 |\n|---|---|---|---|\n| identifier | string | 是 | UID 或用户名；原始 UTF-8 最多 512 字节；规范化后 1–64 个 Unicode 字符 |\n| password_hash | string | 是 | 原始密码 UTF-8 字节的 SHA-256，64 位小写十六进制 |\n\nidentifier 去首尾空白并执行 Unicode NFC，UID 保留大小写，用户名另按不依赖 locale 的规则小写匹配。若 UID 和用户名匹配到不同账号，统一拒绝登录。\n\n请求示例（尖括号内容为占位值）：\n\n```http\nPOST /api/v1/auth/login\nContent-Type: application/json\nX-Request-ID: login-001\n```\n\n```json\n{\"identifier\":\"admin\",\"password_hash\":\"<64位小写SHA-256摘要>\"}\n```\n\n**成功：** 200，data 为 Session，同时设置 refresh Cookie。\n\n```json\n{\n  \"data\": {\n    \"access_token\": \"<access-token>\",\n    \"token_type\": \"Bearer\",\n    \"expires_in\": 900,\n    \"expires_at\": 1789637400000,\n    \"authz_version\": 1,\n    \"csrf_token\": \"<csrf-token>\",\n    \"user\": {\n      \"id\": \"10000000-0000-4000-8000-000000000001\",\n      \"username\": \"admin\",\n      \"display_name\": \"System Administrator\",\n      \"role\": \"super_admin\",\n      \"status\": \"active\",\n      \"force_password_change\": true,\n      \"password_change_recommended\": false,\n      \"version\": 1,\n      \"authz_version\": 1,\n      \"last_login_at\": 1789636500000,\n      \"created_at\": 1789550100510,\n      \"updated_at\": 1789636500000\n    }\n  },\n  \"request_id\": \"login-001\"\n}\n```\n\n| HTTP / code | 条件 |\n|---|---|\n| 401 / 2203 | 用户不存在、密码错误、disabled/locked、临时密码已过期或已消费 |\n| 422 / 2206 | 字段、摘要格式或身份标识非法；不接受明文 password 字段 |\n| 429 / 2211 | 认证预算耗尽 |\n| 500 / 2212 | 安全审计写入失败，登录事务回滚 |\n\n默认连续 5 次错误密码将 active 账号置为 locked。locked_until 默认记录 900 秒后，但到期不会自动解锁，必须调用解锁接口。成功登录清零失败计数。未知用户、禁用、锁定不对外区分原因。",
+        "description": "**鉴权：** 无 Bearer；提交登录凭据。\n\n| Body 字段 | 类型 | 必填 | 约束 |\n|---|---|---|---|\n| login_identifier | string | 是 | 统一登录标识；原始 UTF-8 最多 512 字节；规范化后 1–64 个 Unicode 字符 |\n| password_hash | string | 是 | 原始密码 UTF-8 字节的 SHA-256，64 位小写十六进制 |\n\nlogin_identifier 去首尾空白并执行 Unicode NFC，统一登录标识去首尾空白并执行 Unicode NFC。\n\n请求示例（尖括号内容为占位值）：\n\n```http\nPOST /api/v1/auth/login\nContent-Type: application/json\nX-Request-ID: login-001\n```\n\n```json\n{\"login_identifier\":\"admin\",\"password_hash\":\"<64位小写SHA-256摘要>\"}\n```\n\n**成功：** 200，data 为 Session，同时设置 refresh Cookie。\n\n```json\n{\n  \"data\": {\n    \"access_token\": \"<access-token>\",\n    \"token_type\": \"Bearer\",\n    \"expires_in\": 900,\n    \"expires_at\": 1789637400000,\n    \"authz_version\": 1,\n    \"csrf_token\": \"<csrf-token>\",\n    \"user\": {\n      \"id\": \"10000000-0000-4000-8000-000000000001\",\n      \"login_identifier\": \"admin\",\n      \"display_name\": \"System Administrator\",\n      \"role\": \"super_admin\",\n      \"status\": \"active\",\n      \"force_password_change\": true,\n      \"password_change_recommended\": false,\n      \"version\": 1,\n      \"authz_version\": 1,\n      \"last_login_at\": 1789636500000,\n      \"created_at\": 1789550100510,\n      \"updated_at\": 1789636500000\n    }\n  },\n  \"request_id\": \"login-001\"\n}\n```\n\n| HTTP / code | 条件 |\n|---|---|\n| 401 / 2203 | 用户不存在、密码错误、disabled/locked、临时密码已过期或已消费 |\n| 422 / 2206 | 字段、摘要格式或身份标识非法；不接受明文 password 字段 |\n| 429 / 2211 | 认证预算耗尽 |\n| 500 / 2212 | 安全审计写入失败，登录事务回滚 |\n\n默认连续 5 次错误密码将 active 账号置为 locked。locked_until 默认记录 900 秒后，但到期不会自动解锁，必须调用解锁接口。成功登录清零失败计数。未知用户、禁用、锁定不对外区分原因。",
         "parameters": [
           {
             "$ref": "#/components/parameters/RequestId"
@@ -347,7 +355,7 @@
         ],
         "operationId": "listUsers",
         "summary": "查询用户列表",
-        "description": "**权限：** admin/super_admin。admin 仅能列出 operator/engineer。\n\n| Query 参数 | 类型 | 必填 | 默认／约束 |\n|---|---|---|---|\n| page | integer | 否 | 默认 1；范围 1–4294967295 |\n| page_size | integer | 否 | 默认 20；范围 1–100 |\n| search | string | 否 | 最多 128 个 Unicode 字符，无控制字符；搜索 uid、username、display_name |\n| role | string | 否 | operator / engineer / admin / super_admin |\n| status | string | 否 | active / disabled / locked |\n| sort | string | 否 | 默认 -created_at；白名单见下文 |\n\nsort 仅接受 `-created_at`、`created_at`、`display_name`、`-display_name`、`last_login_at`、`-last_login_at`、`role`、`status`，前缀 - 表示降序。未知 Query 参数返回 `422 / 2206`；admin 显式请求 role=admin/super_admin 返回 `403 / 2204`。\n\n```http\nGET /api/v1/admin/users?page=1&page_size=20&role=operator&sort=-created_at\nAuthorization: Bearer <access-token>\n```\n\n**成功：** 200，data 为 `Page<User>`。无匹配结果示例：\n\n```json\n{\"data\":{\"items\":[],\"total\":0,\"page\":1,\"page_size\":20},\"request_id\":\"users-list-001\"}\n```\n\n安全约束：待强制改密的超管（force_password_change=true）禁止调用此接口，返回 403 / 2204。须先修改密码并重新登录。其他角色的建议改密不受此限制。",
+        "description": "**权限：** admin/super_admin。admin 仅能列出 operator/engineer。\n\n| Query 参数 | 类型 | 必填 | 默认／约束 |\n|---|---|---|---|\n| page | integer | 否 | 默认 1；范围 1–4294967295 |\n| page_size | integer | 否 | 默认 20；范围 1–100 |\n| search | string | 否 | 最多 128 个 Unicode 字符，无控制字符；搜索登录标识和展示名 |\n| role | string | 否 | operator / engineer / admin / super_admin |\n| status | string | 否 | active / disabled / locked |\n| sort | string | 否 | 默认 -created_at；白名单见下文 |\n\nsort 仅接受 `-created_at`、`created_at`、`display_name`、`-display_name`、`last_login_at`、`-last_login_at`、`role`、`status`，前缀 - 表示降序。未知 Query 参数返回 `422 / 2206`；admin 显式请求 role=admin/super_admin 返回 `403 / 2204`。\n\n```http\nGET /api/v1/admin/users?page=1&page_size=20&role=operator&sort=-created_at\nAuthorization: Bearer <access-token>\n```\n\n**成功：** 200，data 为 `Page<User>`。无匹配结果示例：\n\n```json\n{\"data\":{\"items\":[],\"total\":0,\"page\":1,\"page_size\":20},\"request_id\":\"users-list-001\"}\n```\n\n安全约束：待强制改密的超管（force_password_change=true）禁止调用此接口，返回 403 / 2204。须先修改密码并重新登录。其他角色的建议改密不受此限制。",
         "parameters": [
           {
             "$ref": "#/components/parameters/RequestId"
@@ -362,7 +370,7 @@
             "name": "search",
             "in": "query",
             "required": false,
-            "description": "匹配UID、用户名和展示名",
+            "description": "匹配登录标识和展示名",
             "schema": {
               "type": "string",
               "maxLength": 128
@@ -374,13 +382,7 @@
             "required": false,
             "description": "",
             "schema": {
-              "type": "string",
-              "enum": [
-                "operator",
-                "engineer",
-                "admin",
-                "super_admin"
-              ]
+              "type": "string"
             }
           },
           {
@@ -449,7 +451,7 @@
         ],
         "operationId": "createUser",
         "summary": "创建用户，可指定初始密码",
-        "description": "**权限：** admin/super_admin；admin 只能创建 operator/engineer。不要求 If-Match。\n\n| Body 字段 | 类型 | 必填 | 约束 |\n|---|---|---|---|\n| uid | string | 与 username 二选一 | 规范化后 1–64 个 Unicode 字符；保留大小写 |\n| username | string | 与 uid 二选一 | 规范化后 1–64 个 Unicode 字符；按小写 canonical 判重 |\n| display_name | string | 是 | 1–128 个 Unicode 字符，无控制字符，不得全为空格 |\n| role | string | 是 | 四种角色之一，且调用者有权创建 |\n\n可选 Body 字段 `password_hash` 为初始密码 UTF-8 SHA-256 摘要，必须是 64 位小写十六进制字符串；空字符串、null 和其他类型均返回 `422 / 2206`。省略时沿用自动生成临时密码的行为。前端按目标角色校验指定密码：操作员/技术员（engineer）至少 6 个 Unicode 字符，允许纯数字或纯字母；管理员/超级管理员至少 8 个 Unicode 字符且包含字母和数字。两次输入须一致；服务端仅收到摘要，校验摘要格式并加盐存储。\n\n不接受明文密码、状态、id 或版本字段。身份字段的 null 视为未提供；UID 和用户名均去首尾空白、执行 Unicode NFC，原始输入最多 512 字节。用户名保留重音差异，UID 区分大小写；创建后身份不可修改。\n\nUID 与 username 共用登录入口，因此也检查跨字段冲突：已有 username=admin 时，uid=admin 或 uid=ADMIN 均返回 `409 / 2208`；已有 uid=U10086 时，username=u10086 同样冲突。两个 UID 的 U10086 与 u10086 仍可分别存在。并发创建遵循相同规则，冲突请求不会创建用户或签发临时凭据。\n\n```json\n{\"uid\":\"U10086\",\"display_name\":\"Alice\",\"role\":\"operator\"}\n```\n\n**成功：** 201，data 为 CredentialIssue。\n\n```json\n{\n  \"data\": {\n    \"user\": {\n      \"id\": \"10000000-0000-4000-8000-000000000002\",\n      \"uid\": \"U10086\",\n      \"display_name\": \"Alice\",\n      \"role\": \"operator\",\n      \"status\": \"active\",\n      \"force_password_change\": false,\n      \"password_change_recommended\": true,\n      \"version\": 1,\n      \"authz_version\": 1,\n      \"last_login_at\": null,\n      \"created_at\": 1789636500000,\n      \"updated_at\": 1789636500000\n    },\n    \"temporary_credential\": \"<本次生成的临时密码>\",\n    \"temporary_credential_expires_at\": 1789722900000\n  },\n  \"request_id\": \"users-create-001\"\n}\n```\n\n指定 `password_hash` 时，响应中 `temporary_credential` 和 `temporary_credential_expires_at` 均为 null，不回传密码或摘要，也不设置临时密码的 24 小时有效期。首次登录改密策略保持不变：超管强制修改，其他角色建议修改。省略该字段时，响应仍返回一次性的随机临时密码及 24 小时有效期。\n\n额外错误：`422 / 2207`（uid/username 同时提供或同时缺失）、`409 / 2208`（canonical 身份重复）、`429 / 2211`（凭据签发预算耗尽）。仅一个标识但类型错误返回 `422 / 2206`。临时密码仅本次展示，不应持久缓存。\n\n安全约束：待强制改密的超管（force_password_change=true）禁止调用此接口，返回 403 / 2204。须先修改密码并重新登录。其他角色的建议改密不受此限制。",
+        "description": "**权限：** admin/super_admin；admin 只能创建 operator/engineer。不要求 If-Match。\n\n| Body 字段 | 类型 | 必填 | 约束 |\n|---|---|---|---|\n| login_identifier | string | 是 | 规范化后 1–64 个 Unicode 字符；按小写 canonical 判重 |\n| display_name | string | 是 | 1–128 个 Unicode 字符，无控制字符，不得全为空格 |\n| role | string | 是 | 四种角色之一，且调用者有权创建 |\n\n可选 Body 字段 `password_hash` 为初始密码 UTF-8 SHA-256 摘要，必须是 64 位小写十六进制字符串；空字符串、null 和其他类型均返回 `422 / 2206`。省略时沿用自动生成临时密码的行为。前端按目标角色校验指定密码：操作员/技术员（engineer）至少 6 个 Unicode 字符，允许纯数字或纯字母；管理员/超级管理员至少 8 个 Unicode 字符且包含字母和数字。两次输入须一致；服务端仅收到摘要，校验摘要格式并加盐存储。\n\n不接受明文密码、状态、id 或版本字段。身份字段的 null 视为未提供；登录标识去首尾空白并执行 Unicode NFC，原始输入最多 512 字节。登录标识按统一规则规范化；创建后身份不可修改。\n\n登录标识用于登录，因此也检查跨字段冲突：已有 登录标识=admin 时，登录标识=admin 或 登录标识=ADMIN 均返回 `409 / 2208`；已有 登录标识=U10086 时，登录标识=u10086 同样冲突。登录标识按统一规则判重。并发创建遵循相同规则，冲突请求不会创建用户或签发临时凭据。\n\n```json\n{\"login_identifier\":\"U10086\",\"display_name\":\"Alice\",\"role\":\"operator\"}\n```\n\n**成功：** 201，data 为 CredentialIssue。\n\n```json\n{\n  \"data\": {\n    \"user\": {\n      \"id\": \"10000000-0000-4000-8000-000000000002\",\n      \"login_identifier\": \"U10086\",\n      \"display_name\": \"Alice\",\n      \"role\": \"operator\",\n      \"status\": \"active\",\n      \"force_password_change\": false,\n      \"password_change_recommended\": true,\n      \"version\": 1,\n      \"authz_version\": 1,\n      \"last_login_at\": null,\n      \"created_at\": 1789636500000,\n      \"updated_at\": 1789636500000\n    },\n    \"temporary_credential\": \"<本次生成的临时密码>\",\n    \"temporary_credential_expires_at\": 1789722900000\n  },\n  \"request_id\": \"users-create-001\"\n}\n```\n\n指定 `password_hash` 时，响应中 `temporary_credential` 和 `temporary_credential_expires_at` 均为 null，不回传密码或摘要，也不设置临时密码的 24 小时有效期。首次登录改密策略保持不变：超管强制修改，其他角色建议修改。省略该字段时，响应仍返回一次性的随机临时密码及 24 小时有效期。\n\n额外错误：`422 / 2207`（登录标识缺失）、`409 / 2208`（canonical 身份重复）、`429 / 2211`（凭据签发预算耗尽）。登录标识格式非法返回 `422 / 2206`。临时密码仅本次展示，不应持久缓存。\n\n安全约束：待强制改密的超管（force_password_change=true）禁止调用此接口，返回 403 / 2204。须先修改密码并重新登录。其他角色的建议改密不受此限制。",
         "parameters": [
           {
             "$ref": "#/components/parameters/RequestId"
@@ -499,7 +501,7 @@
                 "$ref": "#/components/schemas/CreateUserRequest"
               },
               "example": {
-                "username": "new_operator",
+                "login_identifier": "new_operator",
                 "display_name": "新操作员",
                 "role": "operator"
               }
@@ -558,7 +560,7 @@
         ],
         "operationId": "updateUser",
         "summary": "修改展示名",
-        "description": "**权限：** admin/super_admin；必填 Path id 和 Header If-Match。\n\n| Body 字段 | 类型 | 必填 | 约束 |\n|---|---|---|---|\n| display_name | string | 是 | 1–128 个 Unicode 字符，无控制字符，不得全为空格 |\n\n```http\nPATCH /api/v1/admin/users/10000000-0000-4000-8000-000000000002\nAuthorization: Bearer <access-token>\nIf-Match: 1\nContent-Type: application/json\n```\n\n```json\n{\"display_name\":\"Alice Chen\"}\n```\n\n**成功：** 200，data 为 User。实际名称变化才递增 version；authz_version 不变。拒绝 uid、username、role、status 等额外字段。错误见本节公共错误表。\n\n安全约束：待强制改密的超管（force_password_change=true）禁止调用此接口，返回 403 / 2204。须先修改密码并重新登录。其他角色的建议改密不受此限制。",
+        "description": "**权限：** admin/super_admin；必填 Path id 和 Header If-Match。\n\n| Body 字段 | 类型 | 必填 | 约束 |\n|---|---|---|---|\n| display_name | string | 是 | 1–128 个 Unicode 字符，无控制字符，不得全为空格 |\n\n```http\nPATCH /api/v1/admin/users/10000000-0000-4000-8000-000000000002\nAuthorization: Bearer <access-token>\nIf-Match: 1\nContent-Type: application/json\n```\n\n```json\n{\"display_name\":\"Alice Chen\"}\n```\n\n**成功：** 200，data 为 User。实际名称变化才递增 version；authz_version 不变。拒绝 login_identifier、role、status 等额外字段。错误见本节公共错误表。\n\n安全约束：待强制改密的超管（force_password_change=true）禁止调用此接口，返回 403 / 2204。须先修改密码并重新登录。其他角色的建议改密不受此限制。",
         "parameters": [
           {
             "$ref": "#/components/parameters/RequestId"
@@ -755,7 +757,7 @@
         ],
         "operationId": "assignRole",
         "summary": "分配角色（仅超级管理员）",
-        "description": "**权限：** 仅 super_admin；必填 Path id 和 Header If-Match。\n\n| Body 字段 | 类型 | 必填 | 约束 |\n|---|---|---|---|\n| role | string | 是 | operator / engineer / admin / super_admin |\n\n```json\n{\"role\":\"engineer\"}\n```\n\n**成功：** 200，data 为 User。实际角色变化时递增 version/authz_version 并撤销 refresh 会话；提交原角色不递增版本。最后一个 active 超管不能降级，否则返回 `409 / 2210`；其他错误见本节公共错误表。\n\n禁止给自己分配角色，即使提交原角色也返回 `403 / 2204`；该限制优先于最后一个超管保护。目标和新角色必须在调用者允许管理的范围内。\n\n安全约束：待强制改密的超管（force_password_change=true）禁止调用此接口，返回 403 / 2204。须先修改密码并重新登录。其他角色的建议改密不受此限制。",
+        "description": "**权限：** admin/super_admin；必填 Path id 和 Header If-Match。\n\n| Body 字段 | 类型 | 必填 | 约束 |\n|---|---|---|---|\n| role | string | 是 | operator / engineer / admin / super_admin |\n\n```json\n{\"role\":\"engineer\"}\n```\n\n**成功：** 200，data 为 User。实际角色变化时递增 version/authz_version 并撤销 refresh 会话；提交原角色不递增版本。最后一个 active 超管不能降级，否则返回 `409 / 2210`；其他错误见本节公共错误表。\n\n禁止给自己分配角色，即使提交原角色也返回 `403 / 2204`；该限制优先于最后一个超管保护。目标和新角色必须在调用者允许管理的范围内。\n\n安全约束：待强制改密的超管（force_password_change=true）禁止调用此接口，返回 403 / 2204。须先修改密码并重新登录。其他角色的建议改密不受此限制。",
         "parameters": [
           {
             "$ref": "#/components/parameters/RequestId"
@@ -1025,7 +1027,7 @@
         ],
         "operationId": "getPermissions",
         "summary": "查询当前用户权限",
-        "description": "**鉴权：** Bearer，任意有效角色。无请求参数和请求体。\n\n| data 字段 | 类型 | 说明 |\n|---|---|---|\n| user_id | string(UUID) | 当前用户 ID |\n| role | string | 当前固定角色 |\n| status | string | 当前有效用户为 active |\n| force_password_change | boolean | 当前超管是否必须改密 |\n| authz_version | integer | 当前授权版本 |\n| capabilities | array<string> | 该角色的能力码 |\n\n**成功：** 200。\n\n```json\n{\"data\":{\"user_id\":\"10000000-0000-4000-8000-000000000002\",\"role\":\"engineer\",\"status\":\"active\",\"force_password_change\":false,\"authz_version\":3,\"capabilities\":[\"business.read\",\"business.operate\",\"engineering.configure\"]},\"request_id\":\"permissions-001\"}\n```\n\n| 角色 | 能力 |\n|---|---|\n| operator | business.read、business.operate |\n| engineer | operator 能力，加 engineering.configure |\n| admin | engineer 能力，加 user.read、user.create、user.update、user.status、user.unlock、user.password.reset、audit.read |\n| super_admin | admin 能力，加 user.role.assign |\n\n错误：`401 / 2200`（会话无效）、`403 / 2204`（Origin 不允许）、`500 / 2221`（数据库失败）。菜单可依据此响应显示，实际业务请求仍须服务端鉴权。密码修改建议读取登录／刷新返回的 User；此接口不返回 password_change_recommended。\n\n安全约束：待强制改密的超管（force_password_change=true）禁止调用此接口，返回 403 / 2204。须先修改密码并重新登录。其他角色的建议改密不受此限制。",
+        "description": "**鉴权：** Bearer，任意有效角色。无请求参数和请求体。\n\n| data 字段 | 类型 | 说明 |\n|---|---|---|\n| user_id | string(UUID) | 当前用户 ID |\n| role | string | 当前固定角色 |\n| status | string | 当前有效用户为 active |\n| force_password_change | boolean | 当前超管是否必须改密 |\n| authz_version | integer | 当前授权版本 |\n| capabilities | array<string> | 该角色的能力码 |\n\n**成功：** 200。\n\n```json\n{\"data\":{\"user_id\":\"10000000-0000-4000-8000-000000000002\",\"role\":\"engineer\",\"status\":\"active\",\"force_password_change\":false,\"authz_version\":3,\"capabilities\":[\"business.read\",\"business.operate\",\"engineering.configure\"]},\"request_id\":\"permissions-001\"}\n```\n\n| 角色 | 能力 |\n|---|---|\n| operator | business.read、business.operate |\n| engineer | operator 能力，加 engineering.configure |\n| admin | engineer 能力，加 user.read、user.create、user.update、user.status、user.unlock、user.password.reset、audit.read |\n| super_admin | admin 能力；admin 与 super_admin 均具备 user.role.assign |\n\n错误：`401 / 2200`（会话无效）、`403 / 2204`（Origin 不允许）、`500 / 2221`（数据库失败）。菜单可依据此响应显示，实际业务请求仍须服务端鉴权。密码修改建议读取登录／刷新返回的 User；此接口不返回 password_change_recommended。\n\n安全约束：待强制改密的超管（force_password_change=true）禁止调用此接口，返回 403 / 2204。须先修改密码并重新登录。其他角色的建议改密不受此限制。",
         "parameters": [
           {
             "$ref": "#/components/parameters/RequestId"
@@ -1115,6 +1117,1070 @@
           }
         }
       }
+    },
+    "/admin/system/metrics": {
+      "get": {
+        "tags": [
+          "机器性能"
+        ],
+        "operationId": "getMachineMetrics",
+        "summary": "查询机器性能快照",
+        "description": "需要 system.metrics.read（默认 admin/super_admin）。监控服务所在机器，不是浏览器所在机器。共享采集：CPU/内存 2 秒，磁盘 30 秒。CPU 初次采样 warming_up；局部失败 status=unavailable/error_code=2216，值为 null，其他指标可正常返回。响应不缓存。instance_id 区分采集实例，sequence 在该实例内递增；历史仅保留最近 15 分钟/450 条，服务重启丢失。拒绝未知查询参数。",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功（指标可部分不可用）",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "example": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MachineSnapshotResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "422": {
+            "$ref": "#/components/responses/422"
+          },
+          "500": {
+            "$ref": "#/components/responses/500"
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          }
+        }
+      }
+    },
+    "/admin/system/metrics/history": {
+      "get": {
+        "tags": [
+          "机器性能"
+        ],
+        "operationId": "getMachineMetricsHistory",
+        "summary": "查询机器性能历史",
+        "description": "需要 system.metrics.read（默认 admin/super_admin）。监控服务所在机器，不是浏览器所在机器。共享采集：CPU/内存 2 秒，磁盘 30 秒。CPU 初次采样 warming_up；局部失败 status=unavailable/error_code=2216，值为 null，其他指标可正常返回。响应不缓存。instance_id 区分采集实例，sequence 在该实例内递增；历史仅保留最近 15 分钟/450 条，服务重启丢失。拒绝未知查询参数。",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "name": "window_seconds",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 900,
+              "default": 300
+            },
+            "description": "滚动历史窗口秒数；最多 450 个样本，重启清空历史。"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功（指标可部分不可用）",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "example": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MachineHistoryResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "422": {
+            "$ref": "#/components/responses/422"
+          },
+          "500": {
+            "$ref": "#/components/responses/500"
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          }
+        }
+      }
+    },
+    "/admin/permissions": {
+      "get": {
+        "tags": [
+          "RBAC 管理"
+        ],
+        "summary": "permissions 列表",
+        "operationId": "get__admin_permissions",
+        "description": "需要 `permission.read`。默认仅 super_admin 获得 RBAC 管理权限。",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "name": "include_archived",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "422": {
+            "$ref": "#/components/responses/422"
+          },
+          "500": {
+            "$ref": "#/components/responses/500"
+          },
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PermissionRecordListResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "RBAC 管理"
+        ],
+        "summary": "permissions 新增",
+        "operationId": "post__admin_permissions",
+        "description": "需要 `permission.create`。默认仅 super_admin 获得 RBAC 管理权限。 只能创建自定义 client 权限；服务端保留前缀不可使用，code/module/enforcement/source 创建后不可修改。重复（包含已归档）code 返回 409/2228。",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
+        ],
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "422": {
+            "$ref": "#/components/responses/422"
+          },
+          "500": {
+            "$ref": "#/components/responses/500"
+          },
+          "201": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PermissionRecordResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "ConflictVersion=2209 or domain conflict 2228",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "code": 2228,
+                  "message": "Permission code already exists.",
+                  "details": {},
+                  "request_id": "rbac-conflict"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewPermissionRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/permissions/{id}": {
+      "get": {
+        "tags": [
+          "RBAC 管理"
+        ],
+        "summary": "permissions 详情",
+        "operationId": "get__admin_permissions_id",
+        "description": "需要 `permission.read`。默认仅 super_admin 获得 RBAC 管理权限。",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "422": {
+            "$ref": "#/components/responses/422"
+          },
+          "500": {
+            "$ref": "#/components/responses/500"
+          },
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PermissionRecordResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "RBAC 管理"
+        ],
+        "summary": "permissions 编辑",
+        "operationId": "patch__admin_permissions_id",
+        "description": "需要 `permission.update`。默认仅 super_admin 获得 RBAC 管理权限。",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "当前资源 version；冲突 409/2209，需要重新加载并确认，不自动覆盖。"
+          }
+        ],
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "422": {
+            "$ref": "#/components/responses/422"
+          },
+          "500": {
+            "$ref": "#/components/responses/500"
+          },
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PermissionRecordResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "ConflictVersion=2209 or domain conflict 2232",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "code": 2232,
+                  "message": "Built-in or archived permission is protected.",
+                  "details": {},
+                  "request_id": "rbac-conflict"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PermissionEditRequest"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "RBAC 管理"
+        ],
+        "summary": "permissions 归档",
+        "operationId": "delete__admin_permissions_id",
+        "description": "需要 `permission.archive`。默认仅 super_admin 获得 RBAC 管理权限。 内置或已归档资源不可修改；有关联角色的权限必须先解除关联，否则 409/2230。",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "当前资源 version；冲突 409/2209，需要重新加载并确认，不自动覆盖。"
+          }
+        ],
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "422": {
+            "$ref": "#/components/responses/422"
+          },
+          "500": {
+            "$ref": "#/components/responses/500"
+          },
+          "204": {
+            "description": "归档成功；无响应正文"
+          },
+          "409": {
+            "description": "ConflictVersion=2209 or domain conflict 2230",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "code": 2230,
+                  "message": "Permission is still assigned to roles.",
+                  "details": {},
+                  "request_id": "rbac-conflict"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/permissions/{id}/status": {
+      "patch": {
+        "tags": [
+          "RBAC 管理"
+        ],
+        "summary": "permissions 启停",
+        "operationId": "patch__admin_permissions_id_status",
+        "description": "需要 `permission.status`。默认仅 super_admin 获得 RBAC 管理权限。",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "当前资源 version；冲突 409/2209，需要重新加载并确认，不自动覆盖。"
+          }
+        ],
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "422": {
+            "$ref": "#/components/responses/422"
+          },
+          "500": {
+            "$ref": "#/components/responses/500"
+          },
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PermissionRecordResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/409"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RbacStatusRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/roles": {
+      "get": {
+        "tags": [
+          "RBAC 管理"
+        ],
+        "summary": "roles 列表",
+        "operationId": "get__admin_roles",
+        "description": "需要 `role.read`。默认仅 super_admin 获得 RBAC 管理权限。",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "name": "include_archived",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "422": {
+            "$ref": "#/components/responses/422"
+          },
+          "500": {
+            "$ref": "#/components/responses/500"
+          },
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleRecordListResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "RBAC 管理"
+        ],
+        "summary": "roles 新增",
+        "operationId": "post__admin_roles",
+        "description": "需要 `role.create`。默认仅 super_admin 获得 RBAC 管理权限。 code 必须唯一（包括已归档角色），重复返回 409/2227。创建后原子扩展 super_admin 管理范围并递增授权版本，旧 token 需刷新。",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
+        ],
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "422": {
+            "$ref": "#/components/responses/422"
+          },
+          "500": {
+            "$ref": "#/components/responses/500"
+          },
+          "201": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleRecordResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/409"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoleCreateRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/roles/{id}": {
+      "get": {
+        "tags": [
+          "RBAC 管理"
+        ],
+        "summary": "roles 详情",
+        "operationId": "get__admin_roles_id",
+        "description": "需要 `role.read`。默认仅 super_admin 获得 RBAC 管理权限。",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "422": {
+            "$ref": "#/components/responses/422"
+          },
+          "500": {
+            "$ref": "#/components/responses/500"
+          },
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleRecordResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "RBAC 管理"
+        ],
+        "summary": "roles 编辑",
+        "operationId": "patch__admin_roles_id",
+        "description": "需要 `role.update`。默认仅 super_admin 获得 RBAC 管理权限。",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "当前资源 version；冲突 409/2209，需要重新加载并确认，不自动覆盖。"
+          }
+        ],
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "422": {
+            "$ref": "#/components/responses/422"
+          },
+          "500": {
+            "$ref": "#/components/responses/500"
+          },
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleRecordResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/409"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PermissionEditRequest"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "RBAC 管理"
+        ],
+        "summary": "roles 归档",
+        "operationId": "delete__admin_roles_id",
+        "description": "需要 `role.archive`。默认仅 super_admin 获得 RBAC 管理权限。 内置角色不可归档（409/2231）；仍有用户引用时返回 409/2229。归档清空权限/范围关联并更新受影响管理者的授权版本，归档后只读，code 不可复用。",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "当前资源 version；冲突 409/2209，需要重新加载并确认，不自动覆盖。"
+          }
+        ],
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "422": {
+            "$ref": "#/components/responses/422"
+          },
+          "500": {
+            "$ref": "#/components/responses/500"
+          },
+          "204": {
+            "description": "归档成功；无响应正文"
+          },
+          "409": {
+            "$ref": "#/components/responses/409"
+          }
+        }
+      }
+    },
+    "/admin/roles/{id}/status": {
+      "patch": {
+        "tags": [
+          "RBAC 管理"
+        ],
+        "summary": "roles 启停",
+        "operationId": "patch__admin_roles_id_status",
+        "description": "需要 `role.status`。默认仅 super_admin 获得 RBAC 管理权限。 超管不可停用，已归档角色不可恢复（409/2231）。",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "当前资源 version；冲突 409/2209，需要重新加载并确认，不自动覆盖。"
+          }
+        ],
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "422": {
+            "$ref": "#/components/responses/422"
+          },
+          "500": {
+            "$ref": "#/components/responses/500"
+          },
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleRecordResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/409"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RbacStatusRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/roles/{id}/permissions": {
+      "get": {
+        "tags": [
+          "RBAC 管理"
+        ],
+        "summary": "读取角色 permissions",
+        "operationId": "get__admin_roles_id_permissions",
+        "description": "需要 `role.read`。默认仅 super_admin 获得 RBAC 管理权限。",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "422": {
+            "$ref": "#/components/responses/422"
+          },
+          "500": {
+            "$ref": "#/components/responses/500"
+          },
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PermissionIdsResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "RBAC 管理"
+        ],
+        "summary": "替换角色 permissions",
+        "operationId": "put__admin_roles_id_permissions",
+        "description": "需要 `role.permission.assign`。默认仅 super_admin 获得 RBAC 管理权限。 使用当前角色 version。保留已有停用权限关联合法，不允许新分配非启用权限；超管必需权限不能移除。变更增加 role authz_version，旧 access token 被拒绝。",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "当前资源 version；冲突 409/2209，需要重新加载并确认，不自动覆盖。"
+          }
+        ],
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "422": {
+            "$ref": "#/components/responses/422"
+          },
+          "500": {
+            "$ref": "#/components/responses/500"
+          },
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleRecordResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "ConflictVersion=2209 or domain conflict 2233",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "code": 2233,
+                  "message": "Required super-administrator permissions cannot be removed.",
+                  "details": {},
+                  "request_id": "rbac-conflict"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PermissionIdsRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/roles/{id}/manage-scopes": {
+      "get": {
+        "tags": [
+          "RBAC 管理"
+        ],
+        "summary": "读取角色 manage-scopes",
+        "operationId": "get__admin_roles_id_manage_scopes",
+        "description": "需要 `role.read`。默认仅 super_admin 获得 RBAC 管理权限。",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "422": {
+            "$ref": "#/components/responses/422"
+          },
+          "500": {
+            "$ref": "#/components/responses/500"
+          },
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleScopeIdsResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "RBAC 管理"
+        ],
+        "summary": "替换角色 manage-scopes",
+        "operationId": "put__admin_roles_id_manage_scopes",
+        "description": "需要 `role.scope.assign`。默认仅 super_admin 获得 RBAC 管理权限。 提交全量 target_role_ids，使用 If-Match。super_admin 必须保留全部非归档角色范围，否则返回 409/2233。变更影响授权版本。",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "当前资源 version；冲突 409/2209，需要重新加载并确认，不自动覆盖。"
+          }
+        ],
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "422": {
+            "$ref": "#/components/responses/422"
+          },
+          "500": {
+            "$ref": "#/components/responses/500"
+          },
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleRecordResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/409"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoleScopeIdsRequest"
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1153,12 +2219,6 @@
             "format": "uuid",
             "example": "10000000-0000-4000-8000-000000000002"
           },
-          "uid": {
-            "type": "string"
-          },
-          "username": {
-            "type": "string"
-          },
           "display_name": {
             "type": "string",
             "minLength": 1,
@@ -1167,12 +2227,8 @@
           },
           "role": {
             "type": "string",
-            "enum": [
-              "operator",
-              "engineer",
-              "admin",
-              "super_admin"
-            ]
+            "pattern": "^[a-z][a-z0-9_]{1,63}$",
+            "description": "数据库中的角色 code，支持自定义角色"
           },
           "status": {
             "type": "string",
@@ -1214,6 +2270,21 @@
             "format": "int64",
             "description": "UTC Unix 毫秒",
             "example": 1789636500000
+          },
+          "login_identifier": {
+            "type": "string",
+            "description": "统一登录标识，创建后不可修改"
+          },
+          "role_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "登录/刷新用户快照中的角色 ID"
+          },
+          "role_authz_version": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "登录/刷新用户快照中的角色授权版本；变化后客户端清除旧能力缓存"
           }
         },
         "required": [
@@ -1227,7 +2298,8 @@
           "authz_version",
           "last_login_at",
           "created_at",
-          "updated_at"
+          "updated_at",
+          "login_identifier"
         ]
       },
       "Session": {
@@ -1313,10 +2385,6 @@
           "actor_user_id": {
             "type": "string"
           },
-          "actor_username": {
-            "type": "string",
-            "description": "当前用户名，UID账号返回UID，无法关联时为空"
-          },
           "target_user_id": {
             "type": "string"
           },
@@ -1350,12 +2418,16 @@
             "format": "int64",
             "description": "UTC Unix 毫秒",
             "example": 1789636500000
+          },
+          "actor_login_identifier": {
+            "type": "string",
+            "description": "当前登录标识，无法关联时为空"
           }
         },
         "required": [
           "id",
           "actor_user_id",
-          "actor_username",
+          "actor_login_identifier",
           "target_user_id",
           "event_name",
           "result",
@@ -1375,10 +2447,6 @@
           "user_id": {
             "type": "string",
             "format": "uuid"
-          },
-          "username": {
-            "type": "string",
-            "description": "当前用户名或UID，无法关联时为空"
           },
           "event_name": {
             "type": "string"
@@ -1402,12 +2470,16 @@
             "type": "integer",
             "format": "int64",
             "description": "服务端接收时间，UTC Unix 毫秒"
+          },
+          "login_identifier": {
+            "type": "string",
+            "description": "当前登录标识，无法关联时为空"
           }
         },
         "required": [
           "id",
           "user_id",
-          "username",
+          "login_identifier",
           "event_name",
           "result",
           "request_id",
@@ -1425,12 +2497,8 @@
           },
           "role": {
             "type": "string",
-            "enum": [
-              "operator",
-              "engineer",
-              "admin",
-              "super_admin"
-            ]
+            "pattern": "^[a-z][a-z0-9_]{1,63}$",
+            "description": "数据库中的角色 code，支持自定义角色"
           },
           "status": {
             "type": "string",
@@ -1451,6 +2519,20 @@
             "items": {
               "type": "string"
             }
+          },
+          "manageable_roles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "当前角色管理范围内的非归档角色 code；不替代 user.* 能力"
+          },
+          "assignable_roles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "管理范围内当前启用的角色 code，供创建用户和改角色选择；manageable_roles 另包含停用角色供用户筛选"
           }
         },
         "required": [
@@ -1459,7 +2541,9 @@
           "status",
           "force_password_change",
           "authz_version",
-          "capabilities"
+          "capabilities",
+          "manageable_roles",
+          "assignable_roles"
         ]
       },
       "PasswordChange": {
@@ -1492,11 +2576,6 @@
       "LoginRequest": {
         "type": "object",
         "properties": {
-          "identifier": {
-            "type": "string",
-            "description": "UID或用户名，原始UTF-8最多512字节；规范化后1–64个字符",
-            "example": "admin"
-          },
           "password_hash": {
             "type": "string",
             "pattern": "^[0-9a-f]{64}$",
@@ -1504,11 +2583,17 @@
             "maxLength": 64,
             "description": "原始密码 UTF-8 字节的 SHA-256 小写十六进制摘要，不是明文密码。",
             "example": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "login_identifier": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "description": "统一登录标识，去首尾空白并执行 Unicode NFC"
           }
         },
         "required": [
-          "identifier",
-          "password_hash"
+          "password_hash",
+          "login_identifier"
         ],
         "additionalProperties": false
       },
@@ -1541,16 +2626,6 @@
       "CreateUserRequest": {
         "type": "object",
         "properties": {
-          "uid": {
-            "type": "string",
-            "nullable": true,
-            "description": "与username必须且只能提供一个非null字段，原始UTF-8最多512字节，规范化后1–64个字符"
-          },
-          "username": {
-            "type": "string",
-            "nullable": true,
-            "description": "与uid二选一，创建后不可修改"
-          },
           "display_name": {
             "type": "string",
             "minLength": 1,
@@ -1559,12 +2634,8 @@
           },
           "role": {
             "type": "string",
-            "enum": [
-              "operator",
-              "engineer",
-              "admin",
-              "super_admin"
-            ]
+            "pattern": "^[a-z][a-z0-9_]{1,63}$",
+            "description": "数据库中的角色 code，支持自定义角色"
           },
           "password_hash": {
             "type": "string",
@@ -1573,50 +2644,21 @@
             "maxLength": 64,
             "description": "原始密码 UTF-8 字节的 SHA-256 小写十六进制摘要，不是明文密码。",
             "example": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "login_identifier": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "description": "统一登录标识，去首尾空白并执行 Unicode NFC"
           }
         },
         "required": [
           "display_name",
-          "role"
+          "role",
+          "login_identifier"
         ],
         "additionalProperties": false,
-        "description": "uid/username 二选一。省略password_hash随机生成临时密码；不能传空字符串或null。",
-        "oneOf": [
-          {
-            "required": [
-              "uid"
-            ],
-            "properties": {
-              "uid": {
-                "type": "string",
-                "nullable": false
-              },
-              "username": {
-                "nullable": true,
-                "enum": [
-                  null
-                ]
-              }
-            }
-          },
-          {
-            "required": [
-              "username"
-            ],
-            "properties": {
-              "username": {
-                "type": "string",
-                "nullable": false
-              },
-              "uid": {
-                "nullable": true,
-                "enum": [
-                  null
-                ]
-              }
-            }
-          }
-        ]
+        "description": "登录标识。省略password_hash随机生成临时密码；不能传空字符串或null。"
       },
       "UpdateUserRequest": {
         "type": "object",
@@ -1654,12 +2696,8 @@
         "properties": {
           "role": {
             "type": "string",
-            "enum": [
-              "operator",
-              "engineer",
-              "admin",
-              "super_admin"
-            ]
+            "pattern": "^[a-z][a-z0-9_]{1,63}$",
+            "description": "数据库中的角色 code，支持自定义角色"
           }
         },
         "required": [
@@ -2002,6 +3040,652 @@
           "data",
           "request_id"
         ]
+      },
+      "MachineMetric": {
+        "type": "object",
+        "required": [
+          "status",
+          "error_code",
+          "usage_percent",
+          "total_bytes",
+          "used_bytes",
+          "available_bytes",
+          "free_bytes"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "warming_up",
+              "unavailable"
+            ]
+          },
+          "error_code": {
+            "type": "integer",
+            "nullable": true,
+            "description": "unavailable => 2216; otherwise null"
+          },
+          "usage_percent": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100,
+            "nullable": true
+          },
+          "total_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "nullable": true
+          },
+          "used_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "nullable": true
+          },
+          "available_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "nullable": true
+          },
+          "free_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "nullable": true
+          }
+        },
+        "additionalProperties": false,
+        "description": "CPU only has usage_percent; memory used=total-available (available includes reclaimable cache), free_bytes=null; disk used=total-free, available is caller/quota-aware. Failed values remain null, never fake zero."
+      },
+      "MachineSample": {
+        "type": "object",
+        "required": [
+          "sequence",
+          "sampled_at",
+          "cpu",
+          "memory"
+        ],
+        "properties": {
+          "sequence": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "sampled_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "UTC Unix milliseconds"
+          },
+          "cpu": {
+            "$ref": "#/components/schemas/MachineMetric"
+          },
+          "memory": {
+            "$ref": "#/components/schemas/MachineMetric"
+          }
+        },
+        "additionalProperties": false
+      },
+      "MachineDisk": {
+        "type": "object",
+        "required": [
+          "id",
+          "path",
+          "sampled_at",
+          "capacity"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string",
+            "description": "Local volume mountpoint, not an arbitrary request path"
+          },
+          "sampled_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "UTC Unix milliseconds"
+          },
+          "capacity": {
+            "$ref": "#/components/schemas/MachineMetric"
+          }
+        },
+        "additionalProperties": false
+      },
+      "MachineSnapshot": {
+        "type": "object",
+        "required": [
+          "sequence",
+          "sampled_at",
+          "cpu",
+          "memory",
+          "instance_id",
+          "platform",
+          "logical_cpus",
+          "sample_interval_ms",
+          "disk_interval_ms",
+          "disks"
+        ],
+        "properties": {
+          "sequence": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "sampled_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "UTC Unix milliseconds"
+          },
+          "cpu": {
+            "$ref": "#/components/schemas/MachineMetric"
+          },
+          "memory": {
+            "$ref": "#/components/schemas/MachineMetric"
+          },
+          "instance_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "platform": {
+            "type": "string",
+            "enum": [
+              "linux",
+              "windows"
+            ]
+          },
+          "logical_cpus": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "sample_interval_ms": {
+            "type": "integer",
+            "enum": [
+              2000
+            ]
+          },
+          "disk_interval_ms": {
+            "type": "integer",
+            "enum": [
+              30000
+            ]
+          },
+          "disks": {
+            "type": "array",
+            "maxItems": 32,
+            "items": {
+              "$ref": "#/components/schemas/MachineDisk"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "MachineHistory": {
+        "type": "object",
+        "required": [
+          "instance_id",
+          "sample_interval_ms",
+          "window_seconds",
+          "samples"
+        ],
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sample_interval_ms": {
+            "type": "integer",
+            "enum": [
+              2000
+            ]
+          },
+          "window_seconds": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 900
+          },
+          "samples": {
+            "type": "array",
+            "maxItems": 450,
+            "items": {
+              "$ref": "#/components/schemas/MachineSample"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "MachineSnapshotResponse": {
+        "type": "object",
+        "required": [
+          "data",
+          "request_id"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/MachineSnapshot"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "MachineHistoryResponse": {
+        "type": "object",
+        "required": [
+          "data",
+          "request_id"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/MachineHistory"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PermissionRecord": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "module": {
+            "type": "string"
+          },
+          "enforcement": {
+            "type": "string",
+            "enum": [
+              "server",
+              "client"
+            ]
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "system",
+              "custom"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "disabled",
+              "archived"
+            ]
+          },
+          "required_for_super_admin": {
+            "type": "boolean"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "description",
+          "module",
+          "enforcement",
+          "source",
+          "status",
+          "required_for_super_admin",
+          "version"
+        ],
+        "additionalProperties": false
+      },
+      "RoleRecord": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "system_key": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "disabled",
+              "archived"
+            ]
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "authz_version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "user_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "全部引用此角色的用户数量（含停用用户）"
+          },
+          "permission_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "关联权限总数（含停用权限）"
+          },
+          "manageable": {
+            "type": "boolean",
+            "description": "当前调用者的管理范围是否包含此角色；写操作仍要求对应 capability"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "description",
+          "system_key",
+          "status",
+          "version",
+          "authz_version",
+          "user_count",
+          "permission_count",
+          "manageable"
+        ],
+        "additionalProperties": false
+      },
+      "NewPermissionRequest": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 96,
+            "pattern": "^[a-z0-9_]+(\\.[a-z0-9_]+)*$"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "module": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 512
+          }
+        },
+        "required": [
+          "code",
+          "name",
+          "module"
+        ],
+        "additionalProperties": false
+      },
+      "PermissionEditRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 512
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "RoleCreateRequest": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 512
+          }
+        },
+        "required": [
+          "code",
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "RbacStatusRequest": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "disabled"
+            ]
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "PermissionIdsRequest": {
+        "type": "object",
+        "properties": {
+          "permission_ids": {
+            "type": "array",
+            "maxItems": 1000,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        },
+        "required": [
+          "permission_ids"
+        ],
+        "additionalProperties": false
+      },
+      "RoleScopeIdsRequest": {
+        "type": "object",
+        "properties": {
+          "target_role_ids": {
+            "type": "array",
+            "maxItems": 1000,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        },
+        "required": [
+          "target_role_ids"
+        ],
+        "additionalProperties": false
+      },
+      "PermissionRecordResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/PermissionRecord"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "data",
+          "request_id"
+        ],
+        "additionalProperties": false
+      },
+      "RoleRecordResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/RoleRecord"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "data",
+          "request_id"
+        ],
+        "additionalProperties": false
+      },
+      "PermissionRecordListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/PermissionRecord"
+                }
+              }
+            },
+            "required": [
+              "items"
+            ],
+            "additionalProperties": false
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "data",
+          "request_id"
+        ],
+        "additionalProperties": false
+      },
+      "RoleRecordListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/RoleRecord"
+                }
+              }
+            },
+            "required": [
+              "items"
+            ],
+            "additionalProperties": false
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "data",
+          "request_id"
+        ],
+        "additionalProperties": false
+      },
+      "PermissionIdsResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "permission_ids": {
+                "type": "array",
+                "maxItems": 1000,
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "required": [
+              "permission_ids"
+            ],
+            "additionalProperties": false
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "data",
+          "request_id"
+        ],
+        "additionalProperties": false
+      },
+      "RoleScopeIdsResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "target_role_ids": {
+                "type": "array",
+                "maxItems": 1000,
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "required": [
+              "target_role_ids"
+            ],
+            "additionalProperties": false
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "data",
+          "request_id"
+        ],
+        "additionalProperties": false
       }
     },
     "parameters": {

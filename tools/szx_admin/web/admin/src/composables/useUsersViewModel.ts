@@ -6,15 +6,19 @@ import { hashPassword, manageableRoles, passwordPolicy, passwordProblem } from '
 import { useAuthStore } from '../stores/auth'
 import { usePagedQuery } from './usePagedQuery'
 import { useTask } from './useTask'
+import { translate } from '../i18n'
+import { useI18n } from 'vue-i18n'
 
 export type UserAction = 'create' | 'details' | 'name' | 'role' | 'status' | 'unlock' | 'reset'
 export type UserRowView = User & {
   canManage: boolean
   canAssignRole: boolean
   canChangeStatus: boolean
+  canUpdate: boolean
+  canUnlock: boolean
+  canReset: boolean
 }
 export interface UserDraft {
-  identityType: 'username' | 'uid'
   identity: string
   displayName: string
   role: Role
@@ -22,17 +26,27 @@ export interface UserDraft {
   confirmation: string
 }
 export const actionLabels: Record<UserAction, string> = {
-  create: '创建用户',
-  details: '用户详情',
-  name: '编辑展示名',
-  role: '分配角色',
-  status: '变更用户状态',
-  unlock: '解锁用户',
-  reset: '重置密码',
+  create: 'users.createAction',
+  details: 'users.detailsAction',
+  name: 'users.nameAction',
+  role: 'users.roleAction',
+  status: 'users.statusAction',
+  unlock: 'users.unlockAction',
+  reset: 'users.resetAction',
+}
+const actionCapabilities: Record<UserAction, string> = {
+  create: 'user.create',
+  details: 'user.read',
+  name: 'user.update',
+  role: 'user.role.assign',
+  status: 'user.status',
+  unlock: 'user.unlock',
+  reset: 'user.password.reset',
 }
 
 export function useUsersViewModel() {
   const auth = useAuthStore()
+  const { t } = useI18n()
   const filters = reactive({
     search: '',
     role: '' as Role | '',
@@ -55,18 +69,20 @@ export function useUsersViewModel() {
   const success = shallowRef('')
   const conflict = shallowRef(false)
   const draft = reactive<UserDraft>({
-    identityType: 'username',
     identity: '',
     displayName: '',
     role: 'operator',
     password: '',
     confirmation: '',
   })
-  const roles = computed(() => manageableRoles(auth.user?.role))
+  const roles = computed(
+    () => auth.permissions?.manageable_roles ?? manageableRoles(auth.user?.role),
+  )
+  const assignmentRoles = computed(() => auth.permissions?.assignable_roles ?? roles.value)
   const passwordHint = computed(
     () => passwordPolicy(action.value === 'reset' ? selected.value?.role : draft.role).hint,
   )
-  const canAssignRole = computed(() => auth.user?.role === 'super_admin')
+  const canAssignRole = computed(() => auth.can('user.role.assign'))
   const users = computed<UserRowView[]>(() =>
     query.items.value.map((user) => {
       const canManage = roles.value.includes(user.role)
@@ -75,11 +91,14 @@ export function useUsersViewModel() {
         ...user,
         canManage,
         canAssignRole: canManage && canAssignRole.value && !isSelf,
-        canChangeStatus: canManage && !isSelf,
+        canChangeStatus: canManage && !isSelf && auth.can('user.status'),
+        canUpdate: canManage && auth.can('user.update'),
+        canUnlock: canManage && auth.can('user.unlock'),
+        canReset: canManage && auth.can('user.password.reset'),
       }
     }),
   )
-  const dialogTitle = computed(() => (action.value ? actionLabels[action.value] : ''))
+  const dialogTitle = computed(() => (action.value ? t(actionLabels[action.value]) : ''))
   const targetStatus = computed(() =>
     selected.value?.status === 'disabled' ? 'active' : 'disabled',
   )
@@ -98,16 +117,17 @@ export function useUsersViewModel() {
     }
   }
   function open(next: UserAction, user?: User) {
-    if (mutation.busy.value) return
+    if (mutation.busy.value || !auth.can(actionCapabilities[next])) return
     clearPassword()
     action.value = next
     selected.value = user ?? null
     mutation.error.value = ''
     conflict.value = false
-    draft.identityType = 'username'
     draft.identity = ''
     draft.displayName = user?.display_name ?? ''
-    draft.role = user?.role ?? 'operator'
+    draft.role =
+      user?.role ??
+      (assignmentRoles.value.includes('operator') ? 'operator' : (assignmentRoles.value[0] ?? ''))
     if (user) void reloadSelected()
   }
   const reloadSelected = () =>
@@ -138,21 +158,24 @@ export function useUsersViewModel() {
   }
   const submit = () =>
     mutation.run(async () => {
-      if (conflict.value) throw new Error('请先重新加载用户，再确认操作。')
+      if (conflict.value) throw new Error(translate('errors.reloadUser'))
       try {
         const operation = action.value
         if (!operation || operation === 'details') return
+        if (!auth.can(actionCapabilities[operation])) throw new ApiError(2204)
         let changed: User
         let requestId: string
         if (operation === 'create') {
           const identity = draft.identity.trim().normalize('NFC')
-          if (!identity || [...identity].length > 64) throw new Error('登录标识须为 1–64 个字符。')
+          if (!identity || [...identity].length > 64)
+            throw new Error(translate('errors.identityLength'))
           if (!draft.displayName.trim() || [...draft.displayName].length > 128)
-            throw new Error('展示名须为 1–128 个字符。')
-          if (!roles.value.includes(draft.role)) throw new Error('不能创建此角色的用户。')
+            throw new Error(translate('errors.displayNameLength'))
+          if (!assignmentRoles.value.includes(draft.role))
+            throw new Error(translate('errors.invalidRoleCreate'))
           const passwordHash = await draftPasswordHash(draft.role)
           const response = await adminApi.create({
-            ...(draft.identityType === 'uid' ? { uid: identity } : { username: identity }),
+            login_identifier: identity,
             display_name: draft.displayName,
             role: draft.role,
             ...(passwordHash ? { password_hash: passwordHash } : {}),
@@ -164,11 +187,16 @@ export function useUsersViewModel() {
         } else {
           const user = selected.value
           if (!user) return
-          if (!roles.value.includes(user.role)) throw new Error('无权管理此用户。')
+          if (!roles.value.includes(user.role)) throw new Error(translate('errors.manageForbidden'))
           if (user.id === auth.user?.id && (operation === 'role' || operation === 'status'))
-            throw new Error(operation === 'role' ? '不能给自己分配角色。' : '不能禁用自己。')
-          if (operation === 'role' && (!canAssignRole.value || !roles.value.includes(draft.role)))
-            throw new Error('无权分配此角色。')
+            throw new Error(
+              translate(operation === 'role' ? 'errors.selfRole' : 'errors.selfDisable'),
+            )
+          if (
+            operation === 'role' &&
+            (!canAssignRole.value || !assignmentRoles.value.includes(draft.role))
+          )
+            throw new Error(translate('errors.roleForbidden'))
           if (operation === 'reset') {
             const response = await adminApi.resetPassword(user, await draftPasswordHash(user.role))
             clearPassword()
@@ -176,7 +204,8 @@ export function useUsersViewModel() {
             changed = response.data.user
             requestId = response.request_id
           } else {
-            if (operation === 'name' && !draft.displayName.trim()) throw new Error('请填写展示名。')
+            if (operation === 'name' && !draft.displayName.trim())
+              throw new Error(translate('errors.displayNameRequired'))
             const value =
               operation === 'name'
                 ? draft.displayName
@@ -188,7 +217,7 @@ export function useUsersViewModel() {
             requestId = response.request_id
           }
         }
-        success.value = `${actionLabels[operation]}成功 · 请求 ID：${requestId}`
+        success.value = t('users.success', { action: t(actionLabels[operation]), requestId })
         credentialRequestId.value = credential.value ? requestId : ''
         action.value = null
         selected.value = null
@@ -220,8 +249,10 @@ export function useUsersViewModel() {
     conflict,
     draft,
     roles,
+    assignmentRoles,
     passwordHint,
     canAssignRole,
+    canCreate: computed(() => auth.can('user.create')),
     dialogTitle,
     targetStatus,
     search,

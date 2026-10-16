@@ -1,4 +1,13 @@
 <script setup lang="ts">
+import {
+  LuminaButton as Button,
+  LuminaInput as InputText,
+  LuminaSelect as Select,
+} from '../../ui/lumina'
+import LocalDateTimePicker from '../LocalDateTimePicker.vue'
+import { computed, shallowRef } from 'vue'
+import { useI18n } from 'vue-i18n'
+const { t } = useI18n()
 const filters = defineModel<{
   event_search: string
   result: string
@@ -8,44 +17,80 @@ const filters = defineModel<{
 }>({ required: true })
 defineProps<{ busy: boolean; eventOptions: { code: string; label: string }[] }>()
 const emit = defineEmits<{ search: []; reset: [] }>()
+const dateInputKey = shallowRef(0)
+function reset() {
+  // Reset also discards incomplete manual input that has no committed model value.
+  dateInputKey.value++
+  emit('reset')
+}
+const resultOptions = computed(() => [
+  { value: '', label: t('audit.allResults') },
+  { value: 'success', label: t('result.success') },
+  { value: 'failure', label: t('result.failure') },
+  { value: 'denied', label: t('result.denied') },
+])
 </script>
 <template>
   <form class="filters log-filters" @submit.prevent="emit('search')">
-    <label
-      >事件名称<input
+    <label>
+      {{ t('audit.eventName') }}
+      <Select
         v-model="filters.event_search"
-        type="search"
-        placeholder="搜索中文名称或事件代码，如登录、login"
-        maxlength="128"
-        list="audit-event-options"
-        autocomplete="off"
+        editable
+        :options="eventOptions"
+        option-label="label"
+        option-value="code"
+        :empty-message="t('common.noResults')"
+        :placeholder="t('audit.eventSearchPlaceholder')"
+        :aria-label="t('audit.eventName')"
+        :pt="{
+          label: { maxlength: 128, spellcheck: false },
+          listContainer: { class: 'lumina-scrollbar' },
+        }"
+      >
+        <template #option="{ option }">
+          <div class="lumina-select-option-content">
+            <span class="lumina-select-option-label">{{ option.label }}</span>
+            <span class="lumina-select-option-detail">{{ option.code }}</span>
+          </div>
+        </template>
+      </Select>
+    </label>
+    <label
+      >{{ t('audit.result')
+      }}<Select
+        v-model="filters.result"
+        :placeholder="t('audit.allResults')"
+        :options="resultOptions"
+        option-label="label"
+        option-value="value"
+        :aria-label="t('audit.result')"
     /></label>
-    <datalist id="audit-event-options">
-      <option
-        v-for="event in eventOptions"
-        :key="event.code"
-        :value="event.label"
-        :label="event.code"
-      />
-    </datalist>
     <label
-      >结果<select v-model="filters.result">
-        <option value="">全部结果</option>
-        <option value="success">成功</option>
-        <option value="failure">失败</option>
-        <option value="denied">拒绝</option>
-      </select></label
-    >
-    <label
-      >搜索用户<input
+      >{{ t('audit.searchUser')
+      }}<InputText
         v-model="filters.actor_search"
-        placeholder="搜索展示名、用户名或 UID"
+        :placeholder="t('audit.searchUserPlaceholder')"
         maxlength="128"
         type="search"
     /></label>
-    <label>开始时间（本地）<input v-model="filters.from" type="datetime-local" step="1" /></label>
-    <label>结束时间（本地）<input v-model="filters.to" type="datetime-local" step="1" /></label>
-    <button class="primary" :disabled="busy">查询日志</button>
-    <button type="button" :disabled="busy" @click="emit('reset')">重置筛选</button>
+    <label
+      >{{ t('audit.start')
+      }}<LocalDateTimePicker
+        :key="`from-${dateInputKey}`"
+        v-model="filters.from"
+        :label="t('audit.start')"
+    /></label>
+    <label
+      >{{ t('audit.end')
+      }}<LocalDateTimePicker
+        :key="`to-${dateInputKey}`"
+        v-model="filters.to"
+        :label="t('audit.end')"
+    /></label>
+    <Button class="primary" :disabled="busy" type="submit" variant="primary">{{
+      t('audit.queryLogs')
+    }}</Button>
+    <Button type="button" :disabled="busy" @click="reset">{{ t('common.reset') }}</Button>
   </form>
 </template>

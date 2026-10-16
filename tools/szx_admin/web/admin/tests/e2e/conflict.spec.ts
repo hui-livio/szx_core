@@ -5,7 +5,7 @@ test('version conflict blocks resubmission until the user reloads', async ({ pag
   let attempts = 0
   const user = {
     id: '10000000-0000-4000-8000-000000000001',
-    username: 'admin',
+    login_identifier: 'admin',
     display_name: '管理员',
     role: 'super_admin',
     status: 'active',
@@ -28,6 +28,13 @@ test('version conflict blocks resubmission until the user reloads', async ({ pag
         csrf_token: 'csrf',
         expires_at: Date.now() + 900000,
       })
+    if (path.endsWith('/client/me/permissions'))
+      return reply({
+        user_id: user.id,
+        role: user.role,
+        capabilities: ['user.read', 'user.update'],
+        authz_version: 1,
+      })
     if (path.endsWith('/admin/users'))
       return reply({ items: [user], total: 1, page: 1, page_size: 20 })
     if (request.method() === 'PATCH') {
@@ -42,9 +49,11 @@ test('version conflict blocks resubmission until the user reloads', async ({ pag
     return reply({ ...user, version })
   })
   await page.goto('/login')
-  await page.getByLabel('登录账号').fill('admin')
+  await page.locator('input[name="identifier"]').fill('admin')
   await page.getByLabel('密码', { exact: true }).fill('test')
   await page.getByRole('button', { name: '登录控制台' }).click()
+  await expect(page).toHaveURL('/home')
+  await page.getByRole('link', { name: '用户管理', exact: true }).click()
   await page.getByRole('button', { name: '编辑', exact: true }).click()
   await expect(page.getByRole('button', { name: '确认', exact: true })).toBeEnabled()
   await page.getByLabel('展示名', { exact: true }).fill('Updated')

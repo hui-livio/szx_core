@@ -1,0 +1,100 @@
+/* The installed Lumina scope covers existing and future scroll areas, including
+   body-teleported overlays. Styling never changes overflow or creates a JS scroller. */
+.lumina-scrollbar {
+  /* Reserve space only when explicitly requested, not on every clipping container. */
+  scrollbar-gutter: stable;
+}
+:where(.lumina-scrollbar, [data-lumina-scrollbars], [data-lumina-scrollbars] *) {
+  scrollbar-width: thin;
+  scrollbar-color: var(--lg-scroll-thumb) transparent;
+}
+:where(.lumina-scrollbar, [data-lumina-scrollbars], [data-lumina-scrollbars] *):hover {
+  scrollbar-color: var(--lg-scroll-thumb-hover) transparent;
+}
+
+@supports selector(::-webkit-scrollbar) {
+  /* Standard non-auto properties override WebKit pseudo-elements in modern
+     Chromium; use them only as the non-WebKit fallback. */
+  :where(.lumina-scrollbar, [data-lumina-scrollbars], [data-lumina-scrollbars] *),
+  :where(.lumina-scrollbar, [data-lumina-scrollbars], [data-lumina-scrollbars] *):hover {
+    scrollbar-width: auto;
+    scrollbar-color: auto;
+  }
+  :where(
+    .lumina-scrollbar,
+    [data-lumina-scrollbars],
+    [data-lumina-scrollbars] *
+  )::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  :where(
+    .lumina-scrollbar,
+    [data-lumina-scrollbars],
+    [data-lumina-scrollbars] *
+  )::-webkit-scrollbar-track,
+  :where(
+    .lumina-scrollbar,
+    [data-lumina-scrollbars],
+    [data-lumina-scrollbars] *
+  )::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+  :where(
+    .lumina-scrollbar,
+    [data-lumina-scrollbars],
+    [data-lumina-scrollbars] *
+  )::-webkit-scrollbar-thumb {
+    min-height: 48px;
+    min-width: 48px;
+    border: 2px solid transparent;
+    border-radius: 999px;
+    background: var(--lg-scroll-thumb);
+    background-clip: padding-box;
+  }
+  :where(
+      .lumina-scrollbar,
+      [data-lumina-scrollbars],
+      [data-lumina-scrollbars] *
+    )::-webkit-scrollbar-thumb:hover,
+  :where(
+      .lumina-scrollbar,
+      [data-lumina-scrollbars],
+      [data-lumina-scrollbars] *
+    )::-webkit-scrollbar-thumb:active {
+    background-color: var(--lg-scroll-thumb-hover);
+  }
+  :where(
+    .lumina-scrollbar,
+    [data-lumina-scrollbars],
+    [data-lumina-scrollbars] *
+  )::-webkit-scrollbar-button {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+}
+
+@media (forced-colors: active) {
+  :where(.lumina-scrollbar, [data-lumina-scrollbars], [data-lumina-scrollbars] *),
+  :where(.lumina-scrollbar, [data-lumina-scrollbars], [data-lumina-scrollbars] *):hover {
+    scrollbar-width: auto;
+    scrollbar-color: auto;
+  }
+  :where(
+    .lumina-scrollbar,
+    [data-lumina-scrollbars],
+    [data-lumina-scrollbars] *
+  )::-webkit-scrollbar {
+    width: auto;
+    height: auto;
+  }
+  :where(
+    .lumina-scrollbar,
+    [data-lumina-scrollbars],
+    [data-lumina-scrollbars] *
+  )::-webkit-scrollbar-thumb {
+    background: CanvasText;
+    border-color: Canvas;
+  }
+}

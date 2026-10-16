@@ -1,30 +1,20 @@
 <script setup lang="ts">
-import { useId } from 'vue'
-import { useDialog } from '../composables/useDialog'
+import { useI18n } from 'vue-i18n'
+import { LuminaDialog } from '../ui/lumina'
 defineProps<{ title: string; busy?: boolean }>()
 const emit = defineEmits<{ close: [] }>()
-const titleId = useId()
-useDialog()
+const { t } = useI18n()
 </script>
 <template>
-  <dialog
-    ref="dialog"
+  <LuminaDialog
     class="modal"
-    :aria-labelledby="titleId"
-    @cancel.prevent="!busy && emit('close')"
+    :title="title"
+    :busy="busy"
+    :close-label="t('common.close')"
+    @close="emit('close')"
   >
-    <header class="modal-header">
-      <h2 :id="titleId">{{ title }}</h2>
-      <button
-        type="button"
-        class="icon-button"
-        aria-label="关闭对话框"
-        :disabled="busy"
-        @click="emit('close')"
-      >
-        ×
-      </button>
-    </header>
+    <template v-if="$slots.header" #header><slot name="header" /></template>
     <slot />
-  </dialog>
+    <template v-if="$slots.footer" #footer><slot name="footer" /></template>
+  </LuminaDialog>
 </template>

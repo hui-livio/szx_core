@@ -10,9 +10,11 @@
 #include "SzxAdmin/Infra/RequestContext.h"
 #include "SzxAdmin/Infra/RestApi.h"
 #include "SzxNetwork/HttpServer.h"
+#include "TimeHelper.hpp"
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <filesystem>
 #include <mutex>
 #include <string_view>
@@ -157,13 +159,16 @@ public:
         return path == healthPath();
     }
 
-    void accessLog(const Network::HttpServerRequest &request, const std::string &id,
-                   const Network::HttpServerResponse &response) const noexcept
+    void accessLog(const Network::HttpServerRequest &request, const std::string &id, const Network::HttpServerResponse &response,
+                   std::string_view requestStartedAt, std::chrono::steady_clock::time_point started) const noexcept
     {
         if (!config_.accessLog)
             return;
         try
         {
+            const auto durationMicroseconds =
+                std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - started).count();
+            const auto durationMilliseconds = static_cast<double>(durationMicroseconds) / 1000.0;
             const auto path =
                 SZX::COMMON::Json(request.path.substr(0, 512)).dump(-1, ' ', false, SZX::COMMON::Json::error_handler_t::replace);
             if (response.statusCode >= 400)
@@ -171,13 +176,15 @@ public:
                 const auto body = SZX::COMMON::JsonHelper::ParseRequiredObject(response.body);
                 if (body && body->contains("code") && body->at("code").is_number_integer())
                 {
-                    LOGM_INFO("szx_admin.http", "request_id={} method={} path={} status={} code={}", id, request.method, path,
-                              response.statusCode, body->at("code").get<int>());
+                    LOGM_INFO("szx_admin.http",
+                              "request_id={} request_started_at={} duration={:.2f} ms method={} path={} status={} code={}", id,
+                              requestStartedAt, durationMilliseconds, request.method, path, response.statusCode,
+                              body->at("code").get<int>());
                     return;
                 }
             }
-            LOGM_INFO("szx_admin.http", "request_id={} method={} path={} status={}", id, request.method, path,
-                      response.statusCode);
+            LOGM_INFO("szx_admin.http", "request_id={} request_started_at={} duration={:.2f} ms method={} path={} status={}", id,
+                      requestStartedAt, durationMilliseconds, request.method, path, response.statusCode);
         } catch (...)
         {
         }
@@ -266,6 +273,9 @@ public:
                 {
                     inTransportCallback = previous;
                 };
+                const SZX::COMMON::Stopwatch timing;
+                const auto requestStartedAt                         = SZX::COMMON::TimeHelper::NowIso8601();
+                const auto started                                  = std::chrono::steady_clock::now();
                 const auto id                                       = requestId(request);
                 request.attributes[std::string{requestIdAttribute}] = id;
                 request.headers[std::string{kRequestIdHeader}]      = id;
@@ -278,7 +288,15 @@ public:
                 }
                 response.headers[std::string{kRequestIdHeader}] = id;
                 secureResponse(response);
-                accessLog(request, id, response);
+                const auto appMilliseconds = timing.ElapsedMs();
+                accessLog(request, id, response, requestStartedAt, started);
+                const auto serverMilliseconds = timing.ElapsedMs();
+                // Access logging is synchronous and runs before the response is sent.
+                // Keep it separate so a blocked console/file sink cannot masquerade as SQL latency.
+                if (isApiPath(request.path, config_.apiPrefix))
+                    response.headers["Server-Timing"] = "app;dur=" + std::to_string(appMilliseconds) +
+                        ", access_log;dur=" + std::to_string(serverMilliseconds - appMilliseconds) +
+                        ", server;dur=" + std::to_string(serverMilliseconds);
                 return response;
             });
         if (!configured.ok)
@@ -292,9 +310,11 @@ public:
                 {
                     inTransportCallback = previous;
                 };
-                const auto id = requestId(request);
-                auto response = prepareResponse(RestApi::error(responseError(status), id), id);
-                accessLog(request, id, response);
+                const auto requestStartedAt = SZX::COMMON::TimeHelper::NowIso8601();
+                const auto started          = std::chrono::steady_clock::now();
+                const auto id               = requestId(request);
+                auto response               = prepareResponse(RestApi::error(responseError(status), id), id);
+                accessLog(request, id, response, requestStartedAt, started);
                 return response;
             });
         if (!configured.ok)
@@ -339,12 +359,12 @@ public:
                 return ready;
             const auto registeredMethod = method;
             const auto registeredPath   = path;
-            const auto result            = networkResult(server_->route(std::move(method), std::move(path),
-                                                [handler = std::move(handler)](const auto &request)
-                                                {
-                                                    const auto converted = convertRequest(request);
-                                                    return prepareResponse(handler(converted), converted.requestId);
-                                                }));
+            const auto result           = networkResult(server_->route(std::move(method), std::move(path),
+                                                                       [handler = std::move(handler)](const auto &request)
+                                                                       {
+                                                                 const auto converted = convertRequest(request);
+                                                                 return prepareResponse(handler(converted), converted.requestId);
+                                                             }));
             if (result.ok)
                 LOGM_DEBUG("szx_admin.http", "event=route_registered method={} path={}", registeredMethod, registeredPath);
             return result;

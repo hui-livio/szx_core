@@ -2,6 +2,7 @@
 #include "HttpSupport.h"
 #include "TimeHelper.hpp"
 #include "auth/LoginService.h"
+#include "rbac/RbacHandler.h"
 #include "telemetry/BehaviorEventWriter.h"
 #include "user/UserHandler.h"
 
@@ -40,21 +41,20 @@ auto sessionResponse(const AUTH::LoginSession &session, const INFRA::HttpRequest
                      {"password_change_recommended", user.force_password_change && user.role != "super_admin"},
                      {"version", user.version},
                      {"authz_version", user.authz_version},
+                     {"role_id", user.role_id ? Json(*user.role_id) : Json(nullptr)},
+                     {"role_authz_version", user.role_authz_version},
                      {"last_login_at", utcTimestampJson(user.last_login_at)},
                      {"created_at", utcTimestampJson(user.created_at)},
                      {"updated_at", utcTimestampJson(user.updated_at)}};
-        if (user.uid)
-            profile["uid"] = *user.uid;
-        if (user.username)
-            profile["username"] = *user.username;
-        auto response = RestApi::success(Json{{"user", std::move(profile)},
-                                              {"access_token", session.accessToken},
-                                              {"token_type", "Bearer"},
-                                              {"expires_in", 900},
-                                              {"expires_at", session.expiresAt * 1000},
-                                              {"authz_version", user.authz_version},
-                                              {"csrf_token", session.csrfToken}},
-                                         request.requestId);
+        profile["login_identifier"] = user.login_identifier;
+        auto response               = RestApi::success(Json{{"user", std::move(profile)},
+                                                            {"access_token", session.accessToken},
+                                                            {"token_type", "Bearer"},
+                                                            {"expires_in", 900},
+                                                            {"expires_at", session.expiresAt * 1000},
+                                                            {"authz_version", user.authz_version},
+                                                            {"csrf_token", session.csrfToken}},
+                                                       request.requestId);
         if (response.statusCode == 200)
             response.headers.emplace(
                 "Set-Cookie",
@@ -79,15 +79,19 @@ auto loginResponse(AUTH::LoginService &service, const INFRA::HttpRequest &reques
         const auto body = RestApi::jsonObject(request);
         if (!body.ok)
             return RestApi::error(static_cast<ErrorCode>(body.error), request.requestId);
-        constexpr std::array<std::string_view, 2> fields{"identifier", "password_hash"};
-        if (!RestApi::allowedFields(body.value, fields).ok || !body.value.contains("identifier") ||
-            !body.value.contains("password_hash") || !body.value.at("identifier").is_string() ||
+        constexpr std::array<std::string_view, 2> fields{"login_identifier", "password_hash"};
+        if (!RestApi::allowedFields(body.value, fields).ok || !body.value.contains("password_hash") ||
             !body.value.at("password_hash").is_string())
             return RestApi::error(ErrorCode::ValidationError, request.requestId);
-        const auto session = service.login({.identifier   = body.value.at("identifier").get<std::string>(),
-                                            .passwordHash = body.value.at("password_hash").get<std::string>(),
-                                            .requestId    = request.requestId,
-                                            .peerAddress  = request.peerAddress});
+        if (!body.value.contains("login_identifier") || !body.value.at("login_identifier").is_string())
+            return RestApi::error(ErrorCode::ValidationError, request.requestId);
+        AUTH::LoginInput input{.identifier     = {},
+                               .passwordHash   = body.value.at("password_hash").get<std::string>(),
+                               .requestId      = request.requestId,
+                               .peerAddress    = request.peerAddress,
+                               .identifierType = AUTH::IdentifierType::Username};
+        input.identifier   = body.value.at("login_identifier").get<std::string>();
+        const auto session = service.login(input);
         return session.ok ? sessionResponse(session.value, request, cookiePath) :
                             RestApi::error(static_cast<ErrorCode>(session.error), request.requestId);
     } catch (...)
@@ -235,8 +239,7 @@ auto registerHealthRoutes(std::string_view apiPrefix,
 }
 
 auto registerRoutes(INFRA::HttpTransport &transport, INFRA::DatabasePool &database, AUTH::LoginService *login,
-                    TELEMETRY::BehaviorEventWriter *writer)
-    -> SZX::COMMON::Result<void>
+                    TELEMETRY::BehaviorEventWriter *writer) -> SZX::COMMON::Result<void>
 {
     try
     {
@@ -247,6 +250,21 @@ auto registerRoutes(INFRA::HttpTransport &transport, INFRA::DatabasePool &databa
                 const auto ping = database.ping();
                 if (!ping.ok)
                     return INFRA::RestApi::error(INFRA::ErrorCode::DatabaseUnavailable, request.requestId);
+                const auto rbac = database.withConnection(
+                    [](INFRA::DatabaseConnection &connection) -> SZX::COMMON::Result<void>
+                    {
+                        const auto ready = connection.rbacCatalogReady();
+                        if (!ready.ok)
+                            return SZX::COMMON::Result<void>::Failure(ready.error, {});
+                        return ready.value ?
+                            SZX::COMMON::Result<void>::Success() :
+                            SZX::COMMON::Result<void>::Failure(static_cast<int>(INFRA::ErrorCode::ServiceUnavailable), {});
+                    });
+                if (!rbac.ok)
+                    return INFRA::RestApi::error(rbac.error == static_cast<int>(INFRA::ErrorCode::ServiceUnavailable) ?
+                                                     INFRA::ErrorCode::ServiceUnavailable :
+                                                     INFRA::ErrorCode::DatabaseUnavailable,
+                                                 request.requestId);
                 if (writer && writer->state() != TELEMETRY::AdmissionState::Accepting)
                     return INFRA::RestApi::error(INFRA::ErrorCode::ServiceUnavailable, request.requestId);
                 return INFRA::RestApi::success(SZX::COMMON::Json{{"status", "ready"}}, request.requestId);
@@ -300,6 +318,9 @@ auto registerRoutes(INFRA::HttpTransport &transport, INFRA::DatabasePool &databa
         const auto userRoutes = USER::registerUserRoutes(transport, database, *login, *writer);
         if (!userRoutes.ok)
             return userRoutes;
+        const auto rbacRoutes = RBAC::registerRbacRoutes(transport, database, *login);
+        if (!rbacRoutes.ok)
+            return rbacRoutes;
         return SZX::COMMON::Result<void>::Success();
     } catch (...)
     {

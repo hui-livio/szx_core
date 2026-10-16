@@ -1,13 +1,18 @@
 import { computed, onMounted, onUnmounted, reactive, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
-import { isAdmin, passwordPolicy, passwordProblem, roleLabels } from '../domain'
+import { passwordPolicy, passwordProblem, roleLabel } from '../domain'
 import { useTask } from './useTask'
+import { useI18n } from 'vue-i18n'
+import { hasPageAccess, visiblePages } from '../navigation'
 
 export function useLoginViewModel() {
   const auth = useAuthStore()
   const router = useRouter()
-  const form = reactive({ identifier: '', password: '' })
+  const form = reactive({
+    identifier: '',
+    password: '',
+  })
   const task = useTask()
   const submit = () =>
     task.run(async () => {
@@ -67,18 +72,11 @@ export function useShellViewModel() {
   const router = useRouter()
   const route = useRoute()
   const task = useTask()
+  const { t } = useI18n()
   const links = computed(() =>
     auth.needsPassword
       ? []
-      : [
-          { to: '/home', label: '工作台', symbol: '⌂' },
-          ...(isAdmin(auth.user?.role)
-            ? [
-                { to: '/users', label: '用户管理', symbol: '◎' },
-                { to: '/logs', label: '审计日志', symbol: '≡' },
-              ]
-            : []),
-        ],
+      : visiblePages(auth.can).map((page) => ({ ...page, label: t(page.label) })),
   )
   const logout = () =>
     task.run(async () => {
@@ -90,8 +88,8 @@ export function useShellViewModel() {
     links,
     logout,
     user: computed(() => auth.user),
-    title: computed(() => String(route.meta.title ?? 'Admin')),
-    role: computed(() => (auth.user ? roleLabels[auth.user.role] : '')),
+    title: computed(() => (route.meta.titleKey ? t(String(route.meta.titleKey)) : 'Admin')),
+    role: computed(() => (auth.user ? roleLabel(auth.user.role) : '')),
     passwordLink: computed(() => !auth.needsPassword),
   }
 }
@@ -100,11 +98,29 @@ export function useSessionNavigation() {
   const auth = useAuthStore()
   const router = useRouter()
   watch(
+    () =>
+      [
+        auth.user?.id,
+        auth.user?.authz_version,
+        auth.user?.role_id,
+        auth.user?.role_authz_version,
+      ] as const,
+    () => {
+      if (auth.user && !auth.permissions) void auth.loadPermissions().catch(() => {})
+    },
+    { immediate: true },
+  )
+  watch(
     () => auth.user,
     (user) => {
       if (!user) void router.replace('/login')
       else if (user.force_password_change) void router.replace('/change-password')
-      else if (router.currentRoute.value.meta.admin && !isAdmin(user.role))
+    },
+  )
+  watch(
+    () => auth.permissions,
+    (permissions) => {
+      if (auth.user && permissions && !hasPageAccess(router.currentRoute.value.meta, auth.can))
         void router.replace('/home')
     },
   )
@@ -114,32 +130,53 @@ export function useSessionNavigation() {
 export function useHomeViewModel() {
   const auth = useAuthStore()
   const task = useTask()
+  const { t } = useI18n()
   const load = () => task.run(auth.loadPermissions)
   const capabilityLabels: Record<string, string> = {
-    'business.read': '查看业务数据',
-    'business.operate': '执行业务操作',
-    'engineering.configure': '工程配置',
-    'user.read': '查看用户',
-    'user.create': '创建用户',
-    'user.update': '编辑用户',
-    'user.status': '启用与禁用用户',
-    'user.unlock': '解锁用户',
-    'user.password.reset': '重置用户密码',
-    'audit.read': '查看审计日志',
-    'user.role.assign': '分配角色',
+    'system.metrics.read': 'performance.permission',
+    'business.read': 'permissions.business_read',
+    'business.operate': 'permissions.business_operate',
+    'engineering.configure': 'permissions.engineering_configure',
+    'user.read': 'permissions.user_read',
+    'user.create': 'permissions.user_create',
+    'user.update': 'permissions.user_update',
+    'user.status': 'permissions.user_status',
+    'user.unlock': 'permissions.user_unlock',
+    'user.password.reset': 'permissions.user_password_reset',
+    'audit.read': 'permissions.audit_read',
+    'user.role.assign': 'permissions.user_role_assign',
+    'behavior.read': 'permissions.behavior_read',
+    'role.read': 'permissions.role_read',
+    'role.create': 'permissions.role_create',
+    'role.update': 'permissions.role_update',
+    'role.status': 'permissions.role_status',
+    'role.archive': 'permissions.role_archive',
+    'role.permission.assign': 'permissions.role_permission_assign',
+    'role.scope.assign': 'permissions.role_scope_assign',
+    'permission.read': 'permissions.permission_read',
+    'permission.create': 'permissions.permission_create',
+    'permission.update': 'permissions.permission_update',
+    'permission.status': 'permissions.permission_status',
+    'permission.archive': 'permissions.permission_archive',
   }
   onMounted(load)
   return {
     ...task,
     load,
     user: computed(() => auth.user),
-    role: computed(() => (auth.user ? roleLabels[auth.user.role] : '')),
-    canManage: computed(() => auth.can('user.read')),
-    canAudit: computed(() => auth.can('audit.read')),
+    role: computed(() => (auth.user ? roleLabel(auth.user.role) : '')),
+    links: computed(() =>
+      visiblePages(auth.can)
+        .filter((page) => page.to !== '/home')
+        .map((page) => ({
+          to: page.to,
+          label: t('homeLabel' in page ? page.homeLabel : page.label),
+        })),
+    ),
     capabilities: computed(() =>
       (auth.permissions?.capabilities ?? []).map((code) => ({
         code,
-        label: capabilityLabels[code] ?? code,
+        label: capabilityLabels[code] ? t(capabilityLabels[code]) : code,
       })),
     ),
   }

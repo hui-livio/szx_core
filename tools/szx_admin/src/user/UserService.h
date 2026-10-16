@@ -3,8 +3,9 @@
 #include "ActorContext.h"
 #include "UserRepository.h"
 
+#include "../rbac/AuthorizationService.h"
+
 #include "SzxAdmin/Infra/Database.h"
-#include "SzxAdmin/Policy/Policy.h"
 #include "SzxCryptoService/CryptoService.h"
 
 #include <string>
@@ -29,14 +30,13 @@ struct ListQuery final
     std::uint32_t pageSize{20};
 };
 
-/** 创建请求必须且只能提供 uid 或 username。 */
+/** 创建请求使用统一登录标识模型。 */
 struct CreateUserInput final
 {
-    std::optional<std::string> uid;
-    std::optional<std::string> username;
     std::string displayName;
     std::string role;
     std::optional<std::string> passwordHash; ///< 可选的客户端 SHA-256 摘要；省略时生成临时密码。
+    std::string loginIdentifier;
 };
 
 /** 创建和重置密码的结果；临时凭据明文只在本次响应中出现，不落库。 */
@@ -54,7 +54,9 @@ struct Permissions final
     std::string status;
     bool forcePasswordChange{};
     int authzVersion{};
-    std::vector<std::string_view> capabilities;
+    std::vector<std::string> capabilities;
+    std::vector<std::string> manageableRoles;
+    std::vector<std::string> assignableRoles;
 };
 
 /**
@@ -74,7 +76,7 @@ public:
     [[nodiscard]] auto list(const ActorContext &actor, const ListQuery &query) -> SZX::COMMON::Result<UserPage>;
     [[nodiscard]] auto get(const ActorContext &actor, const std::string &id) -> SZX::COMMON::Result<UserRow>;
     [[nodiscard]] auto create(const ActorContext &actor, const CreateUserInput &input) -> SZX::COMMON::Result<CredentialIssue>;
-    /** 只更新 display_name；uid、username 和 role 创建后不可改。 */
+    /** 只更新 display_name；login_identifier 和 role 创建后不可改。 */
     [[nodiscard]] auto updateProfile(const ActorContext &actor, const std::string &id, const std::string &displayName,
                                      std::uint32_t version) -> SZX::COMMON::Result<UserRow>;
     /** active/disabled 切换；禁用会撤销目标的全部 refresh 会话。 */
@@ -90,25 +92,20 @@ public:
         -> SZX::COMMON::Result<CredentialIssue>;
 
 private:
-    /** 一次加锁授权的结果：调用者、目标和已加锁的 active 超管计数。 */
-    struct Mutation final
-    {
-        UserRow actor;
-        UserRow target;
-        std::uint64_t activeSuperAdmins{};
-    };
-
     /** 校验 token 和数据库当前状态；写操作须在事务内令 lock=true。 */
-    auto resolve(const ActorContext &context, UserRepository &repository, bool lock = false) -> SZX::COMMON::Result<UserRow>;
+    auto resolve(const ActorContext &context, UserRepository &repository, bool lock = false,
+                 RBAC::RoleRepository *roles = nullptr) -> SZX::COMMON::Result<RBAC::AuthorizedActor>;
     /** 在已开启的事务中锁定调用者、目标及 active 超管行，并校验能力、目标角色和版本。 */
     auto authorize(const ActorContext &context, UserRepository &repository, const std::string &targetId,
-                   POLICY::Capability required, std::uint32_t version) -> SZX::COMMON::Result<Mutation>;
+                   std::string_view permissionCode, std::uint32_t version, RBAC::RoleRepository *roles = nullptr)
+        -> SZX::COMMON::Result<RBAC::AuthorizedMutation>;
     /** 生成一次性临时凭据，返回 {明文, 可存储的 Argon2id 记录}。 */
     auto issueCredential(const std::optional<std::string> &passwordHash)
         -> SZX::COMMON::Result<std::pair<std::string, std::string>>;
 
     INFRA::DatabasePool &database_;
     AUTH::LoginService &auth_;
+    RBAC::AuthorizationService authorization_;
     SZX::CRYPTO_SERVICE::CryptoService crypto_;
 };
 } // namespace SZX::ADMIN::USER

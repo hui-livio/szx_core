@@ -9,7 +9,6 @@
 
 #include "SzxAdmin/Infra/Database.h"
 #include "SzxAdmin/Infra/RestApi.h"
-#include "SzxAdmin/Policy/Policy.h"
 #include "TimeHelper.hpp"
 
 #include <array>
@@ -40,14 +39,16 @@ auto permissionsResponse(UserService &service, const INFRA::HttpRequest &request
         if (!result.ok)
             return RestApi::error(static_cast<ErrorCode>(result.error), request.requestId);
         Json capabilities = Json::array();
-        for (const auto capability : result.value.capabilities)
+        for (const auto &capability : result.value.capabilities)
             capabilities.push_back(std::string{capability});
         return RestApi::success(Json{{"user_id", result.value.userId},
                                      {"role", result.value.role},
                                      {"status", result.value.status},
                                      {"force_password_change", result.value.forcePasswordChange},
                                      {"authz_version", result.value.authzVersion},
-                                     {"capabilities", std::move(capabilities)}},
+                                     {"capabilities", std::move(capabilities)},
+                                     {"manageable_roles", result.value.manageableRoles},
+                                     {"assignable_roles", result.value.assignableRoles}},
                                 request.requestId);
     } catch (...)
     {
@@ -68,10 +69,7 @@ auto userRowJson(const UserRow &row) -> Json
                  {"last_login_at", utcTimestampJson(row.last_login_at)},
                  {"created_at", utcTimestampJson(row.created_at)},
                  {"updated_at", utcTimestampJson(row.updated_at)}};
-    if (row.uid)
-        profile["uid"] = *row.uid;
-    if (row.username)
-        profile["username"] = *row.username;
+    profile["login_identifier"] = row.login_identifier;
     return profile;
 }
 
@@ -129,22 +127,17 @@ auto createResponse(UserService &service, const INFRA::HttpRequest &request) -> 
         const auto body = RestApi::jsonObject(request);
         if (!body.ok)
             return RestApi::error(static_cast<ErrorCode>(body.error), request.requestId);
-        constexpr std::array<std::string_view, 5> fields{"uid", "username", "display_name", "role", "password_hash"};
+        constexpr std::array<std::string_view, 4> fields{"login_identifier", "display_name", "role", "password_hash"};
         if (!RestApi::allowedFields(body.value, fields).ok || !body.value.contains("display_name") ||
             !body.value.at("display_name").is_string() || !body.value.contains("role") || !body.value.at("role").is_string())
             return RestApi::error(ErrorCode::ValidationError, request.requestId);
-        const bool hasUid      = body.value.contains("uid") && !body.value.at("uid").is_null();
-        const bool hasUsername = body.value.contains("username") && !body.value.at("username").is_null();
-        if (hasUid == hasUsername)
+        if (!body.value.contains("login_identifier") || !body.value.at("login_identifier").is_string())
             return RestApi::error(ErrorCode::UserIdentityOneOfRequired, request.requestId);
-        if ((hasUid && !body.value.at("uid").is_string()) || (hasUsername && !body.value.at("username").is_string()))
-            return RestApi::error(ErrorCode::ValidationError, request.requestId);
-        CreateUserInput input{.displayName = body.value.at("display_name").get<std::string>(),
-                              .role        = body.value.at("role").get<std::string>()};
-        if (hasUid)
-            input.uid = body.value.at("uid").get<std::string>();
-        else
-            input.username = body.value.at("username").get<std::string>();
+        CreateUserInput input{
+            .displayName     = body.value.at("display_name").get<std::string>(),
+            .role            = body.value.at("role").get<std::string>(),
+            .loginIdentifier = body.value.at("login_identifier").get<std::string>(),
+        };
         if (body.value.contains("password_hash"))
         {
             if (!body.value.at("password_hash").is_string())
@@ -343,7 +336,7 @@ auto logsResponse(AUDIT::AuditService &service, const INFRA::HttpRequest &reques
                       {"event_name", entry.event_name},
                       {"result", entry.result},
                       {"actor_user_id", entry.actor_user_id.value_or("")},
-                      {"actor_username", entry.actor_username},
+                      {"actor_login_identifier", entry.actor_login_identifier},
                       {"target_user_id", entry.target_user_id.value_or("")},
                       {"request_id", entry.request_id},
                       {"peer_address", ""},
@@ -392,7 +385,7 @@ auto behaviorEventsResponse(TELEMETRY::BehaviorEventService &service, const INFR
             redactAuditDetails(*details);
             items.push_back(Json{{"id", entry.id},
                                  {"user_id", entry.user_id},
-                                 {"username", entry.username},
+                                 {"login_identifier", entry.login_identifier},
                                  {"event_name", entry.event_name},
                                  {"result", entry.result},
                                  {"request_id", entry.request_id},

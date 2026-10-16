@@ -1,44 +1,76 @@
 <script setup lang="ts">
+import {
+  LuminaButton as Button,
+  LuminaInput as InputText,
+  LuminaSelect as Select,
+} from '../../ui/lumina'
+import { computed } from 'vue'
 import type { Role, UserStatus } from '../../api/types'
-import { roleLabels, statusLabels } from '../../domain'
+import { roleLabel, statusLabels } from '../../domain'
+import { useI18n } from 'vue-i18n'
+const { t } = useI18n()
 const filters = defineModel<{
   search: string
   role: Role | ''
   status: UserStatus | ''
   sort: string
 }>({ required: true })
-defineProps<{ roles: Role[]; busy: boolean }>()
+const props = defineProps<{ roles: Role[]; busy: boolean }>()
 const emit = defineEmits<{ search: [] }>()
+const roleOptions = computed(() => [
+  { value: '', label: t('users.allRoles') },
+  ...props.roles.map((value) => ({ value, label: roleLabel(value) })),
+])
+const statusOptions = computed(() => [
+  { value: '', label: t('users.allStatuses') },
+  ...Object.entries(statusLabels).map(([value, label]) => ({ value, label: t(label) })),
+])
+const sortOptions = computed(() => [
+  { value: '-created_at', label: t('users.newest') },
+  { value: 'created_at', label: t('users.oldest') },
+  { value: 'display_name', label: t('users.displayName') },
+  { value: '-last_login_at', label: t('users.newestLogin') },
+  { value: 'role', label: t('common.role') },
+  { value: 'status', label: t('common.status') },
+])
 </script>
 <template>
   <form class="filters" @submit.prevent="emit('search')">
     <label class="search-field"
-      >搜索用户<input
+      >{{ t('users.search')
+      }}<InputText
         v-model="filters.search"
-        placeholder="搜索用户名、UID 或展示名"
+        :placeholder="t('users.searchPlaceholder')"
         maxlength="128"
         type="search" /></label
     ><label
-      >角色<select v-model="filters.role">
-        <option value="">全部角色</option>
-        <option v-for="role in roles" :key="role" :value="role">{{ roleLabels[role] }}</option>
-      </select></label
+      >{{ t('common.role')
+      }}<Select
+        v-model="filters.role"
+        :placeholder="t('users.allRoles')"
+        :options="roleOptions"
+        option-label="label"
+        option-value="value"
+        :aria-label="t('common.role')" /></label
     ><label
-      >状态<select v-model="filters.status">
-        <option value="">全部状态</option>
-        <option v-for="(label, value) in statusLabels" :key="value" :value="value">
-          {{ label }}
-        </option>
-      </select></label
+      >{{ t('common.status')
+      }}<Select
+        v-model="filters.status"
+        :placeholder="t('users.allStatuses')"
+        :options="statusOptions"
+        option-label="label"
+        option-value="value"
+        :aria-label="t('common.status')" /></label
     ><label
-      >排序<select v-model="filters.sort">
-        <option value="-created_at">最新创建</option>
-        <option value="created_at">最早创建</option>
-        <option value="display_name">展示名</option>
-        <option value="-last_login_at">最近登录</option>
-        <option value="role">角色</option>
-        <option value="status">状态</option>
-      </select></label
-    ><button class="primary" :disabled="busy">查询</button>
+      >{{ t('users.sort')
+      }}<Select
+        v-model="filters.sort"
+        :options="sortOptions"
+        option-label="label"
+        option-value="value"
+        :aria-label="t('users.sort')" /></label
+    ><Button class="primary" :disabled="busy" type="submit" variant="primary">{{
+      t('common.search')
+    }}</Button>
   </form>
 </template>

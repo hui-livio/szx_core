@@ -47,7 +47,7 @@ struct AuditRow final
     std::string request_id;
     std::string details_json;
     std::string created_at;
-    std::string actor_username;
+    std::string actor_login_identifier;
 };
 
 struct AuditPage final

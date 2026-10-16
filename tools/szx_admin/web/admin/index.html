@@ -1,9 +1,20 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="light" data-fx="lite">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      // Keep in sync with stores/uiPreferences.ts: saved appearance before the first paint.
+      try {
+        document.documentElement.dataset.theme =
+          localStorage.getItem('szx-admin-theme') === 'dark' ? 'dark' : 'light'
+        document.documentElement.dataset.fx =
+          localStorage.getItem('szx-admin-effects') === 'full' ? 'full' : 'lite'
+      } catch {
+        // Blocked storage keeps the static light/lite defaults.
+      }
+    </script>
     <title>数自星智能用户管理系统</title>
   </head>
   <body>

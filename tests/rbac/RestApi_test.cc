@@ -156,3 +156,42 @@ TEST(RestApiTest, ProducesStableSuccessAndErrorEnvelopes)
     EXPECT_EQ(empty.statusCode, 204);
     EXPECT_TRUE(empty.body.empty());
 }
+
+
+TEST(RestApiTest, SerializedSuccessPreservesIguanaBodyAndStatusPolicy)
+{
+    const std::string body = "  {\"data\":{\"value\":null},\"request_id\":\"serialized-request\"}  ";
+    for (const auto status : {200, 201, 202, 204, 400, 500})
+    {
+        SCOPED_TRACE(status);
+        const auto response = RestApi::serializedSuccess(body, "serialized-request", status);
+        if (status == 200 || status == 201 || status == 202)
+        {
+            EXPECT_EQ(response.statusCode, status);
+            EXPECT_EQ(response.body, body); // No parse/dump or field rebuilding.
+            EXPECT_EQ(response.headers.at("Content-Type"), "application/json");
+            EXPECT_EQ(response.headers.at("Cache-Control"), "no-store");
+            EXPECT_EQ(response.headers.at("X-Request-ID"), "serialized-request");
+        }
+        else
+        {
+            EXPECT_EQ(response.statusCode, 500);
+            EXPECT_EQ(SZX::COMMON::Json::parse(response.body).at("code"), 2299);
+        }
+    }
+}
+
+TEST(RestApiTest, PreservesSecondPhasePermissionErrorCodes)
+{
+    for (const auto code : {ErrorCode::PermissionCodeConflict, ErrorCode::PermissionInUse, ErrorCode::ProtectedPermission,
+                            ErrorCode::SuperAdminSecurityFloor})
+    {
+        SCOPED_TRACE(static_cast<int>(code));
+        const auto response = RestApi::error(code, "rbac-error");
+        EXPECT_EQ(response.statusCode, 409);
+        const auto parsed = SZX::COMMON::Json::parse(response.body);
+        EXPECT_EQ(parsed.at("code"), static_cast<int>(code));
+        EXPECT_FALSE(parsed.at("message").get<std::string>().empty());
+        EXPECT_NE(errorCodeName(code), "INTERNAL_FAILURE");
+    }
+}

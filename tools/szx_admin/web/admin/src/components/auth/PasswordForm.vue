@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { LuminaButton as Button, LuminaInput as InputText } from '../../ui/lumina'
+import { useI18n } from 'vue-i18n'
+const { t } = useI18n()
 const form = defineModel<{ oldPassword: string; password: string; confirmation: string }>({
   required: true,
 })
@@ -17,15 +20,16 @@ const emit = defineEmits<{ submit: []; skip: [] }>()
     <p class="alert" :class="forced ? 'warning' : 'info'">
       {{
         forced
-          ? '首次登录必须修改密码，完成后才能进入控制台。'
+          ? t('password.forced')
           : recommended
-            ? '建议修改临时密码，也可以跳过并稍后处理。'
-            : '修改密码后，所有现有会话将失效，需要重新登录。'
+            ? t('password.recommended')
+            : t('password.invalidatesSessions')
       }}
     </p>
     <p v-if="error" class="alert error" role="alert">{{ error }}</p>
     <label
-      >当前密码<input
+      >{{ t('password.current')
+      }}<InputText
         v-model="form.oldPassword"
         type="password"
         autocomplete="current-password"
@@ -33,7 +37,8 @@ const emit = defineEmits<{ submit: []; skip: [] }>()
         :disabled="busy"
     /></label>
     <label
-      >新密码<input
+      >{{ t('password.new')
+      }}<InputText
         v-model="form.password"
         type="password"
         autocomplete="new-password"
@@ -42,9 +47,10 @@ const emit = defineEmits<{ submit: []; skip: [] }>()
         aria-describedby="password-rule"
         :disabled="busy"
     /></label>
-    <p id="password-rule" class="hint">{{ passwordHint }}，且与当前密码不同。</p>
+    <p id="password-rule" class="hint">{{ passwordHint }}{{ t('password.different') }}</p>
     <label
-      >确认新密码<input
+      >{{ t('password.confirmNew')
+      }}<InputText
         v-model="form.confirmation"
         type="password"
         autocomplete="new-password"
@@ -53,10 +59,11 @@ const emit = defineEmits<{ submit: []; skip: [] }>()
         :disabled="busy"
     /></label>
     <div class="actions">
-      <button class="primary" :disabled="busy">{{ busy ? '正在修改…' : '修改密码' }}</button
-      ><button v-if="!forced" type="button" :disabled="busy" @click="emit('skip')">
-        {{ recommended ? '跳过，稍后修改' : '返回' }}
-      </button>
+      <Button class="primary" :disabled="busy" type="submit" variant="primary">
+        {{ busy ? t('password.submitting') : t('password.submit') }}</Button
+      ><Button v-if="!forced" type="button" :disabled="busy" @click="emit('skip')">
+        {{ recommended ? t('password.skip') : t('password.back') }}
+      </Button>
     </div>
   </form>
 </template>

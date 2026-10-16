@@ -10,13 +10,19 @@
     "typecheck": "vue-tsc -b",
     "test": "vitest run",
     "test:e2e": "playwright test",
-    "format": "prettier --write src tests *.ts *.json README.md",
-    "format:check": "prettier --check src tests *.ts *.json README.md"
+    "format": "prettier --write src tests scripts *.html *.ts *.json README.md",
+    "format:check": "prettier --check src tests scripts *.html *.ts *.json README.md",
+    "profile:background": "node scripts/profile-background.mjs"
   },
   "dependencies": {
+    "@primeuix/themes": "2.0.3",
+    "@primeuix/utils": "0.6.4",
     "axios": "^1.20.0",
+    "echarts": "6.1.0",
     "pinia": "^4.0.3",
+    "primevue": "4.5.5",
     "vue": "^3.5.42",
+    "vue-i18n": "^11.4.12",
     "vue-router": "^4.6.4"
   },
   "devDependencies": {

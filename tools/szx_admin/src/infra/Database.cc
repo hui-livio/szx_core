@@ -1,12 +1,15 @@
 #include "SzxAdmin/Infra/Database.h"
 #include "OrmConnection.h"
 
+#include "../rbac/PermissionCodes.h"
 #include "AuditRepository.h"
 #include "BehaviorEventRepository.h"
 #include "DatabaseInitialization.h"
 #include "LogMaintenanceRepository.h"
 #include "Logger.h"
 #include "LoginRepository.h"
+#include "PermissionRepository.h"
+#include "RoleRepository.h"
 #include "SzxAdmin/Infra/ErrorCode.h"
 #include "UserRepository.h"
 
@@ -21,6 +24,7 @@
 #include <memory>
 #include <mutex>
 #include <tuple>
+#include <unordered_set>
 #include <utility>
 
 namespace SZX::ADMIN::INFRA
@@ -42,8 +46,10 @@ YLT_REFL(admin_bootstrap, id, user_id);
 struct users final
 {
     std::string id;
-    std::string username;
-    std::string username_canonical;
+    std::string login_identifier;
+    std::string login_identifier_canonical;
+    std::string identifier_type;
+    std::optional<std::string> role_id;
     std::string display_name;
     std::string password_hash;
     std::string role;
@@ -52,7 +58,8 @@ struct users final
 };
 // Deliberately project only initialized columns. Nullable identities and timestamps
 // are supplied by MySQL defaults, rather than empty strings.
-YLT_REFL(users, id, username, username_canonical, display_name, password_hash, role, status, force_password_change);
+YLT_REFL(users, id, login_identifier, login_identifier_canonical, identifier_type, role_id, display_name, password_hash, role,
+         status, force_password_change);
 
 auto failure(ErrorCode code, const std::string &message) -> SZX::COMMON::Result<void>
 {
@@ -150,15 +157,40 @@ public:
         userRepository_(connection),
         auditRepository_(connection),
         behaviorEventRepository_(connection),
-        logMaintenanceRepository_(connection)
+        logMaintenanceRepository_(connection),
+        roleRepository_(connection),
+        permissionRepository_(connection)
     {
     }
 
     auto executeMigrationStatement(std::string_view sql) -> SZX::COMMON::Result<void> override
     {
-        if (sql.empty() || connection_.execute(std::string{sql}))
-            return SZX::COMMON::Result<void>::Success();
-        return databaseFailure(ErrorCode::DatabaseQueryFailed, "Database statement execution failed", {});
+        try
+        {
+            constexpr std::string_view roleColumnMigration = "ALTER TABLE users\n  DROP CHECK chk_users_role,\n";
+            std::string recovered;
+            if (sql.starts_with(roleColumnMigration))
+            {
+                const auto constraints = connection_.query_s<std::tuple<std::uint64_t>>(
+                    "SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS "
+                    "WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'users' "
+                    "AND CONSTRAINT_NAME = 'chk_users_role' AND CONSTRAINT_TYPE = 'CHECK'");
+                if (connection_.has_error() || constraints.size() != 1)
+                    return databaseFailure(ErrorCode::DatabaseQueryFailed, "Migration schema inspection failed", {});
+                if (std::get<0>(constraints.front()) == 0)
+                {
+                    recovered = "ALTER TABLE users\n";
+                    recovered.append(sql.substr(roleColumnMigration.size()));
+                    sql = recovered;
+                }
+            }
+            if (sql.empty() || connection_.execute(DETAIL::initializationSql(sql, connection_.dialect())))
+                return SZX::COMMON::Result<void>::Success();
+            return databaseFailure(ErrorCode::DatabaseQueryFailed, "Database statement execution failed", {});
+        } catch (...)
+        {
+            return databaseFailure(ErrorCode::DatabaseQueryFailed, "Database statement execution failed", {});
+        }
     }
 
     auto loadAppliedMigrations() -> SZX::COMMON::Result<std::vector<AppliedMigration>> override
@@ -258,17 +290,17 @@ public:
     auto findBootstrapAdministrator() -> SZX::COMMON::Result<std::optional<BootstrapAdministrator>> override
     {
         const auto &initial = DETAIL::initialAdministrator();
-        const auto rows =
-            connection_.query_s<users>("(username_canonical = ? OR role = ?) ORDER BY (role = ?) DESC, id LIMIT 1 FOR UPDATE",
-                                       std::string{initial.username}, std::string{initial.role}, std::string{initial.role});
+        const auto rows     = connection_.query_s<users>(
+            "(login_identifier_canonical = ? OR role = ?) ORDER BY (role = ?) DESC, id LIMIT 1 FOR UPDATE",
+            std::string{initial.username}, std::string{initial.role}, std::string{initial.role});
         if (connection_.has_error())
             return SZX::COMMON::Result<std::optional<BootstrapAdministrator>>::Failure(
                 static_cast<int>(ErrorCode::DatabaseQueryFailed), "Failed to read bootstrap administrator.");
         if (rows.empty())
             return SZX::COMMON::Result<std::optional<BootstrapAdministrator>>::Success(std::nullopt);
         const auto &row = rows.front();
-        return SZX::COMMON::Result<std::optional<BootstrapAdministrator>>::Success(
-            BootstrapAdministrator{row.id, row.username, row.password_hash, row.role, row.status, row.force_password_change});
+        return SZX::COMMON::Result<std::optional<BootstrapAdministrator>>::Success(BootstrapAdministrator{
+            row.id, row.login_identifier, row.password_hash, row.role, row.status, row.force_password_change});
     }
 
     auto insertBootstrapAdministrator(const BootstrapAdministrator &administrator) -> SZX::COMMON::Result<void> override
@@ -278,9 +310,14 @@ public:
             administrator.status != initial.status || administrator.forcePasswordChange != initial.forcePasswordChange ||
             administrator.passwordHash.empty())
             return failure(ErrorCode::ValidationError, "Invalid bootstrap administrator.");
+        const auto roles =
+            connection_.query_s<std::tuple<std::string>>("SELECT id FROM roles WHERE code = ? LIMIT 1", administrator.role);
+        if (connection_.has_error() || roles.size() != 1)
+            return databaseFailure(ErrorCode::DatabaseQueryFailed, "Failed to resolve bootstrap role", {});
         const users row{
-            administrator.id,           administrator.username, administrator.username, std::string{initial.displayName},
-            administrator.passwordHash, administrator.role,     administrator.status,   administrator.forcePasswordChange};
+            administrator.id,           administrator.username,           administrator.username,     "username",
+            std::get<0>(roles.front()), std::string{initial.displayName}, administrator.passwordHash, administrator.role,
+            administrator.status,       administrator.forcePasswordChange};
         const auto affected = connection_.insert(row);
         if (affected != 1 || connection_.has_error())
             return databaseFailure(ErrorCode::DatabaseQueryFailed, "Failed to create bootstrap administrator", {});
@@ -320,6 +357,75 @@ public:
         return &logMaintenanceRepository_;
     }
 
+    auto roleRepository() noexcept -> RBAC::RoleRepository * override
+    {
+        return &roleRepository_;
+    }
+
+    auto permissionRepository() noexcept -> RBAC::PermissionRepository * override
+    {
+        return &permissionRepository_;
+    }
+
+    auto rbacCatalogReady() -> SZX::COMMON::Result<bool> override
+    {
+        try
+        {
+            const auto roles = connection_.query_s<std::tuple<std::uint64_t>>(
+                "SELECT COUNT(*) FROM roles WHERE system_key IN (?, ?, ?, ?) AND status <> 'archived'", "operator", "engineer",
+                "admin", "super_admin");
+            if (connection_.has_error() || roles.size() != 1 || std::get<0>(roles.front()) != 4)
+                return SZX::COMMON::Result<bool>::Success(false);
+
+            const auto identityRows = connection_.query_s<std::tuple<std::uint64_t>>(
+                "SELECT COUNT(*) FROM users u LEFT JOIN roles r ON r.id = u.role_id "
+                "WHERE u.role_id IS NULL OR r.id IS NULL OR r.code <> u.role "
+                "OR u.login_identifier IS NULL OR u.login_identifier_canonical IS NULL "
+                "OR u.identifier_type NOT IN ('uid', 'username')");
+            if (connection_.has_error() || identityRows.size() != 1)
+                return SZX::COMMON::Result<bool>::Failure(static_cast<int>(ErrorCode::DatabaseQueryFailed), {});
+            if (std::get<0>(identityRows.front()) != 0)
+                return SZX::COMMON::Result<bool>::Success(false);
+
+            const auto permissionRows = connection_.query_s<std::tuple<std::string>>(
+                "SELECT code FROM permissions WHERE source = 'system' AND enforcement = 'server' AND status <> 'archived'");
+            if (connection_.has_error())
+                return SZX::COMMON::Result<bool>::Failure(static_cast<int>(ErrorCode::DatabaseQueryFailed), {});
+            std::unordered_set<std::string> registered;
+            registered.reserve(permissionRows.size());
+            for (const auto &row : permissionRows)
+                registered.emplace(std::get<0>(row));
+            if (registered.size() != RBAC::PERMISSIONS::definitions().size())
+                return SZX::COMMON::Result<bool>::Success(false);
+            for (const auto &definition : RBAC::PERMISSIONS::definitions())
+                if (!registered.contains(std::string{definition.code}))
+                    return SZX::COMMON::Result<bool>::Success(false);
+
+            const auto bottomLine = connection_.query_s<std::tuple<std::uint64_t>>(
+                "SELECT COUNT(*) FROM role_permissions rp JOIN roles r ON r.id = rp.role_id "
+                "JOIN permissions p ON p.id = rp.permission_id WHERE r.system_key = 'super_admin' "
+                "AND p.required_for_super_admin = TRUE AND p.status <> 'archived'");
+            if (connection_.has_error() || bottomLine.size() != 1 ||
+                std::get<0>(bottomLine.front()) != RBAC::PERMISSIONS::definitions().size())
+                return SZX::COMMON::Result<bool>::Success(false);
+
+            const auto scopes = connection_.query_s<std::tuple<std::uint64_t>>(
+                "SELECT COUNT(*) FROM role_manage_scopes scope JOIN roles manager ON manager.id = scope.manager_role_id "
+                "JOIN roles target ON target.id = scope.target_role_id WHERE manager.system_key = 'super_admin' "
+                "AND target.status <> 'archived'");
+            if (connection_.has_error() || scopes.size() != 1)
+                return SZX::COMMON::Result<bool>::Failure(static_cast<int>(ErrorCode::DatabaseQueryFailed), {});
+            const auto nonArchived =
+                connection_.query_s<std::tuple<std::uint64_t>>("SELECT COUNT(*) FROM roles WHERE status <> 'archived'");
+            if (connection_.has_error() || nonArchived.size() != 1)
+                return SZX::COMMON::Result<bool>::Failure(static_cast<int>(ErrorCode::DatabaseQueryFailed), {});
+            return SZX::COMMON::Result<bool>::Success(std::get<0>(scopes.front()) == std::get<0>(nonArchived.front()));
+        } catch (...)
+        {
+            return SZX::COMMON::Result<bool>::Failure(static_cast<int>(ErrorCode::DatabaseQueryFailed), {});
+        }
+    }
+
 private:
     DETAIL::OrmConnection &connection_;
     DETAIL::MySqlLoginRepository loginRepository_;
@@ -327,6 +433,8 @@ private:
     DETAIL::MySqlAuditRepository auditRepository_;
     DETAIL::MySqlBehaviorEventRepository behaviorEventRepository_;
     DETAIL::MySqlLogMaintenanceRepository logMaintenanceRepository_;
+    DETAIL::MySqlRoleRepository roleRepository_;
+    DETAIL::MySqlPermissionRepository permissionRepository_;
 };
 
 } // namespace
@@ -489,18 +597,8 @@ auto DatabasePool::withConnectionImpl(const ConnectionCallback &callback,
     if (!callback)
         return failure(ErrorCode::InvalidConfiguration, "Database connection callback is empty.");
 
-    std::unique_lock<std::recursive_timed_mutex> ormLock;
-    try
-    {
-        ormLock = std::unique_lock<std::recursive_timed_mutex>(DETAIL::ormMutex(), std::defer_lock);
-        if (!ormLock.try_lock_until(acquisitionDeadline))
-            return failure(ErrorCode::DatabaseUnavailable, "Unable to acquire database execution slot.");
-    } catch (...)
-    {
-        return failure(ErrorCode::DatabaseUnavailable, "Unable to acquire database execution slot.");
-    }
-
     std::unique_ptr<DETAIL::OrmConnection> connection;
+    const auto acquireStarted = std::chrono::steady_clock::now();
     {
         std::unique_lock lock(impl_->mutex);
         if (!impl_->started)
@@ -513,6 +611,10 @@ auto DatabasePool::withConnectionImpl(const ConnectionCallback &callback,
         connection = std::move(impl_->connections.front());
         impl_->connections.pop_front();
     }
+    const auto acquireElapsed =
+        std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - acquireStarted);
+    if (acquireElapsed >= std::chrono::milliseconds{100})
+        LOGM_DEBUG("szx_admin.database", "event=pool_acquire_slow duration_microseconds={}", acquireElapsed.count());
     if (connection)
         connection->setDeadline(operationDeadline);
 
@@ -571,10 +673,16 @@ auto DatabasePool::withConnectionImpl(const ConnectionCallback &callback,
 
     try
     {
+        const auto callbackStarted = std::chrono::steady_clock::now();
         MySqlConnection wrapper(*connection, impl_->logs);
         try
         {
             const auto result = callback(wrapper);
+            const auto callbackElapsed =
+                std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - callbackStarted);
+            if (callbackElapsed >= std::chrono::milliseconds{100})
+                LOGM_DEBUG("szx_admin.database", "event=database_callback_slow duration_microseconds={}",
+                           callbackElapsed.count());
             if (!wrapper.reusable())
             {
                 returnConnection(false);

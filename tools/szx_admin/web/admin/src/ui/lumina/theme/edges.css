@@ -1,0 +1,57 @@
+/* Keep the existing transparent border for layout; paint the edge as a softly
+   antialiased inset stroke. Keep CSS-pixel thickness: a one-device-pixel hairline
+   still aliases visibly at rounded corners, especially at fractional zoom. */
+.lumina-smooth-edge {
+  --lumina-edge-color: var(--lg-line);
+  --lumina-edge-shadow: inset 0 0 var(--lg-edge-blur) var(--lg-edge-px) var(--lumina-edge-color);
+}
+
+.p-button-outlined.lumina-smooth-edge,
+.p-inputtext.lumina-smooth-edge,
+.p-select.lumina-smooth-edge,
+.p-dialog-close-button.p-button.lumina-smooth-edge {
+  border-color: transparent;
+  box-shadow: var(--lumina-edge-shadow);
+}
+
+.p-button-outlined.lumina-smooth-edge:not(:disabled):hover,
+.p-dialog-close-button.p-button.lumina-smooth-edge:not(:disabled):hover,
+.p-inputtext.lumina-smooth-edge:enabled:hover,
+.p-select.lumina-smooth-edge:not(.p-disabled):hover {
+  border-color: transparent;
+  --lumina-edge-color: var(--lg-edge-hover);
+}
+
+.p-button-outlined.lumina-smooth-edge:focus-visible,
+.p-dialog-close-button.p-button.lumina-smooth-edge:focus-visible,
+.p-inputtext.lumina-smooth-edge:enabled:focus,
+.p-select.lumina-smooth-edge:not(.p-disabled).p-focus {
+  outline: none;
+  border-color: transparent;
+  --lumina-edge-color: var(--lg-edge-focus);
+  box-shadow: var(--lumina-edge-shadow), var(--lg-ring-focus);
+}
+
+.p-button-outlined.p-button-danger.lumina-smooth-edge,
+.p-button-outlined.p-button-danger.lumina-smooth-edge:not(:disabled):hover,
+.p-inputtext.p-invalid.lumina-smooth-edge,
+.p-inputtext.p-invalid.lumina-smooth-edge:enabled:is(:hover, :focus),
+.p-select.p-invalid.lumina-smooth-edge,
+.p-select.p-invalid.lumina-smooth-edge:not(.p-disabled):is(:hover, .p-focus) {
+  --lumina-edge-color: var(--lg-danger);
+}
+
+.lumina-preference-button.p-button.lumina-smooth-edge,
+.lumina-preference-button.p-button.lumina-smooth-edge:not(:disabled):hover {
+  border-color: transparent;
+  --lumina-edge-color: var(--lg-control-ring);
+  box-shadow:
+    var(--lumina-edge-shadow),
+    0 0 var(--lg-edge-blur) var(--lg-edge-px) var(--lg-control-halo);
+}
+
+.lumina-preference-button.p-button.lumina-smooth-edge:focus-visible {
+  outline: none;
+  --lumina-edge-color: var(--lg-control-ring);
+  box-shadow: var(--lumina-edge-shadow), var(--lg-ring-focus);
+}

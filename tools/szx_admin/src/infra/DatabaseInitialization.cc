@@ -149,12 +149,217 @@ CREATE TABLE IF NOT EXISTS client_behavior_events (
 
 constexpr std::string_view kMigration5 = "DROP TABLE IF EXISTS user_logs;";
 
+// RBAC catalog. Deterministic ids make retries safe after an implicit DDL commit.
+constexpr std::string_view kMigration6 = R"SZXSQL(CREATE TABLE IF NOT EXISTS roles (
+  id CHAR(36) NOT NULL PRIMARY KEY,
+  code VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_bin NOT NULL,
+  name VARCHAR(128) NOT NULL,
+  description VARCHAR(512) NOT NULL DEFAULT '',
+  system_key VARCHAR(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_bin,
+  status VARCHAR(16) NOT NULL DEFAULT 'active',
+  version INT UNSIGNED NOT NULL DEFAULT 1,
+  authz_version INT UNSIGNED NOT NULL DEFAULT 1,
+  created_by CHAR(36),
+  updated_by CHAR(36),
+  archived_at DATETIME(6),
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+  CONSTRAINT uk_roles_code UNIQUE (code),
+  CONSTRAINT uk_roles_system_key UNIQUE (system_key),
+  CONSTRAINT chk_roles_status CHECK (status IN ('active', 'disabled', 'archived')),
+  CONSTRAINT chk_roles_versions CHECK (version > 0 AND authz_version > 0),
+  CONSTRAINT chk_roles_archive CHECK ((status = 'archived' AND archived_at IS NOT NULL) OR
+                                      (status <> 'archived' AND archived_at IS NULL)),
+  CONSTRAINT fk_roles_created_by FOREIGN KEY (created_by) REFERENCES users(id),
+  CONSTRAINT fk_roles_updated_by FOREIGN KEY (updated_by) REFERENCES users(id),
+  KEY idx_roles_status_name (status, name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS permissions (
+  id CHAR(36) NOT NULL PRIMARY KEY,
+  code VARCHAR(96) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_bin NOT NULL,
+  name VARCHAR(128) NOT NULL,
+  description VARCHAR(512) NOT NULL DEFAULT '',
+  module VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_bin NOT NULL,
+  enforcement VARCHAR(16) NOT NULL,
+  source VARCHAR(16) NOT NULL,
+  status VARCHAR(16) NOT NULL DEFAULT 'active',
+  required_for_super_admin BOOLEAN NOT NULL DEFAULT FALSE,
+  version INT UNSIGNED NOT NULL DEFAULT 1,
+  created_by CHAR(36),
+  updated_by CHAR(36),
+  archived_at DATETIME(6),
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+  CONSTRAINT uk_permissions_code UNIQUE (code),
+  CONSTRAINT chk_permissions_enforcement CHECK (enforcement IN ('server', 'client')),
+  CONSTRAINT chk_permissions_source CHECK (source IN ('system', 'custom')),
+  CONSTRAINT chk_permissions_status CHECK (status IN ('active', 'disabled', 'archived')),
+  CONSTRAINT chk_permissions_version CHECK (version > 0),
+  CONSTRAINT chk_permissions_archive CHECK ((status = 'archived' AND archived_at IS NOT NULL) OR
+                                            (status <> 'archived' AND archived_at IS NULL)),
+  CONSTRAINT fk_permissions_created_by FOREIGN KEY (created_by) REFERENCES users(id),
+  CONSTRAINT fk_permissions_updated_by FOREIGN KEY (updated_by) REFERENCES users(id),
+  KEY idx_permissions_status_module (status, module, code),
+  KEY idx_permissions_source_enforcement (source, enforcement)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS role_permissions (
+  role_id CHAR(36) NOT NULL,
+  permission_id CHAR(36) NOT NULL,
+  assigned_by CHAR(36),
+  assigned_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY (role_id, permission_id),
+  CONSTRAINT fk_role_permissions_role FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE RESTRICT,
+  CONSTRAINT fk_role_permissions_permission FOREIGN KEY (permission_id) REFERENCES permissions(id) ON DELETE RESTRICT,
+  CONSTRAINT fk_role_permissions_assigned_by FOREIGN KEY (assigned_by) REFERENCES users(id) ON DELETE SET NULL,
+  KEY idx_role_permissions_permission (permission_id, role_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS role_manage_scopes (
+  manager_role_id CHAR(36) NOT NULL,
+  target_role_id CHAR(36) NOT NULL,
+  assigned_by CHAR(36),
+  assigned_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY (manager_role_id, target_role_id),
+  CONSTRAINT fk_role_scopes_manager FOREIGN KEY (manager_role_id) REFERENCES roles(id) ON DELETE RESTRICT,
+  CONSTRAINT fk_role_scopes_target FOREIGN KEY (target_role_id) REFERENCES roles(id) ON DELETE RESTRICT,
+  CONSTRAINT fk_role_scopes_assigned_by FOREIGN KEY (assigned_by) REFERENCES users(id) ON DELETE SET NULL,
+  KEY idx_role_scopes_target (target_role_id, manager_role_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+INSERT IGNORE INTO roles (id, code, name, description, system_key) VALUES
+ ('00000000-0000-4000-8000-000000000001', 'operator', 'Operator', 'Business operator', 'operator'),
+ ('00000000-0000-4000-8000-000000000002', 'engineer', 'Engineer', 'Engineering operator', 'engineer'),
+ ('00000000-0000-4000-8000-000000000003', 'admin', 'Administrator', 'User administrator', 'admin'),
+ ('00000000-0000-4000-8000-000000000004', 'super_admin', 'Super administrator', 'System administrator', 'super_admin');
+
+INSERT IGNORE INTO permissions (id, code, name, module, enforcement, source, required_for_super_admin) VALUES
+ ('10000000-0000-4000-8000-000000000001', 'business.read', 'Read business data', 'business', 'server', 'system', TRUE),
+ ('10000000-0000-4000-8000-000000000002', 'business.operate', 'Operate business data', 'business', 'server', 'system', TRUE),
+ ('10000000-0000-4000-8000-000000000003', 'engineering.configure', 'Configure engineering', 'engineering', 'server', 'system', TRUE),
+ ('10000000-0000-4000-8000-000000000004', 'user.read', 'Read users', 'user', 'server', 'system', TRUE),
+ ('10000000-0000-4000-8000-000000000005', 'user.create', 'Create users', 'user', 'server', 'system', TRUE),
+ ('10000000-0000-4000-8000-000000000006', 'user.update', 'Update users', 'user', 'server', 'system', TRUE),
+ ('10000000-0000-4000-8000-000000000007', 'user.status', 'Change user status', 'user', 'server', 'system', TRUE),
+ ('10000000-0000-4000-8000-000000000008', 'user.unlock', 'Unlock users', 'user', 'server', 'system', TRUE),
+ ('10000000-0000-4000-8000-000000000009', 'user.password.reset', 'Reset user passwords', 'user', 'server', 'system', TRUE),
+ ('10000000-0000-4000-8000-000000000010', 'user.role.assign', 'Assign user roles', 'user', 'server', 'system', TRUE),
+ ('10000000-0000-4000-8000-000000000011', 'audit.read', 'Read audit logs', 'audit', 'server', 'system', TRUE),
+ ('10000000-0000-4000-8000-000000000012', 'behavior.read', 'Read behavior events', 'behavior', 'server', 'system', TRUE),
+ ('10000000-0000-4000-8000-000000000013', 'role.read', 'Read roles', 'role', 'server', 'system', TRUE),
+ ('10000000-0000-4000-8000-000000000014', 'role.create', 'Create roles', 'role', 'server', 'system', TRUE),
+ ('10000000-0000-4000-8000-000000000015', 'role.update', 'Update roles', 'role', 'server', 'system', TRUE),
+ ('10000000-0000-4000-8000-000000000016', 'role.status', 'Change role status', 'role', 'server', 'system', TRUE),
+ ('10000000-0000-4000-8000-000000000017', 'role.archive', 'Archive roles', 'role', 'server', 'system', TRUE),
+ ('10000000-0000-4000-8000-000000000018', 'role.permission.assign', 'Assign role permissions', 'role', 'server', 'system', TRUE),
+ ('10000000-0000-4000-8000-000000000019', 'role.scope.assign', 'Assign role scopes', 'role', 'server', 'system', TRUE),
+ ('10000000-0000-4000-8000-000000000020', 'permission.read', 'Read permissions', 'permission', 'server', 'system', TRUE),
+ ('10000000-0000-4000-8000-000000000021', 'permission.create', 'Create client permissions', 'permission', 'server', 'system', TRUE),
+ ('10000000-0000-4000-8000-000000000022', 'permission.update', 'Update permissions', 'permission', 'server', 'system', TRUE),
+ ('10000000-0000-4000-8000-000000000023', 'permission.status', 'Change permission status', 'permission', 'server', 'system', TRUE),
+ ('10000000-0000-4000-8000-000000000024', 'permission.archive', 'Archive permissions', 'permission', 'server', 'system', TRUE);
+
+INSERT IGNORE INTO role_permissions (role_id, permission_id)
+ SELECT r.id, p.id FROM roles r JOIN permissions p
+ WHERE r.code = 'operator' AND p.code IN ('business.read', 'business.operate');
+INSERT IGNORE INTO role_permissions (role_id, permission_id)
+ SELECT r.id, p.id FROM roles r JOIN permissions p
+ WHERE r.code = 'engineer' AND p.code IN ('business.read', 'business.operate', 'engineering.configure');
+INSERT IGNORE INTO role_permissions (role_id, permission_id)
+ SELECT r.id, p.id FROM roles r JOIN permissions p
+ WHERE r.code = 'admin' AND p.code IN ('business.read', 'business.operate', 'engineering.configure', 'user.read', 'user.create',
+                                       'user.update', 'user.status', 'user.unlock', 'user.password.reset', 'audit.read', 'behavior.read');
+INSERT IGNORE INTO role_permissions (role_id, permission_id)
+ SELECT r.id, p.id FROM roles r JOIN permissions p WHERE r.code = 'super_admin';
+
+INSERT IGNORE INTO role_manage_scopes (manager_role_id, target_role_id)
+ SELECT manager.id, target.id FROM roles manager JOIN roles target
+ WHERE (manager.code = 'admin' AND target.code IN ('operator', 'engineer')) OR manager.code = 'super_admin';
+)SZXSQL";
+
+// Identity migration is additive: old columns remain available while the
+// one-time migration into the formal RBAC and identity model.
+constexpr std::string_view kMigration7 = R"SZXSQL(ALTER TABLE users
+  ADD COLUMN role_id CHAR(36) NULL AFTER role,
+  ADD COLUMN login_identifier VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NULL AFTER username,
+  ADD COLUMN login_identifier_canonical VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NULL AFTER login_identifier,
+  ADD COLUMN identifier_type VARCHAR(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NULL AFTER login_identifier_canonical,
+  ADD KEY idx_users_role_id (role_id),
+  ADD KEY idx_users_login_identifier_canonical (login_identifier_canonical),
+  ADD CONSTRAINT fk_users_role_id FOREIGN KEY (role_id) REFERENCES roles(id);
+
+UPDATE users u JOIN roles r ON r.code = u.role
+SET u.role_id = r.id
+WHERE u.role_id IS NULL;
+
+UPDATE users
+SET login_identifier = CASE WHEN uid IS NOT NULL THEN uid ELSE username END,
+    login_identifier_canonical = CASE WHEN uid IS NOT NULL THEN uid_canonical ELSE username_canonical END,
+    identifier_type = CASE WHEN uid IS NOT NULL THEN 'uid' ELSE 'username' END
+WHERE login_identifier IS NULL;
+)SZXSQL";
+
+// Enforce the single login-identifier namespace only after migration 7 has
+// populated and readiness has verified every formal identity projection.
+constexpr std::string_view kMigration8 = R"SZXSQL(ALTER TABLE users
+  DROP INDEX idx_users_login_identifier_canonical,
+  ADD UNIQUE KEY uk_users_login_identifier_canonical (login_identifier_canonical);
+)SZXSQL";
+
+// V1.2 is the only supported runtime schema. Remove the pre-V1.2 identity
+// columns after the formal projection has been validated and indexed.
+constexpr std::string_view kMigration9 = R"SZXSQL(ALTER TABLE users
+  DROP CHECK chk_users_identity,
+  DROP CHECK chk_users_uid_canonical,
+  DROP CHECK chk_users_username_canonical,
+  DROP INDEX uid_canonical,
+  DROP INDEX username_canonical,
+  DROP INDEX uk_users_login_identifier_canonical,
+  DROP COLUMN uid,
+  DROP COLUMN uid_canonical,
+  DROP COLUMN username,
+  DROP COLUMN username_canonical,
+  MODIFY login_identifier VARCHAR(64) NOT NULL,
+  MODIFY login_identifier_canonical VARCHAR(128) NOT NULL,
+  MODIFY identifier_type VARCHAR(16) NOT NULL;
+)SZXSQL";
+
+constexpr std::string_view kMigration10 = R"SZXSQL(INSERT IGNORE INTO role_permissions (role_id, permission_id)
+SELECT r.id, p.id FROM roles r JOIN permissions p
+WHERE r.code = 'admin' AND p.code = 'user.role.assign';
+)SZXSQL";
+
+constexpr std::string_view kMigration11 =
+    R"SZXSQL(INSERT IGNORE INTO permissions (id, code, name, module, enforcement, source, required_for_super_admin)
+VALUES ('10000000-0000-4000-8000-000000000025', 'system.metrics.read', 'Read machine performance', 'system', 'server', 'system', TRUE);
+INSERT IGNORE INTO role_permissions (role_id, permission_id)
+SELECT r.id, p.id FROM roles r JOIN permissions p
+WHERE r.code IN ('admin', 'super_admin') AND p.code = 'system.metrics.read';
+UPDATE users SET authz_version = authz_version + 1 WHERE role IN ('admin', 'super_admin');
+)SZXSQL";
+
+constexpr std::string_view kMigration12 = R"SZXSQL(ALTER TABLE users
+  DROP CHECK chk_users_role,
+  MODIFY role VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_bin NOT NULL;
+UPDATE users u JOIN roles r ON r.code = u.role
+SET u.role_id = r.id, u.authz_version = u.authz_version + 1
+WHERE u.role_id IS NULL OR u.role_id <> r.id;
+)SZXSQL";
+
 constexpr MigrationDefinition kMigrations[] = {
     {1, kMigration1, "86a4ac820cc8457a2131d0400d4968268576b17113f38fe86b6beceea48c2047"},
     {2, kMigration2, "f4223aadebf005f145941d06b89d2d41e964f4c059d2f765a8e1b3678d389d2d"},
     {3, kMigration3, "66db48cd7957f45317269dcad13d2c2ac5c47eeacfc8e8bb715d2ca4b7e5f065"},
     {4, kMigration4, "193446d82dbee660610cbbc8f822469529d18dbf8760ddcffbb3c1d356e8236a"},
     {5, kMigration5, "df5a342ab4da5db2515c8469d3fe17751a6570cc6ee9b009bef9bed9d2463241"},
+    {6, kMigration6, "ce30e1ba660394557f1ad3ae3eaeb043d265f685a3cfec6c00ef785b024c6e3e"},
+    {7, kMigration7, "870047693dce68a887ef633fd3b08dc164e7ddd64d9da3ffab1131465b32b6be"},
+    {8, kMigration8, "3ff6dc5983213744cceb8879b5af8f2522147cd42768843272178526b643cc72"},
+    {9, kMigration9, "b410199c9d5e1dd14e0a60017a2134d5826e824e50eede2196b68d11c3f18bc4"},
+    {10, kMigration10, "2cb2059bc9b16ca77652475fe8e7435eecb4793d243c966850b2110bdfe87ccd"},
+    {11, kMigration11, "67e60f625227f001d7001a2e3e34b0f9d44c26a3127782cce9b3f88d7cf386a6"},
+    {12, kMigration12, "45e100531a7c3e97626232dc32014e0741ad3aad531a00ceebf5c9927487b83f"},
 };
 
 constexpr DETAIL::InitialAdministratorDefinition kInitialAdministrator{
@@ -355,7 +560,7 @@ auto DETAIL::ensureDatabase(const DatabaseConfig &config) -> SZX::COMMON::Result
                    config.username);
         const auto statement =
             "CREATE DATABASE IF NOT EXISTS `" + config.database + "` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci";
-        if (!connection.execute(statement))
+        if (!connection.execute(DETAIL::initializationSql(statement, connection.dialect())))
         {
             LOGM_ERROR("szx_admin.database", "event=database_create_failed database={} driver_error={}", config.database,
                        connection.lastError());

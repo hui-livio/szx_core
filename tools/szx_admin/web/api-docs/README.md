@@ -4,7 +4,7 @@
 
 - `index.html` / `style.css`：页面展示。
 - `app.js`：加载 OpenAPI、匹配实际 API 前缀和初始化 Swagger UI。
-- `openapi.json`：现有 16 条路径、18 个操作的参数、响应、鉴权和示例；修改接口时同步更新此文件与 Markdown 接口文档。
+- `openapi.json`：现有 26 条路径、36 个操作的参数、响应、鉴权和示例；修改接口时同步更新此文件与 Markdown 接口文档。
 - `vendor/`：未经修改的 `swagger-ui-dist@5.33.0` 浏览器发行文件、Apache-2.0 LICENSE 和 NOTICE。
 
 vendor 来源为 npm 包 `swagger-ui-dist@5.33.0`，包完整性为：

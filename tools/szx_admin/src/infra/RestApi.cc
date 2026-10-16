@@ -166,11 +166,20 @@ auto RestApi::success(Json data, std::string_view requestId, int statusCode) -> 
 {
     try
     {
+        return serializedSuccess(Json{{"data", std::move(data)}, {"request_id", requestId}}.dump(), requestId, statusCode);
+    } catch (...)
+    {
+        return error(ErrorCode::InternalFailure, requestId);
+    }
+}
+
+auto RestApi::serializedSuccess(std::string body, std::string_view requestId, int statusCode) -> HttpResponse
+{
+    try
+    {
         if (statusCode != 200 && statusCode != 201 && statusCode != 202)
             return error(ErrorCode::InternalFailure, requestId);
-        return {.statusCode = statusCode,
-                .body       = Json{{"data", std::move(data)}, {"request_id", requestId}}.dump(),
-                .headers    = responseHeaders(requestId)};
+        return {.statusCode = statusCode, .body = std::move(body), .headers = responseHeaders(requestId)};
     } catch (...)
     {
         return error(ErrorCode::InternalFailure, requestId);
@@ -220,6 +229,13 @@ auto RestApi::error(ErrorCode code, std::string_view requestId) -> HttpResponse
         case ErrorCode::DatabaseTransactionFailed:
         case ErrorCode::MigrationFailed:
         case ErrorCode::MigrationConflict:
+        case ErrorCode::PermissionCodeConflict:
+        case ErrorCode::RoleCodeConflict:
+        case ErrorCode::RoleInUse:
+        case ErrorCode::ProtectedRole:
+        case ErrorCode::PermissionInUse:
+        case ErrorCode::ProtectedPermission:
+        case ErrorCode::SuperAdminSecurityFloor:
         case ErrorCode::InternalFailure:
             break;
         default:
@@ -234,8 +250,8 @@ auto RestApi::error(ErrorCode code, std::string_view requestId) -> HttpResponse
                                    {"message", defaultErrorMessage(code)},
                                    {"details", Json::object()},
                                    {"request_id", requestId}}
-                            .dump(),
-                .headers = std::move(headers)};
+                                  .dump(),
+                .headers    = std::move(headers)};
     } catch (...)
     {
         return {.statusCode = 500};

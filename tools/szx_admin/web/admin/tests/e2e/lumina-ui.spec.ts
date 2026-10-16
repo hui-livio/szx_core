@@ -1,0 +1,329 @@
+import { test, expect } from '@playwright/test'
+
+const fixture = '/tests/fixtures/lumina/index.html'
+
+test('Lumina UI works without admin routes, Pinia, i18n or API calls', async ({ page }) => {
+  const apiRequests: string[] = []
+  page.on('request', (request) => {
+    if (request.url().includes('/api/')) apiRequests.push(request.url())
+  })
+  await page.goto(fixture)
+  await expect(page.getByRole('heading', { name: 'Standalone Lumina controls' })).toBeVisible()
+  await page.getByLabel('Name').fill('Reusable')
+  await expect(page.getByTestId('submit-icon')).toBeVisible()
+  await page.getByRole('button', { name: 'Submit' }).click()
+  await expect(page.getByTestId('submissions')).toHaveText('1')
+  const select = page.getByRole('combobox', { name: 'Colour' })
+  await expect(select).toHaveText('Shade: blue')
+  await select.click()
+  await page.getByRole('option', { name: 'Violet', exact: true }).click()
+  await expect(select).toHaveText('Shade: violet')
+  await expect(page.locator('.lumina-table tbody tr')).toHaveCount(2)
+  await expect(page.getByRole('cell', { name: 'Row: Alpha' })).toBeVisible()
+  await page.getByRole('button', { name: 'Next', exact: true }).click()
+  await expect(page.getByRole('navigation', { name: 'Pages' })).toContainText('2 / 3')
+  const opener = page.getByRole('button', { name: 'Open dialog' })
+  await opener.click()
+  await expect(page.getByTestId('dialog-footer')).toHaveText('Custom footer slot')
+  await page.getByRole('dialog').getByRole('button', { name: 'Close' }).click()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await expect(opener).toBeFocused()
+  expect(apiRequests).toEqual([])
+  // Browser-interaction policy belongs to the consuming application, not the UI.
+  expect(
+    await page
+      .getByRole('heading', { name: 'Standalone Lumina controls' })
+      .evaluate((element) =>
+        element.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })),
+      ),
+  ).toBe(true)
+})
+
+test('standalone UI keeps opaque dark popups and the local-time model', async ({ page }) => {
+  await page.goto(fixture)
+  await page.evaluate(() => {
+    document.documentElement.dataset.theme = 'dark'
+  })
+  const input = page.getByRole('combobox', { name: 'Local time' })
+  await input.fill('2026-10-13 05:06:07')
+  await expect(page.getByTestId('local-time-model')).toHaveText('2026-10-13T05:06:07')
+  await input.press('ArrowDown')
+  const popup = page.locator('.lumina-datetime-panel')
+  await expect(popup).toBeVisible()
+  expect(await popup.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe(
+    'rgb(20, 24, 51)',
+  )
+  await popup.getByRole('button', { name: 'Clear', exact: true }).click()
+  await expect(input).toHaveValue('')
+  await page.getByRole('button', { name: 'Toggle busy' }).click()
+  await expect(page.getByRole('button', { name: 'Next', exact: true })).toBeDisabled()
+  await page.getByRole('button', { name: 'Open dialog' }).click()
+  const close = page.getByRole('dialog').getByRole('button', { name: 'Close' })
+  await expect(close).toBeDisabled()
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('dialog')).toBeVisible()
+})
+
+test('shared logo and user marks honor size and configurable radius', async ({ page }) => {
+  await page.goto(fixture)
+  const shape = async (label: string) =>
+    page.getByRole('img', { name: label }).evaluate((element) => {
+      const rect = element.getBoundingClientRect()
+      return {
+        width: rect.width,
+        height: rect.height,
+        radius: getComputedStyle(element).borderRadius,
+      }
+    })
+  expect(await shape('Reusable S mark')).toEqual({ width: 48, height: 48, radius: '6px' })
+  expect(await shape('Reusable user mark')).toEqual({ width: 48, height: 48, radius: '50%' })
+  expect(
+    await page.getByRole('img', { name: 'Reusable S mark' }).evaluate((element) => ({
+      size: getComputedStyle(element).fontSize,
+      weight: getComputedStyle(element).fontWeight,
+    })),
+  ).toEqual({ size: '24px', weight: '400' })
+  expect(
+    await page
+      .getByRole('img', { name: 'Reusable user mark' })
+      .evaluate((element) => getComputedStyle(element).fontWeight),
+  ).toBe('500')
+})
+
+test('marks are non-selectable and button interaction is disabled by default', async ({ page }) => {
+  await page.goto(fixture)
+  for (const label of ['Reusable S mark', 'Reusable user mark']) {
+    const mark = page.getByRole('img', { name: label })
+    expect(
+      await mark.evaluate((element) => ({
+        tag: element.tagName,
+        selectable: getComputedStyle(element).userSelect,
+      })),
+    ).toEqual({ tag: 'SPAN', selectable: 'none' })
+    await expect(page.getByRole('button', { name: label, exact: true })).toHaveCount(0)
+  }
+  for (const label of ['Interactive brand mark', 'Interactive soft mark']) {
+    const mark = page.getByRole('button', { name: label, exact: true })
+    expect(
+      await mark.evaluate((element) => ({
+        width: element.getBoundingClientRect().width,
+        height: element.getBoundingClientRect().height,
+        selectable: getComputedStyle(element).userSelect,
+      })),
+    ).toEqual({ width: 32, height: 32, selectable: 'none' })
+    const before = await mark.evaluate((element) => ({
+      border: getComputedStyle(element).borderColor,
+      shadow: getComputedStyle(element).boxShadow,
+    }))
+    await mark.hover()
+    const hover = await mark.evaluate((element) => ({
+      border: getComputedStyle(element).borderColor,
+      shadow: getComputedStyle(element).boxShadow,
+    }))
+    expect(hover).not.toEqual(before)
+    await mark.focus()
+    await mark.press('Enter')
+    await mark.press('Space')
+  }
+  await expect(page.getByTestId('mark-clicks')).toHaveText('4')
+  await expect(page.getByRole('button', { name: 'Disabled mark', exact: true })).toBeDisabled()
+})
+
+for (const side of ['bottom', 'top'] as const) {
+  test(`reusable popup arrow follows viewport collision placement: ${side}`, async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.goto(fixture)
+    const trigger = page.getByRole('button', { name: 'Open popup menu', exact: true })
+    await trigger.evaluate((element, side) => {
+      Object.assign((element as HTMLElement).style, {
+        position: 'fixed',
+        right: '12px',
+        top: side === 'top' ? 'auto' : '12px',
+        bottom: side === 'top' ? '12px' : 'auto',
+        zIndex: '10',
+      })
+    }, side)
+    await trigger.click()
+    const popup = page.locator('.lumina-popup-menu')
+    await expect(popup).toHaveAttribute('data-side', side)
+    const bounds = await popup.boundingBox()
+    expect(bounds!.x).toBeGreaterThanOrEqual(0)
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(390)
+    expect(await popup.evaluate((element) => getComputedStyle(element, '::before').content)).toBe(
+      '""',
+    )
+    await page.keyboard.press('ArrowDown')
+    await page.keyboard.press('Enter')
+    await expect(page.getByTestId('mark-clicks')).toHaveText('1')
+    await expect(popup).toHaveCount(0)
+  })
+}
+
+test('generic panels retain faux glass without backdrop-filter passes or resizing', async ({
+  page,
+}) => {
+  await page.goto(fixture)
+  const glass = page.getByTestId('glass-panel')
+  const solid = page.getByTestId('solid-panel')
+  await expect(glass).toContainText('Reusable glass panel slot')
+  expect(
+    await glass.evaluate((element) => ({
+      filter: getComputedStyle(element).backdropFilter,
+      radius: getComputedStyle(element).borderRadius,
+      padding: getComputedStyle(element).padding,
+    })),
+  ).toEqual({ filter: 'none', radius: '18px', padding: '16px' })
+  expect(await solid.evaluate((element) => element.tagName)).toBe('SECTION')
+  const before = await glass.boundingBox()
+  await page.evaluate(() => {
+    document.documentElement.dataset.fx = 'full'
+  })
+  expect(await glass.evaluate((element) => getComputedStyle(element).backdropFilter)).toBe('none')
+  expect(await glass.boundingBox()).toEqual(before)
+  expect(await solid.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe(
+    'rgb(255, 255, 255)',
+  )
+  expect(await solid.evaluate((element) => getComputedStyle(element).backdropFilter)).toBe('none')
+  await page.evaluate(() => {
+    document.documentElement.dataset.theme = 'dark'
+  })
+  expect(await solid.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe(
+    'rgb(20, 24, 51)',
+  )
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  expect(await glass.evaluate((element) => getComputedStyle(element).backdropFilter)).toBe('none')
+})
+
+test('standalone Card slots/state and SVG Chart adapt to appearance changes', async ({ page }) => {
+  await page.goto(fixture)
+  const card = page.getByTestId('reusable-card')
+  await expect(card.getByRole('heading', { name: 'Reusable card', exact: true })).toBeVisible()
+  await expect(card.getByRole('button', { name: 'Card action' })).toBeVisible()
+  await expect(card).toContainText('Caller body')
+  await expect(card.locator('footer')).toHaveText('Caller footer')
+  expect(await card.evaluate((element) => getComputedStyle(element).borderRadius)).toBe('18px')
+  await expect(page.getByTestId('unavailable-card').getByRole('status')).toHaveText(
+    'Caller unavailable',
+  )
+  const chart = card.getByRole('img', { name: 'Reusable chart' })
+  await expect(chart.locator('svg')).toHaveCount(1)
+  const chartId = await chart.getAttribute('_echarts_instance_')
+  await page.evaluate(() => {
+    document.documentElement.dataset.theme = 'dark'
+    document.documentElement.dataset.fx = 'lite'
+  })
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await expect(chart.locator('svg')).toHaveCount(1)
+  expect(await chart.getAttribute('_echarts_instance_')).toBe(chartId)
+  expect(await card.evaluate((element) => getComputedStyle(element).backgroundColor)).not.toBe(
+    'rgba(0, 0, 0, 0)',
+  )
+})
+
+test('independent CardGrid balances changing counts and observes its container', async ({
+  page,
+}) => {
+  await page.goto(fixture)
+  const grid = page.getByTestId('adaptive-grid')
+  const counts = () =>
+    grid.evaluate((element) => {
+      const rows: { top: number; count: number }[] = []
+      for (const card of element.querySelectorAll('.lumina-card')) {
+        const top = card.getBoundingClientRect().top
+        const row = rows.at(-1)
+        if (row && Math.abs(row.top - top) < 1) row.count++
+        else rows.push({ top, count: 1 })
+      }
+      return rows.map((row) => row.count)
+    })
+  await expect.poll(counts).toEqual([3, 2, 2])
+  await page.getByRole('button', { name: 'Remove grid card' }).click()
+  await expect.poll(counts).toEqual([3, 3])
+  await page.getByRole('button', { name: 'Toggle grid width' }).click()
+  await expect.poll(counts).toEqual([1, 1, 1, 1, 1, 1])
+})
+
+test('editable Select accepts free text and uses themed keyboard-accessible options', async ({
+  page,
+}) => {
+  await page.goto(fixture)
+  await page.evaluate(() => {
+    document.documentElement.dataset.theme = 'dark'
+  })
+  const editable = page.getByRole('combobox', { name: 'Editable choice' })
+  await expect(editable).toHaveAttribute('maxlength', '128')
+  await editable.fill('caller custom value')
+  await expect(page.getByTestId('editable-choice-model')).toHaveText('caller custom value')
+  await editable.press('Escape')
+  await expect(editable).toHaveAttribute('aria-expanded', 'false')
+  await editable.fill('')
+  await editable.press('ArrowDown')
+  await expect(page.getByRole('option', { name: 'Violet', exact: true })).toContainText('violet')
+  await editable.fill('Vio')
+  // Await the accessible focused option, not just text from an opening/closing overlay.
+  await expect(page.getByRole('option', { name: 'Violet', exact: true })).toHaveAttribute(
+    'data-p-focused',
+    'true',
+  )
+  await editable.press('Enter')
+  await expect(editable).toHaveValue('Violet')
+  await expect(page.getByTestId('editable-choice-model')).toHaveText('violet')
+  await editable.fill('unknown code')
+  await editable.press('Escape')
+  await expect(editable).toHaveValue('unknown code')
+  await expect(page.locator('datalist')).toHaveCount(0)
+})
+
+test('installed theme styles arbitrary scroll areas and teleported controls without opt-in classes', async ({
+  page,
+}) => {
+  await page.goto(fixture)
+  await expect(page.locator('html')).toHaveAttribute('data-lumina-scrollbars', '')
+  const scroll = page.getByTestId('native-scroll-area')
+  await expect(scroll).not.toHaveClass(/lumina-scrollbar/)
+  const read = () =>
+    scroll.evaluate((element) => ({
+      width: getComputedStyle(element, '::-webkit-scrollbar').width,
+      height: getComputedStyle(element, '::-webkit-scrollbar').height,
+      radius: getComputedStyle(element, '::-webkit-scrollbar-thumb').borderRadius,
+      track: getComputedStyle(element, '::-webkit-scrollbar-track').backgroundColor,
+      thumb: getComputedStyle(element, '::-webkit-scrollbar-thumb').backgroundColor,
+      corner: getComputedStyle(element, '::-webkit-scrollbar-corner').backgroundColor,
+      gutter: getComputedStyle(element).scrollbarGutter,
+      overflow: getComputedStyle(element).overflow,
+    }))
+  const light = await read()
+  expect(light).toMatchObject({
+    width: '10px',
+    height: '10px',
+    radius: '999px',
+    track: 'rgba(0, 0, 0, 0)',
+    corner: 'rgba(0, 0, 0, 0)',
+    gutter: 'auto',
+    overflow: 'auto',
+  })
+  await scroll.evaluate((element) => {
+    element.scrollLeft = 90
+    element.scrollTop = 90
+  })
+  expect(await scroll.evaluate((element) => [element.scrollLeft, element.scrollTop])).toEqual([
+    90, 90,
+  ])
+  await page.evaluate(() => {
+    document.documentElement.dataset.theme = 'dark'
+  })
+  expect((await read()).thumb).not.toBe(light.thumb)
+  // The original readonly Select has no listContainer scrollbar class or app adapter.
+  const control = page.getByRole('combobox', { name: 'Colour' })
+  await control.scrollIntoViewIfNeeded()
+  await control.click()
+  const list = page.locator('.p-select-list-container')
+  await expect(list).not.toHaveClass(/lumina-scrollbar/)
+  expect(
+    await list.evaluate((element) => getComputedStyle(element, '::-webkit-scrollbar').width),
+  ).toBe('10px')
+  expect(await list.evaluate((element) => Boolean(element.closest('#app')))).toBe(false)
+  await control.press('Escape')
+  await page.emulateMedia({ forcedColors: 'active' })
+  expect(await scroll.evaluate((element) => getComputedStyle(element).scrollbarColor)).toBe('auto')
+})

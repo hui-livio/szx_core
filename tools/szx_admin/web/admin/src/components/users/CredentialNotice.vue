@@ -1,23 +1,28 @@
 <script setup lang="ts">
+import { LuminaButton as Button } from '../../ui/lumina'
 import type { CredentialIssue } from '../../api/types'
 import { formatTime } from '../../domain'
+import { useI18n } from 'vue-i18n'
+const { t } = useI18n()
 defineProps<{ issue: CredentialIssue; requestId: string }>()
 const emit = defineEmits<{ close: [] }>()
 </script>
 <template>
   <div class="form-stack">
-    <p class="alert warning">临时密码仅展示本次。请通过安全渠道交付给用户，关闭后无法再次查看。</p>
+    <p class="alert warning">{{ t('users.credentialWarning') }}</p>
     <dl>
-      <dt>登录账号</dt>
-      <dd>{{ issue.user.uid ?? issue.user.username }}</dd>
-      <dt>临时密码</dt>
+      <dt>{{ t('common.loginIdentifier') }}</dt>
+      <dd>{{ issue.user.login_identifier }}</dd>
+      <dt>{{ t('users.newPassword') }}</dt>
       <dd class="credential" data-testid="temporary-credential">
         {{ issue.temporary_credential }}
       </dd>
-      <dt>有效期至</dt>
+      <dt>{{ t('users.expiresAt') }}</dt>
       <dd>{{ formatTime(issue.temporary_credential_expires_at) }}</dd>
     </dl>
-    <p class="request-id">请求 ID：{{ requestId }}</p>
-    <button class="primary" @click="emit('close')">已妥善记录，关闭</button>
+    <p class="request-id">{{ t('common.requestId') }}：{{ requestId }}</p>
+    <Button class="primary" @click="emit('close')" type="button" variant="primary">{{
+      t('users.acknowledged')
+    }}</Button>
   </div>
 </template>

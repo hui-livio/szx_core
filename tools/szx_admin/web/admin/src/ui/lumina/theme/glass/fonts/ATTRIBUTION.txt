@@ -1,0 +1,36 @@
+字体归属与授权说明 / Font Attribution
+================================================================
+
+内嵌字体：Lumina Sans（fonts/noto-sc-400.woff2 / 500 / 700）
+
+  来源字体   Noto Sans CJK SC（思源黑体 Source Han Sans SC 的 Google 版本）
+  版权方     © Adobe Systems Incorporated / Google LLC
+  授权协议   SIL Open Font License 1.1（见同目录 OFL-LICENSE.txt）
+  商用许可   ✅ 允许商业使用、修改、再分发；唯一限制是不得单独出售字体本身，
+              且衍生字体不得继续使用「Noto / Source Han」保留字体名（Reserved Font Name）
+
+  子集化说明 本目录下的 woff2 为上述字体的子集化产物：
+             · 保留字重：Regular 400 / Medium 500 / Bold 700
+             · 保留字符：ASCII + Latin-1 补充 + 常用符号 + 全角字符
+                        + GB2312 一级汉字 3755 字
+             · 生僻字（GB2312 二级字库及以外）会自动回退到系统字体
+             · 生成工具：fontTools 4.66.1（pyftsubset --flavor=woff2）
+             · 生成脚本：见工作区根目录 build-fonts.py
+
+----------------------------------------------------------------
+
+字体栈中的其他候选字体（不随本主题分发，本机已安装时优先命中）：
+
+  HarmonyOS Sans SC   华为《HarmonyOS Sans 字体授权协议》· 免费商用
+  Source Han Sans SC  SIL OFL 1.1 · 免费商用
+  Noto Sans SC        SIL OFL 1.1 · 免费商用
+  JetBrains Mono      SIL OFL 1.1 · 免费商用（等宽）
+  更纱黑体 Sarasa     SIL OFL 1.1 · 免费商用（等宽）
+  Liberation Mono     SIL OFL 1.1 · 免费商用（等宽）
+
+已从字体栈中移除（平台专有授权，不可随产品分发）：
+
+  PingFang SC（苹方）      Apple Inc.
+  Microsoft YaHei（雅黑）  Microsoft Corporation
+  Segoe UI                Microsoft Corporation
+  SF Mono / SF Pro        Apple Inc.

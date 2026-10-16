@@ -17,9 +17,11 @@ namespace SZX::ADMIN::USER
 struct UserRow final
 {
     std::string id;
-    std::optional<std::string> uid;
-    std::optional<std::string> username;
+    std::string login_identifier;
+    std::string login_identifier_canonical;
+    std::string identifier_type;
     std::string display_name;
+    std::optional<std::string> role_id;
     std::string role;
     std::string status;
     int version{};
@@ -40,12 +42,12 @@ struct UserRow final
 struct NewUser final
 {
     std::string id;
-    std::optional<std::string> uid;
-    std::optional<std::string> uid_canonical;
-    std::optional<std::string> username;
-    std::optional<std::string> username_canonical;
+    std::string login_identifier;
+    std::string login_identifier_canonical;
+    std::string identifier_type;
     std::string display_name;
     std::string password_hash;
+    std::optional<std::string> role_id;
     std::string role;
     std::string status;
     bool force_password_change{};
@@ -113,7 +115,7 @@ public:
     /** 创建用户时锁定调用者至事务结束；只读接口保持 lock=false。 */
     virtual auto findById(const std::string &id, bool lock = false) -> SZX::COMMON::Result<std::optional<UserRow>> = 0;
     /** 校验同字段及跨字段登录冲突；调用者须先锁定 bootstrap 单例行直至事务结束。 */
-    virtual auto findByCanonical(const std::string &uid, const std::string &username)
+    virtual auto findByCanonical(const std::string &canonicalValue)
         -> SZX::COMMON::Result<std::optional<UserRow>>                           = 0;
     virtual auto list(const UserFilter &filter) -> SZX::COMMON::Result<UserPage> = 0;
     virtual auto insert(const NewUser &user) -> SZX::COMMON::Result<void>        = 0;

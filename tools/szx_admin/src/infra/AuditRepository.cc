@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <iomanip>
 #include <sstream>
 #include <tuple>
@@ -36,13 +37,13 @@ struct AuditPageRecord final
     std::string event_name;
     std::string result;
     std::string request_id;
-    std::uint64_t details_size{};
+    std::string details_json;
     std::string created_at;
-    std::string actor_username;
+    std::string actor_login_identifier;
     std::string storage_table;
 };
-YLT_REFL(AuditPageRecord, id, actor_user_id, target_user_id, event_name, result, request_id, details_size, created_at,
-         actor_username, storage_table);
+YLT_REFL(AuditPageRecord, id, actor_user_id, target_user_id, event_name, result, request_id, details_json, created_at,
+         actor_login_identifier, storage_table);
 
 template <typename T>
 auto queryFailed() -> Result<T>
@@ -130,59 +131,61 @@ auto MySqlAuditRepository::queryTable(const AUDIT::AuditFilter &filter, std::str
         const auto eventNames    = SZX::COMMON::Json(filter.eventNames).dump();
         const auto limit         = static_cast<std::uint64_t>(filter.limit);
         const auto offset        = filter.offset;
-        const std::string source = " FROM " + std::string{table} + " l LEFT JOIN users u ON u.id = l.actor_user_id WHERE ";
+        const auto pageClause    = " LIMIT " + std::to_string(limit) + " OFFSET " + std::to_string(offset);
+        const auto started       = std::chrono::steady_clock::now();
+        const std::string source = " FROM " + std::string{table} + " l WHERE ";
         const std::string predicate{"(? = '' OR l.created_at >= ?) AND (? = '' OR l.created_at <= ?) AND "
                                     "(? = '' OR l.event_name = ?) AND (? = '' OR l.result = ?) AND "
                                     "(? = '' OR l.actor_user_id = ?) AND "
-                                    "(? = '' OR u.display_name LIKE ? OR u.username LIKE ? OR u.uid LIKE ?) AND "
+                                    "(? = '' OR EXISTS (SELECT 1 FROM users u WHERE u.id = l.actor_user_id AND "
+                                    "(u.display_name LIKE ? OR u.login_identifier LIKE ?))) AND "
                                     "(? = '' OR l.event_name LIKE ? OR JSON_CONTAINS(?, JSON_QUOTE(l.event_name)))"};
 
         const auto totals = connection_.query_s<std::tuple<std::uint64_t>>(
             "SELECT COUNT(*)" + source + predicate, from, from, to, to, event, event, result, result, actor, actor, username,
-            pattern, pattern, pattern, eventSearch, eventPattern, eventNames);
+            pattern, pattern, eventSearch, eventPattern, eventNames);
         if (connection_.has_error() || totals.size() != 1)
             return queryFailed<AUDIT::AuditPage>();
 
+        const auto countElapsed = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - started);
+
         AUDIT::AuditPage page{.items = {}, .total = std::get<0>(totals.front())};
         if (page.total <= offset)
+        {
+            LOGM_DEBUG("szx_admin.audit", "event=query_count_complete duration_microseconds={} total={} offset={} rows=0",
+                       countElapsed.count(), page.total, offset);
             return Result<AUDIT::AuditPage>::Success(std::move(page));
+        }
 
         auto rows = connection_.query_s<AuditPageRecord>(
             "SELECT l.id, l.actor_user_id, l.target_user_id, l.event_name, l.result, l.request_id, "
-            "OCTET_LENGTH(l.details_json), l.created_at, COALESCE(u.username, u.uid, ''), " +
+            // Bound the result type.  An unbounded CAST(JSON AS CHAR) is
+            // reported by MySQL as a 4 GiB LONG_BLOB; ormpp allocates that
+            // metadata length before fetching the page.
+            "CASE WHEN OCTET_LENGTH(l.details_json) <= 1048576 THEN CAST(l.details_json AS CHAR(1048576)) ELSE '{}' END, "
+            "l.created_at, COALESCE((SELECT u.login_identifier FROM users u WHERE u.id = l.actor_user_id), ''), " +
                 std::string{"'"} + std::string{table} + "'" + source + predicate +
-                " ORDER BY l.created_at DESC, l.id ASC LIMIT ? OFFSET ?",
-            from, from, to, to, event, event, result, result, actor, actor, username, pattern, pattern, pattern, eventSearch,
-            eventPattern, eventNames, limit, offset);
+                " ORDER BY l.created_at DESC, l.id ASC" + pageClause,
+            from, from, to, to, event, event, result, result, actor, actor, username, pattern, pattern, eventSearch,
+            eventPattern, eventNames);
         if (connection_.has_error())
             return queryFailed<AUDIT::AuditPage>();
+        const auto rowsElapsed = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - started);
         page.items.reserve(rows.size());
         for (auto &row : rows)
         {
-            constexpr std::uint64_t chunkBytes = 16384;
-            std::string details;
-            for (std::uint64_t byteOffset = 0; byteOffset < row.details_size; byteOffset += chunkBytes)
-            {
-                const auto chunks =
-                    connection_.query_s<std::tuple<std::string>>("SELECT CAST(SUBSTRING(CAST(details_json AS BINARY), ?, 16384) "
-                                                                 "AS CHAR(16384) CHARACTER SET binary) FROM " +
-                                                                     std::string{table} + " WHERE id = ?",
-                                                                 byteOffset + 1, row.id);
-                if (connection_.has_error() || chunks.size() != 1 ||
-                    std::get<0>(chunks.front()).size() != (std::min)(chunkBytes, row.details_size - byteOffset))
-                    return queryFailed<AUDIT::AuditPage>();
-                details += std::get<0>(chunks.front());
-            }
             page.items.push_back({.id             = std::move(row.id),
                                   .actor_user_id  = std::move(row.actor_user_id),
                                   .target_user_id = std::move(row.target_user_id),
                                   .event_name     = std::move(row.event_name),
                                   .result         = std::move(row.result),
                                   .request_id     = std::move(row.request_id),
-                                  .details_json   = std::move(details),
+                                  .details_json   = std::move(row.details_json),
                                   .created_at     = std::move(row.created_at),
-                                  .actor_username = std::move(row.actor_username)});
+                                  .actor_login_identifier = std::move(row.actor_login_identifier)});
         }
+        LOGM_DEBUG("szx_admin.audit", "event=query_complete duration_microseconds={} count_duration_microseconds={} total={} offset={} rows={}",
+                   rowsElapsed.count(), countElapsed.count(), page.total, offset, page.items.size());
         return Result<AUDIT::AuditPage>::Success(std::move(page));
     } catch (...)
     {

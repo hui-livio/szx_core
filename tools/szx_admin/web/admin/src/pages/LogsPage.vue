@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { LuminaPanel, LuminaButton as Button } from '../ui/lumina'
+import { computed, ref, watch } from 'vue'
 import { useLogsViewModel } from '../composables/useLogsViewModel'
 import { useBehaviorEventsViewModel } from '../composables/useBehaviorEventsViewModel'
 import { formatTime } from '../domain'
@@ -9,10 +10,22 @@ import BehaviorEventFilters from '../components/logs/BehaviorEventFilters.vue'
 import BehaviorEventTable from '../components/logs/BehaviorEventTable.vue'
 import PaginationBar from '../components/PaginationBar.vue'
 import ModalDialog from '../components/ModalDialog.vue'
+import { useI18n } from 'vue-i18n'
+import { useAuthStore } from '../stores/auth'
+const { t } = useI18n()
+const auth = useAuthStore()
+const canAudit = computed(() => auth.can('audit.read'))
+const canBehavior = computed(() => auth.can('behavior.read'))
 
 const audit = useLogsViewModel()
 const behavior = useBehaviorEventsViewModel()
-const activeTab = ref<'audit' | 'behavior'>('audit')
+const activeTab = ref<'audit' | 'behavior'>(canAudit.value ? 'audit' : 'behavior')
+watch([canAudit, canBehavior], () => {
+  if (activeTab.value === 'audit' && !canAudit.value && canBehavior.value)
+    activeTab.value = 'behavior'
+  else if (activeTab.value === 'behavior' && !canBehavior.value && canAudit.value)
+    activeTab.value = 'audit'
+})
 const {
   filters: auditFilters,
   logs,
@@ -27,6 +40,7 @@ const {
 const {
   filters: behaviorFilters,
   events,
+  eventOptions: behaviorEventOptions,
   validationError: behaviorValidationError,
   selected: behaviorSelected,
   search: searchBehavior,
@@ -34,170 +48,207 @@ const {
   show: showBehavior,
   close: closeBehavior,
 } = behavior
-const { page, pageCount, total, busy, error, requestId, load } = audit.query
+const { page, pageSize, pageCount, total, busy, error, requestId, load, setPageSize } = audit.query
 const {
   page: behaviorPage,
+  pageSize: behaviorPageSize,
   pageCount: behaviorPageCount,
   total: behaviorTotal,
   busy: behaviorBusy,
   error: behaviorError,
   requestId: behaviorRequestId,
   load: loadBehavior,
+  setPageSize: setBehaviorPageSize,
 } = behavior.query
 </script>
 
 <template>
-  <header class="page-heading">
-    <div>
-      <p class="eyebrow">AUDIT TRAIL</p>
-      <h1>{{ activeTab === 'audit' ? '安全审计' : '用户行为' }}</h1>
-      <p>分别查询可信安全事实和客户端上传的非可信行为事件。</p>
-    </div>
-    <span class="role-badge">只读记录</span>
-  </header>
-  <nav class="log-tabs" aria-label="日志类型" role="tablist">
-    <button
-      role="tab"
-      :aria-selected="activeTab === 'audit'"
-      :class="{ active: activeTab === 'audit' }"
-      @click="activeTab = 'audit'"
+  <div class="data-page logs-page">
+    <header class="page-heading">
+      <div>
+        <h1>{{ activeTab === 'audit' ? t('audit.title') : t('audit.behaviorTitle') }}</h1>
+        <p>{{ t('audit.subtitle') }}</p>
+      </div>
+      <span class="role-badge">{{ t('audit.readOnly') }}</span>
+    </header>
+    <nav class="log-tabs" :aria-label="t('audit.tabs')" role="tablist">
+      <Button
+        v-if="canAudit"
+        role="tab"
+        :aria-selected="activeTab === 'audit'"
+        :class="{ active: activeTab === 'audit' }"
+        @click="activeTab = 'audit'"
+        type="button"
+      >
+        {{ t('audit.auditTab') }}</Button
+      ><Button
+        v-if="canBehavior"
+        role="tab"
+        :aria-selected="activeTab === 'behavior'"
+        :class="{ active: activeTab === 'behavior' }"
+        @click="activeTab = 'behavior'"
+        type="button"
+      >
+        {{ t('audit.behaviorTab') }}
+      </Button>
+    </nav>
+    <LuminaPanel
+      as="section"
+      v-if="activeTab === 'audit' && canAudit"
+      class="panel table-panel"
+      radius="var(--lg-r-3xl)"
+      padding="0"
     >
-      安全审计</button
-    ><button
-      role="tab"
-      :aria-selected="activeTab === 'behavior'"
-      :class="{ active: activeTab === 'behavior' }"
-      @click="activeTab = 'behavior'"
+      <LogFilters
+        v-model="auditFilters"
+        :busy="busy"
+        :event-options="eventOptions"
+        @search="searchAudit"
+        @reset="resetAudit"
+      />
+      <p v-if="auditValidationError" class="alert error" role="alert">{{ auditValidationError }}</p>
+      <div class="section-heading table-heading">
+        <h2>
+          {{ t('audit.records') }} <span class="count">{{ total }}</span>
+        </h2>
+        <Button :disabled="busy" @click="load()" type="button">{{ t('audit.refreshLogs') }}</Button>
+      </div>
+      <p v-if="error" class="alert error" role="alert">{{ error }}</p>
+      <LogTable :logs="logs" :busy="busy" :failed="!!error" @details="showAudit" /><PaginationBar
+        :page="page"
+        :page-size="pageSize"
+        :page-count="pageCount"
+        :total="total"
+        :busy="busy"
+        @change="load"
+        @change:size="setPageSize"
+      />
+    </LuminaPanel>
+    <LuminaPanel
+      as="section"
+      v-else-if="activeTab === 'behavior' && canBehavior"
+      class="panel table-panel"
+      radius="var(--lg-r-3xl)"
+      padding="0"
     >
-      用户行为
-    </button>
-  </nav>
-  <section v-if="activeTab === 'audit'" class="panel table-panel">
-    <LogFilters
-      v-model="auditFilters"
-      :busy="busy"
-      :event-options="eventOptions"
-      @search="searchAudit"
-      @reset="resetAudit"
-    />
-    <p v-if="auditValidationError" class="alert error" role="alert">{{ auditValidationError }}</p>
-    <div class="section-heading table-heading">
-      <h2>
-        操作记录 <span class="count">{{ total }}</span>
-      </h2>
-      <button :disabled="busy" @click="load()">刷新日志</button>
-    </div>
-    <p v-if="error" class="alert error" role="alert">{{ error }}</p>
-    <LogTable :logs="logs" :busy="busy" :failed="!!error" @details="showAudit" /><PaginationBar
-      :page="page"
-      :page-count="pageCount"
-      :total="total"
-      :busy="busy"
-      @change="load"
-    />
-  </section>
-  <section v-else class="panel table-panel">
-    <BehaviorEventFilters
-      v-model="behaviorFilters"
-      :busy="behaviorBusy"
-      @search="searchBehavior"
-      @reset="resetBehavior"
-    />
-    <p v-if="behaviorValidationError" class="alert error" role="alert">
-      {{ behaviorValidationError }}
+      <BehaviorEventFilters
+        v-model="behaviorFilters"
+        :busy="behaviorBusy"
+        :event-options="behaviorEventOptions"
+        @search="searchBehavior"
+        @reset="resetBehavior"
+      />
+      <p v-if="behaviorValidationError" class="alert error" role="alert">
+        {{ behaviorValidationError }}
+      </p>
+      <div class="section-heading table-heading">
+        <h2>
+          {{ t('audit.events') }} <span class="count">{{ behaviorTotal }}</span>
+        </h2>
+        <Button :disabled="behaviorBusy" @click="loadBehavior()" type="button">
+          {{ t('audit.refreshEvents') }}
+        </Button>
+      </div>
+      <p v-if="behaviorError" class="alert error" role="alert">{{ behaviorError }}</p>
+      <BehaviorEventTable
+        :events="events"
+        :busy="behaviorBusy"
+        :failed="!!behaviorError"
+        @details="showBehavior"
+      /><PaginationBar
+        :page="behaviorPage"
+        :page-size="behaviorPageSize"
+        :page-count="behaviorPageCount"
+        :total="behaviorTotal"
+        :busy="behaviorBusy"
+        @change="loadBehavior"
+        @change:size="setBehaviorPageSize"
+      />
+    </LuminaPanel>
+    <p v-if="activeTab === 'audit' && requestId" class="request-id">
+      {{ t('common.requestId') }}：{{ requestId }}
     </p>
-    <div class="section-heading table-heading">
-      <h2>
-        用户行为 <span class="count">{{ behaviorTotal }}</span>
-      </h2>
-      <button :disabled="behaviorBusy" @click="loadBehavior()">刷新事件</button>
-    </div>
-    <p v-if="behaviorError" class="alert error" role="alert">{{ behaviorError }}</p>
-    <BehaviorEventTable
-      :events="events"
-      :busy="behaviorBusy"
-      :failed="!!behaviorError"
-      @details="showBehavior"
-    /><PaginationBar
-      :page="behaviorPage"
-      :page-count="behaviorPageCount"
-      :total="behaviorTotal"
-      :busy="behaviorBusy"
-      @change="loadBehavior"
-    />
-  </section>
-  <p v-if="activeTab === 'audit' && requestId" class="request-id">请求 ID：{{ requestId }}</p>
-  <p v-if="activeTab === 'behavior' && behaviorRequestId" class="request-id">
-    请求 ID：{{ behaviorRequestId }}
-  </p>
-  <ModalDialog v-if="auditSelected && activeTab === 'audit'" title="审计详情" @close="closeAudit"
-    ><dl class="details-grid">
-      <div>
-        <dt>事件</dt>
-        <dd>
-          {{ auditSelected.eventLabel
-          }}<small class="identity"
-            >事件代码：<span class="mono">{{ auditSelected.event_name }}</span></small
-          >
-        </dd>
-      </div>
-      <div>
-        <dt>事件 ID</dt>
-        <dd class="mono">{{ auditSelected.id }}</dd>
-      </div>
-      <div>
-        <dt>时间</dt>
-        <dd>{{ formatTime(auditSelected.created_at) }}</dd>
-      </div>
-      <div>
-        <dt>用户名</dt>
-        <dd>{{ auditSelected.actorUsername }}</dd>
-      </div>
-      <div>
-        <dt>目标用户</dt>
-        <dd class="mono">{{ auditSelected.target_user_id || '—' }}</dd>
-      </div>
-      <div>
-        <dt>请求 ID</dt>
-        <dd class="mono">{{ auditSelected.request_id }}</dd>
-      </div>
-    </dl>
-    <h3>事件详情</h3>
-    <pre class="json-details">{{ JSON.stringify(auditSelected.details, null, 2) }}</pre>
-    <div class="modal-actions"><button @click="closeAudit">关闭</button></div></ModalDialog
-  >
-  <ModalDialog
-    v-if="behaviorSelected && activeTab === 'behavior'"
-    title="用户行为详情"
-    @close="closeBehavior"
-    ><dl class="details-grid">
-      <div>
-        <dt>事件</dt>
-        <dd class="mono">{{ behaviorSelected.event_name }}</dd>
-      </div>
-      <div>
-        <dt>事件 ID</dt>
-        <dd class="mono">{{ behaviorSelected.id }}</dd>
-      </div>
-      <div>
-        <dt>时间</dt>
-        <dd>{{ formatTime(behaviorSelected.created_at) }}</dd>
-      </div>
-      <div>
-        <dt>用户名</dt>
-        <dd>{{ behaviorSelected.username || '未知用户' }}</dd>
-      </div>
-      <div>
-        <dt>用户 ID</dt>
-        <dd class="mono">{{ behaviorSelected.user_id }}</dd>
-      </div>
-      <div>
-        <dt>请求 ID</dt>
-        <dd class="mono">{{ behaviorSelected.request_id }}</dd>
-      </div>
-    </dl>
-    <h3>事件详情</h3>
-    <pre class="json-details">{{ JSON.stringify(behaviorSelected.details, null, 2) }}</pre>
-    <div class="modal-actions"><button @click="closeBehavior">关闭</button></div></ModalDialog
-  >
+    <p v-if="activeTab === 'behavior' && behaviorRequestId" class="request-id">
+      {{ t('common.requestId') }}：{{ behaviorRequestId }}
+    </p>
+    <ModalDialog
+      v-if="canAudit && auditSelected && activeTab === 'audit'"
+      :title="t('audit.detailTitle')"
+      @close="closeAudit"
+      ><dl class="details-grid">
+        <div>
+          <dt>{{ t('common.event') }}</dt>
+          <dd>
+            {{ auditSelected.eventLabel
+            }}<small class="identity"
+              >{{ t('audit.eventCode') }}：<span class="mono">{{
+                auditSelected.event_name
+              }}</span></small
+            >
+          </dd>
+        </div>
+        <div>
+          <dt>{{ t('common.eventId') }}</dt>
+          <dd class="mono">{{ auditSelected.id }}</dd>
+        </div>
+        <div>
+          <dt>{{ t('common.time') }}</dt>
+          <dd>{{ formatTime(auditSelected.created_at) }}</dd>
+        </div>
+        <div>
+          <dt>{{ t('common.loginIdentifier') }}</dt>
+          <dd>{{ auditSelected.actorUsername }}</dd>
+        </div>
+        <div>
+          <dt>{{ t('common.targetUser') }}</dt>
+          <dd class="mono">{{ auditSelected.target_user_id || '—' }}</dd>
+        </div>
+        <div>
+          <dt>{{ t('common.requestId') }}</dt>
+          <dd class="mono">{{ auditSelected.request_id }}</dd>
+        </div>
+      </dl>
+      <h3>{{ t('audit.details') }}</h3>
+      <pre class="json-details">{{ JSON.stringify(auditSelected.details, null, 2) }}</pre>
+      <div class="modal-actions">
+        <Button @click="closeAudit" type="button">{{ t('common.close') }}</Button>
+      </div></ModalDialog
+    >
+    <ModalDialog
+      v-if="canBehavior && behaviorSelected && activeTab === 'behavior'"
+      :title="t('audit.behaviorDetailTitle')"
+      @close="closeBehavior"
+      ><dl class="details-grid">
+        <div>
+          <dt>{{ t('common.event') }}</dt>
+          <dd class="mono">{{ behaviorSelected.event_name }}</dd>
+        </div>
+        <div>
+          <dt>{{ t('common.eventId') }}</dt>
+          <dd class="mono">{{ behaviorSelected.id }}</dd>
+        </div>
+        <div>
+          <dt>{{ t('common.time') }}</dt>
+          <dd>{{ formatTime(behaviorSelected.created_at) }}</dd>
+        </div>
+        <div>
+          <dt>{{ t('common.loginIdentifier') }}</dt>
+          <dd>{{ behaviorSelected.login_identifier || t('common.unknownUser') }}</dd>
+        </div>
+        <div>
+          <dt>{{ t('common.userId') }}</dt>
+          <dd class="mono">{{ behaviorSelected.user_id }}</dd>
+        </div>
+        <div>
+          <dt>{{ t('common.requestId') }}</dt>
+          <dd class="mono">{{ behaviorSelected.request_id }}</dd>
+        </div>
+      </dl>
+      <h3>{{ t('audit.details') }}</h3>
+      <pre class="json-details">{{ JSON.stringify(behaviorSelected.details, null, 2) }}</pre>
+      <div class="modal-actions">
+        <Button @click="closeBehavior" type="button">{{ t('common.close') }}</Button>
+      </div></ModalDialog
+    >
+  </div>
 </template>

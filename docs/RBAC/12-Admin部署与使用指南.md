@@ -88,6 +88,8 @@ Set-Location build/bin
 3. 运行 `nginx -t` 检查配置，再启动 Nginx 或对已有实例运行 `nginx -s reload`。放通代理的 `443` 端口。同机代理部署时，admin 可监听 `127.0.0.1:7364`。
 4. 访问 `https://实际域名/admin/`。保留 `allowedOrigin: "*"` 可跨域访问；如配置单一 Origin，应使用浏览器访问的 HTTPS 来源。
 
+同机 IPv4 上游须明确写为 `proxy_pass http://127.0.0.1:7364;`。Windows 中 `localhost` 若同时解析为 `::1` 和 `127.0.0.1`，Nginx 可能尝试 IPv6 上游，而服务监听 `0.0.0.0` 或 WSL 的 IPv4 转发并不提供该上游。以 Nginx 错误日志中的实际 upstream 地址为准。
+
 可用 `curl.exe -I http://127.0.0.1:7364/admin/` 验证上游，再用 `curl.exe -I https://实际域名/admin/` 验证证书和代理。普通远端 HTTP 可以用于确认端口连通，但其 Web Crypto 与 Secure Cookie 限制使它不能替代完整 HTTPS 部署。浏览器强制 HTTPS 模式也可能把手工输入的 HTTP 地址升级成 HTTPS。
 
 Nginx 示例不修改 CORS、CSP 或 Cookie 响应头。当前 admin 使用连接对端地址进行 IP 限流，不信任 `X-Forwarded-For`；代理后的客户端会共享代理 IP 的限流预算，应按部署规模配置 `auth.attemptsPerMinute`。
@@ -139,6 +141,7 @@ curl.exe http://localhost:7364/api/v1/health
 | 页面空白或 JS/CSS 404 | 检查 index.html 引用 `/admin/assets/`；重新 build、deploy，确认代理保留前缀 |
 | `/admin/users` 刷新 404 | 确认 spaFallback 为 true，并使用支持 admin 挂载的新版后端 |
 | 页面能打开但登录/刷新失败 | 检查 API 地址、Origin、HTTPS、Cookie 和 Web Crypto；以请求状态码及 request_id 定位 |
+| 查询接口偶发约 2 秒、最终 200，Server-Timing 很小 | 检查 Nginx error.log 是否同期出现 `[::1]:7364` / `connect() failed (10061)`；IPv4 上游改为 `127.0.0.1:7364`，通过 `nginx -t` 后 `nginx -s reload`，复测 HTTPS 入口 |
 | 找不到配置或密钥 | 检查启动工作目录和配置内路径；--config 不会改变进程工作目录 |
 
 Windows 检查默认端口占用：
@@ -152,3 +155,63 @@ Get-Process -Id <上一步的OwningProcess>
 确认进程身份后退出旧实例，再启动服务；不要同时运行两个监听同一地址和端口的实例。修改端口后同步更新开发代理和访问地址。
 
 自动化验证命令见 [前端 README](../../tools/szx_admin/web/admin/README.md)。后端静态挂载测试位于 `tests/rbac/HttpTransport_test.cc`，可构建 `test_rbac_infra` 后运行 `ctest --test-dir build -R '^test_rbac_infra$' --output-on-failure`。前端浏览器测试使用模拟 API，不能替代真实数据库、HTTPS Cookie 和生产环境验收。
+
+
+## 查询接口偶发等待排查
+
+用户列表、审计日志与权限查询共用 HTTP 传输、同步访问日志和数据库连接池。浏览器“等待服务器响应”包括服务端处理前的等待及响应传输；现有访问日志的 `duration` 在写入该条日志之前计算，因此不能用它单独排除日志输出阻塞。
+
+新版服务为 API 响应补充 `Server-Timing`，可在浏览器 Network → Timing/Headers 查看：
+
+| 指标 | 覆盖范围 |
+|---|---|
+| `app` | HTTP 中间件开始到业务处理、响应准备完成，包含鉴权和数据库操作 |
+| `access_log` | 同步访问日志输出耗时，包含控制台和文件 sink 的写入/刷新 |
+| `server` | 上面两段合计；不包含进入中间件之前的排队和返回响应之后的套接字发送 |
+
+记录慢请求的 `X-Request-ID`，对照访问日志和 `pool_acquire_slow`、`database_callback_slow`、`orm_operation_slow`。若 `app` 很慢，继续沿鉴权/数据库路径定位；若 `access_log` 很慢，检查控制台及日志文件写入；若 `server` 很快但浏览器等待很久，检查 I/O 线程排队、响应发送、代理/端口转发与 TCP。三段统计不能代替客户端和服务器的同一次请求关联。
+
+默认服务配置使用 `logging.console: false`，诊断继续写入轮转文件，避免终端或输出管道背压阻塞 HTTP。该开关在 Release/RelWithDebInfo 生效；Debug 构建的 logger 始终输出控制台。关闭控制台不排除文件 sink 卡顿，仍需对照 `access_log`。
+
+`workerThreads: 0` 当前实际使用一个 HTTP I/O 线程，业务处理和日志输出均同步执行。其他请求或日志 sink 卡顿可能阻塞后续请求，此时后续请求的业务耗时仍可能很短。仅调大线程数不能证明或解决根因。
+
+可用仓库采样工具对比客户端、新连接与长连接：
+
+```powershell
+py -3 scripts/profile_admin_http.py http://127.0.0.1:7364/api/v1/health --count 100
+py -3 scripts/profile_admin_http.py http://127.0.0.1:7364/api/v1/health --count 100 --new-connection
+py -3 scripts/profile_admin_http.py "http://127.0.0.1:7364/api/v1/admin/users?page=1&page_size=20&sort=-created_at" --token-env SZX_ADMIN_PROFILE_TOKEN --count 100
+```
+
+`SZX_ADMIN_PROFILE_TOKEN` 应为现有会话的 access token。工具只发 GET，不执行登录、刷新或业务写入；不输出 token、响应正文或 URL 查询参数，慢样本输出请求 ID、响应头计时、首字节和总耗时。401/403 等响应不代表成功查询，工具会报告状态并返回非零退出码。它直连目标地址，不读取系统 HTTP 代理，因此与浏览器差异本身也是排查线索。
+
+在 Windows 浏览器访问 WSL 服务的场景，分别在 Windows 与 WSL 运行同样的采样；再对比 Windows 的 `localhost`/`127.0.0.1` 转发地址和 WSL 实际 IPv4 地址。以 `Get-NetTCPConnection` 的拥有进程确认是否经过 `wslrelay` 或其他代理。服务需重新启动新版可执行文件，响应才会出现新增计时头；替换磁盘文件不会让正在运行的旧进程自动更新。
+
+
+### IPv6 上游回退的已复现实例（2026-10-13）
+
+Windows Nginx 配置为 `proxy_pass http://localhost:7364;`、WSL 服务经 IPv4 转发时，两个用户查询慢请求分别在 10:06:28 和 10:12:38（北京时间）的代理错误日志出现连接 `[::1]:7364` 被拒绝。10:12:38 的请求 ID 为 `c2baf73d-899a-4a89-88ad-6a2fc6c983ef`，后端计时 `app=3 ms`、`access_log=1 ms`，浏览器等待约 2.05 秒。
+
+通过 Windows curl 对 `https://localhost/api/v1/health` 使用相同请求方式、新进程每次请求、间隔 250 ms 进行采样（本地自签证书采样使用 `-k`）：修复前 40 次中 2 次超过 1 秒，最大 2275.8 ms，慢请求同期均有 IPv6 上游连接失败。将 upstream 明确改为 `127.0.0.1:7364` 并平滑重载后，100 次采样全部返回 200，最大 244.6 ms，超过 1 秒为 0 次，新增 IPv6 上游错误为 0。该样本证明代理路径上的失败连接/回退，不代表数据库查询性能基准；业务接口仍应按请求 ID 和 Server-Timing 验证。
+
+### MySQL / MariaDB 兼容边界
+
+数据库连接参数仍使用原有 `database` 配置，无需新增 engine 选项。连接时只读检测 `SELECT VERSION()`：MySQL 8.0.16+（含 8.4）和 MariaDB 10.11+；不支持的旧版/未知引擎拒绝启动，不通过关闭 CHECK 等方式降低数据约束。
+
+初始化适配在 `infra/DatabaseDialect.h` 与 ORM 私有适配层：MySQL 按原 SQL 执行；MariaDB 执行 DDL 时将 `DROP CHECK` 转为 `DROP CONSTRAINT`，`utf8mb4_0900_ai_ci` 映射到 `utf8mb4_unicode_520_ci`，`utf8mb4_0900_bin` 映射到 `utf8mb4_nopad_bin`（保留二进制、无填充比较）。映射仅应用于可信初始化 SQL，字符串常量、注释和绑定业务参数不替换。
+
+已发布迁移 1–10 的 SQL 和 SHA-256 校验和保持不变；迁移日志记录原始目录校验和，不记录适配后 SQL。排序规则的 Unicode 权重版本不同，跨引擎的自然语言排序不承诺逐项一致；不要直接复制 MySQL 的内部数据文件给 MariaDB，也不要据此宣称任意旧 MariaDB 库可原地升级。身份与权限标识仍按业务规范校验并使用二进制比较。
+
+数据库由服务自动创建时也按检测结果选择排序规则。已有库不做全库排序规则重写。备份/恢复及生产版本升级仍需独立验收。
+
+机器指标验证脚本：
+
+```sh
+python scripts/test_admin_metrics.py --service build/bin/szx_admin_service
+```
+
+该脚本启动临时、仅监听 loopback 的 MySQL/MariaDB 数据目录，验证全新迁移到 12、真实指标快照/历史、角色权限、非法查询参数及已部署的 OpenAPI；`--rbac` 另验证自定义角色/权限生命周期、范围、引用保护和并发。退出后清理，绝不连接现有应用库。MySQL 需要 mysql/mysqld，MariaDB 另需 mariadb-install-db；Python 需 cryptography。具体已验证版本见本次交付说明，不以版本检测范围替代跨版本实机测试。
+
+迁移 12 保留迁移 1–11 的原始校验值，移除 users.role 的旧固定角色 CHECK、扩为二进制比较的 VARCHAR(64)，并修复遗留 role_id 不一致。升级前备份数据库并停止旧版本写流量；不能把旧版服务回滚后直接连接已升级库作为安全回滚方案。实际部署环境的备份恢复和升级验收需独立执行。
+
+迁移 12 支持 DDL 已提交但数据修复或日志记录尚未完成时的重启恢复：初始化适配器按当前 schema 判断是否省略已完成的旧 CHECK 删除，随后继续列修改和数据修复，不改迁移 SQL/checksum，不忽略其他数据库错误。恢复测试仅在临时库注入失败并重启验证；现场仍应先备份，不手动删除迁移日志来绕过检查。

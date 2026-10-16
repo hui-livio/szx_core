@@ -55,6 +55,8 @@ struct JwtIssueRequest
     std::string subject;          ///< 用户或主体标识，对应 sub 声明。
     std::string jti;              ///< token 唯一标识，对应 jti 声明。
     std::uint64_t authzVersion{}; ///< 授权版本，用于检测权限变更。
+    std::string roleId;
+    std::uint64_t roleAuthzVersion{};
 };
 
 /** @brief JWT 验证成功后解析出的标准声明。 */
@@ -69,6 +71,8 @@ struct JwtClaims
     std::int64_t notBefore{};     ///< 生效时间，UTC Unix 时间戳。
     std::int64_t expiresAt{};     ///< 到期时间，UTC Unix 时间戳。
     std::uint64_t authzVersion{}; ///< 授权版本。
+    std::string roleId;
+    std::uint64_t roleAuthzVersion{};
 };
 
 /**

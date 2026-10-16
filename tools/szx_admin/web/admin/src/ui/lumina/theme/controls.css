@@ -1,0 +1,612 @@
+/* Aura supplies component states; these rules connect the existing Lumina layout. */
+/* Shared popup contract: never let a missing component token expose the page below. */
+.p-select-overlay,
+.p-datepicker-panel,
+.p-dialog {
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--lg-line);
+  box-shadow: var(--lg-sh-4);
+}
+
+.p-select-overlay {
+  border-radius: var(--lg-r-2xl);
+}
+
+.p-datepicker-panel {
+  border-radius: var(--lg-r-3xl);
+  padding: var(--lg-s7);
+}
+
+.p-dialog {
+  border-radius: var(--lg-r-4xl);
+}
+
+.p-component {
+  font-family: var(--lg-font-sans);
+  font-size: var(--lg-fs-sm);
+}
+
+.p-button {
+  min-height: var(--lg-h-ctrl);
+  font-size: var(--lg-fs-sm);
+}
+
+/* All primary actions share Lumina's brand gradient, not Aura's flat primary fill. */
+.p-button.primary,
+.button.primary {
+  background: var(--lg-gradient-brand);
+  color: white;
+  border-color: transparent;
+  box-shadow: 0 8px 20px -12px var(--lg-brand-500);
+}
+
+.p-button.primary:not(:disabled):hover,
+.button.primary:hover {
+  background: linear-gradient(135deg, var(--lg-brand-600), var(--lg-violet-600));
+  color: white;
+  border-color: transparent;
+}
+
+.p-button-outlined.p-button-secondary {
+  background: var(--lg-field);
+  border-color: var(--lg-line);
+  color: var(--text);
+}
+
+.p-button-outlined.p-button-secondary:not(:disabled):hover {
+  background: var(--lg-field-focus);
+  border-color: var(--lg-brand-300);
+}
+
+.p-button-text.p-button-secondary {
+  color: var(--accent);
+}
+
+.p-inputtext,
+.p-select {
+  width: 100%;
+  min-width: 0;
+  min-height: var(--lg-h-soc);
+  font-size: var(--lg-fs-sm);
+}
+
+.p-inputtext:enabled:focus {
+  background: var(--lg-field-focus);
+}
+
+/* Center the intrinsic label and arrow within Lumina's scaled minimum height.
+   Keep the label's block layout so its existing ellipsis behavior is preserved. */
+.p-select {
+  align-items: center;
+}
+
+/* Aura defaults readonly labels to 1rem; use the same scaled field size for both modes. */
+.p-select-label {
+  font-size: inherit;
+}
+
+/* The focusable label is rectangular; Aura draws the ring on the rounded Select root. */
+.p-select-label:focus-visible {
+  outline: none;
+}
+
+/* Editable Select uses one themed root, not a second rectangular native input.
+   The root owns hover/focus borders; preserve editable text and native selection. */
+.p-select > input.p-select-label {
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  caret-color: var(--accent);
+  box-shadow: none;
+}
+.p-select > input.p-select-label:focus {
+  outline: none;
+  box-shadow: none;
+}
+.p-select > input.p-select-label::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+.lumina-select-option-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--lg-s1);
+  min-width: 0;
+}
+.lumina-select-option-label {
+  font-weight: 500;
+}
+.lumina-select-option-detail {
+  color: var(--muted);
+  font-size: var(--lg-fs-xs);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.p-select-overlay {
+  font-size: var(--lg-fs-sm);
+  /* Raw Select fallback; arrow-enabled panels clip their list separately below. */
+  overflow: hidden;
+}
+
+.p-select-list-container {
+  border-radius: inherit;
+}
+
+.p-select-option {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.pagination-controls {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.p-paginator-prev,
+.p-paginator-next {
+  width: auto;
+  padding-inline: var(--lg-s5);
+  font: inherit;
+  white-space: nowrap;
+}
+
+.p-paginator-current {
+  font-size: var(--lg-fs-xs);
+  white-space: nowrap;
+}
+
+.p-dialog-mask {
+  background: rgba(20, 24, 51, 0.45);
+}
+
+.p-dialog-title {
+  overflow-wrap: anywhere;
+}
+
+.p-dialog-close-button.p-button {
+  flex-shrink: 0;
+  width: calc(var(--k) * 48px);
+  height: calc(var(--k) * 32px);
+  min-height: calc(var(--k) * 32px);
+  padding: 0;
+  border: 1px solid var(--lg-line);
+  border-radius: var(--lg-r-sm);
+  background: var(--lg-field);
+  color: var(--muted);
+}
+
+.p-dialog-close-button.p-button:not(:disabled):hover {
+  background: var(--lg-field-focus);
+  border-color: var(--lg-brand-300);
+  color: var(--accent);
+}
+
+.p-dialog-close-button.p-button:focus-visible {
+  outline: none;
+  border-color: var(--lg-brand-400);
+  box-shadow: var(--lg-ring-focus);
+}
+
+.lumina-table .p-datatable-table {
+  min-width: var(--lumina-table-min-width, 0px);
+  font-size: var(--lg-fs-sm);
+}
+
+.lumina-table .p-datatable-header-cell {
+  font-size: var(--lg-fs-2xs);
+  font-weight: var(--lg-fw-m);
+}
+
+.lumina-table .p-datatable-empty-message > td {
+  padding: 0;
+}
+
+.p-datepicker {
+  width: 100%;
+  min-width: 0;
+}
+
+.lumina-datetime-panel {
+  font-size: var(--lg-fs-lg);
+  max-width: calc(100vw - 24px);
+}
+
+.lumina-datetime-panel .p-datepicker-select-month,
+.lumina-datetime-panel .p-datepicker-select-year,
+.lumina-datetime-panel .p-datepicker-weekday,
+.lumina-datetime-panel .p-datepicker-day,
+.lumina-datetime-panel .p-datepicker-month,
+.lumina-datetime-panel .p-datepicker-year,
+.lumina-datetime-panel .p-datepicker-buttonbar .p-button {
+  font-size: inherit;
+}
+
+.lumina-datetime-panel .p-datepicker-day-view {
+  min-width: 0;
+  width: 100%;
+  font-size: inherit;
+}
+
+.lumina-datetime-panel .p-datepicker-day-cell {
+  padding: var(--lg-s1);
+}
+
+.lumina-datetime-panel .p-datepicker-time-picker {
+  font-size: var(--lg-fs-xl);
+}
+
+.lumina-datetime-panel .p-datepicker-time-picker span {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Calendar cells and navigation must not inherit the admin data table spacing. */
+.lumina-datetime-panel .p-datepicker-weekday-cell {
+  padding: var(--lg-s2) var(--lg-s1);
+  border: 0;
+  background: transparent;
+  position: static;
+}
+
+.lumina-datetime-panel .p-datepicker-day-cell {
+  border: 0;
+}
+
+.lumina-datetime-panel .p-datepicker-day-view tbody tr:hover {
+  background: transparent;
+}
+
+.lumina-datetime-panel .p-datepicker-select-month,
+.lumina-datetime-panel .p-datepicker-select-year {
+  min-height: calc(var(--k) * 32px);
+  padding: var(--lg-s2) var(--lg-s3);
+  border: 0;
+  background: transparent;
+  border-radius: var(--lg-r-sm);
+}
+
+.lumina-datetime-panel {
+  max-height: calc(100dvh - 24px);
+  overflow: auto;
+}
+
+/* Own these presentation contracts locally: a theme refresh must not collapse
+   business-table spacing or leave a modal without a visible surface. */
+.lumina-table .p-datatable-table {
+  border-collapse: collapse;
+  text-align: left;
+  color: var(--text);
+  background: var(--surface);
+}
+
+.lumina-table .p-datatable-header-cell {
+  padding: var(--lg-s6) var(--lg-s9);
+  color: var(--muted);
+  background: var(--table-header-background);
+  border: 0;
+  border-bottom: 1px solid var(--line);
+}
+
+/* PrimeVue already positions the header group. Keep the group, rather than
+   individual cells, above relative-positioned row buttons while scrolling. */
+.lumina-table .table-scroll > .p-datatable-table > .p-datatable-thead {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.lumina-table .p-datatable-tbody > tr > td {
+  padding: var(--lg-s7) var(--lg-s9);
+  border: 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.lumina-table .p-datatable-tbody > tr:hover {
+  background: var(--table-row-hover);
+}
+
+.p-dialog.lumina-dialog {
+  color: var(--text);
+  background: transparent;
+  border: 0;
+  border-radius: var(--lg-r-4xl);
+  box-shadow: none;
+}
+
+.lumina-dialog-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: inherit;
+  border-color: var(--lg-line);
+}
+
+.lumina-dialog-panel > .p-dialog-header,
+.lumina-dialog-panel > .p-dialog-footer {
+  flex-shrink: 0;
+}
+
+.p-dialog.lumina-dialog .p-dialog-header {
+  padding: var(--lg-s12) var(--lg-s12) var(--lg-s10);
+}
+
+.p-dialog.lumina-dialog .p-dialog-content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 var(--lg-s12) var(--lg-s12);
+}
+
+.lumina-datetime-panel {
+  color: var(--text);
+  background: var(--surface);
+}
+
+@media (max-width: 600px) {
+  .lumina-datetime-panel {
+    position: fixed;
+    top: 50% !important;
+    left: 50% !important;
+    transform: translate(-50%, -50%);
+    width: min(calc(var(--k) * 360px), calc(100vw - 24px));
+    min-width: 0 !important;
+  }
+}
+
+.lumina-datetime-panel .p-datepicker-day {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(var(--k) * 36px);
+  height: calc(var(--k) * 36px);
+  border-radius: var(--lg-r-full);
+}
+
+.lumina-datetime-panel .p-datepicker-day-selected {
+  background: var(--lg-brand-500);
+  color: white;
+}
+
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--lg-s8) var(--lg-s10);
+  font-size: var(--lg-fs-xs);
+  color: var(--muted);
+  gap: var(--lg-s6);
+}
+
+.lumina-dialog {
+  width: min(calc(var(--k) * 600px), calc(100vw - 32px));
+  max-height: calc(100dvh - 48px);
+}
+
+.lumina-pagination-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--lg-s3);
+}
+
+.lumina-appearance-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--lg-s2);
+}
+
+.lumina-preference-button.p-button {
+  width: var(--lg-control-px, var(--lg-h-ctrl));
+  height: var(--lg-control-px, var(--lg-h-ctrl));
+  min-height: var(--lg-control-px, var(--lg-h-ctrl));
+  padding: 0;
+  flex-shrink: 0;
+  border: 1px solid transparent;
+  border-radius: var(--lg-r-full);
+}
+
+.lumina-preference-button.p-button[aria-checked='true'],
+.lumina-preference-button.p-button[aria-checked='true']:not(:disabled):hover {
+  background: var(--lg-gradient-brand);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: var(--lumina-edge-shadow), var(--lg-sh-5);
+}
+
+.lumina-preference-button.p-button[aria-checked='true'].lumina-smooth-edge,
+.lumina-preference-button.p-button[aria-checked='true'].lumina-smooth-edge:not(:disabled):hover {
+  --lumina-edge-color: transparent;
+  box-shadow: var(--lumina-edge-shadow), var(--lg-sh-5);
+}
+
+.lumina-preference-button svg {
+  width: var(--lg-icon-px, 20px);
+  height: var(--lg-icon-px, 20px);
+}
+
+.lumina-preference-button svg path,
+.lumina-preference-button svg circle {
+  vector-effect: non-scaling-stroke;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.lumina-preference-button.p-button:not(:disabled):hover {
+  border-color: transparent;
+}
+
+.lumina-mark {
+  -webkit-user-select: none;
+  user-select: none;
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: var(--lumina-mark-size);
+  height: var(--lumina-mark-size);
+  border-radius: var(--lumina-mark-radius);
+  line-height: 1;
+  font-weight: var(--lumina-mark-font-weight);
+  font-size: var(--lumina-mark-font-size);
+  letter-spacing: 0;
+  overflow: hidden;
+}
+
+.lumina-mark-brand {
+  background: var(--lg-gradient-brand);
+  color: white;
+  border: 1px solid var(--lg-stroke);
+  box-shadow: var(--lg-sh-2);
+}
+
+.lumina-mark-soft {
+  background: var(--lg-soft-surface);
+  color: var(--accent);
+  border: 1px solid var(--lg-soft-border);
+}
+
+/* Button interaction is opt-in; static marks retain their image/span semantics. */
+.lumina-mark-button.p-button {
+  min-height: var(--lumina-mark-size);
+  padding: 0;
+}
+
+.lumina-mark-brand.p-button,
+.lumina-mark-brand.p-button:not(:disabled):hover {
+  background: var(--lg-gradient-brand);
+  color: white;
+}
+
+.lumina-mark-soft.p-button,
+.lumina-mark-soft.p-button:not(:disabled):hover {
+  background: var(--lg-soft-surface);
+  color: var(--accent);
+}
+
+.lumina-mark-button.p-button:not(:disabled):hover {
+  border-color: var(--lg-edge-hover);
+  --lumina-edge-color: var(--lg-edge-hover);
+  box-shadow: var(--lumina-edge-shadow), var(--lg-sh-2);
+}
+
+.lumina-mark-button.p-button:focus-visible {
+  outline: none;
+  border-color: var(--lg-edge-focus);
+  --lumina-edge-color: var(--lg-edge-focus);
+  box-shadow: var(--lumina-edge-shadow), var(--lg-ring-focus);
+}
+
+.lumina-popup-menu.p-menu {
+  min-width: calc(var(--k) * 160px);
+  max-width: calc(100vw - 16px);
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--lg-line);
+  border-radius: var(--lg-r-2xl);
+  box-shadow: var(--lg-sh-4);
+}
+
+.lumina-popup-menu .p-menu-list {
+  padding: var(--lg-s2);
+  border-radius: inherit;
+}
+
+/* Keyboard focus is shown by the active menu item's rounded highlight, not a
+   square native outline around the entire popup that intersects the arrow. */
+.lumina-popup-menu .p-menu-list:focus-visible {
+  outline: none;
+}
+
+.lumina-popup-menu .p-menu-item-content {
+  border-radius: var(--lg-r-xl);
+}
+
+.lumina-popup-menu .p-menu-item-link {
+  min-height: var(--lg-h-ctrl);
+  padding: var(--lg-s4) var(--lg-s6);
+  color: var(--text);
+  font-size: var(--lg-fs-sm);
+}
+
+.lumina-popup-menu .p-menu-item:not(.p-disabled) > .p-menu-item-content:hover,
+.lumina-popup-menu .p-menu-item.p-focus > .p-menu-item-content {
+  background: var(--lg-hover-surface);
+}
+
+/* The portal keeps its anchored arrow outside the rounded menu surface. */
+.lumina-popup-arrow {
+  --lumina-popup-arrow-size: calc(var(--k) * 7px);
+  overflow: visible;
+  margin-top: var(--lg-s2);
+}
+
+.lumina-popup-arrow::before {
+  content: '';
+  position: absolute;
+  left: var(--lumina-popup-anchor-x, 20px);
+  top: calc(var(--lumina-popup-arrow-size) * -0.5 - 0.5px);
+  width: var(--lumina-popup-arrow-size);
+  height: var(--lumina-popup-arrow-size);
+  border-top-left-radius: 1px;
+  background: var(--surface);
+  border-top: 1px solid var(--lg-line);
+  border-left: 1px solid var(--lg-line);
+  transform: translateX(-50%) rotate(45deg);
+  pointer-events: none;
+}
+
+.lumina-popup-arrow[data-side='top'] {
+  margin-top: calc(-1 * var(--lg-s2));
+}
+
+.lumina-popup-arrow[data-side='top']::before {
+  top: auto;
+  bottom: calc(var(--lumina-popup-arrow-size) * -0.5 - 0.5px);
+  transform: translateX(-50%) rotate(225deg);
+}
+
+/* The arrow must escape the surface, while native scrollbars remain clipped to
+   the list's rounded corners (including classic non-overlay scrollbars). */
+.p-select-overlay.lumina-popup-arrow .p-select-list-container {
+  clip-path: inset(0 round var(--lg-r-2xl));
+}
+
+.p-select-overlay.lumina-popup-arrow .p-select-header {
+  border-radius: var(--lg-r-2xl) var(--lg-r-2xl) 0 0;
+}
+
+/* Keep size controls and navigation usable when pagination wraps on mobile. */
+.pagination-actions,
+.pagination-size {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--lg-s3);
+  min-width: 0;
+}
+
+.pagination-actions {
+  justify-content: flex-end;
+  gap: var(--lg-s5);
+}
+
+.pagination-size > span,
+.pagination-size-apply {
+  white-space: nowrap;
+}
+
+.pagination-size .p-select,
+.pagination-size .pagination-size-input {
+  width: calc(var(--k) * 110px);
+  flex: none;
+}
+
+.pagination-size > small {
+  flex-basis: 100%;
+  color: var(--danger-ink);
+}

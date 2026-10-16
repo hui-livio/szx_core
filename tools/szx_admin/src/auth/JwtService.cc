@@ -249,12 +249,13 @@ auto JwtService::issue(const JwtIssueRequest &request, const JwtSigningKey &key)
 {
     try
     {
-        if (!validConfig(config_) || request.subject.empty() || request.jti.empty() || !validKey(key, true))
+        if (!validConfig(config_) || request.subject.empty() || request.jti.empty() || request.roleId.empty() || !validKey(key, true))
             return failure(JwtError::InvalidArgument, "Invalid JWT request or configuration.");
 
         const auto now      = std::chrono::system_clock::now();
         const auto issuedAt = std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch()).count();
         if (request.authzVersion > static_cast<std::uint64_t>((std::numeric_limits<std::int64_t>::max)()) ||
+            request.roleAuthzVersion > static_cast<std::uint64_t>((std::numeric_limits<std::int64_t>::max)()) ||
             config_.lifetimeSeconds > (std::numeric_limits<std::int64_t>::max)() - issuedAt)
             return failure(JwtError::InvalidArgument, "JWT numeric value is out of range.");
         const auto expiresAt   = issuedAt + config_.lifetimeSeconds;
@@ -274,7 +275,11 @@ auto JwtService::issue(const JwtIssueRequest &request, const JwtSigningKey &key)
                            .set_expires_at(expiresDate)
                            .set_payload_claim("authz_version",
                                               jwt::claim(jwt::traits::kazuho_picojson::value_type(
-                                                  jwt::traits::kazuho_picojson::integer_type(request.authzVersion))));
+                                                  jwt::traits::kazuho_picojson::integer_type(request.authzVersion))))
+                           .set_payload_claim("role_id", jwt::claim(request.roleId))
+                           .set_payload_claim("role_authz_version",
+                                              jwt::claim(jwt::traits::kazuho_picojson::value_type(
+                                                  jwt::traits::kazuho_picojson::integer_type(request.roleAuthzVersion))));
 
         std::error_code error;
         const auto token = builder.sign(Ps256ServiceAlgorithm{crypto_, key.privateKey, true}, error);
@@ -324,11 +329,13 @@ auto JwtService::verify(std::string_view token, const JwtSigningKey &key) -> SZX
         }
 
         if (!decoded.has_subject() || !decoded.has_id() || !decoded.has_issued_at() || !decoded.has_not_before() ||
-            !decoded.has_expires_at() || !decoded.has_payload_claim("authz_version"))
+            !decoded.has_expires_at() || !decoded.has_payload_claim("authz_version") ||
+            !decoded.has_payload_claim("role_id") || !decoded.has_payload_claim("role_authz_version"))
             return SZX::COMMON::Result<JwtClaims>::Failure(static_cast<int>(JwtError::ClaimsInvalid), "JWT is missing required claims.");
 
         const auto authzVersion = decoded.get_payload_claim("authz_version").as_integer();
-        if (authzVersion < 0)
+        const auto roleAuthzVersion = decoded.get_payload_claim("role_authz_version").as_integer();
+        if (authzVersion < 0 || roleAuthzVersion < 0 || decoded.get_payload_claim("role_id").as_string().empty())
             return SZX::COMMON::Result<JwtClaims>::Failure(static_cast<int>(JwtError::ClaimsInvalid), "Invalid JWT authorization version.");
 
         JwtClaims claims{.keyId        = decoded.get_key_id(),
@@ -338,8 +345,10 @@ auto JwtService::verify(std::string_view token, const JwtSigningKey &key) -> SZX
                          .jti          = decoded.get_id(),
                          .issuedAt     = toSeconds(decoded.get_issued_at()),
                          .notBefore    = toSeconds(decoded.get_not_before()),
-                         .expiresAt    = toSeconds(decoded.get_expires_at()),
-                         .authzVersion = static_cast<std::uint64_t>(authzVersion)};
+                         .expiresAt        = toSeconds(decoded.get_expires_at()),
+                         .authzVersion     = static_cast<std::uint64_t>(authzVersion),
+                         .roleId           = decoded.get_payload_claim("role_id").as_string(),
+                         .roleAuthzVersion = static_cast<std::uint64_t>(roleAuthzVersion)};
         return SZX::COMMON::Result<JwtClaims>::Success(std::move(claims));
     } catch (const std::bad_alloc &)
     {

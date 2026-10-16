@@ -1,4 +1,4 @@
-file(GLOB SZX_CAMERA_CORE_SOURCES CONFIGURE_DEPENDS
+file(GLOB SZX_CAMERA_CORE_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cc")
 add_library(szx_camera SHARED ${SZX_CAMERA_CORE_SOURCES})
 add_library(szx::camera ALIAS szx_camera)

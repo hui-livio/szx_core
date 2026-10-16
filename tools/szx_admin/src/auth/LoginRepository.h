@@ -2,6 +2,7 @@
 
 #include "Result.hpp"
 
+#include <cstdint>
 #include <optional>
 #include <string>
 
@@ -10,9 +11,12 @@ namespace SZX::ADMIN::AUTH
 struct LoginUser
 {
     std::string id;
-    std::optional<std::string> uid;
-    std::optional<std::string> username;
+    std::string login_identifier;
+    std::string login_identifier_canonical;
+    std::string identifier_type;
     std::string display_name;
+    std::optional<std::string> role_id;
+    std::uint32_t role_authz_version{};
     std::string password_hash;
     std::string role;
     std::string status;
@@ -49,8 +53,12 @@ class LoginRepository
 {
 public:
     virtual ~LoginRepository() = default;
-    virtual auto find(const std::string &uid, const std::string &username) -> SZX::COMMON::Result<std::optional<LoginUser>> = 0;
+    virtual auto find(const std::string &canonicalValue, const std::string &identifierType) -> SZX::COMMON::Result<std::optional<LoginUser>> = 0;
     virtual auto findById(const std::string &id) -> SZX::COMMON::Result<std::optional<LoginUser>>                           = 0;
+    virtual auto roleAuthzVersion(const std::string &) -> SZX::COMMON::Result<std::uint32_t>
+    {
+        return SZX::COMMON::Result<std::uint32_t>::Success(1);
+    }
     virtual auto saveState(const LoginUser &user) -> SZX::COMMON::Result<void>                                              = 0;
     /** Revoke every unrevoked session of a user; reason is stored for diagnostics. */
     virtual auto revokeRefresh(const std::string &userId, const std::string &now, const std::string &reason)

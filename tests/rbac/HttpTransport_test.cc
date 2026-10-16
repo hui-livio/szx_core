@@ -535,3 +535,38 @@ TEST(AdminHttpIntegrationTest, EnforcesConfiguredConnectionLimitAndContainsBindF
     EXPECT_EQ(status(request(collision.port(), "GET", "/api/v1/health")), 200);
     EXPECT_TRUE(collision.stop().ok);
 }
+
+TEST(AdminHttpIntegrationTest, ApiTimingCoversHandlersErrorsAndDisabledAccessLogging)
+{
+    for (const bool accessLog : {false, true})
+    {
+        SCOPED_TRACE(accessLog);
+        auto config      = testConfig();
+        config.accessLog = accessLog;
+        HttpTransport transport(config);
+        ASSERT_TRUE(transport
+                        .registerApiRoute("GET", "/timing-test", [](const auto &input)
+                                          { return RestApi::error(ErrorCode::DatabaseUnavailable, input.requestId); })
+                        .ok);
+        ASSERT_TRUE(transport.start().ok);
+        for (const auto &[path, expectedStatus] :
+             {std::pair{"/api/v1/health", 200}, {"/api/v1/timing-test", 503}, {"/api/v1/missing", 404}})
+        {
+            SCOPED_TRACE(path);
+            const auto response = request(transport.port(), "GET", path, {}, idHeader);
+            EXPECT_EQ(status(response), expectedStatus);
+            const auto headerBegin = response.find("Server-Timing: app;dur=");
+            ASSERT_NE(headerBegin, response.npos);
+            const auto headerEnd = response.find("\r\n", headerBegin);
+            const auto timing    = response.substr(headerBegin, headerEnd - headerBegin);
+            const auto app       = std::stoll(timing.substr(timing.find("app;dur=") + 8));
+            const auto log       = std::stoll(timing.substr(timing.find("access_log;dur=") + 15));
+            const auto server    = std::stoll(timing.substr(timing.find("server;dur=") + 11));
+            EXPECT_GE(app, 0);
+            EXPECT_GE(log, 0);
+            EXPECT_EQ(server, app + log);
+            EXPECT_NE(response.find("X-Request-ID: test-id"), response.npos);
+        }
+        EXPECT_TRUE(transport.stop().ok);
+    }
+}

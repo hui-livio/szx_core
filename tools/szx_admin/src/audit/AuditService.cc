@@ -5,8 +5,13 @@
 #include "../user/UserRepository.h"
 #include "../user/UserValidation.h"
 
+#include "../rbac/PermissionCodes.h"
+#include "../rbac/RoleRepository.h"
+
 #include "SzxAdmin/Infra/ErrorCode.h"
-#include "SzxAdmin/Policy/Policy.h"
+#include "Logger.h"
+
+#include <chrono>
 
 namespace SZX::ADMIN::AUDIT
 {
@@ -24,7 +29,7 @@ auto failed(ErrorCode code) -> Result<T>
 
 AuditService::AuditService(INFRA::DatabasePool &database, AUTH::LoginService &auth) :
     database_(database),
-    auth_(auth)
+    authorization_(auth)
 {
 }
 
@@ -37,6 +42,9 @@ auto AuditService::query(const USER::ActorContext &context, const AuditQuery &qu
 {
     try
     {
+        const auto started = std::chrono::steady_clock::now();
+        LOGM_DEBUG("szx_admin.audit", "event=query_begin request_id={} page={} page_size={} actor_search={} event_search={}",
+                   context.requestId, query.page, query.pageSize, !query.actorSearch.empty(), !query.eventSearch.empty());
         const auto from = query.from.empty() ? std::optional<std::string>{std::string{}} : USER::databaseTimestamp(query.from);
         const auto to   = query.to.empty() ? std::optional<std::string>{std::string{}} : USER::databaseTimestamp(query.to);
         if (!from || !to || query.page == 0 || query.pageSize == 0 ||
@@ -54,17 +62,16 @@ auto AuditService::query(const USER::ActorContext &context, const AuditQuery &qu
                 auto *repository = connection.auditRepository();
                 if (!users || !repository)
                     return failed<void>(ErrorCode::DatabaseQueryFailed);
-                const auto claims = auth_.verifyAccess(context.accessToken);
-                if (!claims.ok || !USER::validUuid(claims.value.subject))
-                    return failed<void>(claims.ok ? ErrorCode::AuthRequired : static_cast<ErrorCode>(claims.error));
-                const auto found = users->findById(claims.value.subject);
-                if (!found.ok)
-                    return Result<void>::Failure(found.error, {});
-                if (!found.value || found.value->status != "active" || found.value->authz_version <= 0 ||
-                    static_cast<std::uint64_t>(found.value->authz_version) != claims.value.authzVersion)
-                    return failed<void>(ErrorCode::AuthRequired);
-                if ((found.value->role == "super_admin" && found.value->force_password_change) ||
-                    !POLICY::allows(found.value->role, POLICY::Capability::AuditRead))
+                auto *roles      = connection.roleRepository();
+                if (!roles)
+                    return failed<void>(ErrorCode::DatabaseQueryFailed);
+                const auto actor = authorization_.resolve(context, *users, false, roles);
+                if (!actor.ok)
+                    return Result<void>::Failure(actor.error, {});
+                const auto allowed = authorization_.allows(*roles, actor.value.user.role, RBAC::PERMISSIONS::AuditRead);
+                if (!allowed.ok)
+                    return Result<void>::Failure(allowed.error, {});
+                if (!allowed.value)
                     return failed<void>(ErrorCode::Forbidden);
 
                 AuditFilter filter{.from        = *from,
@@ -86,6 +93,9 @@ auto AuditService::query(const USER::ActorContext &context, const AuditQuery &qu
                 output = queried.value;
                 return Result<void>::Success();
             });
+        const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - started);
+        LOGM_DEBUG("szx_admin.audit", "event=query_complete request_id={} duration_microseconds={} ok={} total={} items={} error={}",
+                   context.requestId, elapsed.count(), operation.ok, output.total, output.items.size(), operation.error);
         return operation.ok ? Result<AuditPage>::Success(std::move(output)) : Result<AuditPage>::Failure(operation.error, {});
     } catch (...)
     {

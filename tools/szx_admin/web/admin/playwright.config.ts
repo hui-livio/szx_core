@@ -5,6 +5,7 @@ export default defineConfig({
   use: {
     baseURL: 'http://localhost:5183',
     browserName: 'chromium',
+    locale: 'zh-CN',
     channel: process.env.PLAYWRIGHT_CHANNEL || undefined,
     headless: true,
   },

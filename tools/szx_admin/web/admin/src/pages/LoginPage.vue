@@ -1,33 +1,48 @@
 <script setup lang="ts">
+import { LuminaMark, LuminaPanel } from '../ui/lumina'
 import LoginForm from '../components/auth/LoginForm.vue'
 import { useLoginViewModel } from '../composables/useAuthViewModel'
+import { useI18n } from 'vue-i18n'
+import UiPreferences from '../components/UiPreferences.vue'
 const { form, busy, error, notice, submit } = useLoginViewModel()
+const { t } = useI18n()
 </script>
 <template>
   <main class="login-page">
+    <div class="login-language"><UiPreferences /></div>
     <section class="login-story">
       <div class="brand">
-        <span class="brand-mark">S</span>SZX <span class="brand-light">ADMIN</span>
+        <LuminaMark class="brand-mark" />SZX <span class="brand-light">ADMIN</span>
       </div>
       <div class="login-copy">
-        <p class="eyebrow">IDENTITY & ACCESS</p>
-        <h1>每个身份，<br />各有所属。</h1>
-        <p>在同一个控制台中管理用户、分配角色，<br />让每一次访问和操作清晰可查。</p>
+        <p class="eyebrow">{{ t('login.eyebrow') }}</p>
+        <h1>
+          <template v-for="(line, index) in t('login.heroTitle').split('\n')" :key="line">
+            {{ line }}<br v-if="index < t('login.heroTitle').split('\n').length - 1" />
+          </template>
+        </h1>
+        <p>
+          <template v-for="(line, index) in t('login.heroSubtitle').split('\n')" :key="line">
+            {{ line }}<br v-if="index < t('login.heroSubtitle').split('\n').length - 1" />
+          </template>
+        </p>
         <div class="role-path">
-          <span>操作员</span><i /><span>工程师</span><i /><span>管理员</span>
+          <span>{{ t('roles.operator') }}</span
+          ><i /><span>{{ t('roles.engineer') }}</span
+          ><i /><span>{{ t('roles.admin') }}</span>
         </div>
       </div>
-      <small>SZX · 身份与访问管理</small>
+      <small>SZX · {{ t('shell.identityManagement') }}</small>
     </section>
     <section class="login-panel">
-      <div class="login-card">
-        <p class="eyebrow">SZX 管理控制台</p>
-        <h2>欢迎登录</h2>
-        <p class="subtitle">使用你的账号继续</p>
+      <LuminaPanel class="login-card">
+        <p class="eyebrow">{{ t('login.console') }}</p>
+        <h2>{{ t('login.welcome') }}</h2>
+        <p class="subtitle">{{ t('login.continue') }}</p>
         <LoginForm v-model="form" :busy="busy" :error="error" :notice="notice" @submit="submit" />
-        <p class="login-help">无法登录？请联系管理员检查账号状态。</p>
-      </div>
-      <small>仅限已授权用户访问</small>
+        <p class="login-help">{{ t('login.help') }}</p>
+      </LuminaPanel>
+      <small>{{ t('login.authorizedOnly') }}</small>
     </section>
   </main>
 </template>

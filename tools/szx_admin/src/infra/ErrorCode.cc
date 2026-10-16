@@ -60,6 +60,20 @@ auto errorCodeName(ErrorCode code) noexcept -> std::string_view
         return "BEHAVIOR_EVENT_QUEUE_FULL";
     case ErrorCode::BehaviorEventQueueClosed:
         return "BEHAVIOR_EVENT_QUEUE_CLOSED";
+    case ErrorCode::PermissionCodeConflict:
+        return "PERMISSION_CODE_CONFLICT";
+    case ErrorCode::RoleCodeConflict:
+        return "ROLE_CODE_CONFLICT";
+    case ErrorCode::RoleInUse:
+        return "ROLE_IN_USE";
+    case ErrorCode::ProtectedRole:
+        return "PROTECTED_ROLE";
+    case ErrorCode::PermissionInUse:
+        return "PERMISSION_IN_USE";
+    case ErrorCode::ProtectedPermission:
+        return "PROTECTED_PERMISSION";
+    case ErrorCode::SuperAdminSecurityFloor:
+        return "SUPER_ADMIN_SECURITY_FLOOR";
     case ErrorCode::InternalFailure:
         return "INTERNAL_FAILURE";
     }
@@ -78,6 +92,13 @@ auto errorCodeHttpStatus(ErrorCode code) noexcept -> int
         return 403;
     case ErrorCode::ResourceNotFound:
         return 404;
+    case ErrorCode::PermissionCodeConflict:
+    case ErrorCode::RoleCodeConflict:
+    case ErrorCode::RoleInUse:
+    case ErrorCode::ProtectedRole:
+    case ErrorCode::PermissionInUse:
+    case ErrorCode::ProtectedPermission:
+    case ErrorCode::SuperAdminSecurityFloor:
     case ErrorCode::ConflictVersion:
     case ErrorCode::UserIdentityConflict:
     case ErrorCode::LastSuperAdminProtected:
@@ -170,6 +191,20 @@ auto defaultErrorMessage(ErrorCode code) noexcept -> std::string_view
         return "The behavior event queue is full.";
     case ErrorCode::BehaviorEventQueueClosed:
         return "The behavior event queue is not accepting events.";
+    case ErrorCode::PermissionCodeConflict:
+        return "The permission code is already in use.";
+    case ErrorCode::RoleCodeConflict:
+        return "The role code is already in use.";
+    case ErrorCode::RoleInUse:
+        return "The role is still referenced by users.";
+    case ErrorCode::ProtectedRole:
+        return "The role is protected or archived.";
+    case ErrorCode::PermissionInUse:
+        return "The permission is still assigned to a role.";
+    case ErrorCode::ProtectedPermission:
+        return "The permission is protected or archived.";
+    case ErrorCode::SuperAdminSecurityFloor:
+        return "Required super-administrator permissions or management scopes cannot be removed.";
     case ErrorCode::InternalFailure:
         return "An internal server error occurred.";
     }

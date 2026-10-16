@@ -88,4 +88,19 @@ auto canonicalIdentifier(std::string_view input, bool username) -> SZX::COMMON::
         return Result<std::string>::Failure(static_cast<int>(INFRA::ErrorCode::InternalFailure), {});
     }
 }
+
+auto normalizeLoginIdentifier(std::string_view input, IdentifierType type) -> SZX::COMMON::Result<LoginIdentifier>
+{
+    using SZX::COMMON::Result;
+    const auto display = canonicalIdentifier(input, false);
+    if (!display.ok)
+        return Result<LoginIdentifier>::Failure(display.error, {});
+    // V1.2 gives UID and username one uniqueness domain. Reuse the same
+    // invariant-lowercase and Unicode-normalization path for both types.
+    const auto canonical = canonicalIdentifier(input, true);
+    if (!canonical.ok)
+        return Result<LoginIdentifier>::Failure(canonical.error, {});
+    return Result<LoginIdentifier>::Success(
+        LoginIdentifier{.displayValue = std::move(display.value), .canonicalValue = std::move(canonical.value), .type = type});
+}
 } // namespace SZX::ADMIN::AUTH

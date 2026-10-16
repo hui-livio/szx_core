@@ -1,16 +1,29 @@
 <script setup lang="ts">
-defineProps<{ page: number; pageCount: number; total: number; busy: boolean }>()
-const emit = defineEmits<{ change: [page: number] }>()
+import { LuminaPagination } from '../ui/lumina'
+import { useI18n } from 'vue-i18n'
+const { t } = useI18n()
+defineProps<{ page: number; pageSize: number; pageCount: number; total: number; busy: boolean }>()
+const emit = defineEmits<{ change: [page: number]; 'change:size': [size: number] }>()
 </script>
 <template>
-  <footer class="pagination" aria-label="分页">
-    <span>共 {{ total }} 条记录</span>
-    <div class="actions">
-      <button :disabled="busy || page <= 1" @click="emit('change', page - 1)">上一页</button
-      ><span>{{ page }} / {{ pageCount }}</span
-      ><button :disabled="busy || page >= pageCount" @click="emit('change', page + 1)">
-        下一页
-      </button>
-    </div>
-  </footer>
+  <LuminaPagination
+    :page="page"
+    :page-size="pageSize"
+    :page-count="pageCount"
+    :total="total"
+    :busy="busy"
+    :page-size-options="[10, 20, 50, 100]"
+    :min-page-size="1"
+    :max-page-size="100"
+    :page-size-label="t('common.pageSize')"
+    :page-size-custom-label="t('common.customPageSize')"
+    :page-size-apply-label="t('common.applyPageSize')"
+    :page-size-hint="t('common.pageSizeHint', { min: 1, max: 100 })"
+    :summary="t('common.totalRecords', { count: total })"
+    :label="t('common.pagination')"
+    :previous-label="t('common.previous')"
+    :next-label="t('common.next')"
+    @change="emit('change', $event)"
+    @change:size="emit('change:size', $event)"
+  />
 </template>

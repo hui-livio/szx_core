@@ -1,52 +1,60 @@
 <script setup lang="ts">
+import {
+  LuminaButton as Button,
+  LuminaTable as DataTable,
+  LuminaColumn as Column,
+} from '../../ui/lumina'
 import type { AuditLog } from '../../api/types'
 import type { AuditLogView } from '../../composables/useLogsViewModel'
 import { formatTime, resultLabels } from '../../domain'
+import { useI18n } from 'vue-i18n'
+const { t } = useI18n()
 defineProps<{ logs: AuditLogView[]; busy: boolean; failed: boolean }>()
 const emit = defineEmits<{ details: [log: AuditLog] }>()
 </script>
 <template>
-  <div class="table-scroll" :aria-busy="busy">
-    <table>
-      <thead>
-        <tr>
-          <th>事件 / 请求 ID</th>
-          <th>结果</th>
-          <th>用户名</th>
-          <th>发生时间</th>
-          <th>详情</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-for="log in logs" :key="log.id">
-          <td>
-            <strong>{{ log.eventLabel }}</strong>
-            <small class="identity"
-              >事件代码：<span class="mono">{{ log.event_name }}</span></small
-            >
-            <small class="identity"
-              >请求 ID：<span class="mono">{{ log.request_id }}</span></small
-            >
-          </td>
-          <td>
-            <span class="status-badge" :class="log.result">{{ resultLabels[log.result] }}</span>
-          </td>
-          <td>{{ log.actorUsername }}</td>
-          <td class="time-cell">{{ formatTime(log.created_at) }}</td>
-          <td><button class="text-button" @click="emit('details', log)">查看详情</button></td>
-        </tr>
-        <tr v-if="!logs.length">
-          <td colspan="5" class="empty">
-            {{
-              busy
-                ? '正在加载日志…'
-                : failed
-                  ? '加载失败，请重试。'
-                  : '没有匹配的日志。请调整时间或筛选条件。'
-            }}
-          </td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
+  <DataTable
+    :value="logs"
+    data-key="id"
+    class="admin-table"
+    min-width="calc(var(--k) * 780px)"
+    :pt="{ tableContainer: { class: 'table-scroll', 'aria-busy': busy } }"
+  >
+    <Column :header="`${t('common.event')} / ${t('common.requestId')}`">
+      <template #body="{ data }: { data: AuditLogView }">
+        <strong>{{ data.eventLabel }}</strong>
+        <small class="identity"
+          >{{ t('audit.eventCode') }}：<span class="mono">{{ data.event_name }}</span></small
+        >
+        <small class="identity"
+          >{{ t('common.requestId') }}：<span class="mono">{{ data.request_id }}</span></small
+        >
+      </template>
+    </Column>
+    <Column :header="t('audit.result')">
+      <template #body="{ data }: { data: AuditLogView }">
+        <span class="status-badge" :class="data.result">{{ t(resultLabels[data.result]) }}</span>
+      </template>
+    </Column>
+    <Column :header="t('common.loginIdentifier')">
+      <template #body="{ data }: { data: AuditLogView }">{{ data.actorUsername }}</template>
+    </Column>
+    <Column :header="t('common.time')" body-class="time-cell">
+      <template #body="{ data }: { data: AuditLogView }">{{
+        formatTime(data.created_at)
+      }}</template>
+    </Column>
+    <Column :header="t('common.details')">
+      <template #body="{ data }: { data: AuditLogView }">
+        <Button class="text-button" @click="emit('details', data)" type="button" variant="text">
+          {{ t('common.details') }}
+        </Button>
+      </template>
+    </Column>
+    <template #empty>
+      <div class="empty">
+        {{ busy ? t('audit.loadingLogs') : failed ? t('audit.failed') : t('audit.emptyLogs') }}
+      </div>
+    </template>
+  </DataTable>
 </template>

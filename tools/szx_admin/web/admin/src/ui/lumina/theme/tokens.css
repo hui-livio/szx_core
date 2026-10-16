@@ -1,0 +1,93 @@
+:root {
+  font-family: var(--lg-font-sans);
+  color: var(--text);
+  background: var(--bg);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  --ink: var(--text);
+  --accent: var(--lg-brand-700);
+  --muted: var(--lg-n-600);
+  --line: var(--lg-line);
+  --surface: var(--lg-n-0);
+  --success-ink: #087653;
+  --warning-ink: #895309;
+  --danger-ink: #b42332;
+  --lg-info-surface: var(--lg-brand-50);
+  --lg-info-border: var(--lg-brand-200);
+  --lg-info-ink: var(--accent);
+  --table-header-background: var(--lg-n-50);
+  --table-row-hover: var(--lg-brand-50);
+  --lg-hover-surface: var(--lg-brand-50);
+  --lg-hover-border: var(--lg-brand-200);
+  --lg-active-surface: linear-gradient(135deg, var(--lg-brand-50), var(--lg-violet-50));
+  --lg-active-border: var(--lg-brand-200);
+  --lg-soft-surface: var(--lg-brand-100);
+  --lg-soft-border: var(--lg-stroke);
+  --lg-control-ring: var(--lg-brand-200);
+  --lg-control-halo: rgba(125, 139, 255, 0.04);
+  --lg-scroll-thumb: rgba(107, 105, 184, 0.44);
+  --lg-scroll-thumb-hover: rgba(107, 105, 184, 0.7);
+  --lg-edge-px: 1px;
+  --lg-edge-blur: 1.25px;
+  --lg-edge-hover: rgba(125, 139, 255, 0.72);
+  --lg-edge-focus: rgba(125, 139, 255, 0.9);
+}
+
+/* Lite is the default from the first paint, including component pseudo-elements. */
+html:not([data-fx='full']) *,
+html:not([data-fx='full']) *::before,
+html:not([data-fx='full']) *::after {
+  animation: none !important;
+  transition: none !important;
+  scroll-behavior: auto !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+.lg-bg {
+  z-index: -1;
+  background: var(--bg);
+}
+
+.lg-orb {
+  opacity: 0.32;
+}
+
+.lg-grid {
+  opacity: 0.2;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --accent: var(--lg-brand-300);
+  --lg-scroll-thumb: rgba(156, 162, 225, 0.44);
+  --lg-scroll-thumb-hover: rgba(177, 183, 245, 0.72);
+  --muted: #8b92b8;
+  --success-ink: #6ee7b7;
+  --warning-ink: #fcd34d;
+  --danger-ink: #fda4af;
+  --lg-info-surface: rgba(91, 108, 255, 0.14);
+  --lg-info-border: rgba(125, 139, 255, 0.36);
+  --lg-info-ink: var(--lg-brand-200);
+  --table-header-background: var(--lg-n-800);
+  --table-row-hover: var(--lg-n-800);
+  --surface: var(--lg-n-900);
+  --lg-hover-surface: var(--lg-n-800);
+  --lg-hover-border: var(--lg-brand-700);
+  --lg-active-surface: linear-gradient(135deg, var(--lg-brand-900), var(--lg-violet-900));
+  --lg-active-border: var(--lg-brand-700);
+  --lg-soft-surface: var(--lg-brand-900);
+  --lg-soft-border: var(--lg-brand-700);
+  --lg-control-ring: rgba(125, 139, 255, 0.55);
+  --lg-control-halo: rgba(125, 139, 255, 0.1);
+  --lg-edge-hover: rgba(125, 139, 255, 0.56);
+  --lg-edge-focus: rgba(125, 139, 255, 0.78);
+}
