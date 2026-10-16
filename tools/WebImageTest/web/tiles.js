@@ -1,4 +1,4 @@
-import { imageUrl } from './images.js'
+import { rawTile } from './images.js'
 
 export const TILE_CACHE_LIMIT = 64
 export const VISIBLE_TILE_LIMIT = 48
@@ -44,7 +44,7 @@ export function visibleTiles(view, info) {
   }
 }
 
-/** Four in-flight tile requests and a 64-bitmap LRU; no whole-image download. */
+/** Four in-flight tile requests and a 64-image LRU; no whole-image download. */
 export class TileLayer {
   cache = new Map()
   pending = new Map()
@@ -64,7 +64,6 @@ export class TileLayer {
     this.generation++
     for (const controller of this.pending.values()) controller.abort()
     this.pending.clear()
-    for (const tile of this.cache.values()) tile.bitmap.close?.()
     this.cache.clear()
     this.failed.clear()
     this.wanted = []
@@ -103,25 +102,15 @@ export class TileLayer {
     }
   }
   async load(tile, controller, generation) {
-    let bitmap
+    let image
     try {
-      const response = await fetch(imageUrl(`/api/image/tile/${tile.key}`, this.info.name), {
-        signal: controller.signal,
-        cache: 'no-store',
-      })
-      if (!response.ok || !response.headers.get('content-type')?.startsWith('image/png'))
-        throw new Error('Tile unavailable')
-      const blob = await response.blob()
-      if (blob.size > 4 * 1024 * 1024) throw new Error('Tile exceeds budget')
-      bitmap = await createImageBitmap(blob, { premultiplyAlpha: 'none' })
-      if (bitmap.width > this.info.tile_size || bitmap.height > this.info.tile_size)
-        throw new Error('Invalid tile size')
+      const info = this.info
+      image = await rawTile(`/api/image/tile/${tile.key}`, info.name, info.id, controller.signal)
       if (this.disposed || generation !== this.generation || controller.signal.aborted) return
-      this.cache.set(tile.key, { ...tile, bitmap })
-      bitmap = null
+      this.cache.set(tile.key, { ...tile, image })
+      image = null
       while (this.cache.size > TILE_CACHE_LIMIT) {
         const oldest = this.cache.keys().next().value
-        this.cache.get(oldest).bitmap.close?.()
         this.cache.delete(oldest)
       }
       this.invalidate()
@@ -129,7 +118,6 @@ export class TileLayer {
       if (generation === this.generation && !controller.signal.aborted) this.failed.add(tile.key)
       // Keep the preview visible; do not spin in a retry/render loop on failures.
     } finally {
-      bitmap?.close?.()
       if (this.pending.get(tile.key) === controller) this.pending.delete(tile.key)
       if (generation === this.generation && !this.disposed) this.pump()
     }

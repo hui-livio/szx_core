@@ -1,19 +1,23 @@
-import { Viewport, MAX_IMAGE_BYTES, MAX_IMAGE_PIXELS } from './viewport.js'
+import { Viewport } from './viewport.js'
 import { createRenderer } from './renderer.js'
 import { TileLayer } from './tiles.js'
-import { imageUrl, metadata, fullImage, MAX_FULL_IMAGE_BYTES } from './images.js'
+import { loadBackend, rawImage } from './images.js'
 
 const $ = (id) => document.getElementById(id)
 const host = $('viewport')
 const status = $('status')
 const view = new Viewport()
 let renderer
-let bitmap = null
+let image = null
 let frame = 0
 let controller
 let sequence = 0
 let lost = false
 let loading = false
+let backendLoading = false
+let backendController
+let backendSequence = 0
+let readyInfo = null
 let disposed = false
 let catalogReady = false
 let listLoading = false
@@ -30,8 +34,9 @@ function setStatus(text, error = false) {
 }
 function syncButtons() {
   for (const id of ['zoom-in', 'zoom-out', 'fit-image', 'actual-size'])
-    $(id).disabled = !bitmap || lost
-  $('load-image').disabled = loading || lost || !catalogReady
+    $(id).disabled = !image || lost
+  $('load-backend').disabled = backendLoading || loading || !catalogReady || lost
+  $('load-image').disabled = loading || backendLoading || lost || !catalogReady || !readyInfo
   $('image-select').disabled = !catalogReady || lost
   $('refresh-images').disabled = listLoading
   $('display-mode').disabled = lost
@@ -49,7 +54,7 @@ function draw() {
     renderer.setTiles(suspended ? [] : tiles.update(view))
     renderer.draw(view)
   }
-  $('zoom-value').textContent = bitmap ? `${(view.zoom * 100).toFixed(1)}%` : '—'
+  $('zoom-value').textContent = image ? `${(view.zoom * 100).toFixed(1)}%` : '—'
 }
 function invalidate() {
   if (!frame && !disposed && !lost && !document.hidden) frame = requestAnimationFrame(draw)
@@ -71,9 +76,9 @@ function attachContextEvents() {
   canvas.addEventListener('webglcontextrestored', () => {
     if (renderer.canvas !== canvas || disposed) return
     try {
-      // Context restoration invalidates all old GPU objects; re-create from the retained bitmap.
+      // Context restoration invalidates all old GPU objects; re-create from the retained image.
       renderer = createRenderer(canvas)
-      if (bitmap) renderer.setImage(bitmap)
+      if (image) renderer.setImage(image)
       lost = false
       $('renderer-name').textContent = renderer.name
       setStatus('绘制器已恢复。')
@@ -90,25 +95,20 @@ function attachContextEvents() {
 function useCanvasFallback() {
   renderer.dispose()
   renderer = createRenderer(renderer.canvas, true)
-  if (bitmap) renderer.setImage(bitmap)
+  if (image) renderer.setImage(image)
   $('renderer-name').textContent = renderer.name
   setStatus('已切换 Canvas2D，缩放与平移仍可使用。')
 }
 
-async function decode(blob) {
-  if (typeof createImageBitmap === 'function')
-    return createImageBitmap(blob, { premultiplyAlpha: 'none' })
-  const url = URL.createObjectURL(blob)
-  try {
-    const image = new Image()
-    image.src = url
-    await image.decode()
-    return image
-  } finally {
-    URL.revokeObjectURL(url)
-  }
-}
 function stopSelection() {
+  backendSequence++
+  backendController?.abort()
+  backendLoading = false
+  readyInfo = null
+  host.dataset.backendState = 'not-loaded'
+  stopTransfer()
+}
+function stopTransfer() {
   sequence++
   controller?.abort()
   loading = false
@@ -172,72 +172,63 @@ async function refreshImages() {
   }
 }
 
-async function loadImage() {
+async function prepareBackend() {
   stopSelection()
-  const current = ++sequence
+  const current = ++backendSequence
   const name = $('image-select').value
+  backendController = new AbortController()
+  backendLoading = true
+  host.dataset.backendState = 'loading'
+  syncButtons()
+  setStatus('后端正在读取、解码并转换为连续 BGRA8…')
+  try {
+    const info = await loadBackend(name, backendController.signal)
+    if (disposed || current !== backendSequence) return
+    readyInfo = { ...info, name }
+    host.dataset.backendState = 'ready'
+    host.dataset.backendId = info.id
+    setStatus(
+      `后端 BGRA8 已加载：${info.width} × ${info.height}，${(info.byte_length / 1048576).toFixed(1)} MiB。点击获取内存图片。`,
+    )
+  } catch (error) {
+    if (!disposed && current === backendSequence && error.name !== 'AbortError') {
+      host.dataset.backendState = 'failed'
+      setStatus(error.message || '后端 BGRA8 加载失败。', true)
+    }
+  } finally {
+    if (current === backendSequence) {
+      backendLoading = false
+      syncButtons()
+    }
+  }
+}
+
+async function loadImage() {
+  if (!readyInfo || readyInfo.name !== $('image-select').value) return
+  stopTransfer()
+  const current = ++sequence
+  const info = readyInfo
+  const name = info.name
   const mode = $('display-mode').value
+  const tiled = mode === 'tiles' && info.tiled
   controller = new AbortController()
   loading = true
   syncButtons()
-  setStatus('正在请求并解码内存图片…')
-  let next = null
+  setStatus('正在获取已解码的 BGRA8 原始字节…')
   try {
-    const info = await metadata(name, controller.signal)
-    if (current !== sequence || disposed) return
-    const tiled = mode === 'tiles' && info.tiled
-    if (
-      !Number.isSafeInteger(info.width) ||
-      !Number.isSafeInteger(info.height) ||
-      info.width < 1 ||
-      info.height < 1 ||
-      info.width * info.height > MAX_IMAGE_PIXELS
-    )
-      throw new Error('原图尺寸无效或超出像素上限。')
-    if (
-      tiled &&
-      (!Number.isInteger(info.tile_size) ||
-        info.tile_size < 1 ||
-        info.tile_size > 512 ||
-        !Number.isInteger(info.max_level) ||
-        info.max_level < 0 ||
-        info.max_level > 20 ||
-        !Number.isInteger(info.preview_width) ||
-        info.preview_width < 1 ||
-        info.preview_width > 2048)
-    )
-      throw new Error('瓦片配置无效。')
-    const endpoint = tiled ? '/api/image/preview' : '/api/image'
-    const maxBytes = mode === 'full' ? MAX_FULL_IMAGE_BYTES : MAX_IMAGE_BYTES
-    let blob
-    if (mode === 'full' && info.encoded_bytes > 16 * 1024 * 1024) {
-      blob = await fullImage(name, info.encoded_bytes, controller.signal, (progress) => {
+    const next = await rawImage(
+      tiled ? '/api/image/preview' : '/api/image',
+      name,
+      info.id,
+      tiled ? info.preview_width : info.width,
+      tiled ? info.preview_height : info.height,
+      controller.signal,
+      (progress) => {
         if (current === sequence)
-          setStatus(`正在下载完整原图：${(progress * 100).toFixed(0)}%（非瓦片）`)
-      })
-    } else {
-      const response = await fetch(imageUrl(endpoint, name), {
-        signal: controller.signal,
-        cache: 'no-store',
-      })
-      if (!response.ok) throw new Error(`获取失败：HTTP ${response.status}`)
-      if (response.headers.get('content-type')?.split(';')[0] !== 'image/png')
-        throw new Error('服务未返回 PNG 图片。')
-      const length = Number(response.headers.get('content-length'))
-      if (length > maxBytes) throw new Error('图片响应超过当前模式的大小上限。')
-      blob = await response.blob()
-    }
-    if (!blob.size || blob.size > maxBytes) throw new Error('图片为空或超出大小限制。')
-    next = await decode(blob)
-    if (current !== sequence || disposed) return
-    const width = next.width || next.naturalWidth
-    const height = next.height || next.naturalHeight
-    if (
-      width < 1 ||
-      height < 1 ||
-      width * height > (mode === 'full' ? MAX_IMAGE_PIXELS : 64 * 1024 * 1024)
+          setStatus(`正在传输 BGRA8 原始字节：${(progress * 100).toFixed(0)}%`)
+      },
     )
-      throw new Error('解码后的图片超出模式像素上限或尺寸无效。')
+    if (disposed || current !== sequence) return
     try {
       if (requestedMode !== mode && renderer.name.startsWith('Canvas2D')) {
         renderer.dispose()
@@ -249,34 +240,32 @@ async function loadImage() {
       useCanvasFallback()
       renderer.setImage(next)
     }
-    const previous = bitmap
-    bitmap = next
-    next = null
-    previous?.close?.()
+    image = next
     view.setImage(info.width, info.height)
-    tiles.configure(tiled ? { ...info, name } : null)
+    tiles.configure(tiled ? info : null)
     suspended = false
     requestedMode = mode
     $('empty-state').hidden = true
     $('image-info').textContent =
-      `${name} · ${info.width} × ${info.height} px · ${tiled ? '瓦片模式 · 预览' : '整图'} ${(blob.size / 1024).toFixed(1)} KiB`
+      `${name} · ${info.width} × ${info.height} px · BGRA8 · ${tiled ? '瓦片预览' : '整图'} ${(next.data.byteLength / 1048576).toFixed(1)} MiB`
     $('renderer-name').textContent = renderer.name
     host.dataset.loaded = 'true'
     host.dataset.name = name
     host.dataset.mode = mode
+    host.dataset.format = 'BGRA8'
+    host.dataset.snapshot = info.id
     setStatus(
       mode === 'full' && renderer.name.startsWith('Canvas2D')
-        ? '整图已载入 Canvas2D：原图超过单纹理上限或 WebGL 不可用，未使用瓦片。'
-        : '图片已就绪。滚轮缩放，拖动平移，双击适应窗口。',
+        ? 'BGRA8 整图已载入，使用 Canvas2D 可见区域 CPU 转换降级；没有压缩图解码或瓦片请求。'
+        : 'BGRA8 已显示；原始字节直接上传纹理，没有浏览器图片解码。',
     )
     invalidate()
   } catch (error) {
-    if (current === sequence && !disposed && error.name !== 'AbortError') {
-      setStatus(error.message || '图片请求失败。', true)
+    if (!disposed && current === sequence && error.name !== 'AbortError') {
+      setStatus(error.message || 'BGRA8 数据请求失败。', true)
       suspended = true
     }
   } finally {
-    next?.close?.()
     if (current === sequence) {
       loading = false
       syncButtons()
@@ -300,7 +289,7 @@ function release(event) {
   if (host.hasPointerCapture(event.pointerId)) host.releasePointerCapture(event.pointerId)
 }
 host.addEventListener('pointerdown', (event) => {
-  if (!bitmap || lost || event.button !== 0 || pointers.size >= 2) return
+  if (!image || lost || event.button !== 0 || pointers.size >= 2) return
   host.focus({ preventScroll: true })
   pointers.set(event.pointerId, localPoint(event))
   host.setPointerCapture(event.pointerId)
@@ -328,7 +317,7 @@ for (const name of ['pointerup', 'pointercancel', 'lostpointercapture'])
 host.addEventListener(
   'wheel',
   (event) => {
-    if (!bitmap || lost) return
+    if (!image || lost) return
     event.preventDefault()
     const point = localPoint(event)
     const delta =
@@ -347,7 +336,7 @@ host.addEventListener('dblclick', () => {
   invalidate()
 })
 host.addEventListener('keydown', (event) => {
-  if (!bitmap || lost) return
+  if (!image || lost) return
   const actions = {
     '+': () => view.zoomAt(view.width / 2, view.height / 2, view.zoom * 1.25),
     '=': () => view.zoomAt(view.width / 2, view.height / 2, view.zoom * 1.25),
@@ -365,17 +354,21 @@ host.addEventListener('keydown', (event) => {
     invalidate()
   }
 })
+$('load-backend').addEventListener('click', prepareBackend)
 $('load-image').addEventListener('click', loadImage)
 $('refresh-images').addEventListener('click', refreshImages)
-for (const id of ['image-select', 'display-mode'])
-  $(id).addEventListener('change', () => {
-    stopSelection()
-    setStatus(
-      $('display-mode').value === 'full'
-        ? '整图模式将下载并解码完整原图，大图内存开销较高；点击获取开始加载。'
-        : '已选择图片和瓦片模式，点击获取开始加载。',
-    )
-  })
+$('image-select').addEventListener('change', () => {
+  stopSelection()
+  setStatus('已选择图片，请先点击后端加载并解码为 BGRA8。')
+})
+$('display-mode').addEventListener('change', () => {
+  stopTransfer()
+  setStatus(
+    $('display-mode').value === 'full'
+      ? '整图模式将传输完整 BGRA8 原始字节，内存和带宽开销高；后端已加载时可直接获取。'
+      : '已选择瓦片模式；后端已加载时可直接获取 BGRA8。',
+  )
+})
 $('zoom-in').addEventListener('click', () => {
   view.zoomAt(view.width / 2, view.height / 2, view.zoom * 1.25)
   invalidate()
@@ -416,6 +409,8 @@ function windowResize() {
 }
 function dispose() {
   disposed = true
+  backendSequence++
+  backendController?.abort()
   sequence++
   controller?.abort()
   listController?.abort()
@@ -426,8 +421,7 @@ function dispose() {
   window.removeEventListener('resize', windowResize)
   renderer?.dispose()
   tiles.dispose()
-  bitmap?.close?.()
-  bitmap = null
+  image = null
 }
 window.addEventListener('pagehide', (event) => {
   if (!event.persisted) dispose()
@@ -445,4 +439,5 @@ try {
 } catch {
   setStatus('无法创建绘制器，请更新浏览器或启用硬件加速。', true)
   $('load-image').disabled = true
+  $('load-backend').disabled = true
 }

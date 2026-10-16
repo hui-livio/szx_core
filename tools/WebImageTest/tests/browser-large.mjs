@@ -50,8 +50,8 @@ try {
                 const bitmap = args.at(-1)
                 window.textureStats.maxEdge = Math.max(
                   window.textureStats.maxEdge,
-                  bitmap.width || 0,
-                  bitmap.height || 0,
+                  args[3] || 0,
+                  args[4] || 0,
                 )
               }
               if (name === 'createTexture') {
@@ -71,6 +71,12 @@ try {
       { fallback },
     )
     await page.goto(url)
+    await page.getByRole('button', { name: '后端加载并解码 BGRA8', exact: true }).click()
+    await page.waitForFunction(
+      () => document.getElementById('viewport').dataset.backendState === 'ready',
+      null,
+      { timeout: 120000 },
+    )
     await page.getByRole('button', { name: '获取内存图片', exact: true }).click()
     await page.locator('#viewport[data-loaded="true"]').waitFor({ timeout: 30000 })
     const info = await (await context.request.get(`${url}/api/image/info`)).json()
@@ -82,7 +88,7 @@ try {
       document.getElementById('zoom-value').textContent.includes('%'),
     )
     assert.ok(requests.includes('/api/image/preview'))
-    assert.ok(!requests.includes('/api/image'), 'must not download the 258 MiB original')
+    assert.ok(!requests.includes('/api/image'), 'must not download the 904 MiB BGRA8 original')
     assert.match(
       await page.locator('#renderer-name').textContent(),
       fallback ? /Canvas2D/ : /WebGL2/,
@@ -120,9 +126,11 @@ try {
     }
     const edge = await context.request.get(`${url}/api/image/tile/0/35/25`)
     assert.equal(edge.status(), 200)
-    const png = await edge.body()
-    assert.equal(png.readUInt32BE(16), 32)
-    assert.equal(png.readUInt32BE(20), 400)
+    const raw = await edge.body()
+    assert.equal(edge.headers()['x-pixel-format'], 'BGRA8')
+    assert.equal(edge.headers()['x-image-width'], '32')
+    assert.equal(edge.headers()['x-image-height'], '400')
+    assert.equal(raw.length, 32 * 400 * 4)
     const invalid = await context.request.get(`${url}/api/image/tile/999/0/0`)
     assert.equal(invalid.status(), 400)
     await page.screenshot({
@@ -144,6 +152,12 @@ try {
     if (!fallback) {
       const picker = page.getByRole('combobox', { name: '选择图片', exact: true })
       await picker.selectOption('1_1_01.jpg')
+      await page.getByRole('button', { name: '后端加载并解码 BGRA8', exact: true }).click()
+      await page.waitForFunction(
+        () => document.getElementById('viewport').dataset.backendState === 'ready',
+        null,
+        { timeout: 120000 },
+      )
       await page.getByRole('button', { name: '获取内存图片', exact: true }).click()
       await page.waitForFunction(
         () =>
@@ -158,10 +172,14 @@ try {
         () => Number(document.getElementById('viewport').dataset.tiles) > 0,
       )
       const old = await context.request.get(`${url}/api/image/preview?name=moban.png`)
-      assert.equal(old.status(), 409, 'evicted image must not return the newly selected PNG')
+      assert.equal(
+        old.status(),
+        409,
+        'evicted image must not return the newly selected BGRA8 image',
+      )
       await page.screenshot({ path: resolve(output, 'selected-jpg.png') })
       console.log(
-        'PASS actual directory selection: 1_1_01.jpg 12122x10866, previous PNG cannot be confused with current image',
+        'PASS actual directory selection: 1_1_01.jpg 12122x10866, previous BGRA8 snapshot cannot be confused with current image',
       )
     }
     await context.close()

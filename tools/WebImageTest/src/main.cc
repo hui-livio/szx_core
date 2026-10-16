@@ -67,7 +67,7 @@ int main(int argc, char **argv)
         if (!started.ok)
             return report(static_cast<int>(ErrorCode::ListenFailed));
         std::cout << "WebImageTest ready: http://" << host << ':' << server->port() << "/\n"
-                  << "Image directory ready. Images are decoded on demand by a single worker." << std::endl;
+                  << "Image directory ready. Explicit POST /api/image/load decodes and prepares BGRA8." << std::endl;
         while (!stopRequested)
             std::this_thread::sleep_for(std::chrono::milliseconds{100});
         const auto stopped = server->stop();

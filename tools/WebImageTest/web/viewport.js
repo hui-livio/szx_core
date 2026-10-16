@@ -1,5 +1,4 @@
 export const MAX_IMAGE_PIXELS = 256 * 1024 * 1024
-export const MAX_IMAGE_BYTES = 64 * 1024 * 1024
 
 export function backingSize(width, height, devicePixelRatio = 1) {
   const w = Math.max(1, width)

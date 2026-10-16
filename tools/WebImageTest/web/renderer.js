@@ -18,7 +18,7 @@ in vec2 v_uv;
 uniform sampler2D u_texture;
 out vec4 outColor;
 void main() {
-  vec4 sampleColor = texture(u_texture, v_uv);
+  vec4 sampleColor = texture(u_texture, v_uv).bgra;
   // Composite once against the canvas background: a translucent detail tile must
   // replace, not blend a second time over, the already composited preview.
   outColor = vec4(mix(vec3(11.0/255.0, 14.0/255.0, 25.0/255.0), sampleColor.rgb, sampleColor.a), 1.0);
@@ -38,7 +38,7 @@ function shader(gl, kind, text) {
 
 class WebGLRenderer {
   name = 'WebGL2 · GPU texture'
-  bitmap = null
+  image = null
   tiles = new Map()
   constructor(canvas, gl) {
     this.canvas = canvas
@@ -94,19 +94,19 @@ class WebGLRenderer {
     gl.clearColor(11 / 255, 14 / 255, 25 / 255, 1)
   }
 
-  setImage(bitmap) {
+  setImage(image) {
     const gl = this.gl
-    if (bitmap.width > this.limit || bitmap.height > this.limit)
+    if (image.width > this.limit || image.height > this.limit)
       throw new Error(`图片超过 GPU 纹理上限 ${this.limit}。`)
-    const next = this.upload(bitmap)
+    const next = this.upload(image)
     if (this.texture) gl.deleteTexture(this.texture)
     this.texture = next
-    this.bitmap = bitmap
+    this.image = image
     for (const tile of this.tiles.values()) gl.deleteTexture(tile.texture)
     this.tiles.clear()
   }
 
-  upload(bitmap) {
+  upload(image) {
     const gl = this.gl
     const texture = gl.createTexture()
     if (!texture) throw new Error('无法分配图像纹理。')
@@ -117,7 +117,20 @@ class WebGLRenderer {
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, bitmap)
+      if (image.format !== 'BGRA8' || image.data.byteLength !== image.width * image.height * 4)
+        throw new Error('GPU 输入不是连续 BGRA8 数据。')
+      gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4)
+      gl.texImage2D(
+        gl.TEXTURE_2D,
+        0,
+        gl.RGBA8,
+        image.width,
+        image.height,
+        0,
+        gl.RGBA,
+        gl.UNSIGNED_BYTE,
+        image.data,
+      )
       if (gl.getError() !== gl.NO_ERROR) throw new Error('GPU 纹理上传失败。')
       return texture
     } catch (error) {
@@ -136,7 +149,7 @@ class WebGLRenderer {
     }
     for (const tile of tiles) {
       if (!this.tiles.has(tile.key))
-        this.tiles.set(tile.key, { ...tile, texture: this.upload(tile.bitmap) })
+        this.tiles.set(tile.key, { ...tile, texture: this.upload(tile.image) })
     }
   }
 
@@ -149,7 +162,7 @@ class WebGLRenderer {
     }
     gl.viewport(0, 0, this.canvas.width, this.canvas.height)
     gl.clear(gl.COLOR_BUFFER_BIT)
-    if (!this.bitmap || gl.isContextLost()) return
+    if (!this.image || gl.isContextLost()) return
     gl.useProgram(this.program)
     gl.bindVertexArray(this.vao)
     gl.activeTexture(gl.TEXTURE0)
@@ -180,7 +193,7 @@ class WebGLRenderer {
     if (this.buffer) gl.deleteBuffer(this.buffer)
     if (this.vao) gl.deleteVertexArray(this.vao)
     if (this.program) gl.deleteProgram(this.program)
-    this.bitmap = null
+    this.image = null
     // Release the old framebuffer/context promptly when replacing a WebGL canvas.
     gl.getExtension('WEBGL_lose_context')?.loseContext()
   }
@@ -188,49 +201,88 @@ class WebGLRenderer {
 
 class CanvasRenderer {
   tiles = []
-  setTiles(tiles) {
-    this.tiles = tiles
-  }
-  name = 'Canvas2D · fallback'
-  bitmap = null
+  image = null
+  output = null
+  name = 'Canvas2D · BGRA8 CPU fallback'
   constructor(canvas) {
     this.canvas = canvas
     this.context = canvas.getContext('2d', { alpha: false })
     if (!this.context) throw new Error('浏览器无法创建图像画布。')
   }
-  setImage(bitmap) {
-    this.bitmap = bitmap
+  setImage(image) {
+    this.image = image
+    this.tiles = []
+  }
+  setTiles(tiles) {
+    this.tiles = tiles
   }
   draw(view) {
     const size = backingSize(view.width, view.height, window.devicePixelRatio)
     if (this.canvas.width !== size.width || this.canvas.height !== size.height) {
       this.canvas.width = size.width
       this.canvas.height = size.height
+      this.output = null
     }
     const ctx = this.context
-    ctx.setTransform(size.width / view.width, 0, 0, size.height / view.height, 0, 0)
-    ctx.fillStyle = '#0b0e19'
-    ctx.fillRect(0, 0, view.width, view.height)
-    if (this.bitmap)
-      ctx.drawImage(
-        this.bitmap,
+    if (!this.output) this.output = ctx.createImageData(size.width, size.height)
+    const target = this.output.data
+    for (let i = 0; i < target.length; i += 4) {
+      target[i] = 11
+      target[i + 1] = 14
+      target[i + 2] = 25
+      target[i + 3] = 255
+    }
+    // Bounded viewport-sized output: no giant temporary canvas or whole-image RGBA conversion.
+    const paint = (source, x, y, w, h) => {
+      const sx = size.width / view.width,
+        sy = size.height / view.height
+      const left = Math.max(0, Math.floor(x * sx)),
+        top = Math.max(0, Math.floor(y * sy))
+      const right = Math.min(size.width, Math.ceil((x + w) * sx)),
+        bottom = Math.min(size.height, Math.ceil((y + h) * sy))
+      const fx = source.width / (w * sx),
+        fy = source.height / (h * sy)
+      for (let py = top; py < bottom; py++) {
+        const row =
+          Math.min(source.height - 1, Math.max(0, Math.floor((py + 0.5 - y * sy) * fy))) *
+          source.width
+        for (let px = left; px < right; px++) {
+          const column = Math.min(
+            source.width - 1,
+            Math.max(0, Math.floor((px + 0.5 - x * sx) * fx)),
+          )
+          const input = (row + column) * 4,
+            output = (py * size.width + px) * 4
+          const alpha = source.data[input + 3] / 255,
+            inverse = 1 - alpha
+          target[output] = source.data[input + 2] * alpha + 11 * inverse
+          target[output + 1] = source.data[input + 1] * alpha + 14 * inverse
+          target[output + 2] = source.data[input] * alpha + 25 * inverse
+        }
+      }
+    }
+    if (this.image)
+      paint(
+        this.image,
         view.x - (view.imageWidth * view.zoom) / 2,
         view.y - (view.imageHeight * view.zoom) / 2,
         view.imageWidth * view.zoom,
         view.imageHeight * view.zoom,
       )
-    for (const tile of this.tiles) {
-      const x = view.x + (tile.x - view.imageWidth / 2) * view.zoom
-      const y = view.y + (tile.y - view.imageHeight / 2) * view.zoom
-      const width = tile.width * view.zoom
-      const height = tile.height * view.zoom
-      ctx.fillRect(x, y, width, height)
-      ctx.drawImage(tile.bitmap, x, y, width, height)
-    }
+    for (const tile of this.tiles)
+      paint(
+        tile.image,
+        view.x + (tile.x - view.imageWidth / 2) * view.zoom,
+        view.y + (tile.y - view.imageHeight / 2) * view.zoom,
+        tile.width * view.zoom,
+        tile.height * view.zoom,
+      )
+    ctx.putImageData(this.output, 0, 0)
   }
   dispose() {
-    this.bitmap = null
+    this.image = null
     this.tiles = []
+    this.output = null
   }
 }
 

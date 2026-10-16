@@ -79,4 +79,4 @@ OpenCV、IKap 和 libmodbus 均按本机 SDK/库是否存在选择性启用；�
 
 ## HTTP / OpenCV 原生 Web 图片示例
 
-`tools/WebImageTest` 提供独立的静态网页 HTTP 服务：通过列表接口选择目录图片，单工作线程按需用 OpenCV 载入内存，接口返回 PNG；原生 JavaScript 页面支持瓦片模式和整图非瓦片模式，以 WebGL2（Canvas2D 降级）按需绘制，支持缩放、平移、双指与全屏，不使用 Vue 或数据库。默认不构建，设置 `SZX_COMPONENTS_BUILD_WEB_IMAGE_TEST=ON` 与 `SZX_COMPONENTS_BUILD_NETWORK=ON` 启用；仅该目标要求 OpenCV 的 `core/imgcodecs/imgproc`。详见 [构建、运行、接口与测试](tools/WebImageTest/README.md)。
+`tools/WebImageTest` 提供独立的静态网页 HTTP 服务：通过列表接口选择目录图片，通过独立加载接口在单工作线程中用 OpenCV 解码并转换成连续 BGRA8，数据接口只返回 BGRA8 原始字节；原生 JavaScript 页面支持瓦片模式和整图非瓦片模式，以 WebGL2（Canvas2D 降级）按需绘制，支持缩放、平移、双指与全屏，不使用 Vue 或数据库。默认不构建，设置 `SZX_COMPONENTS_BUILD_WEB_IMAGE_TEST=ON` 与 `SZX_COMPONENTS_BUILD_NETWORK=ON` 启用；仅该目标要求 OpenCV 的 `core/imgcodecs/imgproc`。详见 [构建、运行、接口与测试](tools/WebImageTest/README.md)。

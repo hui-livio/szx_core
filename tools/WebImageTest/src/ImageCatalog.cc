@@ -143,7 +143,7 @@ auto ImageCatalog::list() const -> SZX::COMMON::Result<std::string>
     }
 }
 
-auto ImageCatalog::get(std::string name, bool allowLoad, bool retry) -> SZX::COMMON::Result<std::shared_ptr<const ImageSnapshot>>
+auto ImageCatalog::request(std::string name, bool allowLoad) -> SZX::COMMON::Result<std::shared_ptr<const ImageSnapshot>>
 {
     using Value = std::shared_ptr<const ImageSnapshot>;
     try
@@ -160,7 +160,13 @@ auto ImageCatalog::get(std::string name, bool allowLoad, bool retry) -> SZX::COM
             if (cached_ && cachedName_ == name)
                 return SZX::COMMON::Result<Value>::Success(cached_);
             if (!allowLoad)
+            {
+                if (loading_ == name)
+                    return failure<Value>(ErrorCode::ImageLoading);
+                if (failedName_ == name)
+                    return SZX::COMMON::Result<Value>::Failure(failure_, {});
                 return failure<Value>(ErrorCode::ImageNotLoaded);
+            }
         }
         const auto path = resolve(name);
         if (!path.ok)
@@ -170,12 +176,12 @@ auto ImageCatalog::get(std::string name, bool allowLoad, bool retry) -> SZX::COM
             return SZX::COMMON::Result<Value>::Success(cached_);
         if (!loading_.empty())
             return failure<Value>(loading_ == name ? ErrorCode::ImageLoading : ErrorCode::ImageBusy);
-        if (failedName_ == name && !retry)
-            return SZX::COMMON::Result<Value>::Failure(failure_, {});
         // Queue publication under the same lock prevents a worker racing the state update.
         if (work_.try_push(name) != SZX::COMMON::QueuePushResult::Pushed)
             return failure<Value>(ErrorCode::ImageBusy);
         loading_ = std::move(name);
+        failedName_.clear();
+        failure_ = 0;
         return failure<Value>(ErrorCode::ImageLoading);
     } catch (const std::bad_alloc &)
     {
@@ -184,6 +190,15 @@ auto ImageCatalog::get(std::string name, bool allowLoad, bool retry) -> SZX::COM
     {
         return failure<Value>(ErrorCode::UnexpectedFailure);
     }
+}
+
+auto ImageCatalog::load(std::string name) -> SZX::COMMON::Result<std::shared_ptr<const ImageSnapshot>>
+{
+    return request(std::move(name), true);
+}
+auto ImageCatalog::get(std::string name) -> SZX::COMMON::Result<std::shared_ptr<const ImageSnapshot>>
+{
+    return request(std::move(name), false);
 }
 
 void ImageCatalog::run() noexcept

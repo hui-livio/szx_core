@@ -31,7 +31,8 @@
               <option value="full">整图模式（非瓦片）</option>
             </select>
           </div>
-          <button id="load-image" class="primary" type="button">获取内存图片</button>
+          <button id="load-backend" class="primary" type="button">后端加载并解码 BGRA8</button>
+          <button id="load-image" type="button">获取内存图片</button>
           <div class="tools" role="group" aria-label="画面操作">
             <button id="zoom-out" type="button" aria-label="缩小" title="缩小 (-)">−</button>
             <output id="zoom-value" aria-label="当前缩放">—</output>
@@ -53,8 +54,8 @@
           <canvas id="image-canvas" aria-label="从服务内存获取的图片"></canvas>
           <div id="empty-state" class="empty-state">
             <span class="empty-icon" aria-hidden="true">▧</span>
-            <h1>让图片留在显存，让操作更轻</h1>
-            <p>选择目录中的图片和显示模式，再点击“获取内存图片”。</p>
+            <h1>后端解码 BGRA8，前端按需绘制</h1>
+            <p>先选择图片，点击“后端加载并解码 BGRA8”，完成后再获取原始数据。</p>
             <small>不使用 Vue · 不持续刷新 · 不在每次请求中读盘</small>
           </div>
         </div>
@@ -69,11 +70,11 @@
         <ol>
           <li>
             <strong>OpenCV 解码</strong>
-            <p>所选图片按需读入 cv::Mat，单工作线程加载，最多缓存一张。</p>
+            <p>独立加载接口在工作线程读取、解码、转换为 BGRA8，完成后才可获取。</p>
           </li>
           <li>
             <strong>HTTP 二进制响应</strong>
-            <p>直接获取 PNG，不使用 Base64 或 JSON 包装图片。</p>
+            <p>直接传输连续 BGRA8 字节，不使用 PNG/JPEG、Base64 或浏览器图片解码。</p>
           </li>
           <li>
             <strong>GPU 纹理复用</strong>

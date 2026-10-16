@@ -30,6 +30,12 @@ try {
   await page.getByRole('combobox', { name: '选择图片', exact: true }).selectOption('moban.png')
   await page.getByRole('combobox', { name: '显示模式', exact: true }).selectOption('full')
   const started = performance.now()
+  await page.getByRole('button', { name: '后端加载并解码 BGRA8', exact: true }).click()
+  await page.waitForFunction(
+    () => document.getElementById('viewport').dataset.backendState === 'ready',
+    null,
+    { timeout: 120000 },
+  )
   await page.getByRole('button', { name: '获取内存图片', exact: true }).click()
   await page.waitForFunction(
     () => {
@@ -72,6 +78,8 @@ try {
     renderer: await page.locator('#renderer-name').textContent(),
     previewOrTileRequests: 0,
     elapsedMs: Math.round(performance.now() - started),
+    rawByteLength: 17952 * 13200 * 4,
+    format: 'BGRA8',
     status: 'passed',
   }
   assert.deepEqual(errors, [])

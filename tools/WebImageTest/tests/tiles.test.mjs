@@ -61,87 +61,69 @@ test('fully offscreen image needs no tiles and small images keep the single-text
   assert.deepEqual(visibleTiles(view, { ...info, tiled: false }), [])
 })
 
-test('tile bitmap LRU evicts and closes resources; reset closes all remaining entries', async () => {
-  const { TileLayer } = await import('../web/tiles.js')
-  const oldFetch = globalThis.fetch,
-    oldBitmap = globalThis.createImageBitmap,
-    oldDocument = globalThis.document
-  let closed = 0
-  globalThis.document = { hidden: false }
-  globalThis.fetch = async () => ({
-    ok: true,
-    headers: new Headers({ 'content-type': 'image/png' }),
-    blob: async () => new Blob(['tile']),
-  })
-  globalThis.createImageBitmap = async () => ({
-    width: 512,
-    height: 512,
-    close: () => {
-      closed++
+function rawResponse(id = 'tiles') {
+  return new Response(new Uint8Array(512 * 512 * 4), {
+    headers: {
+      'content-type': 'application/octet-stream',
+      'x-pixel-format': 'BGRA8',
+      'x-image-width': '512',
+      'x-image-height': '512',
+      'x-image-stride': '2048',
+      'x-image-byte-length': String(512 * 512 * 4),
+      'x-image-origin': 'top-left',
+      'x-image-alpha': 'straight',
+      'x-image-id': id,
     },
   })
+}
+test('raw tile LRU stays bounded and reset removes all retained byte arrays', async () => {
+  const { TileLayer } = await import('../web/tiles.js')
+  const old = globalThis.fetch,
+    doc = globalThis.document
+  globalThis.document = { hidden: false }
+  globalThis.fetch = async () => rawResponse()
   const layer = new TileLayer(() => {})
   try {
-    layer.configure(info)
-    for (let i = 0; i < 80; i++) {
+    layer.configure({ ...info, id: 'tiles' })
+    for (let i = 0; i < 80; i++)
       await layer.load(
         { key: `0/${i}/0`, x: i * 512, y: 0, width: 512, height: 512 },
         new AbortController(),
         layer.generation,
       )
-    }
     assert.equal(layer.cache.size, 64)
-    assert.equal(closed, 16)
+    assert.equal(layer.cache.values().next().value.image.format, 'BGRA8')
     layer.reset()
-    assert.equal(closed, 80)
     assert.equal(layer.cache.size, 0)
   } finally {
     layer.dispose()
-    globalThis.fetch = oldFetch
-    globalThis.createImageBitmap = oldBitmap
-    if (oldDocument === undefined) delete globalThis.document
-    else globalThis.document = oldDocument
+    globalThis.fetch = old
+    if (doc === undefined) delete globalThis.document
+    else globalThis.document = doc
   }
 })
-
-test('image generation changes close late decoded tiles instead of publishing stale content', async () => {
+test('late raw tiles from a previous image generation are not published', async () => {
   const { TileLayer } = await import('../web/tiles.js')
-  const oldFetch = globalThis.fetch,
-    oldBitmap = globalThis.createImageBitmap,
-    oldDocument = globalThis.document
-  let finish,
-    closed = 0
+  const old = globalThis.fetch,
+    doc = globalThis.document
+  let finish
   globalThis.document = { hidden: false }
-  globalThis.fetch = async () => ({
-    ok: true,
-    headers: new Headers({ 'content-type': 'image/png' }),
-    blob: async () => new Blob(['tile']),
-  })
-  globalThis.createImageBitmap = () =>
+  globalThis.fetch = () =>
     new Promise((resolve) => {
       finish = resolve
     })
   const layer = new TileLayer(() => {})
   try {
-    layer.configure(info)
+    layer.configure({ ...info, id: 'tiles' })
     const pending = layer.load({ key: '0/0/0' }, new AbortController(), layer.generation)
-    while (!finish) await new Promise((resolve) => setImmediate(resolve))
-    layer.configure(info)
-    finish({
-      width: 512,
-      height: 512,
-      close: () => {
-        closed++
-      },
-    })
+    layer.configure({ ...info, id: 'new-image' })
+    finish(rawResponse())
     await pending
     assert.equal(layer.cache.size, 0)
-    assert.equal(closed, 1)
   } finally {
     layer.dispose()
-    globalThis.fetch = oldFetch
-    globalThis.createImageBitmap = oldBitmap
-    if (oldDocument === undefined) delete globalThis.document
-    else globalThis.document = oldDocument
+    globalThis.fetch = old
+    if (doc === undefined) delete globalThis.document
+    else globalThis.document = doc
   }
 })

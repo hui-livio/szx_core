@@ -84,6 +84,10 @@ try {
   assert.ok(!listed.items.some((item) => item.name === 'ignore.txt'))
   async function load(name) {
     await picker.selectOption(name)
+    await page.getByRole('button', { name: '后端加载并解码 BGRA8', exact: true }).click()
+    await page.waitForFunction(
+      () => document.getElementById('viewport').dataset.backendState === 'ready',
+    )
     await page.getByRole('button', { name: '获取内存图片', exact: true }).click()
     await page.waitForFunction(
       (name) =>
@@ -133,19 +137,24 @@ try {
   await page.screenshot({ path: resolve(output, 'catalog-full-mode.png') })
   report.push('tile mode and full-image non-tiled mode stay separate')
 
-  await page.route('**/api/image/info?*', async (route) => {
+  await page.route('**/api/image?*', async (route) => {
     if (new URL(route.request().url()).searchParams.get('name') === 'a.ppm') {
+      const response = await route.fetch()
       await new Promise((done) => setTimeout(done, 350))
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ width: 192, height: 128, tiled: false }),
-      })
+      await route.fulfill({ response })
     } else await route.continue()
   })
   await picker.selectOption('a.ppm')
+  await page.getByRole('button', { name: '后端加载并解码 BGRA8', exact: true }).click()
+  await page.waitForFunction(
+    () => document.getElementById('viewport').dataset.backendState === 'ready',
+  )
   await page.getByRole('button', { name: '获取内存图片', exact: true }).click()
   await picker.selectOption('蓝色 图片 #2.PPM')
+  await page.getByRole('button', { name: '后端加载并解码 BGRA8', exact: true }).click()
+  await page.waitForFunction(
+    () => document.getElementById('viewport').dataset.backendState === 'ready',
+  )
   await page.getByRole('button', { name: '获取内存图片', exact: true }).click()
   await page.waitForFunction(
     () =>
@@ -154,16 +163,20 @@ try {
   )
   await page.waitForTimeout(450)
   assert.equal(await page.locator('#viewport').getAttribute('data-name'), '蓝色 图片 #2.PPM')
-  await page.unroute('**/api/image/info?*')
+  await page.unroute('**/api/image?*')
   report.push('late previous selection cannot replace the latest image')
 
   await picker.selectOption('bad.png')
-  await page.getByRole('button', { name: '获取内存图片', exact: true }).click()
+  await page.getByRole('button', { name: '后端加载并解码 BGRA8', exact: true }).click()
   await page.waitForFunction(() =>
     document.getElementById('status').textContent.includes('解码失败'),
   )
   assert.equal(await page.locator('#viewport').getAttribute('data-name'), '蓝色 图片 #2.PPM')
   await ppm('bad.png', 25, 30, [70, 130, 160])
+  await page.getByRole('button', { name: '后端加载并解码 BGRA8', exact: true }).click()
+  await page.waitForFunction(
+    () => document.getElementById('viewport').dataset.backendState === 'ready',
+  )
   await page.getByRole('button', { name: '获取内存图片', exact: true }).click()
   await page.waitForFunction(
     () =>

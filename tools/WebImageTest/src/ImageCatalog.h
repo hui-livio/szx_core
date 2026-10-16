@@ -21,13 +21,15 @@ public:
     auto operator=(const ImageCatalog &) -> ImageCatalog & = delete;
     /** Enumerate immediate regular images, excluding symlinks and unsupported extensions. */
     [[nodiscard]] auto list() const -> SZX::COMMON::Result<std::string>;
-    /** Queue decode on metadata requests only; PNG/tile requests never switch the cache. */
-    [[nodiscard]] auto get(std::string name, bool allowLoad, bool retry = false)
-        -> SZX::COMMON::Result<std::shared_ptr<const ImageSnapshot>>;
+    /** Explicit load command; success means BGRA8 conversion and raw preview are complete. */
+    [[nodiscard]] auto load(std::string name) -> SZX::COMMON::Result<std::shared_ptr<const ImageSnapshot>>;
+    /** Read/status only. Never reads a file or submits work. */
+    [[nodiscard]] auto get(std::string name) -> SZX::COMMON::Result<std::shared_ptr<const ImageSnapshot>>;
 
 private:
     ImageCatalog(std::filesystem::path root, std::string defaultName);
     [[nodiscard]] auto resolve(const std::string &name) const -> SZX::COMMON::Result<std::filesystem::path>;
+    [[nodiscard]] auto request(std::string name, bool allowLoad) -> SZX::COMMON::Result<std::shared_ptr<const ImageSnapshot>>;
     void run() noexcept;
     std::filesystem::path root_;
     std::string defaultName_;
