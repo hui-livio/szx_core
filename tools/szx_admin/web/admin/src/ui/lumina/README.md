@@ -130,6 +130,10 @@ Esc 由公共层单一捕获监听和对话框栈管理：一次只处理最上�
 
 分页使用 1 起始页码，不负责请求数据。summary、navigation、上一页/下一页等文案由调用方提供，忙碌期间禁止翻页。
 
+可选 `page-size-label` 启用每页条数入口，`page-size-options` 提供数字预设；`page-size-custom-label` 启用“自定义”选项及整数输入，`page-size-apply-label` / `page-size-hint` 提供确认按钮和校验文案。`min-page-size` / `max-page-size` 指定合法范围（通用默认 1 至最大安全整数）。预设选择立即发出 `change:size(number)`，自定义草稿仅在 Enter/应用且合法、与已应用值不同时发出，不按输入的每个数字触发请求；忙碌期间全部禁用。未提供 `page-size-label` 的旧调用方保留原有分页行为。
+
+后台 `PaginationBar` 设置 10/20/50/100 预设和 1–100 上限，并注入六种语言文案。调用方把 `change:size` 交给 `usePagedQuery.setPageSize()`；业务层负责回到第一页、保留已应用筛选、发起服务端查询和忽略旧响应，通用分页不依赖 API 或 Pinia。
+
 ## 日期时间与 locale
 
 ```vue

@@ -48,7 +48,7 @@ const {
   show: showBehavior,
   close: closeBehavior,
 } = behavior
-const { page, pageSize, pageCount, total, busy, error, requestId, load } = audit.query
+const { page, pageSize, pageCount, total, busy, error, requestId, load, setPageSize } = audit.query
 const {
   page: behaviorPage,
   pageSize: behaviorPageSize,
@@ -58,6 +58,7 @@ const {
   error: behaviorError,
   requestId: behaviorRequestId,
   load: loadBehavior,
+  setPageSize: setBehaviorPageSize,
 } = behavior.query
 </script>
 
@@ -120,6 +121,7 @@ const {
         :total="total"
         :busy="busy"
         @change="load"
+        @change:size="setPageSize"
       />
     </LuminaPanel>
     <LuminaPanel
@@ -160,6 +162,7 @@ const {
         :total="behaviorTotal"
         :busy="behaviorBusy"
         @change="loadBehavior"
+        @change:size="setBehaviorPageSize"
       />
     </LuminaPanel>
     <p v-if="activeTab === 'audit' && requestId" class="request-id">

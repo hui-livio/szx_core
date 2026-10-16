@@ -167,6 +167,11 @@ export default {
 
   common: {
     ...zh.common,
+    customPageSize: '件数を指定',
+    pageSize: '1ページの件数',
+    applyPageSize: '適用',
+    pageSizeHint: '{min}〜{max} の整数を入力し、Enter または適用を押してください',
+
     close: '閉じる',
     cancel: 'キャンセル',
     confirm: '確認',

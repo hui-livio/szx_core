@@ -170,6 +170,11 @@ export default {
   },
   common: {
     ...en.common,
+    customPageSize: '행 수 직접 지정',
+    pageSize: '페이지당 행 수',
+    applyPageSize: '적용',
+    pageSizeHint: '{min}–{max} 범위의 정수를 입력한 후 Enter 또는 적용을 누르세요',
+
     close: '닫기',
     cancel: '취소',
     confirm: '확인',

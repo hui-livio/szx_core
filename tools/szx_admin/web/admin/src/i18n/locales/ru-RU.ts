@@ -176,6 +176,11 @@ export default {
   },
   common: {
     ...en.common,
+    customPageSize: 'Своё количество строк',
+    pageSize: 'Строк на странице',
+    applyPageSize: 'Применить',
+    pageSizeHint: 'Введите целое число от {min} до {max}, затем нажмите Enter или Применить',
+
     close: 'Закрыть',
     cancel: 'Отмена',
     confirm: 'Подтвердить',

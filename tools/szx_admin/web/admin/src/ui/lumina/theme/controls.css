@@ -579,3 +579,34 @@
 .p-select-overlay.lumina-popup-arrow .p-select-header {
   border-radius: var(--lg-r-2xl) var(--lg-r-2xl) 0 0;
 }
+
+/* Keep size controls and navigation usable when pagination wraps on mobile. */
+.pagination-actions,
+.pagination-size {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--lg-s3);
+  min-width: 0;
+}
+
+.pagination-actions {
+  justify-content: flex-end;
+  gap: var(--lg-s5);
+}
+
+.pagination-size > span,
+.pagination-size-apply {
+  white-space: nowrap;
+}
+
+.pagination-size .p-select,
+.pagination-size .pagination-size-input {
+  width: calc(var(--k) * 110px);
+  flex: none;
+}
+
+.pagination-size > small {
+  flex-basis: 100%;
+  color: var(--danger-ink);
+}

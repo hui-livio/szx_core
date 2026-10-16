@@ -177,6 +177,11 @@ export default {
   },
   common: {
     ...en.common,
+    customPageSize: 'Nombre personnalisé',
+    pageSize: 'Lignes par page',
+    applyPageSize: 'Appliquer',
+    pageSizeHint: 'Saisissez un entier de {min} à {max}, puis Entrée ou Appliquer',
+
     close: 'Fermer',
     cancel: 'Annuler',
     confirm: 'Confirmer',
