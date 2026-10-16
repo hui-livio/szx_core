@@ -15,6 +15,7 @@ ScrollView {
     property alias textColor: editor.color
     property alias selectByMouse: editor.selectByMouse
     property alias wrapMode: editor.wrapMode
+    property alias textFormat: editor.textFormat
     property alias cursorPosition: editor.cursorPosition
     property color fieldColor: UTTheme.surfaceColor
     property color borderNormal: UTTheme.borderColor
