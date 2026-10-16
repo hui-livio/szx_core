@@ -1,3 +1,4 @@
+import { expectThemedPanels } from './surface'
 import { chooseOption } from './select'
 import { expectHeaderAboveRowControls } from './table'
 import { test, expect, type Locator, type Page } from '@playwright/test'
@@ -512,9 +513,9 @@ test.describe('dropdown scrollbar clipping', () => {
           context.drawImage(image, 0, 0)
           const rect = document.querySelector('.p-select-overlay')!.getBoundingClientRect()
           const scale = image.naturalWidth / innerWidth
-          const pixel = (y: number) => {
+          const pixel = (y: number, x = rect.right - 2) => {
             const [r, g, b] = context.getImageData(
-              Math.floor((rect.right - 2) * scale),
+              Math.floor(x * scale),
               Math.floor(y * scale),
               1,
               1,
@@ -523,7 +524,9 @@ test.describe('dropdown scrollbar clipping', () => {
           }
           return {
             corners: [pixel(rect.top + 2), pixel(rect.bottom - 2)],
-            track: pixel(rect.top + rect.height / 2),
+            // Sample the track below the initially top-aligned thumb, not the
+            // rounded thumb end at mid-height or the antialiased outer edge.
+            track: pixel(rect.top + rect.height * 0.75, rect.right - 8),
           }
         }, screenshot.toString('base64'))
         const scrollbarColors = ['245,158,11', '115,122,156']
@@ -1198,7 +1201,7 @@ for (const ratio of [1, 1.25, 1.5, 2]) {
   })
 }
 
-test('login glass surface uses the reusable panel and respects the performance switch', async ({
+test('login faux-glass surface keeps effects without an animated backdrop-filter pass', async ({
   page,
 }) => {
   await page.goto('/login')
@@ -1207,9 +1210,7 @@ test('login glass surface uses the reusable panel and respects the performance s
   const before = await panel.boundingBox()
   expect(await panel.evaluate((element) => getComputedStyle(element).backdropFilter)).toBe('none')
   await page.getByRole('switch', { name: '性能模式', exact: true }).click()
-  expect(await panel.evaluate((element) => getComputedStyle(element).backdropFilter)).toContain(
-    'blur(',
-  )
+  expect(await panel.evaluate((element) => getComputedStyle(element).backdropFilter)).toBe('none')
   expect(await panel.boundingBox()).toEqual(before)
   await page.getByRole('switch', { name: '性能模式', exact: true }).click()
   expect(await panel.evaluate((element) => getComputedStyle(element).backdropFilter)).toBe('none')
@@ -1343,4 +1344,27 @@ test('all admin scroll regions share Lumina styling including body portals and f
       (element) => getComputedStyle(element, '::-webkit-scrollbar-thumb').backgroundColor,
     ),
   ).not.toBe(light)
+})
+
+test('login, home, users, logs and password panels use one theme-aware surface', async ({
+  page,
+}) => {
+  await page.goto('/login')
+  await expectThemedPanels(page, '.login-card')
+  await signInWithRows(page)
+  await expectThemedPanels(page, '.table-panel')
+  // Transparent rows reveal the page panel, while the sticky header remains opaque.
+  expect(
+    await page
+      .locator('.admin-table tbody tr')
+      .first()
+      .evaluate((e) => getComputedStyle(e).backgroundColor),
+  ).toBe('rgba(0, 0, 0, 0)')
+  await page.locator('.sidebar a[href="/home"]').click()
+  await expectThemedPanels(page, '.panel')
+  await page.locator('.sidebar a[href="/logs"]').click()
+  await expectThemedPanels(page, '.table-panel')
+  await page.locator('.topbar .avatar').click()
+  await page.getByRole('menuitem', { name: '修改密码', exact: true }).click()
+  await expectThemedPanels(page, '.panel.narrow')
 })

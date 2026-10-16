@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
+  LuminaPanel,
   LuminaButton as Button,
   LuminaInput as Input,
   LuminaSelect as Select,
@@ -90,7 +91,7 @@ const sources = computed(() => [
       </div>
     </header>
     <p v-if="success" class="alert success" role="status">{{ success }}</p>
-    <section class="panel table-panel">
+    <LuminaPanel as="section" class="panel table-panel" radius="var(--lg-r-3xl)" padding="0">
       <form class="filters" @submit.prevent="load">
         <label
           >{{ t('rbac.search')
@@ -175,7 +176,7 @@ const sources = computed(() => [
         >
         <template #empty>{{ loading ? t('common.loading') : t('common.noResults') }}</template>
       </Table>
-    </section>
+    </LuminaPanel>
     <ModalDialog v-if="action" :title="title" :busy="saving" @close="close">
       <form @submit.prevent="submit">
         <fieldset :disabled="saving" class="permission-form">

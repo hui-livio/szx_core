@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { LuminaPanel } from '../ui/lumina'
 import PasswordForm from '../components/auth/PasswordForm.vue'
 import { usePasswordViewModel } from '../composables/useAuthViewModel'
 import { useI18n } from 'vue-i18n'
@@ -12,7 +13,7 @@ const { t } = useI18n()
       <p>{{ t('password.subtitle') }}</p>
     </div>
   </header>
-  <section class="panel narrow">
+  <LuminaPanel as="section" class="panel narrow" radius="var(--lg-r-3xl)" padding="var(--lg-s11)">
     <PasswordForm
       v-model="form"
       :busy="busy"
@@ -24,5 +25,5 @@ const { t } = useI18n()
       @submit="submit"
       @skip="skip"
     />
-  </section>
+  </LuminaPanel>
 </template>

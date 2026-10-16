@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { LuminaButton as Button } from '../ui/lumina'
+import { LuminaPanel, LuminaButton as Button } from '../ui/lumina'
 import { useUsersViewModel } from '../composables/useUsersViewModel'
 import UserFilters from '../components/users/UserFilters.vue'
 import UserTable from '../components/users/UserTable.vue'
@@ -55,7 +55,7 @@ const { busy: saving, error: saveError } = mutation
       >
     </header>
     <p v-if="success" class="alert success" role="status">{{ success }}</p>
-    <section class="panel table-panel">
+    <LuminaPanel as="section" class="panel table-panel" radius="var(--lg-r-3xl)" padding="0">
       <UserFilters v-model="filters" :roles="roles" :busy="busy" @search="search" />
       <div class="section-heading table-heading">
         <h2>
@@ -79,7 +79,7 @@ const { busy: saving, error: saveError } = mutation
         :busy="busy"
         @change="load"
       />
-    </section>
+    </LuminaPanel>
     <p v-if="requestId" class="request-id">{{ t('common.requestId') }}：{{ requestId }}</p>
     <ModalDialog v-if="action" :title="dialogTitle" :busy="saving" @close="close">
       <UserEditor

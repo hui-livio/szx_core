@@ -7,12 +7,14 @@
 ```text
 lumina/
 ├── components/     # LuminaButton/Input/Select/Table/Dialog/DateTimePicker/Pagination/Background
-├── composables/    # 主题缩放与 resize 生命周期
+├── composables/    # 主题缩放、背景预算时钟与生命周期
 ├── theme/
 │   ├── aura.ts     # Aura preset 与现有 CSS token 映射
 │   ├── install.ts  # PrimeVue 安装与 locale 更新入口
 │   ├── locale.ts   # Intl 日历名称 + 调用方提供的文案
 │   ├── tokens.css  # 通用色彩、表面色、低特效模式
+│   ├── background.css # 有界粒子/光晕精灵，无全屏滤镜
+│   ├── brand.css   # 可选自定义主题色；默认不覆盖原色板
 │   ├── controls.css
 │   ├── edges.css   # 统一的柔化交互描边
 │   ├── panels.css  # 普通/玻璃面板与性能降级
@@ -233,7 +235,7 @@ npm run format:check
 
 默认 variant 为 glass，普通表面为 solid。radius/padding 支持非负数值像素或 CSS 字符串；支持 div/section/article 根元素，ARIA 属性、class、style 与事件透传。面板不固定登录卡片宽度，布局由调用方决定。
 
-glass 自动响应根节点的 `data-fx`：lite（或未设置 full）关闭毛玻璃，full 启用玻璃背景与顶部高光；切换不改变内容尺寸。减少动态效果偏好或浏览器不支持 backdrop-filter 时使用低成本背景。solid 始终使用不透明主题表面。
+glass 自动响应根节点的 `data-fx`：lite（或未设置 full）使用低成本表面，full 启用半透明背景与静态高光。材质由共享 `--lg-panel-background` / `--lg-panel-highlight` 令牌管理，高光直接绘制在 background-image 而非覆盖正文的伪元素层。两种模式均不执行 backdrop-filter，避免背景光晕运动时反复采样；切换不改变内容尺寸。减少动态效果偏好始终使用低成本背景。solid 始终使用不透明主题表面。
 
 提示条使用 `--lg-info-surface`、`--lg-info-border`、`--lg-info-ink` 明暗语义 token；暗色信息提示不再使用浅色品牌底色。
 
@@ -295,3 +297,17 @@ glass 自动响应根节点的 `data-fx`：lite（或未设置 full）关闭毛�
 ```
 
 选中时 model 为 option-value，输入时 model 为用户文本。输入限制应通过 `pt.label` 传给内部 input，而不是放在 Select 根 div 上。`option` 插槽可使用 `lumina-select-option-content/label/detail` 显示“名称＋代码”等两级文案。通用控件不决定查询语义或预设来源；审计页预设由业务事件目录提供，行为页预设从当前返回记录中去重获取，未知代码仍可手工查询。
+
+## 背景粒子与光晕预算
+
+`LuminaBackground` 默认静态；`data-fx="full"` 且页面可见、系统未要求减少动态效果时，启动单一最高 30 FPS 时钟。3 个光球与最多 8 个粒子（≤720px 时 5 个）按确定性时间轨迹更新，只写 transform/opacity。粒子核与光晕合成一个 18px 径向渐变精灵，不使用滤镜、阴影、全屏噪声或动画 scale。光球最长边同时受 480 CSS px 和 768 物理像素约束，鼠标跟随光斑受 280 CSS px 和 448 物理像素约束；精细指针设备才订阅跟随事件，同一背景时钟消费最新坐标。
+
+静态/后台/减少动态效果状态不保留待执行的 timer/rAF；移除指针监听及 will-change 提示。恢复时延续动画时间，不追赶后台帧。组件不写入全局 body class，卸载不影响其他实例，所有监听与观察器均释放。逐帧没有 Vue 响应式更新、getComputedStyle 或布局读取。预算与粒子轨迹函数位于 `utils/background.ts`。
+
+`tests/fixtures/lumina/background.html` 是独立性能夹具。`npm run profile:background` 采样浏览器 trace/图层面积；可选 `--reference /mnt/d/share/client` 比较原参考背景，外部目录不参与构建。面积、Paint/RasterTask、主线程耗时均为代理指标，不能表述成硬件 GPU 利用率或显存实测值。
+
+## 可选自定义主色
+
+默认主题色不变；`applyLuminaBrand('#008866')` 校验六位十六进制主色，生成品牌色阶及可读前景，`applyLuminaBrand(null)` 删除全部覆盖并恢复 CSS 原始默认值。样式只在 `data-brand` 存在时启用；深浅色由原有 `data-theme` 控制。持久化、选择器文案和对话框属于应用层 `UiPreferences` / Pinia，本目录不依赖 localStorage、i18n 或业务 store。应用保存键为 `szx-admin-brand`。
+
+后台所有子页面外壳复用 `LuminaPanel` 的 glass 材质，性能页对 `LuminaCard` 显式指定 `variant="glass"`，通用 Card 的默认 solid 契约保持不变。表格行/table 在 glass 外壳内透出面板材质，粘性表头与 Teleport 弹层保持不透明，避免滚动行和弹层内容互相干扰。

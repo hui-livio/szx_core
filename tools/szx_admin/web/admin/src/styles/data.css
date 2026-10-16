@@ -38,3 +38,22 @@
   border-color: transparent;
   --lumina-edge-color: var(--lg-brand-700);
 }
+
+/* Page panels share login's material; the actual table must reveal that surface.
+   Sticky headers retain their opaque semantic background above scrolling actions. */
+.panel.lumina-panel-glass .lumina-table .p-datatable-table,
+.panel.lumina-panel-glass .lumina-table .p-datatable-tbody > tr:not(.p-datatable-row-selected) {
+  background: transparent;
+}
+
+.panel.lumina-panel-glass
+  .lumina-table
+  .p-datatable-tbody
+  > tr:not(.p-datatable-row-selected):hover {
+  background: var(--table-row-hover);
+}
+
+.data-page .log-tabs {
+  background-color: var(--lg-panel-background);
+  background-image: var(--lg-panel-highlight);
+}

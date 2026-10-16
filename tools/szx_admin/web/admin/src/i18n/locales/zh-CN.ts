@@ -127,6 +127,10 @@ export default {
     permission: '查看机器性能',
   },
   appearance: {
+    customize: '自定义主题色',
+    brand: '主题色',
+    resetBrand: '恢复默认配色',
+
     theme: '深色主题',
     performance: '性能模式',
     light: '当前为浅色主题，点击切换为深色',

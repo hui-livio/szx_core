@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
+  LuminaPanel,
   LuminaButton as Button,
   LuminaInput as Input,
   LuminaSelect as Select,
@@ -112,7 +113,7 @@ const groups = computed(() => {
     </header>
     <p v-if="success" class="alert success" role="status">{{ success }}</p>
     <p v-if="saveError && !action" class="alert error" role="alert">{{ saveError }}</p>
-    <section class="panel table-panel">
+    <LuminaPanel as="section" class="panel table-panel" radius="var(--lg-r-3xl)" padding="0">
       <form class="filters" @submit.prevent="load">
         <label
           >{{ t('roleManagement.search')
@@ -256,7 +257,7 @@ const groups = computed(() => {
               : t('common.noResults')
         }}</template>
       </Table>
-    </section>
+    </LuminaPanel>
     <ModalDialog v-if="action" :title="title" :busy="saving" @close="close">
       <div v-if="discardRequested" class="role-form">
         <p>{{ t('roleManagement.unsaved') }}</p>

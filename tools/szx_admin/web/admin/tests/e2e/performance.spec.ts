@@ -1,3 +1,4 @@
+import { expectThemedPanels } from './surface'
 import { test, expect, type Page } from '@playwright/test'
 
 const metric = (usage = 40) => ({
@@ -403,4 +404,12 @@ test('unchanged disk charts skip repeated polling updates but retain data, local
   await expect.poll(diskCounts).toEqual(Array(32).fill(3))
   await expect(page.getByRole('img', { name: 'CPU usage trend', exact: true })).toBeVisible()
   await expect(page.locator('.lumina-chart')).toHaveCount(34)
+})
+
+test('page panels share the login theme material in light/dark and lite/full modes', async ({
+  page,
+}) => {
+  await setup(page)
+  await page.locator('.sidebar a[href="/system/performance"]').click()
+  await expectThemedPanels(page, '.performance-grid .lumina-card')
 })

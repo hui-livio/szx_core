@@ -59,7 +59,6 @@ onBeforeUnmount(() => narrowScreenQuery?.removeEventListener('change', updateNar
         </div>
         <div id="mobile-topbar" />
       </div>
-      <div class="nav-label">{{ t('shell.adminConsole') }}</div>
       <nav :aria-label="t('shell.mainNavigation')">
         <RouterLink
           class="lumina-smooth-edge"
@@ -71,15 +70,12 @@ onBeforeUnmount(() => narrowScreenQuery?.removeEventListener('change', updateNar
           >{{ link.label }}</RouterLink
         >
       </nav>
-      <div class="sidebar-bottom">
-        <span class="system-mark" /> SZX · {{ t('shell.identityManagement') }}
-      </div>
     </aside>
     <div class="workspace">
       <Teleport to="#mobile-topbar" :disabled="!narrowScreen" defer>
         <header class="topbar">
           <span class="breadcrumb"
-            >{{ t('shell.console') }} <span>/</span> <strong>{{ title }}</strong></span
+            ><strong>{{ title }}</strong></span
           >
           <div class="account">
             <UiPreferences />

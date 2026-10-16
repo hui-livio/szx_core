@@ -1,3 +1,4 @@
+import { expectThemedPanels } from './surface'
 import { test, expect, type Page } from '@playwright/test'
 import { expectHeaderAboveRowControls } from './table'
 import type { RoleRecord } from '../../src/api/types'
@@ -511,3 +512,11 @@ for (const width of [1440, 390]) {
     }
   })
 }
+
+test('page panels share the login theme material in light/dark and lite/full modes', async ({
+  page,
+}) => {
+  await setup(page)
+  await openRoles(page)
+  await expectThemedPanels(page, '.table-panel')
+})

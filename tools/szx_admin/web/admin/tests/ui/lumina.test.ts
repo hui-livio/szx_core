@@ -34,6 +34,18 @@ describe('Lumina source-module boundary', () => {
       )
     }
   })
+
+  it('all page panel shells reuse the same LuminaPanel material as login', () => {
+    for (const path of files(resolve('src/pages')).filter((path) => path.endsWith('.vue'))) {
+      const source = readFileSync(path, 'utf8')
+      expect(source).not.toMatch(/<section[^>]*class="panel/)
+      if (source.includes('class="panel')) expect(source).toContain('<LuminaPanel')
+    }
+    const metrics = readFileSync('src/pages/PerformancePage.vue', 'utf8')
+    for (const card of metrics.matchAll(/<LuminaCard\s[\s\S]*?>/g)) {
+      expect(card[0]).toContain('variant="glass"')
+    }
+  })
   it('keeps theme resources in the same directory without creating a package', () => {
     const names = files(root)
     expect(names).not.toContain(resolve(root, 'package.json'))
@@ -44,6 +56,9 @@ describe('Lumina source-module boundary', () => {
 
 it.each([
   [1440, 900, 1],
+  [1366, 768, 0.92],
+  [1920, 1080, 1.14],
+  [2560, 1440, 1.42],
   [320, 480, 0.92],
   [10000, 10000, 1.5],
 ])('scales %s×%s without app-specific dependencies', (width, height, expected) => {

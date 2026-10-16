@@ -1,0 +1,51 @@
+/* Opt-in only. Without data-brand, the original admin palette is unchanged. */
+:root[data-brand] {
+  --accent-2: var(--lg-brand-400);
+  --lg-gradient-brand: linear-gradient(135deg, var(--lg-brand-500), var(--lg-brand-400));
+  --lg-gradient-flow: linear-gradient(120deg, var(--lg-brand-500), var(--lg-brand-400));
+  --lg-active-surface: linear-gradient(135deg, var(--lg-brand-50), var(--lg-brand-100));
+  --lg-control-halo: color-mix(in srgb, var(--lg-brand-500) 4%, transparent);
+  --lg-control-ring: var(--lg-brand-200);
+  --lg-edge-hover: color-mix(in srgb, var(--lg-brand-500) 72%, transparent);
+  --lg-edge-focus: color-mix(in srgb, var(--lg-brand-500) 90%, transparent);
+  --lg-ring-focus: 0 0 0 var(--lg-ring) color-mix(in srgb, var(--lg-brand-500) 20%, transparent);
+  --lg-sh-1: 0 4px 12px -4px color-mix(in srgb, var(--lg-brand-500) 90%, transparent);
+  --lg-sh-2: 0 8px 20px -6px color-mix(in srgb, var(--lg-brand-500) 80%, transparent);
+  --lg-sh-5: 0 14px 30px -12px color-mix(in srgb, var(--lg-brand-500) 90%, transparent);
+  --lg-sh-6: 0 18px 38px -12px var(--lg-brand-500);
+  --lg-orb-1: radial-gradient(circle at 35% 35%, var(--lg-brand-300), transparent 74%);
+  --lg-orb-2: radial-gradient(circle at 60% 40%, var(--lg-brand-500), transparent 74%);
+  --lg-orb-3: radial-gradient(circle, var(--lg-brand-200), transparent 74%);
+  --lg-spot: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--lg-brand-400) 28%, transparent),
+    transparent 68%
+  );
+  --lg-spark-color: var(--lg-brand-500);
+  --lg-spark-glow: color-mix(in srgb, var(--lg-brand-400) 45%, transparent);
+  --lg-scroll-thumb: color-mix(in srgb, var(--lg-brand-500) 44%, transparent);
+  --lg-scroll-thumb-hover: color-mix(in srgb, var(--lg-brand-500) 70%, transparent);
+}
+
+:root[data-brand][data-theme='dark'] {
+  --lg-active-surface: linear-gradient(135deg, var(--lg-brand-900), var(--lg-brand-800));
+  --lg-info-surface: color-mix(in srgb, var(--lg-brand-500) 14%, transparent);
+  --lg-info-border: color-mix(in srgb, var(--lg-brand-400) 36%, transparent);
+  --lg-control-ring: color-mix(in srgb, var(--lg-brand-400) 55%, transparent);
+  --lg-spark-color: var(--lg-brand-200);
+}
+
+:root[data-brand] .p-button.primary,
+:root[data-brand] .button.primary,
+:root[data-brand] .lumina-mark-brand,
+:root[data-brand] .lumina-mark-brand.p-button:not(:disabled):hover,
+:root[data-brand] .lumina-preference-button.p-button[aria-checked='true'],
+:root[data-brand] .lumina-preference-button.p-button[aria-checked='true']:not(:disabled):hover {
+  color: var(--lg-brand-contrast);
+}
+
+:root[data-brand] .p-button.primary:not(:disabled):hover,
+:root[data-brand] .button.primary:hover {
+  background: var(--lg-brand-600);
+  color: var(--lg-brand-hover-contrast);
+}

@@ -159,7 +159,7 @@ for (const side of ['bottom', 'top'] as const) {
   })
 }
 
-test('generic panels switch glass effects without resizing and keep solid surfaces opaque', async ({
+test('generic panels retain faux glass without backdrop-filter passes or resizing', async ({
   page,
 }) => {
   await page.goto(fixture)
@@ -178,9 +178,7 @@ test('generic panels switch glass effects without resizing and keep solid surfac
   await page.evaluate(() => {
     document.documentElement.dataset.fx = 'full'
   })
-  expect(await glass.evaluate((element) => getComputedStyle(element).backdropFilter)).toContain(
-    'blur(',
-  )
+  expect(await glass.evaluate((element) => getComputedStyle(element).backdropFilter)).toBe('none')
   expect(await glass.boundingBox()).toEqual(before)
   expect(await solid.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe(
     'rgb(255, 255, 255)',
@@ -257,10 +255,16 @@ test('editable Select accepts free text and uses themed keyboard-accessible opti
   await editable.fill('caller custom value')
   await expect(page.getByTestId('editable-choice-model')).toHaveText('caller custom value')
   await editable.press('Escape')
+  await expect(editable).toHaveAttribute('aria-expanded', 'false')
   await editable.fill('')
   await editable.press('ArrowDown')
   await expect(page.getByRole('option', { name: 'Violet', exact: true })).toContainText('violet')
   await editable.fill('Vio')
+  // Await the accessible focused option, not just text from an opening/closing overlay.
+  await expect(page.getByRole('option', { name: 'Violet', exact: true })).toHaveAttribute(
+    'data-p-focused',
+    'true',
+  )
   await editable.press('Enter')
   await expect(editable).toHaveValue('Violet')
   await expect(page.getByTestId('editable-choice-model')).toHaveText('violet')

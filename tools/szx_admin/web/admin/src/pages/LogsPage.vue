@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { LuminaButton as Button } from '../ui/lumina'
+import { LuminaPanel, LuminaButton as Button } from '../ui/lumina'
 import { computed, ref, watch } from 'vue'
 import { useLogsViewModel } from '../composables/useLogsViewModel'
 import { useBehaviorEventsViewModel } from '../composables/useBehaviorEventsViewModel'
@@ -91,7 +91,13 @@ const {
         {{ t('audit.behaviorTab') }}
       </Button>
     </nav>
-    <section v-if="activeTab === 'audit' && canAudit" class="panel table-panel">
+    <LuminaPanel
+      as="section"
+      v-if="activeTab === 'audit' && canAudit"
+      class="panel table-panel"
+      radius="var(--lg-r-3xl)"
+      padding="0"
+    >
       <LogFilters
         v-model="auditFilters"
         :busy="busy"
@@ -115,8 +121,14 @@ const {
         :busy="busy"
         @change="load"
       />
-    </section>
-    <section v-else-if="activeTab === 'behavior' && canBehavior" class="panel table-panel">
+    </LuminaPanel>
+    <LuminaPanel
+      as="section"
+      v-else-if="activeTab === 'behavior' && canBehavior"
+      class="panel table-panel"
+      radius="var(--lg-r-3xl)"
+      padding="0"
+    >
       <BehaviorEventFilters
         v-model="behaviorFilters"
         :busy="behaviorBusy"
@@ -149,7 +161,7 @@ const {
         :busy="behaviorBusy"
         @change="loadBehavior"
       />
-    </section>
+    </LuminaPanel>
     <p v-if="activeTab === 'audit' && requestId" class="request-id">
       {{ t('common.requestId') }}：{{ requestId }}
     </p>

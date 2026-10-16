@@ -1,0 +1,106 @@
+/* Separate dark tokens use greater specificity than the base :root palette. */
+:root[data-theme='dark'] {
+  --lg-spark-color: rgba(180, 196, 255, 0.9);
+  --lg-spark-glow: rgba(120, 140, 255, 0.65);
+}
+
+/* Small, cached gradient sprites, not full-screen filters/canvas/video. The single
+   background clock writes only transform/opacity, at most 30 times per second. */
+.lg-bg {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  z-index: 0;
+  contain: strict;
+  pointer-events: none;
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--lg-line) 35%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--lg-line) 35%, transparent) 1px, transparent 1px);
+  background-size: var(--lg-grid-size) var(--lg-grid-size);
+}
+
+.lg-orb {
+  position: absolute;
+  width: min(52vw, var(--lg-orb-cap, 480px));
+  aspect-ratio: 1;
+  border-radius: 50%;
+  opacity: var(--lg-orb-opacity);
+}
+
+.lg-orb.a {
+  left: -6vw;
+  top: -12vh;
+  background: var(--lg-orb-1);
+}
+
+.lg-orb.b {
+  right: -5vw;
+  top: 8vh;
+  background: var(--lg-orb-2);
+}
+
+.lg-orb.c {
+  left: 30vw;
+  bottom: -18vh;
+  background: var(--lg-orb-3);
+}
+
+.lg-spot {
+  display: none;
+  position: absolute;
+  width: min(40vw, var(--lg-spot-cap, 280px));
+  aspect-ratio: 1;
+  left: 0;
+  top: 0;
+  /* Individual translate is static; the clock writes only transform. */
+  translate: -50% -50%;
+  background: var(--lg-spot);
+  border-radius: 50%;
+}
+
+.lg-spark {
+  display: none;
+  position: absolute;
+  top: 0;
+  width: 18px;
+  height: 18px;
+  opacity: 0;
+  /* Bake core and halo into one sprite; no per-particle blur/shadow/filter. */
+  background: radial-gradient(
+    circle,
+    var(--lg-spark-color) 0 8%,
+    var(--lg-spark-glow) 12%,
+    transparent 66%
+  );
+}
+
+.lg-bg[data-motion='running'] .lg-orb {
+  will-change: transform;
+}
+
+.lg-bg[data-motion='running'] .lg-spark:not([hidden]) {
+  display: block;
+  will-change: transform, opacity;
+}
+
+.lg-bg[data-motion='running'][data-pointer] .lg-spot {
+  display: block;
+  will-change: transform;
+}
+
+.lg-bg[data-motion='paused'] .lg-orb {
+  opacity: var(--lg-orb-opacity-lite);
+}
+
+/* Respect reduced-motion immediately, before JS observers deliver the change. */
+@media (prefers-reduced-motion: reduce) {
+  .lg-bg .lg-spark,
+  .lg-bg .lg-spot {
+    display: none !important;
+  }
+
+  .lg-bg .lg-orb {
+    will-change: auto !important;
+    opacity: var(--lg-orb-opacity-lite);
+  }
+}

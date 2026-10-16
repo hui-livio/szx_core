@@ -137,6 +137,10 @@ export default {
     permission: 'マシン性能を表示',
   },
   appearance: {
+    customize: 'テーマ色をカスタマイズ',
+    brand: 'テーマ色',
+    resetBrand: '既定の配色に戻す',
+
     theme: 'ダークテーマ',
     performance: 'パフォーマンスモード',
     light: 'ライトテーマ：ダークに切り替え',

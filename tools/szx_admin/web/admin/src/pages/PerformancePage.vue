@@ -189,6 +189,7 @@ function capacity(metric: MachineMetric): LuminaChartOption {
     :aria-label="t('performance.title')"
   >
     <LuminaCard
+      variant="glass"
       :style="cellStyle(0)"
       :title="t('performance.cpu')"
       :subtitle="t('performance.cores', { count: snapshot?.logical_cpus ?? '—' })"
@@ -200,6 +201,7 @@ function capacity(metric: MachineMetric): LuminaChartOption {
       <template #footer>{{ t('performance.sampleEvery', { seconds: 2 }) }}</template>
     </LuminaCard>
     <LuminaCard
+      variant="glass"
       :style="cellStyle(1)"
       :title="t('performance.memory')"
       :subtitle="t('performance.physicalMemory')"
@@ -225,6 +227,7 @@ function capacity(metric: MachineMetric): LuminaChartOption {
       <template #footer>{{ t('performance.availableHint') }}</template>
     </LuminaCard>
     <LuminaCard
+      variant="glass"
       v-for="(disk, index) in snapshot?.disks ?? []"
       :style="cellStyle(index + 2)"
       :key="disk.id"
