@@ -1,4 +1,4 @@
-# Opt-in: no OpenCV dependency is added to admin or unrelated components.
+# Keep OpenCV scoped to the image viewer targets.
 szx_find_opencv(COMPONENTS core imgcodecs imgproc)
 add_library(szx_web_image_core STATIC src/ImageService.cc src/ImageCatalog.cc)
 target_include_directories(szx_web_image_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")

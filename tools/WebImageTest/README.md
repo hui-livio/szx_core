@@ -134,13 +134,11 @@ X-Image-Id: snapshot-uuid
 
 ## 构建与启动
 
-OpenCV C++ 开发包需要 `core` / `imgcodecs` / `imgproc`。本机通过 `/usr/lib/cmake/opencv5/OpenCVConfig.cmake` 验证。示例默认关闭，不改变 admin 依赖。
+OpenCV C++ 开发包需要 `core` / `imgcodecs` / `imgproc`。本机通过 `/usr/lib/cmake/opencv5/OpenCVConfig.cmake` 验证。示例在独立构建时默认开启，作为子项目时默认关闭；OpenCV 仅链接到图片示例目标。可设置 `SZX_COMPONENTS_BUILD_WEB_IMAGE_TEST=OFF` 关闭示例；关闭网络组件时也需关闭此示例。
 
 ```sh
 # 仓库根目录
 cmake -S . -B build-web-image -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-  -DSZX_COMPONENTS_BUILD_WEB_IMAGE_TEST=ON \
-  -DSZX_COMPONENTS_BUILD_NETWORK=ON \
   -DSZX_COMPONENTS_BUILD_RBAC=OFF \
   -DSZX_COMPONENTS_BUILD_CAMERA=OFF \
   -DSZX_COMPONENTS_BUILD_COMPRESSION=OFF \
@@ -156,7 +154,7 @@ cmake --build build-web-image --target szx_web_image_test test_web_image --paral
 # http://127.0.0.1:7380/
 ```
 
-已有构建目录只需开启 `SZX_COMPONENTS_BUILD_WEB_IMAGE_TEST` 和 NETWORK，必要时设置 `SZX_OPENCV_DIR`（包含 OpenCVConfig.cmake 的目录）。Windows 使用 x64 MSVC 开发者终端，Multi-Config build/ctest 增加 `--config Release` / `-C Release`；对应 DLL 需可被运行时找到。
+全新独立构建无需额外开启示例或网络选项。已有构建目录会保留 CMake 缓存中的旧值，如原先为 OFF，需重新配置并显式传入 `-DSZX_COMPONENTS_BUILD_WEB_IMAGE_TEST=ON -DSZX_COMPONENTS_BUILD_NETWORK=ON`；必要时设置 `SZX_OPENCV_DIR`（包含 OpenCVConfig.cmake 的目录）。Windows 使用 x64 MSVC 开发者终端，Multi-Config build/ctest 增加 `--config Release` / `-C Release`；对应 DLL 需可被运行时找到。
 
 | 参数           | 默认                                     | 说明                        |
 | -------------- | ---------------------------------------- | --------------------------- |

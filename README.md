@@ -72,11 +72,11 @@ backend; its operations then return `UnsupportedBackend`.
 
 Qt/QML 应用按需链接 `szx::feature_manager_qt`，并通过 `add_subdirectory()` 源码集成或安装后的 `SZXComponents` package 使用。
 
-OpenCV、IKap 和 libmodbus 均按本机 SDK/库是否存在选择性启用；无硬件环境仍可构建 common、crypto、logger 和 camera 核心。
+相机组件中的 OpenCV、IKap 和 libmodbus 按本机 SDK/库是否存在选择性启用；默认开启的 Web 图片示例需要 OpenCV 开发包。不构建该示例时可设置 `SZX_COMPONENTS_BUILD_WEB_IMAGE_TEST=OFF`；无硬件环境仍可构建 common、crypto、logger 和 camera 核心。
 
 仓库文档入口见 [docs/文档索引.md](docs/文档索引.md)，统一构建、基础组件和工具使用见 [工具与基础组件构建使用指南](docs/使用/工具与基础组件构建使用指南.md)，第三方源码依赖及其分发边界见 [docs/规范/第三方库清单.md](docs/规范/第三方库清单.md)。
 
 
 ## HTTP / OpenCV 原生 Web 图片示例
 
-`tools/WebImageTest` 提供独立的静态网页 HTTP 服务：通过列表接口选择目录图片，通过独立加载接口在单工作线程中用 OpenCV 解码并转换成连续 BGRA8，数据接口只返回 BGRA8 原始字节；原生 JavaScript 页面支持瓦片模式和整图非瓦片模式，以 WebGL2（Canvas2D 降级）按需绘制，支持缩放、平移、双指与全屏，不使用 Vue 或数据库。默认不构建，设置 `SZX_COMPONENTS_BUILD_WEB_IMAGE_TEST=ON` 与 `SZX_COMPONENTS_BUILD_NETWORK=ON` 启用；仅该目标要求 OpenCV 的 `core/imgcodecs/imgproc`。详见 [构建、运行、接口与测试](tools/WebImageTest/README.md)。
+`tools/WebImageTest` 提供独立的静态网页 HTTP 服务：通过列表接口选择目录图片，通过独立加载接口在单工作线程中用 OpenCV 解码并转换成连续 BGRA8，数据接口只返回 BGRA8 原始字节；原生 JavaScript 页面支持瓦片模式和整图非瓦片模式，以 WebGL2（Canvas2D 降级）按需绘制，支持缩放、平移、双指与全屏，不使用 Vue 或数据库。独立构建默认开启 `SZX_COMPONENTS_BUILD_WEB_IMAGE_TEST`，依赖网络组件和 OpenCV 的 `core/imgcodecs/imgproc`；作为子项目时默认关闭，需要时同时设置 `SZX_COMPONENTS_BUILD_WEB_IMAGE_TEST=ON` 与 `SZX_COMPONENTS_BUILD_NETWORK=ON`。可设置 `SZX_COMPONENTS_BUILD_WEB_IMAGE_TEST=OFF` 关闭示例。详见 [构建、运行、接口与测试](tools/WebImageTest/README.md)。

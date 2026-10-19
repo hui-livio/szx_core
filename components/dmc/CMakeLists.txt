@@ -29,7 +29,7 @@ target_include_directories(szx_dmc PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_link_libraries(szx_dmc PRIVATE szx::common)
+target_link_libraries(szx_dmc PUBLIC szx::common)
 if(SZX_DMC_HAS_LTDMC)
     target_include_directories(szx_dmc PRIVATE "${SZX_DMC_ROOT}")
     target_link_libraries(szx_dmc PRIVATE "${SZX_DMC_IMPLIB}")
