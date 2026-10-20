@@ -11,6 +11,7 @@ import {
 } from '../ui/lumina'
 import { usePerformance } from '../features/performance/usePerformance'
 import { formatBytes } from '../features/performance/model'
+import PerformanceHardware from '../features/performance/PerformanceHardware.vue'
 import { formatTime } from '../domain'
 import type { MachineMetric } from '../api/types'
 
@@ -61,7 +62,7 @@ const stateLabel = (metric?: MachineMetric) =>
         ? 'performance.warming'
         : 'performance.unavailable',
   )
-function trend(key: 'cpu' | 'memory'): LuminaChartOption {
+function trend(key: 'cpu' | 'memory' | 'gpu'): LuminaChartOption {
   return {
     grid: { left: 36, right: 12, top: 12, bottom: 26 },
     tooltip: {
@@ -105,6 +106,7 @@ function trend(key: 'cpu' | 'memory'): LuminaChartOption {
 const cpuOption = computed(() => trend('cpu'))
 const cardCount = computed(() => 2 + (snapshot.value?.disks.length ?? 0))
 const memoryOption = computed(() => trend('memory'))
+const gpuOption = computed(() => trend('gpu'))
 interface DiskChart {
   used: number
   free: number
@@ -192,19 +194,37 @@ function capacity(metric: MachineMetric): LuminaChartOption {
       variant="glass"
       :style="cellStyle(0)"
       :title="t('performance.cpu')"
-      :subtitle="t('performance.cores', { count: snapshot?.logical_cpus ?? '—' })"
+      :subtitle="
+        snapshot?.cpu_name || t('performance.cores', { count: snapshot?.logical_cpus ?? '—' })
+      "
       :state="state(snapshot?.cpu)"
       :state-label="stateLabel(snapshot?.cpu)"
     >
       <div class="performance-value">{{ percent(snapshot?.cpu.usage_percent) }}</div>
       <LuminaChart :option="cpuOption" :label="t('performance.cpuTrend')" />
+      <dl class="performance-details">
+        <div>
+          <dt>{{ t('performance.coresLabel') }}</dt>
+          <dd>{{ snapshot?.logical_cpus ?? '—' }}</dd>
+        </div>
+        <div>
+          <dt>{{ t('performance.temperature') }}</dt>
+          <dd>
+            {{
+              snapshot?.cpu.temperature_celsius == null
+                ? '—'
+                : `${numberFormatter.format(snapshot.cpu.temperature_celsius)} °C`
+            }}
+          </dd>
+        </div>
+      </dl>
       <template #footer>{{ t('performance.sampleEvery', { seconds: 2 }) }}</template>
     </LuminaCard>
     <LuminaCard
       variant="glass"
       :style="cellStyle(1)"
       :title="t('performance.memory')"
-      :subtitle="t('performance.physicalMemory')"
+      :subtitle="snapshot?.memory_spec || t('performance.physicalMemory')"
       :state="state(snapshot?.memory)"
       :state-label="stateLabel(snapshot?.memory)"
     >
@@ -260,6 +280,7 @@ function capacity(metric: MachineMetric): LuminaChartOption {
         </div>
       </dl>
       <template #footer>
+        <span v-if="disk.type">{{ disk.type }} · </span>
         <span v-if="now - disk.sampled_at > 65_000" class="performance-stale"
           >{{ t('performance.stale') }} ·
         </span>
@@ -269,6 +290,7 @@ function capacity(metric: MachineMetric): LuminaChartOption {
     </LuminaCard>
   </LuminaCardGrid>
   <p v-if="snapshot && !snapshot.disks.length" class="hint">{{ t('performance.noDisks') }}</p>
+  <PerformanceHardware :snapshot="snapshot" :gpu-option="gpuOption" />
 </template>
 <style scoped>
 .performance-controls {

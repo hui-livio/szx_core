@@ -5,10 +5,16 @@ if(TARGET szx_rbac_infra)
     add_subdirectory(rbac)
 endif()
 add_subdirectory(license)
+if(TARGET szx_metrics)
+    add_subdirectory(metrics)
+endif()
+
 if(TARGET szx_camera)
     add_subdirectory(camera)
 endif()
+
 add_subdirectory(logger)
+
 if(TARGET szx_dmc)
     add_subdirectory(dmc)
 endif()

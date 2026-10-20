@@ -10,6 +10,7 @@
 #include "../support/HttpClient.h"
 #include "JsonHelper.hpp"
 #include "SzxAdmin/Infra/Database.h"
+#include "SzxAdmin/Infra/ErrorCode.h"
 #include "SzxAdmin/Infra/HttpTransport.h"
 #include "SzxAdmin/Infra/RestApi.h"
 #include "SzxAdmin/Policy/Policy.h"
@@ -68,7 +69,9 @@ TEST(SystemMetricsTest, CapacityKeepsQuotaAvailableSeparate)
 TEST(SystemMetricsTest, RealPlatformLifecycleAndBoundedHistory)
 {
     SystemMetricsService service;
-    EXPECT_FALSE(service.snapshot().ok);
+    const auto unavailable = service.snapshot();
+    EXPECT_FALSE(unavailable.ok);
+    EXPECT_EQ(unavailable.error, static_cast<int>(SZX::ADMIN::INFRA::ErrorCode::ServiceUnavailable));
     const auto started = service.start();
     EXPECT_TRUE(started.ok);
     if (!started.ok)
@@ -82,10 +85,27 @@ TEST(SystemMetricsTest, RealPlatformLifecycleAndBoundedHistory)
     EXPECT_FALSE(snapshot.value.memory.error_code.has_value());
     EXPECT_FALSE(snapshot.value.cpu.usage_percent.has_value());
     EXPECT_LE(snapshot.value.disks.size(), 32U);
-    const auto instance = snapshot.value.instance_id;
-    EXPECT_FALSE(service.start().ok);
+    EXPECT_FALSE(snapshot.value.cpu_name.empty());
+    EXPECT_EQ(snapshot.value.gpu_count == 0, snapshot.value.gpu_name.empty());
+    EXPECT_EQ(snapshot.value.gpu_count == 0, snapshot.value.gpu.status == "unavailable");
+    if (snapshot.value.cpu.temperature_celsius)
+        EXPECT_GE(*snapshot.value.cpu.temperature_celsius, 0.0);
+    for (const auto &network : snapshot.value.networks)
+    {
+        EXPECT_FALSE(network.id.empty());
+        if (network.rx_bytes_per_sec)
+            EXPECT_GE(*network.rx_bytes_per_sec, 0.0);
+    }
+    const auto instance  = snapshot.value.instance_id;
+    const auto duplicate = service.start();
+    EXPECT_FALSE(duplicate.ok);
+    EXPECT_EQ(duplicate.error, static_cast<int>(SZX::ADMIN::INFRA::ErrorCode::InvalidConfiguration));
     for (unsigned window : {0U, 901U, std::numeric_limits<unsigned>::max()})
-        EXPECT_FALSE(service.history(window).ok);
+    {
+        const auto invalid = service.history(window);
+        EXPECT_FALSE(invalid.ok);
+        EXPECT_EQ(invalid.error, static_cast<int>(SZX::ADMIN::INFRA::ErrorCode::ValidationError));
+    }
     EXPECT_TRUE(service.history(900).ok);
     std::this_thread::sleep_for(std::chrono::milliseconds(2150));
     snapshot = service.snapshot();
@@ -94,19 +114,42 @@ TEST(SystemMetricsTest, RealPlatformLifecycleAndBoundedHistory)
     const auto history = service.history(300);
     EXPECT_GE(history.value.samples.size(), 2U);
     EXPECT_EQ(history.value.instance_id, instance);
+    EXPECT_EQ(history.value.samples.back().gpu.status, snapshot.value.gpu.status);
     service.stop();
-    EXPECT_FALSE(service.snapshot().ok);
+    const auto stopped = service.snapshot();
+    EXPECT_FALSE(stopped.ok);
+    EXPECT_EQ(stopped.error, static_cast<int>(SZX::ADMIN::INFRA::ErrorCode::ServiceUnavailable));
     EXPECT_TRUE(service.start().ok);
     EXPECT_NE(service.snapshot().value.instance_id, instance);
     service.stop();
 }
 TEST(SystemMetricsTest, ConfigRejectsUnboundedAndRelativePaths)
 {
-    for (auto config : std::vector<MetricsConfig>{{{"relative"}}, {{""}}, {std::vector<std::string>(33, "/")}})
+    for (auto config : std::vector<MetricsConfig>{{{"relative"}},
+                                                  {{""}},
+                                                  {std::vector<std::string>(33, "/")},
+                                                  {{}, {""}},
+                                                  {{}, std::vector<std::string>(17, "example")}})
     {
         SystemMetricsService service{std::move(config)};
-        EXPECT_FALSE(service.start().ok);
+        const auto started = service.start();
+        EXPECT_FALSE(started.ok);
+        EXPECT_EQ(started.error, static_cast<int>(SZX::ADMIN::INFRA::ErrorCode::InvalidConfiguration));
     }
+}
+TEST(SystemMetricsTest, ConfiguredProcessNamesAreExposedWithoutClientInput)
+{
+    MetricsConfig config;
+    config.processNames = {"szx_missing_process_test"};
+    SystemMetricsService service{std::move(config)};
+    ASSERT_TRUE(service.start().ok);
+    const auto snapshot = service.snapshot();
+    ASSERT_TRUE(snapshot.ok);
+    ASSERT_EQ(snapshot.value.processes.size(), 1U);
+    EXPECT_EQ(snapshot.value.processes.front().name, "szx_missing_process_test");
+    EXPECT_EQ(snapshot.value.processes.front().status, "stopped");
+    EXPECT_FALSE(snapshot.value.processes.front().cpu_percent.has_value());
+    service.stop();
 }
 TEST(SystemMetricsTest, OnlyAdminPolicyHasMetricsRead)
 {
@@ -154,14 +197,24 @@ TEST(SystemMetricsTest, IguanaSnapshotPreservesWireFieldsNullsAndEscapedPaths)
     const auto maximum     = std::numeric_limits<std::uint64_t>::max();
     const std::string path = "C:\\data\\资料\\\"report\"";
     MetricsSnapshotDto snapshot;
-    snapshot.sequence     = maximum;
-    snapshot.sampled_at   = 1780000000123LL;
-    snapshot.instance_id  = "instance-json";
-    snapshot.platform     = "windows";
-    snapshot.logical_cpus = 128;
-    snapshot.cpu          = {"ok", std::nullopt, 0.0};
-    snapshot.memory       = {"ok", std::nullopt, 100.0, maximum, maximum, 0, std::nullopt};
+    snapshot.sequence                = maximum;
+    snapshot.sampled_at              = 1780000000123LL;
+    snapshot.instance_id             = "instance-json";
+    snapshot.platform                = "windows";
+    snapshot.logical_cpus            = 128;
+    snapshot.cpu                     = {"ok", std::nullopt, 0.0};
+    snapshot.cpu.temperature_celsius = 62.5;
+    snapshot.memory                  = {"ok", std::nullopt, 100.0, maximum, maximum, 0, std::nullopt};
     snapshot.disks.push_back({"disk-json", path, 1780000000000LL, {"unavailable", 2216}});
+    snapshot.disks.back().type = "SSD(NVMe)";
+    snapshot.cpu_name          = "Test CPU";
+    snapshot.memory_spec       = "DDR5";
+    snapshot.gpu               = {"ok", std::nullopt, 72.0, maximum, maximum / 2, maximum / 2, std::nullopt, 68.0};
+    snapshot.gpu_engine        = {"ok", std::nullopt, 72.0, 42.0, std::nullopt};
+    snapshot.gpu_count         = 1;
+    snapshot.gpu_name          = "Test GPU";
+    snapshot.networks.push_back({"nic-1", "Ethernet", "Adapter", "192.0.2.5", "", 1780000000000LL, 1024.0, std::nullopt, 1000.0});
+    snapshot.processes.push_back({"inspector", "stopped", std::nullopt, std::nullopt, std::nullopt});
     MetricsSnapshotResponse envelope{std::move(snapshot), "metrics-json"};
     std::string body;
     to_json(envelope, body);
@@ -172,7 +225,7 @@ TEST(SystemMetricsTest, IguanaSnapshotPreservesWireFieldsNullsAndEscapedPaths)
     EXPECT_EQ(parsed->size(), 2U);
     EXPECT_EQ(parsed->at("request_id"), "metrics-json");
     const auto &data = parsed->at("data");
-    EXPECT_EQ(data.size(), 10U);
+    EXPECT_EQ(data.size(), 18U);
     EXPECT_EQ(data.at("sequence").get<std::uint64_t>(), maximum);
     EXPECT_EQ(data.at("sampled_at").get<std::int64_t>(), 1780000000123LL);
     EXPECT_EQ(data.at("instance_id"), "instance-json");
@@ -180,8 +233,9 @@ TEST(SystemMetricsTest, IguanaSnapshotPreservesWireFieldsNullsAndEscapedPaths)
     EXPECT_EQ(data.at("logical_cpus"), 128);
     EXPECT_EQ(data.at("sample_interval_ms"), 2000);
     EXPECT_EQ(data.at("disk_interval_ms"), 30000);
-    EXPECT_EQ(data.at("cpu").size(), 7U);
+    EXPECT_EQ(data.at("cpu").size(), 8U);
     EXPECT_EQ(data.at("cpu").at("usage_percent"), 0.0);
+    EXPECT_EQ(data.at("cpu").at("temperature_celsius"), 62.5);
     EXPECT_TRUE(data.at("cpu").at("error_code").is_null());
     EXPECT_TRUE(data.at("cpu").at("total_bytes").is_null());
     EXPECT_TRUE(data.at("cpu").at("used_bytes").is_null());
@@ -193,6 +247,18 @@ TEST(SystemMetricsTest, IguanaSnapshotPreservesWireFieldsNullsAndEscapedPaths)
     EXPECT_EQ(data.at("disks").size(), 1U);
     EXPECT_EQ(data.at("disks").at(0).at("path"), path);
     EXPECT_EQ(data.at("disks").at(0).at("sampled_at"), 1780000000000LL);
+    EXPECT_EQ(data.at("disks").at(0).at("type"), "SSD(NVMe)");
+    EXPECT_EQ(data.at("cpu_name"), "Test CPU");
+    EXPECT_EQ(data.at("memory_spec"), "DDR5");
+    EXPECT_EQ(data.at("gpu_name"), "Test GPU");
+    EXPECT_EQ(data.at("gpu_count"), 1);
+    EXPECT_EQ(data.at("gpu").at("temperature_celsius"), 68.0);
+    EXPECT_EQ(data.at("gpu_engine").at("cuda_percent"), 42.0);
+    EXPECT_TRUE(data.at("gpu_engine").at("graphics_3d_percent").is_null());
+    EXPECT_EQ(data.at("networks").at(0).at("rx_bytes_per_sec"), 1024.0);
+    EXPECT_TRUE(data.at("networks").at(0).at("tx_bytes_per_sec").is_null());
+    EXPECT_EQ(data.at("processes").at(0).at("status"), "stopped");
+    EXPECT_TRUE(data.at("processes").at(0).at("cpu_percent").is_null());
     const auto &unavailable = data.at("disks").at(0).at("capacity");
     EXPECT_EQ(unavailable.at("status"), "unavailable");
     EXPECT_EQ(unavailable.at("error_code"), 2216);
@@ -204,6 +270,8 @@ TEST(SystemMetricsTest, IguanaSnapshotPreservesWireFieldsNullsAndEscapedPaths)
         return;
     EXPECT_EQ(roundTrip.data.disks.front().path, path);
     EXPECT_EQ(roundTrip.data.sequence, maximum);
+    EXPECT_EQ(roundTrip.data.networks.front().name, "Ethernet");
+    EXPECT_EQ(roundTrip.data.gpu_engine.cuda_percent, 42.0);
     const auto response = SZX::ADMIN::INFRA::RestApi::serializedSuccess(std::move(body), envelope.request_id);
     EXPECT_EQ(response.statusCode, 200);
     EXPECT_EQ(response.headers.at("Cache-Control"), "no-store");
@@ -212,9 +280,13 @@ TEST(SystemMetricsTest, IguanaSnapshotPreservesWireFieldsNullsAndEscapedPaths)
 TEST(SystemMetricsTest, IguanaHistoryPreservesNestedSamplesAndEmptyArrays)
 {
     MetricsHistoryResponse envelope{{"instance-history", 2000, 900, {}}, "history-json"};
+    envelope.data.samples.push_back({1,
+                                     1780000000000LL,
+                                     {"warming_up", std::nullopt},
+                                     {"ok", std::nullopt, 25.0, 4096, 1024, 3072},
+                                     {"warming_up", std::nullopt}});
     envelope.data.samples.push_back(
-        {1, 1780000000000LL, {"warming_up", std::nullopt}, {"ok", std::nullopt, 25.0, 4096, 1024, 3072}});
-    envelope.data.samples.push_back({2, 1780000002000LL, {"ok", std::nullopt, 0.0}, {"unavailable", 2216}});
+        {2, 1780000002000LL, {"ok", std::nullopt, 0.0}, {"unavailable", 2216}, {"ok", std::nullopt, 55.0}});
     std::string body;
     SZX::COMMON::Serializer::to_json(envelope, body);
     const auto parsed = SZX::COMMON::JsonHelper::Parse(body);
@@ -226,7 +298,8 @@ TEST(SystemMetricsTest, IguanaHistoryPreservesNestedSamplesAndEmptyArrays)
     EXPECT_EQ(data.size(), 4U);
     EXPECT_EQ(data.at("window_seconds"), 900);
     EXPECT_EQ(data.at("samples").size(), 2U);
-    EXPECT_EQ(data.at("samples").at(0).size(), 4U);
+    EXPECT_EQ(data.at("samples").at(0).size(), 5U);
+    EXPECT_EQ(data.at("samples").at(1).at("gpu").at("usage_percent"), 55.0);
     EXPECT_EQ(data.at("samples").at(0).at("cpu").at("status"), "warming_up");
     EXPECT_TRUE(data.at("samples").at(0).at("cpu").at("error_code").is_null());
     EXPECT_TRUE(data.at("samples").at(0).at("cpu").at("usage_percent").is_null());

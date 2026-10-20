@@ -60,7 +60,9 @@ database:
   connectTimeoutSeconds: 5
   lockWaitTimeoutSeconds: 5
 
-# Whole-machine metrics: CPU/memory every 2s, local disk capacity every 30s.
+# Machine metrics: CPU/memory/GPU/network every 2s, local disk capacity every 30s.
 # Empty diskPaths auto-discovers local volumes (max 32); never monitor network mounts.
+# processNames is optional (max 16 executable names without extensions).
 metrics:
   diskPaths: []
+  processNames: []

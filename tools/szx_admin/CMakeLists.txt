@@ -37,6 +37,9 @@ endif()
 if(NOT TARGET szx::network)
     message(FATAL_ERROR "szx_admin_service requires SZX_COMPONENTS_BUILD_NETWORK=ON")
 endif()
+if(NOT TARGET szx::metrics)
+    message(FATAL_ERROR "szx_admin_service requires SZX_COMPONENTS_BUILD_METRICS=ON")
+endif()
 
 add_library(szx_admin_persistence STATIC
     src/infra/ErrorCode.cc
@@ -102,14 +105,13 @@ target_link_libraries(szx_admin_persistence
     PRIVATE szx::logger szx_rbac_ormpp szx::crypto szx::crypto_service szx::rbac_auth
 )
 target_link_libraries(szx_admin_application PUBLIC szx::common szx::network szx_admin_persistence
-    PRIVATE szx::logger szx::crypto szx::crypto_service szx::rbac_auth)
+    PRIVATE szx::logger szx::crypto szx::crypto_service szx::rbac_auth szx::metrics)
 target_link_libraries(szx_admin_http PUBLIC szx::common szx::network szx_admin_application szx_admin_persistence
     PRIVATE szx::logger szx_rbac_auth)
 target_link_libraries(szx_rbac_infra INTERFACE szx_admin_http szx_admin_application szx_admin_persistence)
 
 if(WIN32)
     target_link_libraries(szx_admin_persistence PRIVATE Normaliz)
-    target_link_libraries(szx_admin_application PRIVATE Pdh)
 else()
     find_package(ICU REQUIRED COMPONENTS uc)
     target_link_libraries(szx_admin_persistence PRIVATE ICU::uc)
@@ -134,7 +136,7 @@ add_executable(szx_admin_service
 )
 
 target_link_libraries(szx_admin_service
-    PRIVATE szx::rbac_infra szx::rbac_auth szx::common szx::logger
+    PRIVATE szx::rbac_infra szx::rbac_auth szx::common szx::logger szx::metrics
 )
 
 target_compile_features(szx_admin_service PRIVATE cxx_std_20)

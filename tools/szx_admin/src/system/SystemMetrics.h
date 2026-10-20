@@ -3,16 +3,15 @@
 #include "Result.hpp"
 #include "SystemMetricsDto.h"
 
-#include <array>
-#include <condition_variable>
 #include <cstdint>
-#include <deque>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
-#include <thread>
+#include <string_view>
 #include <vector>
+
+struct szx_metrics_service;
 
 namespace SZX::ADMIN::SYSTEM
 {
@@ -22,6 +21,7 @@ inline namespace v1
 struct MetricsConfig final
 {
     std::vector<std::string> diskPaths;
+    std::vector<std::string> processNames;
 };
 
 struct CpuCounters final
@@ -52,15 +52,14 @@ struct MetricsSample final
     Metric cpu;
     Metric memory;
 };
-/** Pure parser/calculation helpers used by the platform collector and deterministic tests. */
+/** Compatibility helpers backed by szx_metrics' C ABI. */
 [[nodiscard]] auto parseCpuCounters(std::string_view text) -> std::optional<CpuCounters>;
 [[nodiscard]] auto cpuUsage(CpuCounters previous, CpuCounters current) noexcept -> std::optional<double>;
 [[nodiscard]] auto parseMemory(std::string_view text) -> Metric;
 [[nodiscard]] auto capacityMetric(std::uint64_t total, std::uint64_t free, std::uint64_t available) -> Metric;
 
-/** Single bounded sampler shared by all HTTP callers; no database or request-time OS collection.
- * Stable service boundaries contain exceptions and return admin-owned error codes.
- * The instance must outlive registered handlers. stop() wakes and joins the worker. */
+/** Adapts one szx_metrics sampler to the existing admin HTTP contract.
+ * The instance must outlive registered handlers; errors use admin-owned codes. */
 class SystemMetricsService final
 {
 public:
@@ -74,19 +73,13 @@ public:
     [[nodiscard]] auto history(unsigned windowSeconds = 300) const -> SZX::COMMON::Result<MetricsHistoryDto>;
 
 private:
-    class Platform;
-    void sample(bool disks);
+    struct MetricsServiceDeleter
+    {
+        void operator()(szx_metrics_service *service) const noexcept;
+    };
     MetricsConfig config_;
-    std::unique_ptr<Platform> platform_;
-    std::string instanceId_;
     mutable std::mutex mutex_;
-    std::mutex lifecycleMutex_;
-    std::condition_variable_any wake_;
-    std::jthread worker_;
-    bool running_{};
-    unsigned logicalCpus_{};
-    std::deque<MetricsSample> samples_;
-    std::vector<DiskMetric> disks_;
+    std::unique_ptr<szx_metrics_service, MetricsServiceDeleter> service_;
 };
 } // namespace v1
 } // namespace SZX::ADMIN::SYSTEM

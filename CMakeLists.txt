@@ -69,6 +69,7 @@ option(SZX_COMPONENTS_BUILD_WEB_IMAGE_TEST
 option(SZX_COMPONENTS_BUILD_NETWORK "Build the HTTP/TCP/WebSocket network component" ${SZX_COMPONENTS_STANDALONE_BUILD})
 option(SZX_COMPONENTS_BUILD_RBAC "Build the RBAC admin backend (requires network and MySQL)" ${_SZX_COMPONENTS_DEFAULT_RBAC})
 option(SZX_COMPONENTS_BUILD_TESTS "Build component smoke tests" ${_SZX_COMPONENTS_DEFAULT_TESTS})
+option(SZX_COMPONENTS_BUILD_METRICS "Build the cross-platform system metrics component" ON)
 option(SZX_COMPONENTS_INSTALL "Generate install tree and package config" ${_SZX_COMPONENTS_DEFAULT_INSTALL})
 option(SZX_COMPONENTS_BUILD_CAMERA "Build camera component" ${_SZX_COMPONENTS_DEFAULT_CAMERA})
 option(SZX_COMPONENTS_BUILD_PLC "Build PLC component when libmodbus is available" ${_SZX_COMPONENTS_DEFAULT_PLC})

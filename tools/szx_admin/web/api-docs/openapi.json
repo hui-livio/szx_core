@@ -34,7 +34,7 @@
     },
     {
       "name": "机器性能",
-      "description": "Windows/Linux 服务端机器的 CPU、物理内存及本地磁盘容量；system.metrics.read 权限"
+      "description": "Windows/Linux 服务端机器的 CPU、内存、GPU、网口、本地磁盘及关注进程；system.metrics.read 权限"
     },
     {
       "name": "RBAC 管理",
@@ -1125,7 +1125,7 @@
         ],
         "operationId": "getMachineMetrics",
         "summary": "查询机器性能快照",
-        "description": "需要 system.metrics.read（默认 admin/super_admin）。监控服务所在机器，不是浏览器所在机器。共享采集：CPU/内存 2 秒，磁盘 30 秒。CPU 初次采样 warming_up；局部失败 status=unavailable/error_code=2216，值为 null，其他指标可正常返回。响应不缓存。instance_id 区分采集实例，sequence 在该实例内递增；历史仅保留最近 15 分钟/450 条，服务重启丢失。拒绝未知查询参数。",
+        "description": "需要 system.metrics.read（默认 admin/super_admin）。监控服务所在机器。CPU/内存/GPU/网口每 2 秒采样，磁盘每 30 秒采样；关注进程由服务端配置。CPU 温度与 GPU 在硬件或平台不支持时为 null/unavailable。局部失败不影响其他指标。响应不缓存。instance_id 区分采集实例；历史保留最近约 15 分钟/450 条。拒绝未知查询参数。",
         "parameters": [
           {
             "$ref": "#/components/parameters/RequestId"
@@ -1175,7 +1175,7 @@
         ],
         "operationId": "getMachineMetricsHistory",
         "summary": "查询机器性能历史",
-        "description": "需要 system.metrics.read（默认 admin/super_admin）。监控服务所在机器，不是浏览器所在机器。共享采集：CPU/内存 2 秒，磁盘 30 秒。CPU 初次采样 warming_up；局部失败 status=unavailable/error_code=2216，值为 null，其他指标可正常返回。响应不缓存。instance_id 区分采集实例，sequence 在该实例内递增；历史仅保留最近 15 分钟/450 条，服务重启丢失。拒绝未知查询参数。",
+        "description": "需要 system.metrics.read（默认 admin/super_admin）。返回服务所在机器最近窗口内的 CPU、内存与第一块 GPU 使用率；不包含网口与进程历史。采样间隔 2 秒，最多 450 条，服务重启清空。局部采集失败时指标 status=unavailable。拒绝未知查询参数。",
         "parameters": [
           {
             "$ref": "#/components/parameters/RequestId"
@@ -3050,7 +3050,8 @@
           "total_bytes",
           "used_bytes",
           "available_bytes",
-          "free_bytes"
+          "free_bytes",
+          "temperature_celsius"
         ],
         "properties": {
           "status": {
@@ -3095,10 +3096,55 @@
             "format": "int64",
             "minimum": 0,
             "nullable": true
+          },
+          "temperature_celsius": {
+            "type": "number",
+            "nullable": true,
+            "description": "摄氏度；硬件或平台不支持时为 null"
           }
         },
         "additionalProperties": false,
-        "description": "CPU only has usage_percent; memory used=total-available (available includes reclaimable cache), free_bytes=null; disk used=total-free, available is caller/quota-aware. Failed values remain null, never fake zero."
+        "description": "CPU 有使用率与可选温度；内存 used=total-available 且 free_bytes=null；磁盘 used=total-free；GPU 可提供使用率、显存和温度。缺失值为 null，不伪造 0。"
+      },
+      "MachineGpuEngine": {
+        "type": "object",
+        "required": ["status", "error_code", "total_percent", "cuda_percent", "graphics_3d_percent"],
+        "properties": {
+          "status": {"type": "string", "enum": ["ok", "warming_up", "unavailable"]},
+          "error_code": {"type": "integer", "nullable": true},
+          "total_percent": {"type": "number", "nullable": true},
+          "cuda_percent": {"type": "number", "nullable": true},
+          "graphics_3d_percent": {"type": "number", "nullable": true}
+        },
+        "additionalProperties": false
+      },
+      "MachineNetwork": {
+        "type": "object",
+        "required": ["id", "name", "description", "ipv4", "ipv6", "sampled_at", "rx_bytes_per_sec", "tx_bytes_per_sec", "link_mbps"],
+        "properties": {
+          "id": {"type": "string"},
+          "name": {"type": "string"},
+          "description": {"type": "string"},
+          "ipv4": {"type": "string", "description": "IPv4 地址以换行分隔"},
+          "ipv6": {"type": "string", "description": "IPv6 地址以换行分隔"},
+          "sampled_at": {"type": "integer", "format": "int64"},
+          "rx_bytes_per_sec": {"type": "number", "nullable": true},
+          "tx_bytes_per_sec": {"type": "number", "nullable": true},
+          "link_mbps": {"type": "number", "nullable": true}
+        },
+        "additionalProperties": false
+      },
+      "MachineProcess": {
+        "type": "object",
+        "required": ["name", "status", "error_code", "cpu_percent", "memory_bytes"],
+        "properties": {
+          "name": {"type": "string"},
+          "status": {"type": "string", "enum": ["ok", "stopped", "unavailable"]},
+          "error_code": {"type": "integer", "nullable": true},
+          "cpu_percent": {"type": "number", "nullable": true},
+          "memory_bytes": {"type": "integer", "format": "int64", "nullable": true}
+        },
+        "additionalProperties": false
       },
       "MachineSample": {
         "type": "object",
@@ -3106,7 +3152,8 @@
           "sequence",
           "sampled_at",
           "cpu",
-          "memory"
+          "memory",
+          "gpu"
         ],
         "properties": {
           "sequence": {
@@ -3124,6 +3171,9 @@
           },
           "memory": {
             "$ref": "#/components/schemas/MachineMetric"
+          },
+          "gpu": {
+            "$ref": "#/components/schemas/MachineMetric"
           }
         },
         "additionalProperties": false
@@ -3134,7 +3184,8 @@
           "id",
           "path",
           "sampled_at",
-          "capacity"
+          "capacity",
+          "type"
         ],
         "properties": {
           "id": {
@@ -3151,6 +3202,10 @@
           },
           "capacity": {
             "$ref": "#/components/schemas/MachineMetric"
+          },
+          "type": {
+            "type": "string",
+            "description": "磁盘介质与总线描述"
           }
         },
         "additionalProperties": false
@@ -3167,7 +3222,15 @@
           "logical_cpus",
           "sample_interval_ms",
           "disk_interval_ms",
-          "disks"
+          "disks",
+          "cpu_name",
+          "memory_spec",
+          "gpu",
+          "gpu_engine",
+          "gpu_count",
+          "gpu_name",
+          "networks",
+          "processes"
         ],
         "properties": {
           "sequence": {
@@ -3219,7 +3282,15 @@
             "items": {
               "$ref": "#/components/schemas/MachineDisk"
             }
-          }
+          },
+          "cpu_name": {"type": "string"},
+          "memory_spec": {"type": "string"},
+          "gpu": {"$ref": "#/components/schemas/MachineMetric"},
+          "gpu_engine": {"$ref": "#/components/schemas/MachineGpuEngine"},
+          "gpu_count": {"type": "integer", "minimum": 0, "description": "检测到的 GPU 数；gpu/gpu_engine/gpu_name 表示第一块"},
+          "gpu_name": {"type": "string"},
+          "networks": {"type": "array", "items": {"$ref": "#/components/schemas/MachineNetwork"}},
+          "processes": {"type": "array", "maxItems": 16, "items": {"$ref": "#/components/schemas/MachineProcess"}}
         },
         "additionalProperties": false
       },

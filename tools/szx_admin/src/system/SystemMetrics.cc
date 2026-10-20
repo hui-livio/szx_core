@@ -1,31 +1,11 @@
 #include "SystemMetrics.h"
 
-#include "FileHelper.hpp"
 #include "SzxAdmin/Infra/ErrorCode.h"
-#include "TimeHelper.hpp"
-#include "UUID.hpp"
+#include "SzxMetrics/Metrics.h"
 
-#include <algorithm>
-#include <chrono>
-#include <cmath>
-#include <filesystem>
 #include <limits>
-#include <set>
-#include <sstream>
+#include <memory>
 #include <utility>
-
-#ifdef _WIN32
-    #ifndef NOMINMAX
-        #define NOMINMAX
-    #endif
-    #include <pdh.h>
-    #include <pdhmsg.h>
-    #include <windows.h>
-#else
-    #include <sys/stat.h>
-    #include <sys/statvfs.h>
-    #include <unistd.h>
-#endif
 
 namespace SZX::ADMIN::SYSTEM
 {
@@ -35,473 +15,330 @@ namespace
 {
 using INFRA::ErrorCode;
 using SZX::COMMON::Result;
+
 template <typename T>
 auto failure(ErrorCode code) -> Result<T>
 {
     return Result<T>::Failure(static_cast<int>(code), {});
 }
-auto metricDto(const Metric &value) -> MetricDto
+
+auto metricsError(std::int32_t code) noexcept -> ErrorCode
 {
-    const auto error =
-        value.status == "unavailable" ? std::optional<int>{static_cast<int>(ErrorCode::ServiceUnavailable)} : std::nullopt;
-    return {value.status, error, value.usagePercent, value.totalBytes, value.usedBytes, value.availableBytes, value.freeBytes};
+    switch (code)
+    {
+    case SZX_METRICS_OUT_OF_RANGE:
+        return ErrorCode::ValidationError;
+    case SZX_METRICS_INVALID_CONFIG:
+        return ErrorCode::InvalidConfiguration;
+    case SZX_METRICS_NOT_RUNNING:
+    case SZX_METRICS_PLATFORM_ERROR:
+    case SZX_METRICS_OUT_OF_MEMORY:
+        return ErrorCode::ServiceUnavailable;
+    default:
+        return ErrorCode::InternalFailure;
+    }
 }
-auto sampleDto(const MetricsSample &value) -> MetricsSampleDto
+
+auto metricValue(const szx_metrics_metric &raw) -> Metric
 {
-    return {value.sequence, value.sampledAt, metricDto(value.cpu), metricDto(value.memory)};
+    Metric result;
+    switch (raw.state)
+    {
+    case SZX_METRICS_METRIC_OK:
+        result.status = "ok";
+        break;
+    case SZX_METRICS_METRIC_WARMING_UP:
+        result.status = "warming_up";
+        break;
+    case SZX_METRICS_METRIC_STOPPED:
+        result.status = "stopped";
+        break;
+    default:
+        return result;
+    }
+    if (raw.present & SZX_METRICS_FIELD_USAGE)
+        result.usagePercent = raw.usage_percent;
+    if (raw.present & SZX_METRICS_FIELD_TOTAL)
+        result.totalBytes = raw.total_bytes;
+    if (raw.present & SZX_METRICS_FIELD_USED)
+        result.usedBytes = raw.used_bytes;
+    if (raw.present & SZX_METRICS_FIELD_AVAILABLE)
+        result.availableBytes = raw.available_bytes;
+    if (raw.present & SZX_METRICS_FIELD_FREE)
+        result.freeBytes = raw.free_bytes;
+    return result;
 }
-#ifndef _WIN32
-auto unescapeMount(std::string value) -> std::string
+
+auto metricDto(const szx_metrics_metric &raw) -> MetricDto
 {
-    for (std::size_t i = 0; i + 3 < value.size(); ++i)
-        if (value[i] == '\\' && value[i + 1] >= '0' && value[i + 1] <= '7' && value[i + 2] >= '0' && value[i + 2] <= '7' &&
-            value[i + 3] >= '0' && value[i + 3] <= '7')
-            value.replace(i, 4, 1, static_cast<char>((value[i + 1] - '0') * 64 + (value[i + 2] - '0') * 8 + value[i + 3] - '0'));
-    return value;
+    const auto value     = metricValue(raw);
+    const bool available = raw.state == SZX_METRICS_METRIC_OK || raw.state == SZX_METRICS_METRIC_WARMING_UP ||
+        raw.state == SZX_METRICS_METRIC_STOPPED;
+    const auto error = available ? std::nullopt : std::optional<int>{static_cast<int>(ErrorCode::ServiceUnavailable)};
+    return {value.status,
+            error,
+            value.usagePercent,
+            value.totalBytes,
+            value.usedBytes,
+            value.availableBytes,
+            value.freeBytes,
+            (raw.present & SZX_METRICS_FIELD_TEMPERATURE) ? std::optional<double>{raw.temperature_celsius} : std::nullopt};
 }
-#endif
+
+auto gpuEngineDto(const szx_metrics_gpu_extra &raw) -> GpuEngineDto
+{
+    szx_metrics_metric state{};
+    state.state       = raw.state;
+    const auto metric = metricDto(state);
+    return {metric.status, metric.error_code, (raw.present & 1U) ? std::optional<double>{raw.total_percent} : std::nullopt,
+            (raw.present & 2U) ? std::optional<double>{raw.cuda_percent} : std::nullopt,
+            (raw.present & 4U) ? std::optional<double>{raw.graphics_3d_percent} : std::nullopt};
+}
+
+auto sizedMetric() -> szx_metrics_metric
+{
+    szx_metrics_metric result{};
+    result.struct_size = SZX_METRICS_SIZE_OF(szx_metrics_metric);
+    return result;
+}
+
+using Snapshot = std::unique_ptr<szx_metrics_snapshot, decltype(&szx_metrics_snapshot_release)>;
+using History  = std::unique_ptr<szx_metrics_history, decltype(&szx_metrics_history_release)>;
 } // namespace
 
 auto parseCpuCounters(std::string_view text) -> std::optional<CpuCounters>
 {
-    std::istringstream input{std::string(text.substr(0, text.find('\n')))};
-    std::string label;
-    std::array<std::uint64_t, 8> ticks{};
-    if (!(input >> label) || label != "cpu")
+    if (text.empty() || text.size() > std::numeric_limits<std::uint32_t>::max())
         return std::nullopt;
-    for (auto &tick : ticks)
-        if (!(input >> tick))
-            return std::nullopt;
-    CpuCounters result;
-    for (auto tick : ticks)
-    {
-        if (tick > std::numeric_limits<std::uint64_t>::max() - result.total)
-            return std::nullopt;
-        result.total += tick;
-    }
-    result.idle = ticks[3] + ticks[4]; // idle + iowait; guest is already included in user/nice.
-    return result;
-}
-auto cpuUsage(CpuCounters previous, CpuCounters current) noexcept -> std::optional<double>
-{
-    if (current.total <= previous.total || current.idle < previous.idle)
+    szx_metrics_cpu_counters raw{};
+    raw.struct_size = SZX_METRICS_SIZE_OF(szx_metrics_cpu_counters);
+    if (szx_metrics_parse_cpu_counters(text.data(), static_cast<std::uint32_t>(text.size()), &raw) != SZX_METRICS_OK)
         return std::nullopt;
-    const auto total = current.total - previous.total;
-    const auto idle  = current.idle - previous.idle;
-    if (idle > total)
-        return std::nullopt;
-    return 100.0 * static_cast<double>(total - idle) / static_cast<double>(total);
-}
-auto capacityMetric(std::uint64_t total, std::uint64_t free, std::uint64_t available) -> Metric
-{
-    if (!total || free > total || available > free)
-        return {};
-    Metric result;
-    result.status         = "ok";
-    result.totalBytes     = total;
-    result.usedBytes      = total - free;
-    result.availableBytes = available;
-    result.freeBytes      = free;
-    result.usagePercent   = 100.0 * static_cast<double>(total - free) / static_cast<double>(total);
-    return result;
-}
-auto parseMemory(std::string_view text) -> Metric
-{
-    std::istringstream lines{std::string(text)};
-    std::string line;
-    std::optional<std::uint64_t> total, available;
-    while (std::getline(lines, line))
-    {
-        std::istringstream input{line};
-        std::string key, unit;
-        std::uint64_t value{};
-        if (!(input >> key) || (key != "MemTotal:" && key != "MemAvailable:"))
-            continue;
-        if (!(input >> value >> unit) || unit != "kB" || value > std::numeric_limits<std::uint64_t>::max() / 1024)
-            return {};
-        (key == "MemTotal:" ? total : available) = value * 1024;
-    }
-    if (!total || !available)
-        return {};
-    auto result = capacityMetric(*total, *available, *available);
-    result.freeBytes.reset(); // available includes reclaimable cache, not raw MemFree.
-    return result;
+    return CpuCounters{raw.total, raw.idle};
 }
 
-class SystemMetricsService::Platform final
+auto cpuUsage(CpuCounters previous, CpuCounters current) noexcept -> std::optional<double>
 {
-public:
-#ifdef _WIN32
-    PDH_HQUERY query{};
-    PDH_HCOUNTER counter{};
-    bool primed{};
-    ~Platform()
-    {
-        if (query)
-            PdhCloseQuery(query);
-    }
-#else
-    std::optional<CpuCounters> previous;
-#endif
-    auto cpu() -> Metric
-    {
-        Metric result;
-#ifdef _WIN32
-        if (!query)
-        {
-            if (PdhOpenQueryW(nullptr, 0, &query) != ERROR_SUCCESS)
-                return result;
-            if (PdhAddEnglishCounterW(query, L"\\Processor Information(_Total)\\% Processor Time", 0, &counter) != ERROR_SUCCESS)
-            {
-                PdhCloseQuery(query);
-                query = nullptr;
-                return result;
-            }
-        }
-        if (PdhCollectQueryData(query) != ERROR_SUCCESS)
-        {
-            primed = false;
-            return result;
-        }
-        if (!std::exchange(primed, true))
-        {
-            result.status = "warming_up";
-            return result;
-        }
-        PDH_FMT_COUNTERVALUE value{};
-        if (PdhGetFormattedCounterValue(counter, PDH_FMT_DOUBLE, nullptr, &value) != ERROR_SUCCESS ||
-            (value.CStatus != PDH_CSTATUS_VALID_DATA && value.CStatus != PDH_CSTATUS_NEW_DATA) ||
-            !std::isfinite(value.doubleValue) || value.doubleValue < 0 || value.doubleValue > 100)
-        {
-            primed = false;
-            return result;
-        }
-        result.usagePercent = value.doubleValue;
-#else
-        const auto text    = SZX::COMMON::FileHelper::ReadText("/proc/stat");
-        const auto current = text ? parseCpuCounters(*text) : std::nullopt;
-        if (!current)
-        {
-            previous.reset();
-            return result;
-        }
-        if (previous)
-            result.usagePercent = cpuUsage(*previous, *current);
-        previous = current;
-        if (!result.usagePercent)
-        {
-            result.status = "warming_up";
-            return result;
-        }
-#endif
-        result.status = "ok";
-        return result;
-    }
-    auto memory() -> Metric
-    {
-#ifdef _WIN32
-        MEMORYSTATUSEX data{};
-        data.dwLength = sizeof(data);
-        if (!GlobalMemoryStatusEx(&data))
-            return {};
-        auto result = capacityMetric(data.ullTotalPhys, data.ullAvailPhys, data.ullAvailPhys);
-        result.freeBytes.reset();
-        return result;
-#else
-        const auto text = SZX::COMMON::FileHelper::ReadText("/proc/meminfo");
-        return text ? parseMemory(*text) : Metric{};
-#endif
-    }
-    auto disks(const MetricsConfig &config, std::int64_t now) -> std::vector<DiskMetric>
-    {
-        std::vector<std::string> paths;
-#ifdef _WIN32
-        if (config.diskPaths.empty())
-        {
-            std::array<wchar_t, 512> drives{};
-            const auto count = GetLogicalDriveStringsW(static_cast<DWORD>(drives.size()), drives.data());
-            if (count && count < drives.size())
-                for (const wchar_t *drive = drives.data(); *drive; drive += wcslen(drive) + 1)
-                    if (GetDriveTypeW(drive) == DRIVE_FIXED)
-                        paths.push_back(std::filesystem::path(drive).string());
-        }
-        else
-            paths = config.diskPaths;
-        std::set<std::wstring> seen;
-        std::vector<DiskMetric> result;
-        std::set<std::string> configuredPaths;
-        for (const auto &path : paths)
-        {
-            if (!configuredPaths.insert(path).second)
-                continue;
-            if (result.size() >= 32)
-                break;
-            const auto native = std::filesystem::u8path(path).wstring();
-            std::array<wchar_t, MAX_PATH> volume{};
-            DiskMetric disk{path, path, now, {}};
-            if (!GetVolumePathNameW(native.c_str(), volume.data(), static_cast<DWORD>(volume.size())) ||
-                GetDriveTypeW(volume.data()) != DRIVE_FIXED)
-            {
-                result.push_back(std::move(disk));
-                continue;
-            }
-            if (!seen.insert(volume.data()).second)
-                continue;
-            disk.id = disk.path = std::filesystem::path(volume.data()).string();
-            ULARGE_INTEGER available{}, total{}, free{};
-            if (GetDiskFreeSpaceExW(volume.data(), &available, &total, &free))
-                disk.capacity = capacityMetric(total.QuadPart, free.QuadPart, available.QuadPart);
-            result.push_back(std::move(disk));
-        }
-#else
-        // Only known local filesystems: never probe network/pseudo mounts from an HTTP request.
-        const auto mountText = SZX::COMMON::FileHelper::ReadText("/proc/self/mountinfo");
-        struct Mount
-        {
-            std::string path;
-            bool local;
-        };
-        std::vector<Mount> mounts;
-        if (mountText)
-        {
-            std::istringstream lines{*mountText};
-            std::string line;
-            const std::set<std::string> local{"ext2",    "ext3", "ext4", "xfs",   "btrfs", "zfs",
-                                              "overlay", "f2fs", "vfat", "exfat", "ntfs3"};
-            while (std::getline(lines, line))
-            {
-                const auto separator = line.find(" - ");
-                if (separator == std::string::npos)
-                    continue;
-                std::istringstream left{line.substr(0, separator)}, right{line.substr(separator + 3)};
-                std::string id, parent, device, root, path, fs;
-                if (left >> id >> parent >> device >> root >> path && right >> fs)
-                    mounts.push_back({unescapeMount(path), local.contains(fs)});
-            }
-        }
-        if (config.diskPaths.empty())
-        {
-            for (const auto &mount : mounts)
-                if (mount.local)
-                    paths.push_back(mount.path);
-        }
-        else
-            paths = config.diskPaths;
-        std::set<dev_t> seen;
-        std::vector<DiskMetric> result;
-        std::set<std::string> configuredPaths;
-        for (const auto &path : paths)
-        {
-            if (!configuredPaths.insert(path).second)
-                continue;
-            if (result.size() >= 32)
-                break;
-            const Mount *owner = nullptr;
-            for (const auto &mount : mounts)
-                if ((path == mount.path || mount.path == "/" || path.starts_with(mount.path + "/")) &&
-                    (!owner || mount.path.size() > owner->path.size()))
-                    owner = &mount;
-            DiskMetric disk{path, path, now, {}};
-            if (!owner || !owner->local)
-            {
-                if (!config.diskPaths.empty())
-                    result.push_back(std::move(disk));
-                continue;
-            }
-            struct stat info{};
-            if (::stat(path.c_str(), &info) != 0)
-            {
-                result.push_back(std::move(disk));
-                continue;
-            }
-            if (!seen.insert(info.st_dev).second)
-                continue;
-            disk.id   = std::to_string(info.st_dev);
-            disk.path = owner->path;
-            struct statvfs data{};
-            if (::statvfs(path.c_str(), &data) == 0 && data.f_frsize &&
-                data.f_blocks <= std::numeric_limits<std::uint64_t>::max() / data.f_frsize && data.f_bfree <= data.f_blocks &&
-                data.f_bavail <= data.f_bfree)
-                disk.capacity =
-                    capacityMetric(data.f_blocks * data.f_frsize, data.f_bfree * data.f_frsize, data.f_bavail * data.f_frsize);
-            result.push_back(std::move(disk));
-        }
-#endif
-        return result;
-    }
-};
+    szx_metrics_cpu_counters before{SZX_METRICS_SIZE_OF(szx_metrics_cpu_counters), 0, previous.total, previous.idle};
+    szx_metrics_cpu_counters after{SZX_METRICS_SIZE_OF(szx_metrics_cpu_counters), 0, current.total, current.idle};
+    double percent = 0.0;
+    if (szx_metrics_cpu_usage(&before, &after, &percent) != SZX_METRICS_OK)
+        return std::nullopt;
+    return percent;
+}
+
+auto parseMemory(std::string_view text) -> Metric
+{
+    if (text.empty() || text.size() > std::numeric_limits<std::uint32_t>::max())
+        return {};
+    auto raw = sizedMetric();
+    if (szx_metrics_parse_memory(text.data(), static_cast<std::uint32_t>(text.size()), &raw) != SZX_METRICS_OK)
+        return {};
+    return metricValue(raw);
+}
+
+auto capacityMetric(std::uint64_t total, std::uint64_t free, std::uint64_t available) -> Metric
+{
+    auto raw = sizedMetric();
+    if (szx_metrics_capacity_metric(total, free, available, &raw) != SZX_METRICS_OK)
+        return {};
+    return metricValue(raw);
+}
+
+void SystemMetricsService::MetricsServiceDeleter::operator()(szx_metrics_service *service) const noexcept
+{
+    szx_metrics_service_destroy(service);
+}
 
 SystemMetricsService::SystemMetricsService(MetricsConfig config) :
     config_(std::move(config))
 {
 }
+
 SystemMetricsService::~SystemMetricsService()
 {
     stop();
 }
+
 auto SystemMetricsService::start() -> Result<void>
 {
     try
     {
-        std::lock_guard lifecycle{lifecycleMutex_};
-        if (worker_.joinable())
+        std::lock_guard lock{mutex_};
+        if (service_)
             return failure<void>(ErrorCode::InvalidConfiguration);
-        if (config_.diskPaths.size() > 32)
-            return failure<void>(ErrorCode::InvalidConfiguration);
+
+        szx_metrics_config config{};
+        szx_metrics_config_init(&config);
+        config.flags = SZX_METRICS_CARD_CPU | SZX_METRICS_CARD_MEMORY | SZX_METRICS_CARD_DISK | SZX_METRICS_CARD_NETWORK |
+            SZX_METRICS_CARD_GPU;
+        std::vector<const char *> paths;
+        paths.reserve(config_.diskPaths.size());
         for (const auto &path : config_.diskPaths)
-            if (path.empty() || !std::filesystem::u8path(path).is_absolute() || path.size() > 4096 ||
-                path.find('\0') != std::string::npos)
-                return failure<void>(ErrorCode::InvalidConfiguration);
-        platform_   = std::make_unique<Platform>();
-        instanceId_ = SZX::COMMON::Uuid::v4().toString();
-#ifdef _WIN32
-        logicalCpus_ = GetActiveProcessorCount(ALL_PROCESSOR_GROUPS);
-#else
-        const auto count = sysconf(_SC_NPROCESSORS_ONLN);
-        logicalCpus_     = count > 0 ? static_cast<unsigned>(count) : 0;
-#endif
-        {
-            std::lock_guard lock{mutex_};
-            samples_.clear();
-            disks_.clear();
-        }
-        sample(true);
-        {
-            std::lock_guard lock{mutex_};
-            running_ = true;
-        }
-        worker_ = std::jthread(
-            [this](std::stop_token stop)
-            {
-                try
-                {
-                    auto nextDisk = std::chrono::steady_clock::now() + std::chrono::seconds(30);
-                    std::mutex waitMutex;
-                    while (!stop.stop_requested())
-                    {
-                        std::unique_lock lock{waitMutex};
-                        wake_.wait_for(lock, stop, std::chrono::seconds(2), [] { return false; });
-                        if (stop.stop_requested())
-                            break;
-                        const auto now   = std::chrono::steady_clock::now();
-                        const bool disks = now >= nextDisk;
-                        sample(disks);
-                        if (disks)
-                            nextDisk = now + std::chrono::seconds(30);
-                    }
-                } catch (...)
-                {
-                    std::lock_guard lock{mutex_};
-                    running_ = false;
-                }
-            });
+            paths.push_back(path.c_str());
+        if (paths.size() > SZX_METRICS_MAX_DISK_PATHS)
+            return failure<void>(ErrorCode::InvalidConfiguration);
+        config.disk_paths      = paths.data();
+        config.disk_path_count = static_cast<std::uint32_t>(paths.size());
+        std::vector<const char *> names;
+        names.reserve(config_.processNames.size());
+        for (const auto &name : config_.processNames)
+            names.push_back(name.c_str());
+        if (names.size() > SZX_METRICS_MAX_PROCESS_NAMES)
+            return failure<void>(ErrorCode::InvalidConfiguration);
+        config.process_names      = names.data();
+        config.process_name_count = static_cast<std::uint32_t>(names.size());
+        if (!names.empty())
+            config.flags |= SZX_METRICS_CARD_PROCESS;
+
+        szx_metrics_service *created = nullptr;
+        const auto createdCode       = szx_metrics_service_create(&config, &created);
+        if (createdCode != SZX_METRICS_OK)
+            return failure<void>(createdCode == SZX_METRICS_INVALID_ARGUMENT || createdCode == SZX_METRICS_INVALID_CONFIG ?
+                                     ErrorCode::InvalidConfiguration :
+                                     metricsError(createdCode));
+        std::unique_ptr<szx_metrics_service, MetricsServiceDeleter> pending{created};
+        const auto startedCode = szx_metrics_service_start(pending.get());
+        if (startedCode != SZX_METRICS_OK)
+            return failure<void>(startedCode == SZX_METRICS_INVALID_CONFIG ? ErrorCode::InvalidConfiguration :
+                                                                             metricsError(startedCode));
+        service_ = std::move(pending);
         return Result<void>::Success();
     } catch (...)
     {
-        std::lock_guard lock{mutex_};
-        running_ = false;
-        return failure<void>(ErrorCode::ServiceUnavailable);
+        return failure<void>(ErrorCode::InternalFailure);
     }
 }
+
 void SystemMetricsService::stop() noexcept
 {
     try
     {
-        std::lock_guard lifecycle{lifecycleMutex_};
-        if (worker_.joinable())
-        {
-            worker_.request_stop();
-            wake_.notify_all();
-            worker_.join();
-        }
         std::lock_guard lock{mutex_};
-        running_ = false;
+        service_.reset();
     } catch (...)
-    { /* destructor must not propagate */
+    {
     }
 }
-void SystemMetricsService::sample(bool disks)
-{
-    MetricsSample next;
-    next.sampledAt = SZX::COMMON::TimeHelper::NowTimestamp();
-    try
-    {
-        next.cpu = platform_->cpu();
-    } catch (...)
-    {
-        next.cpu = {};
-    }
-    try
-    {
-        next.memory = platform_->memory();
-    } catch (...)
-    {
-        next.memory = {};
-    }
-    std::optional<std::vector<DiskMetric>> volumes;
-    if (disks)
-    {
-        try
-        {
-            volumes = platform_->disks(config_, next.sampledAt);
-        } catch (...)
-        { /* preserve last disk timestamp: frontend marks it stale */
-        }
-    }
-    std::lock_guard lock{mutex_};
-    next.sequence = samples_.empty() ? 1 : samples_.back().sequence + 1;
-    samples_.push_back(std::move(next));
-    while (samples_.size() > 450)
-        samples_.pop_front();
-    if (volumes)
-        disks_ = std::move(*volumes);
-}
+
 auto SystemMetricsService::snapshot() const -> Result<MetricsSnapshotDto>
 {
     try
     {
         std::lock_guard lock{mutex_};
-        if (!running_ || samples_.empty())
+        if (!service_)
             return failure<MetricsSnapshotDto>(ErrorCode::ServiceUnavailable);
-        const auto &sample = samples_.back();
+        szx_metrics_snapshot *created = nullptr;
+        const auto code               = szx_metrics_service_snapshot(service_.get(), &created);
+        if (code != SZX_METRICS_OK)
+            return failure<MetricsSnapshotDto>(metricsError(code));
+        Snapshot snapshot{created, &szx_metrics_snapshot_release};
+
+        auto cpu    = sizedMetric();
+        auto memory = sizedMetric();
+        auto gpu    = sizedMetric();
+        if (szx_metrics_snapshot_cpu(snapshot.get(), &cpu) != SZX_METRICS_OK ||
+            szx_metrics_snapshot_memory(snapshot.get(), &memory) != SZX_METRICS_OK ||
+            szx_metrics_snapshot_gpu(snapshot.get(), &gpu) != SZX_METRICS_OK)
+            return failure<MetricsSnapshotDto>(ErrorCode::InternalFailure);
+        szx_metrics_gpu_extra gpuExtra{};
+        gpuExtra.struct_size = SZX_METRICS_SIZE_OF(szx_metrics_gpu_extra);
+        if (szx_metrics_snapshot_gpu_extra(snapshot.get(), &gpuExtra) != SZX_METRICS_OK)
+            return failure<MetricsSnapshotDto>(ErrorCode::InternalFailure);
+
         MetricsSnapshotDto result;
-        result.sequence     = sample.sequence;
-        result.sampled_at   = sample.sampledAt;
-        result.cpu          = metricDto(sample.cpu);
-        result.memory       = metricDto(sample.memory);
-        result.instance_id  = instanceId_;
-        result.logical_cpus = logicalCpus_;
-#ifdef _WIN32
-        result.platform = "windows";
-#else
-        result.platform = "linux";
-#endif
-        result.disks.reserve(disks_.size());
-        for (const auto &disk : disks_)
-            result.disks.push_back({disk.id, disk.path, disk.sampledAt, metricDto(disk.capacity)});
+        result.sequence           = szx_metrics_snapshot_sequence(snapshot.get());
+        result.sampled_at         = szx_metrics_snapshot_sampled_at(snapshot.get());
+        result.cpu                = metricDto(cpu);
+        result.memory             = metricDto(memory);
+        result.instance_id        = szx_metrics_snapshot_instance_id(snapshot.get());
+        result.platform           = szx_metrics_snapshot_platform(snapshot.get());
+        result.logical_cpus       = szx_metrics_snapshot_logical_cpus(snapshot.get());
+        result.sample_interval_ms = szx_metrics_snapshot_sample_interval_ms(snapshot.get());
+        result.disk_interval_ms   = szx_metrics_snapshot_disk_interval_ms(snapshot.get());
+        result.cpu_name           = szx_metrics_snapshot_cpu_name(snapshot.get());
+        result.memory_spec        = szx_metrics_snapshot_memory_spec(snapshot.get());
+        result.gpu                = metricDto(gpu);
+        result.gpu_engine         = gpuEngineDto(gpuExtra);
+        result.gpu_count          = szx_metrics_snapshot_gpu_count(snapshot.get());
+        result.gpu_name           = szx_metrics_snapshot_gpu_name(snapshot.get());
+        const auto diskCount      = szx_metrics_snapshot_disk_count(snapshot.get());
+        result.disks.reserve(diskCount);
+        for (std::uint32_t index = 0; index < diskCount; ++index)
+        {
+            szx_metrics_disk disk{};
+            disk.struct_size = SZX_METRICS_SIZE_OF(szx_metrics_disk);
+            if (szx_metrics_snapshot_disk_at(snapshot.get(), index, &disk) != SZX_METRICS_OK)
+                return failure<MetricsSnapshotDto>(ErrorCode::InternalFailure);
+            result.disks.push_back({disk.id, disk.path, disk.sampled_at, metricDto(disk.capacity), disk.type});
+        }
+        const auto networkCount = szx_metrics_snapshot_network_count(snapshot.get());
+        result.networks.reserve(networkCount);
+        for (std::uint32_t index = 0; index < networkCount; ++index)
+        {
+            szx_metrics_network network{};
+            network.struct_size = SZX_METRICS_SIZE_OF(szx_metrics_network);
+            if (szx_metrics_snapshot_network_at(snapshot.get(), index, &network) != SZX_METRICS_OK)
+                return failure<MetricsSnapshotDto>(ErrorCode::InternalFailure);
+            result.networks.push_back({network.id, network.name, network.description, network.ipv4, network.ipv6,
+                                       network.sampled_at,
+                                       (network.present & 1U) ? std::optional<double>{network.rx_bytes_per_sec} : std::nullopt,
+                                       (network.present & 2U) ? std::optional<double>{network.tx_bytes_per_sec} : std::nullopt,
+                                       (network.present & 4U) ? std::optional<double>{network.link_mbps} : std::nullopt});
+        }
+        const auto processCount = szx_metrics_snapshot_process_count(snapshot.get());
+        result.processes.reserve(processCount);
+        for (std::uint32_t index = 0; index < processCount; ++index)
+        {
+            szx_metrics_process process{};
+            process.struct_size = SZX_METRICS_SIZE_OF(szx_metrics_process);
+            if (szx_metrics_snapshot_process_at(snapshot.get(), index, &process) != SZX_METRICS_OK)
+                return failure<MetricsSnapshotDto>(ErrorCode::InternalFailure);
+            szx_metrics_metric state{};
+            state.state       = process.state;
+            const auto status = metricDto(state);
+            result.processes.push_back(
+                {process.name, status.status, status.error_code,
+                 process.state == SZX_METRICS_METRIC_OK ? std::optional<double>{process.cpu_percent} : std::nullopt,
+                 process.state == SZX_METRICS_METRIC_OK ? std::optional<std::uint64_t>{process.memory_bytes} : std::nullopt});
+        }
         return Result<MetricsSnapshotDto>::Success(std::move(result));
     } catch (...)
     {
         return failure<MetricsSnapshotDto>(ErrorCode::InternalFailure);
     }
 }
+
 auto SystemMetricsService::history(unsigned windowSeconds) const -> Result<MetricsHistoryDto>
 {
+    if (!windowSeconds || windowSeconds > SZX_METRICS_MAX_WINDOW_SECONDS)
+        return failure<MetricsHistoryDto>(ErrorCode::ValidationError);
     try
     {
-        if (!windowSeconds || windowSeconds > 900)
-            return failure<MetricsHistoryDto>(ErrorCode::ValidationError);
         std::lock_guard lock{mutex_};
-        if (!running_ || samples_.empty())
+        if (!service_)
             return failure<MetricsHistoryDto>(ErrorCode::ServiceUnavailable);
+        szx_metrics_history *created = nullptr;
+        const auto code              = szx_metrics_service_history(service_.get(), windowSeconds, &created);
+        if (code != SZX_METRICS_OK)
+            return failure<MetricsHistoryDto>(metricsError(code));
+        History history{created, &szx_metrics_history_release};
+
         MetricsHistoryDto result;
-        result.instance_id    = instanceId_;
-        result.window_seconds = windowSeconds;
-        result.samples.reserve(samples_.size());
-        const auto cutoff = samples_.back().sampledAt - static_cast<std::int64_t>(windowSeconds) * 1000;
-        for (const auto &sample : samples_)
-            if (sample.sampledAt >= cutoff)
-                result.samples.push_back(sampleDto(sample));
+        result.instance_id        = szx_metrics_history_instance_id(history.get());
+        result.sample_interval_ms = szx_metrics_history_sample_interval_ms(history.get());
+        result.window_seconds     = szx_metrics_history_window_seconds(history.get());
+        const auto count          = szx_metrics_history_count(history.get());
+        result.samples.reserve(count);
+        for (std::uint32_t index = 0; index < count; ++index)
+        {
+            szx_metrics_sample sample{};
+            sample.struct_size = SZX_METRICS_SIZE_OF(szx_metrics_sample);
+            if (szx_metrics_history_sample_at(history.get(), index, &sample) != SZX_METRICS_OK)
+                return failure<MetricsHistoryDto>(ErrorCode::InternalFailure);
+            result.samples.push_back(
+                {sample.sequence, sample.sampled_at, metricDto(sample.cpu), metricDto(sample.memory), metricDto(sample.gpu)});
+        }
         return Result<MetricsHistoryDto>::Success(std::move(result));
     } catch (...)
     {

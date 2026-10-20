@@ -9,6 +9,7 @@ const metric = (usage = 40) => ({
   used_bytes: 6 * 1024 ** 3,
   available_bytes: 10 * 1024 ** 3,
   free_bytes: null,
+  temperature_celsius: null,
 })
 async function setup(page: Page, role = 'admin', permission = true, diskPaths = ['/', '/data']) {
   let loggedIn = false
@@ -17,6 +18,7 @@ async function setup(page: Page, role = 'admin', permission = true, diskPaths = 
   let memoryUnavailable = false
   let fail = false
   let diskUsed = 6 * 1024 ** 3
+  let gpuAvailable = false
   const user = {
     id: 'admin',
     login_identifier: 'admin',
@@ -60,7 +62,17 @@ async function setup(page: Page, role = 'admin', permission = true, diskPaths = 
         instance_id: instance,
         sample_interval_ms: 2000,
         window_seconds: 900,
-        samples: [{ sequence: count, sampled_at: Date.now(), cpu: metric(25), memory: metric(40) }],
+        samples: [
+          {
+            sequence: count,
+            sampled_at: Date.now(),
+            cpu: metric(25),
+            memory: metric(40),
+            gpu: gpuAvailable
+              ? metric(55)
+              : { ...metric(), status: 'unavailable', usage_percent: null },
+          },
+        ],
       })
     if (path.endsWith('/metrics')) {
       count++
@@ -69,11 +81,30 @@ async function setup(page: Page, role = 'admin', permission = true, diskPaths = 
         instance_id: instance,
         sequence: count,
         sampled_at: Date.now(),
-        cpu: metric(25),
+        cpu: { ...metric(25), temperature_celsius: 61.5 },
         memory: memoryUnavailable
           ? { ...metric(), status: 'unavailable', error_code: 2216, usage_percent: null }
           : metric(40),
         platform: 'linux',
+        cpu_name: 'Test CPU 9000',
+        memory_spec: 'DDR5',
+        gpu: gpuAvailable
+          ? {
+              ...metric(55),
+              temperature_celsius: 67,
+              total_bytes: 8 * 1024 ** 3,
+              used_bytes: 4 * 1024 ** 3,
+            }
+          : { ...metric(), status: 'unavailable', usage_percent: null },
+        gpu_engine: {
+          status: gpuAvailable ? 'ok' : 'unavailable',
+          error_code: gpuAvailable ? null : 2216,
+          total_percent: gpuAvailable ? 55 : null,
+          cuda_percent: gpuAvailable ? 32 : null,
+          graphics_3d_percent: null,
+        },
+        gpu_count: gpuAvailable ? 1 : 0,
+        gpu_name: gpuAvailable ? 'Test GPU 8000' : '',
         logical_cpus: 8,
         sample_interval_ms: 2000,
         disk_interval_ms: 30000,
@@ -82,7 +113,30 @@ async function setup(page: Page, role = 'admin', permission = true, diskPaths = 
           path,
           sampled_at: Date.now(),
           capacity: { ...metric(60), used_bytes: diskUsed, free_bytes: 10 * 1024 ** 3 },
+          type: 'SSD(NVMe)',
         })),
+        networks: [
+          {
+            id: 'nic-1',
+            name: 'Ethernet',
+            description: 'Test adapter',
+            ipv4: '192.0.2.5',
+            ipv6: '',
+            sampled_at: Date.now(),
+            rx_bytes_per_sec: 1024,
+            tx_bytes_per_sec: null,
+            link_mbps: 1000,
+          },
+        ],
+        processes: [
+          {
+            name: 'inspector',
+            status: 'stopped',
+            error_code: null,
+            cpu_percent: null,
+            memory_bytes: null,
+          },
+        ],
       })
     }
     if (path.endsWith('/auth/logout')) return reply(null)
@@ -111,6 +165,9 @@ async function setup(page: Page, role = 'admin', permission = true, diskPaths = 
     setVolumes: (paths: string[]) => {
       diskPaths = paths
     },
+    setGpuAvailable: () => {
+      gpuAvailable = true
+    },
   }
 }
 
@@ -132,6 +189,21 @@ test('one card per metric/volume, ECharts SVG and pause/resume/leave cleanup', a
   const leftCount = state.count()
   await page.waitForTimeout(2300)
   expect(state.count()).toBe(leftCount)
+})
+
+test('shows CPU model and temperature, network rates, and GPU when available', async ({ page }) => {
+  const state = await setup(page)
+  await page.locator('.sidebar nav').getByRole('link', { name: '机器性能' }).click()
+  await expect(page.getByText('Test CPU 9000')).toBeVisible()
+  await expect(page.getByText('61.5 °C')).toBeVisible()
+  await expect(page.getByRole('heading', { name: '网络接口' })).toBeVisible()
+  await expect(page.getByRole('row', { name: /Ethernet/ })).toContainText('1 KiB/s')
+  await expect(page.getByRole('row', { name: /inspector/ })).toContainText('未运行')
+  await expect(page.getByText('未检测到可用 GPU。')).toBeVisible()
+  state.setGpuAvailable()
+  await expect(page.getByText('Test GPU 8000')).toBeVisible()
+  await expect(page.getByRole('img', { name: 'GPU 使用率趋势' }).locator('svg')).toHaveCount(1)
+  await expect(page.getByText('67 °C')).toBeVisible()
 })
 
 test('partial unavailable, server restart, request failure retain explicit state', async ({

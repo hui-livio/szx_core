@@ -87,18 +87,46 @@ export interface MachineMetric {
   used_bytes: number | null
   available_bytes: number | null
   free_bytes: number | null
+  temperature_celsius: number | null
 }
 export interface MachineSample {
   sequence: number
   sampled_at: number
   cpu: MachineMetric
   memory: MachineMetric
+  gpu: MachineMetric
 }
 export interface MachineDisk {
   id: string
   path: string
   sampled_at: number
   capacity: MachineMetric
+  type: string
+}
+export interface MachineGpuEngine {
+  status: 'ok' | 'warming_up' | 'unavailable'
+  error_code: number | null
+  total_percent: number | null
+  cuda_percent: number | null
+  graphics_3d_percent: number | null
+}
+export interface MachineNetwork {
+  id: string
+  name: string
+  description: string
+  ipv4: string
+  ipv6: string
+  sampled_at: number
+  rx_bytes_per_sec: number | null
+  tx_bytes_per_sec: number | null
+  link_mbps: number | null
+}
+export interface MachineProcess {
+  name: string
+  status: 'ok' | 'stopped' | 'unavailable'
+  error_code: number | null
+  cpu_percent: number | null
+  memory_bytes: number | null
 }
 export interface MachineSnapshot extends MachineSample {
   instance_id: string
@@ -107,6 +135,13 @@ export interface MachineSnapshot extends MachineSample {
   sample_interval_ms: number
   disk_interval_ms: number
   disks: MachineDisk[]
+  cpu_name: string
+  memory_spec: string
+  gpu_engine: MachineGpuEngine
+  gpu_count: number
+  gpu_name: string
+  networks: MachineNetwork[]
+  processes: MachineProcess[]
 }
 export interface MachineHistory {
   instance_id: string

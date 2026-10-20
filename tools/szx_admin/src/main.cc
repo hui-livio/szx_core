@@ -68,7 +68,7 @@ struct ServiceConfig final
     SZX::ADMIN::TELEMETRY::TelemetryConfig telemetry;
 };
 SZX_REFL(ServiceConfig::Logging, level, flushLevel, loggerName, pattern, filePath, maxFileSize, maxFiles, truncate, console);
-SZX_REFL(SZX::ADMIN::SYSTEM::MetricsConfig, diskPaths);
+SZX_REFL(SZX::ADMIN::SYSTEM::MetricsConfig, diskPaths, processNames);
 SZX_REFL(ServiceConfig, logging, server, database, logs, auth, telemetry, metrics);
 
 auto logLevel(std::string_view value) -> std::optional<SZX::LOGGER::LogLevel>

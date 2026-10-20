@@ -6,6 +6,7 @@ Never connects to the existing application database or service.
 """
 
 import argparse
+from contextlib import ExitStack
 import hashlib
 import json
 from pathlib import Path
@@ -65,7 +66,17 @@ def main():
                    f"--port={database_port}", f"--socket={root / 'db.sock'}", f"--pid-file={root / 'db.pid'}"]
         if not maria:
             command.append("--mysqlx=OFF")
-        with running(command, root, root / "database.log") as database:
+        with running(command, root, root / "database.log") as database, ExitStack() as cleanup:
+            def shutdown_database():
+                if database.poll() is not None:
+                    return
+                subprocess.run(client + ["--execute=SHUTDOWN"], capture_output=True, timeout=20)
+                try:
+                    database.wait(timeout=30)
+                except subprocess.TimeoutExpired:
+                    pass
+
+            cleanup.callback(shutdown_database)
             wait_until(database_ready, database)
             sql("CREATE DATABASE metrics_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_520_ci;")
             key = rsa.generate_private_key(public_exponent=65537, key_size=3072)
@@ -76,10 +87,10 @@ def main():
                                                             serialization.PublicFormat.SubjectPublicKeyInfo))
             config = root / "config.yaml"
             config.write_text(
-                f"logging:\n  console: false\n  filePath: {json.dumps(str(root / 'service.log'))}\n"
+                f"logging:\n  console: false\n  filePath: {json.dumps((root / 'service.log').as_posix())}\n"
                 f"server:\n  host: 127.0.0.1\n  port: {http_port}\n  workerThreads: 2\n"
-                f"  staticRoot: {json.dumps(str(service.parent / 'web'))}\n"
-                f"auth:\n  privateKeyPath: {json.dumps(str(private))}\n  publicKeyPath: {json.dumps(str(public))}\n"
+                f"  staticRoot: {json.dumps((service.parent / 'web').as_posix())}\n"
+                f"auth:\n  privateKeyPath: {json.dumps(private.as_posix())}\n  publicKeyPath: {json.dumps(public.as_posix())}\n"
                 "  allowedOrigin: '*'\n  attemptsPerMinute: 200\n"
                 f"database:\n  host: 127.0.0.1\n  port: {database_port}\n  database: metrics_test\n"
                 "  username: root\n  password: ''\n  poolSize: 3\nmetrics:\n  diskPaths: []\n", encoding="utf-8")
@@ -145,14 +156,25 @@ def main():
                 assert status == 200 and headers["Cache-Control"] == "no-store", body
                 current = body["data"]
                 assert current["cpu"]["status"] == "ok" and 0 <= current["cpu"]["usage_percent"] <= 100
+                assert isinstance(current["cpu_name"], str) and "temperature_celsius" in current["cpu"]
                 assert current["memory"]["status"] == "ok" and current["memory"]["free_bytes"] is None
+                assert isinstance(current["memory_spec"], str)
+                assert isinstance(current["gpu_count"], int) and isinstance(current["gpu_name"], str)
+                assert "temperature_celsius" in current["gpu"] and "cuda_percent" in current["gpu_engine"]
+                if current["gpu_count"] == 0:
+                    assert current["gpu"]["status"] == "unavailable"
                 assert len(current["disks"]) <= 32
+                assert all("type" in disk for disk in current["disks"])
+                assert isinstance(current["networks"], list) and current["processes"] == []
+                assert all("rx_bytes_per_sec" in nic and "link_mbps" in nic for nic in current["networks"])
                 status, body, _ = call("GET", "/admin/system/metrics/history?window_seconds=900", token=token)
                 assert status == 200 and body["data"]["instance_id"] == current["instance_id"], body
                 assert 2 <= len(body["data"]["samples"]) <= 450
+                assert all("gpu" in sample for sample in body["data"]["samples"])
                 status, document, _ = call("GET", "/openapi.json")
                 assert status == 200
                 assert "/admin/system/metrics" in document["paths"]
+                assert "networks" in document["components"]["schemas"]["MachineSnapshot"]["properties"]
                 print("PASS: migration 12, real metrics/history, default role RBAC, strict queries and deployed OpenAPI")
                 if args.rbac:
                     from test_admin_permissions import run_permission_checks
