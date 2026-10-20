@@ -19,6 +19,7 @@
         #define NOMINMAX
     #endif
     #include <pdh.h>
+    #include <pdhmsg.h>
     #include <windows.h>
 #else
     #include <sys/stat.h>

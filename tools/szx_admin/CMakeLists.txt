@@ -141,8 +141,8 @@ target_compile_features(szx_admin_service PRIVATE cxx_std_20)
 szx_apply_default_compile_policy(szx_admin_service)
 szx_copy_runtime_dlls(szx_admin_service)
 
-# Build the admin frontend and deploy the freshly generated production bundle
-# whenever the service target is built, including builds without relinking.
+# Install locked frontend dependencies, build the production bundle, and replace
+# deployed assets after linking the service.
 if(WIN32)
     find_program(_SZX_ADMIN_NPM_EXECUTABLE NAMES npm.cmd npm REQUIRED NO_CACHE)
 else()
@@ -150,18 +150,24 @@ else()
 endif()
 
 add_custom_command(TARGET szx_admin_service POST_BUILD
+    COMMAND "${_SZX_ADMIN_NPM_EXECUTABLE}" ci --no-audit --no-fund
     COMMAND "${_SZX_ADMIN_NPM_EXECUTABLE}" run build
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/web/admin"
     COMMAND ${CMAKE_COMMAND} -E copy_directory
     "${CMAKE_CURRENT_SOURCE_DIR}/config"
     "$<TARGET_FILE_DIR:szx_admin_service>/config"
+    COMMAND "${CMAKE_COMMAND}" -E rm -rf
+    "$<TARGET_FILE_DIR:szx_admin_service>/web/admin"
     COMMAND ${CMAKE_COMMAND} -E copy_directory
     "${CMAKE_CURRENT_SOURCE_DIR}/web/admin/dist"
     "$<TARGET_FILE_DIR:szx_admin_service>/web/admin"
-    COMMENT "Copying szx_admin_service configuration"
+    COMMENT "Installing frontend dependencies, building admin web, and replacing deployed assets"
+    VERBATIM
 )
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/web/api-docs/index.html")
     add_custom_command(TARGET szx_admin_service POST_BUILD
+        COMMAND "${CMAKE_COMMAND}" -E rm -rf
+        "$<TARGET_FILE_DIR:szx_admin_service>/web/api-docs"
         COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_CURRENT_SOURCE_DIR}/web/api-docs"
         "$<TARGET_FILE_DIR:szx_admin_service>/web/api-docs"
