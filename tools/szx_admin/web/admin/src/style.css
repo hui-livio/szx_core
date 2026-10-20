@@ -1,6 +1,7 @@
 @import url('./ui/lumina/styles.css');
 @import url('./styles/layout.css') layer(app);
 @import url('./styles/data.css') layer(app);
+@import url('./styles/industrial.css') layer(app);
 
 @layer app {
   body {

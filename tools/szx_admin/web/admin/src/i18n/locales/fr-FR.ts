@@ -148,6 +148,10 @@ export default {
     permission: 'Consulter les performances',
   },
   appearance: {
+    design: 'Choisir le style',
+    glass: 'Verre',
+    industrial: 'Industriel',
+    system: 'Suivre le système',
     customize: 'Personnaliser la couleur du thème',
     brand: 'Couleur du thème',
     resetBrand: 'Rétablir les couleurs par défaut',

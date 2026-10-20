@@ -141,6 +141,10 @@ export default {
     permission: '머신 성능 조회',
   },
   appearance: {
+    design: '디자인 선택',
+    glass: '글래스',
+    industrial: '인더스트리얼',
+    system: '시스템 설정 따르기',
     customize: '테마 색상 사용자 지정',
     brand: '테마 색상',
     resetBrand: '기본 색상 복원',

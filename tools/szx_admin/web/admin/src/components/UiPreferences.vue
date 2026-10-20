@@ -10,9 +10,11 @@ import {
 } from '../ui/lumina'
 import { useUiPreferences } from '../composables/useUiPreferences'
 import LanguageSwitcher from './LanguageSwitcher.vue'
+import DesignSwitch from './DesignSwitch.vue'
 
 const { t } = useI18n()
-const { theme, effects, brand, setTheme, setEffects, setBrand } = useUiPreferences()
+const { theme, themePreference, effects, design, brand, setThemePreference, setEffects, setBrand } =
+  useUiPreferences()
 const colorDialog = ref(false)
 const selectedColor = computed({
   get: () => brand.value ?? LUMINA_DEFAULT_BRAND,
@@ -23,6 +25,7 @@ const selectedColor = computed({
 const labels = computed(() => ({
   theme: t('appearance.theme'),
   performance: t('appearance.performance'),
+  system: t('appearance.system'),
   light: t('appearance.light'),
   dark: t('appearance.dark'),
   lite: t('appearance.lite'),
@@ -33,6 +36,7 @@ const labels = computed(() => ({
   <div class="ui-preferences">
     <LanguageSwitcher />
     <LuminaButton
+      v-if="design !== 'industrial'"
       class="lumina-preference-button"
       :aria-label="t('appearance.customize')"
       :title="t('appearance.customize')"
@@ -56,12 +60,15 @@ const labels = computed(() => ({
       </svg>
     </LuminaButton>
     <LuminaAppearanceControls
-      :theme="theme"
+      :theme="themePreference"
+      :resolved-theme="theme"
       :effects="effects"
+      :show-effects="design !== 'industrial'"
       :labels="labels"
-      @update:theme="setTheme"
+      @update:theme="setThemePreference"
       @update:effects="setEffects"
     />
+    <DesignSwitch />
     <LuminaDialog
       v-if="colorDialog"
       :title="t('appearance.customize')"
@@ -91,5 +98,8 @@ const labels = computed(() => ({
   height: var(--lg-h-ctrl);
   padding: var(--lg-s2);
   cursor: pointer;
+}
+.ui-preferences {
+  flex-wrap: wrap;
 }
 </style>

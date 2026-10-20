@@ -1,6 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { createPinia } from 'pinia'
 import { useUiPreferencesStore } from '../src/stores/uiPreferences'
+import { resolveLuminaTheme } from '../src/ui/lumina/theme/appearance'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -68,4 +69,40 @@ it('custom brand persists across store initialization without changing default c
   const defaults = useUiPreferencesStore(createPinia())
   defaults.initialize()
   expect(defaults.brand).toBeNull()
+})
+
+it('restores the design mode and resolves a system theme change', () => {
+  const data = new Map<string, string>([
+    ['szx-admin-design', 'industrial'],
+    ['szx-admin-theme', 'system'],
+    ['szx-admin-effects', 'full'],
+  ])
+  let dark = false
+  let listener: ((event: { matches: boolean }) => void) | undefined
+  vi.stubGlobal('localStorage', {
+    getItem: (key: string) => data.get(key) ?? null,
+    setItem: (key: string, value: string) => data.set(key, value),
+  })
+  vi.stubGlobal('window', {
+    matchMedia: () => ({
+      get matches() {
+        return dark
+      },
+      addEventListener: (_: string, update: (event: { matches: boolean }) => void) => {
+        listener = update
+      },
+      removeEventListener: () => {},
+    }),
+  })
+  const store = useUiPreferencesStore(createPinia())
+  store.initialize()
+  expect(store.design).toBe('industrial')
+  expect(store.themePreference).toBe('system')
+  expect(store.theme).toBe('light')
+  dark = true
+  listener?.({ matches: true })
+  expect(store.theme).toBe('dark')
+  expect(resolveLuminaTheme('system')).toBe('dark')
+  store.setDesign('glass')
+  expect(data.get('szx-admin-design')).toBe('glass')
 })

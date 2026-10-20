@@ -1,0 +1,296 @@
+:root[data-design='industrial'] {
+  --bg: #f3f5f8;
+  --surface: #ffffff;
+  --text: #2b2f36;
+  --muted: #626b78;
+  --accent: #1677ff;
+  --line: #e2e7ee;
+  --lg-line: #cbd3de;
+  --lg-stroke: #e2e7ee;
+  --lg-brand-50: #e6f4ff;
+  --lg-brand-100: #bae0ff;
+  --lg-brand-200: #91caff;
+  --lg-brand-300: #69b1ff;
+  --lg-brand-400: #4096ff;
+  --lg-brand-500: #1677ff;
+  --lg-brand-600: #0958d9;
+  --lg-brand-700: #003eb3;
+  --lg-brand-800: #002c8c;
+  --lg-brand-900: #001d66;
+  --lg-n-50: #f4f5f7;
+  --lg-n-100: #eef0f3;
+  --lg-n-200: #d5d9df;
+  --lg-n-300: #cbd3de;
+  --lg-n-400: #9aa3ad;
+  --lg-n-500: #78818c;
+  --lg-n-600: #626b78;
+  --lg-n-700: #454d58;
+  --lg-n-800: #303740;
+  --lg-n-900: #222830;
+  --lg-glass: var(--surface);
+  --lg-glass-2: var(--bg);
+  --lg-glass-solid: var(--surface);
+  --lg-glass-solid-2: var(--surface);
+  --lg-panel-background: var(--surface);
+  --lg-panel-highlight: none;
+  --lg-field: var(--surface);
+  --lg-field-focus: var(--surface);
+  --lg-hover-surface: #e9ebef;
+  --lg-active-surface: #e6f1ff;
+  --lg-active-border: #1677ff;
+  --lg-soft-surface: #e6f1ff;
+  --lg-soft-border: #91caff;
+  --lg-gradient-brand: #1677ff;
+  --table-header-background: #f7f9fc;
+  --table-row-hover: #edf4fc;
+  --lg-sh-1: none;
+  --lg-sh-2: none;
+  --lg-sh-3: none;
+  --lg-sh-4: 0 3px 12px #00000018;
+  --lg-sh-5: none;
+  --lg-sh-6: none;
+  --lg-sh-card: none;
+  --lg-ring-focus: 0 0 0 2px #1677ff33;
+  --lumina-edge-shadow: none;
+  --lg-r-xs: 6px;
+  --lg-r-sm: 6px;
+  --lg-r-md: 6px;
+  --lg-r-lg: 6px;
+  --lg-r-xl: 6px;
+  --lg-r-2xl: 6px;
+  --lg-r-3xl: 6px;
+  --lg-r-4xl: 6px;
+}
+
+:root[data-design='industrial'][data-theme='dark'] {
+  --bg: #161b22;
+  --surface: #222830;
+  --text: #e1e5eb;
+  --muted: #a5aeba;
+  --accent: #69b1ff;
+  --line: #343e4c;
+  --lg-line: #566170;
+  --lg-stroke: #414b58;
+  --lg-hover-surface: #303740;
+  --lg-active-surface: #243d58;
+  --lg-active-border: #69b1ff;
+  --lg-soft-surface: #243d58;
+  --lg-soft-border: #345e88;
+  --table-header-background: #303740;
+  --table-row-hover: #2b3745;
+}
+
+:root[data-design='industrial'] .lg-bg,
+:root[data-design='industrial'] .lumina-smooth-edge::before,
+:root[data-design='industrial'] .lumina-smooth-edge::after {
+  display: none;
+}
+
+:root[data-design='industrial'] .app-shell {
+  min-width: 320px;
+  padding: 0;
+  gap: 0;
+}
+
+:root[data-design='industrial'] .sidebar {
+  width: clamp(180px, calc(var(--k) * 190px), 230px);
+  height: 100dvh;
+  top: 0;
+  padding: var(--lg-s10);
+  border: 0;
+  border-right: 1px solid var(--line);
+  border-radius: 0;
+  background: var(--surface);
+}
+
+:root[data-design='industrial'] .brand {
+  font-size: var(--lg-fs-xl);
+  gap: var(--lg-s5);
+  letter-spacing: 0;
+}
+
+:root[data-design='industrial'] .brand-mark {
+  box-shadow: none;
+}
+
+:root[data-design='industrial'] .ui-preferences {
+  flex-wrap: nowrap;
+  gap: var(--lg-s5);
+}
+
+:root[data-design='industrial'] .lumina-preference-button,
+:root[data-design='industrial'] .language-switcher .p-select {
+  width: calc(var(--k) * 30px);
+  min-width: calc(var(--k) * 30px);
+  height: calc(var(--k) * 30px);
+  min-height: calc(var(--k) * 30px);
+}
+
+:root[data-design='industrial'] .lumina-preference-button {
+  padding: var(--lg-s4);
+}
+
+:root[data-design='industrial'] .lumina-preference-button svg {
+  width: calc(var(--k) * 16px);
+  height: calc(var(--k) * 16px);
+}
+
+:root[data-design='industrial'] .avatar.lumina-mark-brand.p-button-outlined {
+  background: #1677ff;
+  border-color: transparent;
+  color: #ffffff;
+}
+
+:root[data-design='industrial'] .avatar.lumina-mark-brand.p-button-outlined:not(:disabled):hover {
+  background: #0958d9;
+  color: #ffffff;
+}
+
+:root[data-design='industrial'] .sidebar nav a {
+  border-radius: 6px;
+}
+
+:root[data-design='industrial'] .sidebar nav a.router-link-active {
+  color: var(--accent);
+  background: var(--lg-active-surface);
+  box-shadow: none;
+}
+
+:root[data-design='industrial'] .main {
+  max-width: none;
+  padding: var(--lg-s9) var(--lg-s11);
+}
+
+:root[data-design='industrial'] .page-heading {
+  padding-bottom: var(--lg-s5);
+  border-bottom: 1px solid var(--line);
+}
+
+:root[data-design='industrial']
+  :is(.lumina-panel, .p-dialog, .p-select-overlay, .p-datepicker-panel) {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: none;
+}
+
+:root[data-design='industrial'] :is(.p-inputtext, .p-select, .p-textarea, .p-multiselect) {
+  border: 1px solid var(--lg-line);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+:root[data-design='industrial'] :is(.p-inputtext, .p-select, .p-textarea):focus-within {
+  border-color: var(--accent);
+  box-shadow: var(--lg-ring-focus);
+}
+
+:root[data-design='industrial'] .p-button {
+  border-radius: 6px;
+  box-shadow: none;
+}
+
+:root[data-design='industrial'] .p-button-outlined.p-button-secondary {
+  border-color: var(--lg-line);
+  background: var(--table-header-background);
+}
+
+:root[data-design='industrial'] :is(.p-button.primary, .button.primary) {
+  background: #1677ff;
+  border-color: #1677ff;
+  box-shadow: none;
+}
+
+:root[data-design='industrial'] :is(.p-button.primary, .button.primary):not(:disabled):hover {
+  background: #0958d9;
+  border-color: #0958d9;
+}
+
+:root[data-design='industrial'] .lumina-card-header {
+  border-bottom: 1px solid var(--line);
+}
+
+:root[data-design='industrial'] .lumina-card,
+:root[data-design='industrial'] .network-trend {
+  box-shadow: none;
+}
+
+:root[data-design='industrial'] .p-datatable-thead > tr > th {
+  background: var(--table-header-background);
+}
+
+:root[data-design='industrial'] .p-datatable-tbody > tr:nth-child(even) {
+  background: var(--table-header-background);
+}
+
+:root[data-design='industrial'] .login-story {
+  min-width: 0;
+  padding: clamp(40px, 6vw, 88px);
+  background: var(--table-header-background);
+  border-right: 1px solid var(--line);
+}
+
+:root[data-design='industrial'] .login-page {
+  width: 100%;
+  max-width: 1440px;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+}
+
+:root[data-design='industrial'] .login-copy {
+  max-width: 620px;
+}
+
+:root[data-design='industrial'] .login-copy h1 {
+  max-width: 12ch;
+  line-height: 1.2;
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+}
+
+:root[data-design='industrial'] .login-panel {
+  min-width: 0;
+  padding: 88px clamp(24px, 6vw, 88px);
+}
+
+:root[data-design='industrial'] .login-card {
+  width: min(100%, 440px);
+  min-width: 0;
+  margin-block: auto;
+}
+
+@media (max-width: 720px) {
+  :root[data-design='industrial'] .login-page {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  :root[data-design='industrial'] .login-story {
+    padding: var(--lg-s11) var(--lg-s9) 0;
+    border-right: 0;
+  }
+
+  :root[data-design='industrial'] .login-copy {
+    max-width: none;
+  }
+
+  :root[data-design='industrial'] .login-copy h1 {
+    max-width: none;
+  }
+
+  :root[data-design='industrial'] .login-panel {
+    padding: var(--lg-s11) var(--lg-s7);
+  }
+
+  :root[data-design='industrial'] .app-shell {
+    overflow: auto;
+  }
+
+  :root[data-design='industrial'] .sidebar {
+    width: 100%;
+    height: auto;
+    position: static;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+}

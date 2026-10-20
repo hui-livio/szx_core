@@ -1,5 +1,26 @@
 export type LuminaTheme = 'light' | 'dark'
+export type LuminaThemePreference = 'system' | LuminaTheme
 export type LuminaEffects = 'lite' | 'full'
+
+export function systemPrefersDark(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-color-scheme: dark)').matches
+  )
+}
+
+export function resolveLuminaTheme(preference: LuminaThemePreference): LuminaTheme {
+  return preference === 'system' ? (systemPrefersDark() ? 'dark' : 'light') : preference
+}
+
+export function onSystemThemeChange(listener: (dark: boolean) => void): () => void {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return () => {}
+  const query = window.matchMedia('(prefers-color-scheme: dark)')
+  const update = (event: MediaQueryListEvent) => listener(event.matches)
+  query.addEventListener('change', update)
+  return () => query.removeEventListener('change', update)
+}
 
 /// 订阅「设备像素比变化」，返回退订函数
 ///

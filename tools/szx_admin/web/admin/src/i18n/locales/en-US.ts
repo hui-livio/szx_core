@@ -166,6 +166,10 @@ export default {
     permission: 'Read machine performance',
   },
   appearance: {
+    design: 'Choose design',
+    glass: 'Glass',
+    industrial: 'Industrial',
+    system: 'Follow system',
     customize: 'Customize theme color',
     brand: 'Theme color',
     resetBrand: 'Restore default colors',

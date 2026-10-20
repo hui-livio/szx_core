@@ -264,6 +264,98 @@ test('desktop account and appearance controls stay at the lower-left of the shel
   expect(bounds.shellBottom - bounds.footBottom).toBeLessThan(80)
 })
 
+test('industrial design applies to login and shell and restores the saved choice', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto('/login')
+  await page.getByRole('button', { name: '选择主题' }).click()
+  await page.getByRole('menuitem', { name: '工业' }).click()
+  await expect(page.locator('html')).toHaveAttribute('data-design', 'industrial')
+  await expect(page.locator('html')).toHaveAttribute('data-fx', 'lite')
+  await expect(page.getByRole('button', { name: '自定义主题色' })).toHaveCount(0)
+  const loginColumns = await page.evaluate(() => {
+    const story = document.querySelector('.login-story')!.getBoundingClientRect()
+    const panel = document.querySelector('.login-panel')!.getBoundingClientRect()
+    const card = document.querySelector('.login-card')!.getBoundingClientRect()
+    return {
+      rootWidth: document.documentElement.getBoundingClientRect().width,
+      storyWidth: story.width,
+      panelWidth: panel.width,
+      cardWidth: card.width,
+    }
+  })
+  expect(loginColumns.rootWidth).toBe(1440)
+  expect(loginColumns.storyWidth).toBeGreaterThan(600)
+  expect(loginColumns.panelWidth).toBeGreaterThanOrEqual(420)
+  expect(loginColumns.cardWidth).toBeGreaterThanOrEqual(380)
+  await signInWithRows(page)
+  await expect(page.locator('html')).toHaveAttribute('data-design', 'industrial')
+  const sidebar = page.locator('.sidebar')
+  await expect(sidebar).toHaveCSS('border-top-right-radius', '0px')
+  const workspaceWidth = await page
+    .locator('.workspace')
+    .evaluate((element) => element.getBoundingClientRect().width)
+  expect(workspaceWidth).toBeGreaterThan(1000)
+  await page.screenshot({ path: 'test-results/industrial-shell.png' })
+  const controls = await sidebar.locator('.ui-preferences').evaluate((element) => {
+    const bounds = [...element.children].map((item) => item.getBoundingClientRect())
+    return {
+      firstCenter: bounds[0]!.top + bounds[0]!.height / 2,
+      lastCenter: bounds.at(-1)!.top + bounds.at(-1)!.height / 2,
+    }
+  })
+  expect(controls.firstCenter).toBeCloseTo(controls.lastCenter, 0)
+  const avatar = sidebar.locator('.avatar')
+  await expect(avatar).toHaveCSS('color', 'rgb(255, 255, 255)')
+  await expect(avatar).toHaveCSS('background-color', 'rgb(22, 119, 255)')
+  await page.reload()
+  await expect(page.locator('html')).toHaveAttribute('data-design', 'industrial')
+  await page.getByRole('button', { name: '选择主题' }).click()
+  await page.getByRole('menuitem', { name: '玻璃' }).click()
+  await expect(page.locator('html')).toHaveAttribute('data-design', 'glass')
+})
+
+test('industrial dark theme keeps sidebar controls readable on mobile', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/login')
+  await page.getByRole('button', { name: '选择主题' }).click()
+  await page.getByRole('menuitem', { name: '工业' }).click()
+  await page.getByRole('switch', { name: '深色主题' }).click()
+  const loginBounds = await page.evaluate(() => {
+    const story = document.querySelector('.login-story')!.getBoundingClientRect()
+    const panel = document.querySelector('.login-panel')!.getBoundingClientRect()
+    return { rootWidth: document.documentElement.getBoundingClientRect().width, story, panel }
+  })
+  expect(loginBounds.rootWidth).toBe(390)
+  expect(loginBounds.panel.top).toBeGreaterThanOrEqual(loginBounds.story.bottom)
+  expect(loginBounds.panel.right).toBeLessThanOrEqual(390)
+  await signInWithRows(page)
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
+  await expect(page.locator('html')).toHaveAttribute('data-design', 'industrial')
+  await expect(page.locator('.sidebar .avatar')).toBeVisible()
+  await expect(page.locator('.sidebar .avatar')).toHaveCSS('background-color', 'rgb(22, 119, 255)')
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
+  await page.screenshot({ path: 'test-results/industrial-mobile-dark.png' })
+})
+
+test('system theme follows OS changes and restores before the next paint', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'light' })
+  await page.goto('/login')
+  const theme = page.getByRole('switch', { name: '深色主题' })
+  await theme.click()
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
+  await theme.click()
+  await expect(theme).toHaveAttribute('title', /跟随系统/)
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
+  await page.emulateMedia({ colorScheme: 'dark' })
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
+  await page.reload()
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
+  await page.emulateMedia({ colorScheme: 'light' })
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
+})
+
 for (const viewport of [
   { width: 1440, height: 900 },
   { width: 701, height: 406 },

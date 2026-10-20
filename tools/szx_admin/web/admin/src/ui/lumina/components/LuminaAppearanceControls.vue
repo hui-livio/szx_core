@@ -1,23 +1,31 @@
 <script setup lang="ts">
 import LuminaButton from './LuminaButton.vue'
-import type { LuminaTheme, LuminaEffects } from '../theme/appearance'
+import type { LuminaTheme, LuminaThemePreference, LuminaEffects } from '../theme/appearance'
 
-const theme = defineModel<LuminaTheme>('theme', { required: true })
+const theme = defineModel<LuminaThemePreference>('theme', { required: true })
 const effects = defineModel<LuminaEffects>('effects', { required: true })
-defineProps<{
+const props = defineProps<{
+  resolvedTheme: LuminaTheme
+  showEffects?: boolean
   labels: {
     theme: string
     performance: string
+    system: string
     light: string
     dark: string
     lite: string
     full: string
   }
 }>()
+const themeCycle: LuminaThemePreference[] = ['light', 'dark', 'system']
+function cycleTheme() {
+  theme.value = themeCycle[(themeCycle.indexOf(theme.value) + 1) % themeCycle.length]!
+}
 </script>
 <template>
   <div class="lumina-appearance-controls">
     <LuminaButton
+      v-if="props.showEffects !== false"
       class="lumina-preference-button"
       role="switch"
       :aria-label="labels.performance"
@@ -40,12 +48,24 @@ defineProps<{
       class="lumina-preference-button"
       role="switch"
       :aria-label="labels.theme"
-      :aria-checked="theme === 'dark'"
-      :title="theme === 'dark' ? labels.dark : labels.light"
-      @click="theme = theme === 'light' ? 'dark' : 'light'"
+      :aria-checked="resolvedTheme === 'dark'"
+      :title="`${labels.theme}: ${theme === 'system' ? labels.system : theme === 'dark' ? labels.dark : labels.light}`"
+      @click="cycleTheme"
     >
       <svg
-        v-if="theme === 'light'"
+        v-if="theme === 'system'"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        shape-rendering="geometricPrecision"
+        aria-hidden="true"
+      >
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 3v18a9 9 0 0 0 0-18Z" fill="currentColor" stroke="none" />
+      </svg>
+      <svg
+        v-else-if="theme === 'light'"
         viewBox="0 0 24 24"
         fill="none"
         stroke="currentColor"

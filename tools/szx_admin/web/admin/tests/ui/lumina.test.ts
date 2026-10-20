@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { readFileSync, readdirSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
+import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { computeLuminaScale } from '../../src/ui/lumina/composables/useLuminaScale'
 import { balancedCardRows } from '../../src/ui/lumina/utils/cardGrid'
 import { createLuminaCalendarLocale } from '../../src/ui/lumina/theme/locale'
@@ -19,9 +19,15 @@ describe('Lumina source-module boundary', () => {
         (match) => match[1]!,
       )
       for (const imported of imports) {
-        if (imported.startsWith('.'))
-          expect(resolve(dirname(path), imported).startsWith(`${root}/`)).toBe(true)
-        else expect(imported).toMatch(/^(vue$|echarts\/|primevue\/|@primevue\/|@primeuix\/)/)
+        if (imported.startsWith('.')) {
+          const withinUi = relative(root, resolve(dirname(path), imported))
+          expect(
+            withinUi !== '' &&
+              withinUi !== '..' &&
+              !withinUi.startsWith(`..${sep}`) &&
+              !isAbsolute(withinUi),
+          ).toBe(true)
+        } else expect(imported).toMatch(/^(vue$|echarts\/|primevue\/|@primevue\/|@primeuix\/)/)
       }
     }
   })

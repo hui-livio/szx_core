@@ -147,6 +147,10 @@ export default {
     permission: 'Просмотр производительности',
   },
   appearance: {
+    design: 'Выбрать оформление',
+    glass: 'Стекло',
+    industrial: 'Промышленный',
+    system: 'Следовать системе',
     customize: 'Настроить цвет темы',
     brand: 'Цвет темы',
     resetBrand: 'Восстановить цвета по умолчанию',

@@ -137,6 +137,10 @@ export default {
     permission: 'マシン性能を表示',
   },
   appearance: {
+    design: 'デザインを選択',
+    glass: 'ガラス',
+    industrial: '工業',
+    system: 'システムに従う',
     customize: 'テーマ色をカスタマイズ',
     brand: 'テーマ色',
     resetBrand: '既定の配色に戻す',

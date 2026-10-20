@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-CN" data-theme="light" data-fx="lite">
+<html lang="zh-CN" data-theme="light" data-fx="lite" data-design="glass">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
@@ -11,6 +11,16 @@
           localStorage.getItem('szx-admin-theme') === 'dark' ? 'dark' : 'light'
         document.documentElement.dataset.fx =
           localStorage.getItem('szx-admin-effects') === 'full' ? 'full' : 'lite'
+        document.documentElement.dataset.design =
+          localStorage.getItem('szx-admin-design') === 'industrial' ? 'industrial' : 'glass'
+        if (localStorage.getItem('szx-admin-theme') === 'system')
+          document.documentElement.dataset.theme = window.matchMedia?.(
+            '(prefers-color-scheme: dark)',
+          ).matches
+            ? 'dark'
+            : 'light'
+        if (document.documentElement.dataset.design === 'industrial')
+          document.documentElement.dataset.fx = 'lite'
       } catch {
         // Blocked storage keeps the static light/lite defaults.
       }

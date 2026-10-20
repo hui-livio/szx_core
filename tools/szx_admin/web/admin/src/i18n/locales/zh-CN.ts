@@ -151,6 +151,10 @@ export default {
     permission: '查看机器性能',
   },
   appearance: {
+    design: '选择主题',
+    glass: '玻璃',
+    industrial: '工业',
+    system: '跟随系统',
     customize: '自定义主题色',
     brand: '主题色',
     resetBrand: '恢复默认配色',
