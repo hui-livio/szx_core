@@ -16,3 +16,15 @@ export function trackChartUpdates() {
     },
   })
 }
+
+export function lineSmoothSettings(label: string): boolean[] {
+  const host = [...document.querySelectorAll<HTMLElement>('.lumina-chart')].find(
+    (element) => element.getAttribute('aria-label') === label,
+  )
+  const chart = host ? getInstanceByDom(host) : undefined
+  if (!chart) throw new Error(`Chart not mounted: ${label}`)
+  const series = chart.getOption().series
+  return Array.isArray(series)
+    ? series.map((item) => Boolean((item as { smooth?: boolean }).smooth))
+    : []
+}

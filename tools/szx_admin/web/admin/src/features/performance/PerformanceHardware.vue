@@ -1,34 +1,107 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import type { MachineSnapshot } from '../../api/types'
-import { LuminaChart, type LuminaChartOption } from '../../ui/lumina'
-import { formatBytes } from './model'
+import type { MachineNetwork, MachineSnapshot } from '../../api/types'
+import { LuminaCard, LuminaCardGrid, LuminaChart, type LuminaChartOption } from '../../ui/lumina'
+import { displayMetricText, formatBytes, type NetworkRateSample } from './model'
 
-defineProps<{ snapshot?: MachineSnapshot; gpuOption: LuminaChartOption }>()
+const props = defineProps<{
+  snapshot?: MachineSnapshot
+  gpuOption: LuminaChartOption
+  networkSamples: NetworkRateSample[]
+  hiddenCards: string[]
+}>()
 
 const { t, locale } = useI18n()
 const formatter = computed(() => new Intl.NumberFormat(locale.value, { maximumFractionDigits: 1 }))
 const percent = (value: number | null | undefined) =>
-  value == null ? '—' : `${formatter.value.format(value)}%`
+  value == null || !Number.isFinite(value) ? '—' : `${formatter.value.format(value)}%`
 const bytes = (value: number | null | undefined) =>
   formatBytes(value ?? null, locale.value, formatter.value)
 const speed = (value: number | null | undefined) => (value == null ? '—' : `${bytes(value)}/s`)
 const number = (value: number | null | undefined) =>
-  value == null ? '—' : formatter.value.format(value)
+  value == null || !Number.isFinite(value) ? '—' : formatter.value.format(value)
+const linkSpeed = (value: number | null | undefined) =>
+  value == null || !Number.isFinite(value) ? '—' : `${number(value)} Mbps`
+const addresses = (ipv4: string | null | undefined, ipv6: string | null | undefined) =>
+  [ipv4, ipv6]
+    .map((address) => displayMetricText(address))
+    .filter((address) => address !== '—')
+    .join('\n') || '—'
+const networkLabel = (network: MachineNetwork) => {
+  const name = displayMetricText(network.name)
+  return name === '—' ? displayMetricText(network.id) : name
+}
+const visibleNetworks = computed(() =>
+  (props.snapshot?.networks ?? []).filter(
+    (network) => !props.hiddenCards.includes(`net:${network.id}`),
+  ),
+)
+function networkChartOption(id: string): LuminaChartOption {
+  const points = props.networkSamples
+  return {
+    grid: { left: 12, right: 12, top: 12, bottom: 8 },
+    tooltip: {
+      trigger: 'axis',
+      valueFormatter: (value: unknown) => (typeof value === 'number' ? speed(value) : '—'),
+    },
+    xAxis: {
+      type: 'time',
+      axisLine: { show: false },
+      axisTick: { show: false },
+      axisLabel: { show: false },
+    },
+    yAxis: {
+      type: 'value',
+      min: 0,
+      axisLabel: { show: false },
+      splitLine: { lineStyle: { color: 'rgba(137,147,178,0.15)' } },
+    },
+    series: [
+      {
+        type: 'line',
+        name: t('performance.download'),
+        showSymbol: true,
+        symbolSize: 5,
+        connectNulls: false,
+        smooth: true,
+        lineStyle: { width: 2, color: '#159d83' },
+        itemStyle: { color: '#159d83' },
+        data: points.map((sample) => [sample.sampled_at, sample.rates[id]?.rx ?? null]),
+      },
+      {
+        type: 'line',
+        name: t('performance.upload'),
+        showSymbol: true,
+        symbolSize: 5,
+        connectNulls: false,
+        smooth: true,
+        lineStyle: { width: 2, color: '#d18135' },
+        itemStyle: { color: '#d18135' },
+        data: points.map((sample) => [sample.sampled_at, sample.rates[id]?.tx ?? null]),
+      },
+    ],
+  }
+}
+const networkChartOptions = computed(
+  () =>
+    new Map(visibleNetworks.value.map((network) => [network.id, networkChartOption(network.id)])),
+)
 </script>
 
 <template>
   <template v-if="snapshot">
-    <section class="hardware-section" aria-labelledby="performance-gpu-title">
-      <header class="hardware-heading">
-        <h2 id="performance-gpu-title">{{ t('performance.gpu') }}</h2>
-        <span v-if="snapshot.gpu_count"
-          >{{ snapshot.gpu_name || t('performance.gpu') }} ·
-          {{ t('performance.gpuFirst', { count: snapshot.gpu_count }) }}</span
-        >
-      </header>
-      <template v-if="snapshot.gpu_count">
+    <section
+      v-if="!hiddenCards.includes('gpu')"
+      class="hardware-section"
+      :aria-label="t('performance.gpu')"
+    >
+      <LuminaCard
+        v-if="snapshot.gpu_count"
+        variant="glass"
+        :title="t('performance.gpu')"
+        :subtitle="`${snapshot.gpu_name || t('performance.gpu')} · ${t('performance.gpuFirst', { count: snapshot.gpu_count })}`"
+      >
         <div class="gpu-layout">
           <div class="gpu-summary">
             <div class="gpu-value">{{ percent(snapshot.gpu.usage_percent) }}</div>
@@ -70,16 +143,46 @@ const number = (value: number | null | undefined) =>
           </div>
           <LuminaChart :option="gpuOption" :label="t('performance.gpuTrend')" />
         </div>
-      </template>
+      </LuminaCard>
       <p v-else class="hardware-empty">{{ t('performance.noGpu') }}</p>
     </section>
 
-    <section class="hardware-section" aria-labelledby="performance-network-title">
+    <section
+      v-if="visibleNetworks.length"
+      class="hardware-section"
+      aria-labelledby="performance-network-title"
+    >
       <header class="hardware-heading">
         <h2 id="performance-network-title">{{ t('performance.network') }}</h2>
       </header>
+      <LuminaCardGrid v-slot="{ cellStyle }" class="network-grid" :count="visibleNetworks.length">
+        <LuminaCard
+          v-for="(network, index) in visibleNetworks"
+          :key="network.id"
+          variant="glass"
+          class="network-trend"
+          :style="cellStyle(index)"
+          :title="networkLabel(network)"
+          :subtitle="displayMetricText(network.description)"
+        >
+          <div class="network-rates">
+            <div class="network-rate receive-rate">
+              <span>{{ t('performance.download') }}</span>
+              <strong>{{ speed(network.rx_bytes_per_sec) }}</strong>
+            </div>
+            <div class="network-rate send-rate">
+              <span>{{ t('performance.upload') }}</span>
+              <strong>{{ speed(network.tx_bytes_per_sec) }}</strong>
+            </div>
+          </div>
+          <LuminaChart
+            :option="networkChartOptions.get(network.id)!"
+            :label="`${t('performance.networkTrend')} · ${networkLabel(network)}`"
+          />
+        </LuminaCard>
+      </LuminaCardGrid>
       <div
-        v-if="snapshot.networks?.length"
+        v-if="visibleNetworks.length"
         class="hardware-table-scroll"
         role="region"
         :aria-label="t('performance.network')"
@@ -96,28 +199,25 @@ const number = (value: number | null | undefined) =>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="network in snapshot.networks" :key="network.id">
+            <tr v-for="network in visibleNetworks" :key="network.id">
               <th scope="row">
-                <strong>{{ network.name || network.id }}</strong
-                ><small>{{ network.description }}</small>
+                <strong>{{ networkLabel(network) }}</strong
+                ><small>{{ displayMetricText(network.description) }}</small>
               </th>
-              <td class="network-address">
-                {{ [network.ipv4, network.ipv6].filter(Boolean).join('\n') || '—' }}
-              </td>
+              <td class="network-address">{{ addresses(network.ipv4, network.ipv6) }}</td>
               <td class="numeric">{{ speed(network.rx_bytes_per_sec) }}</td>
               <td class="numeric">{{ speed(network.tx_bytes_per_sec) }}</td>
               <td class="numeric">
-                {{ network.link_mbps == null ? '—' : `${number(network.link_mbps)} Mbps` }}
+                {{ linkSpeed(network.link_mbps) }}
               </td>
             </tr>
           </tbody>
         </table>
       </div>
-      <p v-else class="hardware-empty">{{ t('performance.noNetworks') }}</p>
     </section>
 
     <section
-      v-if="snapshot.processes?.length"
+      v-if="snapshot.processes?.length && !hiddenCards.includes('processes')"
       class="hardware-section"
       aria-labelledby="performance-process-title"
     >
@@ -141,7 +241,7 @@ const number = (value: number | null | undefined) =>
           </thead>
           <tbody>
             <tr v-for="process in snapshot.processes" :key="process.name">
-              <th scope="row">{{ process.name }}</th>
+              <th scope="row">{{ displayMetricText(process.name) }}</th>
               <td>
                 {{
                   t(
@@ -178,6 +278,41 @@ const number = (value: number | null | undefined) =>
   margin: 0;
   font-size: var(--lg-fs-xl);
   font-weight: 600;
+}
+.network-trend {
+  min-width: 0;
+}
+.network-grid {
+  margin-block-end: var(--lg-s6);
+}
+.network-rates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--lg-s7);
+  margin-block-end: var(--lg-s4);
+}
+.network-rate {
+  display: grid;
+  gap: var(--lg-s2);
+  padding-inline-start: var(--lg-s4);
+  border-inline-start: 3px solid;
+}
+.network-rate span {
+  color: var(--muted);
+  font-size: var(--lg-fs-sm);
+}
+.network-rate strong {
+  font-variant-numeric: tabular-nums;
+  font-size: var(--lg-fs-lg);
+}
+.receive-rate {
+  border-color: #159d83;
+}
+.send-rate {
+  border-color: #d18135;
+}
+.network-trend .lumina-chart {
+  height: 210px;
 }
 .hardware-heading span,
 .hardware-empty,

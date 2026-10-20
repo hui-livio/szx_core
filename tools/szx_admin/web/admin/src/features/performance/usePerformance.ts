@@ -4,12 +4,13 @@ import { systemApi } from '../../api/system'
 import { ApiError, errorMessage } from '../../api/client'
 import type { MachineSample, MachineSnapshot } from '../../api/types'
 import { createMetricsPoller } from './poller'
-import { mergeSamples } from './model'
+import { appendNetworkSample, mergeSamples, type NetworkRateSample } from './model'
 
 export function usePerformance() {
   const auth = useAuthStore()
   const snapshot = shallowRef<MachineSnapshot>()
   const samples = shallowRef<MachineSample[]>([])
+  const networkSamples = shallowRef<NetworkRateSample[]>([])
   const error = ref('')
   const paused = ref(false)
   const hidden = ref(document.hidden)
@@ -37,6 +38,7 @@ export function usePerformance() {
       }
       if (!current()) return
       samples.value = mergeSamples(restart ? [] : samples.value, [...history, next])
+      networkSamples.value = appendNetworkSample(restart ? [] : networkSamples.value, next)
       snapshot.value = next
       now.value = Date.now()
       error.value = ''
@@ -57,6 +59,7 @@ export function usePerformance() {
     if (!allowed.value) {
       snapshot.value = undefined
       samples.value = []
+      networkSamples.value = []
     }
   }
   function visibility() {
@@ -78,6 +81,7 @@ export function usePerformance() {
   return {
     snapshot,
     samples,
+    networkSamples,
     error,
     paused,
     hidden,
@@ -91,6 +95,13 @@ export function usePerformance() {
         (item) =>
           item.sampled_at >=
           (samples.value.at(-1)?.sampled_at ?? now.value) - windowSeconds.value * 1000,
+      ),
+    ),
+    visibleNetworkSamples: computed(() =>
+      networkSamples.value.filter(
+        (item) =>
+          item.sampled_at >=
+          (networkSamples.value.at(-1)?.sampled_at ?? now.value) - windowSeconds.value * 1000,
       ),
     ),
   }

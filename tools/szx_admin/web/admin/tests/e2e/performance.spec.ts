@@ -19,6 +19,7 @@ async function setup(page: Page, role = 'admin', permission = true, diskPaths = 
   let fail = false
   let diskUsed = 6 * 1024 ** 3
   let gpuAvailable = false
+  let networkUnavailable = false
   const user = {
     id: 'admin',
     login_identifier: 'admin',
@@ -119,13 +120,24 @@ async function setup(page: Page, role = 'admin', permission = true, diskPaths = 
           {
             id: 'nic-1',
             name: 'Ethernet',
-            description: 'Test adapter',
-            ipv4: '192.0.2.5',
+            description: networkUnavailable ? 'undefined' : 'Test adapter',
+            ipv4: networkUnavailable ? undefined : '192.0.2.5',
+            ipv6: networkUnavailable ? null : '',
+            sampled_at: Date.now(),
+            rx_bytes_per_sec: networkUnavailable ? undefined : count * 1024,
+            tx_bytes_per_sec: networkUnavailable ? null : count > 1 ? count * 512 : null,
+            link_mbps: networkUnavailable ? undefined : 1000,
+          },
+          {
+            id: 'nic-2',
+            name: 'Wi-Fi',
+            description: 'Wireless adapter',
+            ipv4: '192.0.2.6',
             ipv6: '',
             sampled_at: Date.now(),
-            rx_bytes_per_sec: 1024,
-            tx_bytes_per_sec: null,
-            link_mbps: 1000,
+            rx_bytes_per_sec: count * 2048,
+            tx_bytes_per_sec: count * 1024,
+            link_mbps: 866,
           },
         ],
         processes: [
@@ -168,6 +180,9 @@ async function setup(page: Page, role = 'admin', permission = true, diskPaths = 
     setGpuAvailable: () => {
       gpuAvailable = true
     },
+    setNetworkUnavailable: () => {
+      networkUnavailable = true
+    },
   }
 }
 
@@ -204,6 +219,94 @@ test('shows CPU model and temperature, network rates, and GPU when available', a
   await expect(page.getByText('Test GPU 8000')).toBeVisible()
   await expect(page.getByRole('img', { name: 'GPU 使用率趋势' }).locator('svg')).toHaveCount(1)
   await expect(page.getByText('67 °C')).toBeVisible()
+  const smooth = await page.evaluate(async () => {
+    const { lineSmoothSettings } = await import('/tests/fixtures/lumina/chartUpdates.ts')
+    return {
+      cpu: lineSmoothSettings('CPU 使用率趋势'),
+      memory: lineSmoothSettings('内存使用率趋势'),
+      gpu: lineSmoothSettings('GPU 使用率趋势'),
+      ethernet: lineSmoothSettings('网络实时上行和下行速率 · Ethernet'),
+    }
+  })
+  expect(smooth).toEqual({ cpu: [true], memory: [true], gpu: [true], ethernet: [true, true] })
+})
+
+test('each network chart follows polling and preserves its own interface rates', async ({
+  page,
+}) => {
+  const state = await setup(page)
+  await page.locator('.sidebar nav').getByRole('link', { name: '机器性能' }).click()
+  const ethernet = page
+    .locator('.network-trend')
+    .filter({ has: page.getByRole('heading', { name: 'Ethernet', exact: true }) })
+  const wifi = page
+    .locator('.network-trend')
+    .filter({ has: page.getByRole('heading', { name: 'Wi-Fi', exact: true }) })
+  await expect(
+    page.getByRole('img', { name: '网络实时上行和下行速率 · Ethernet' }).locator('svg'),
+  ).toHaveCount(1)
+  await expect(
+    page.getByRole('img', { name: '网络实时上行和下行速率 · Wi-Fi' }).locator('svg'),
+  ).toHaveCount(1)
+  await expect(ethernet.locator('.network-rates')).toContainText('1 KiB/s')
+  await expect(wifi.locator('.network-rates')).toContainText('2 KiB/s')
+  await expect.poll(state.count).toBeGreaterThanOrEqual(2)
+  await expect(ethernet.locator('.network-rates')).toContainText('2 KiB/s')
+  await expect(wifi.locator('.network-rates')).toContainText('4 KiB/s')
+  const beforePause = state.count()
+  await page.getByRole('button', { name: '暂停', exact: true }).click()
+  await page.waitForTimeout(2300)
+  expect(state.count()).toBe(beforePause)
+  await expect(ethernet.locator('.lumina-chart svg')).toHaveCount(1)
+  await expect(wifi.locator('.lumina-chart svg')).toHaveCount(1)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+    await page.evaluate(() => window.innerWidth),
+  )
+})
+
+test('unavailable network fields render as empty values, never undefined text', async ({
+  page,
+}) => {
+  const state = await setup(page)
+  await page.locator('.sidebar nav').getByRole('link', { name: '机器性能' }).click()
+  state.setNetworkUnavailable()
+  await expect.poll(state.count).toBeGreaterThanOrEqual(2)
+  const row = page.getByRole('row', { name: /Ethernet/ })
+  await expect(row).not.toContainText('undefined')
+  await expect(row).toContainText('—')
+  await expect(row).not.toContainText('NaN')
+  await expect(
+    page.getByRole('img', { name: '网络实时上行和下行速率 · Ethernet' }).locator('svg'),
+  ).toHaveCount(1)
+})
+
+test('metric visibility can hide individual cards and interfaces across reloads', async ({
+  page,
+}) => {
+  const state = await setup(page)
+  state.setGpuAvailable()
+  await page.locator('.sidebar nav').getByRole('link', { name: '机器性能' }).click()
+  await expect(page.locator('.performance-grid .lumina-card')).toHaveCount(4)
+  await expect(page.getByRole('img', { name: 'GPU 使用率趋势' })).toBeVisible()
+  const menuButton = page.getByRole('button', { name: '显示指标' })
+  await menuButton.click()
+  const menu = page.locator('.performance-cards-menu')
+  await menu.getByRole('checkbox', { name: 'CPU', exact: true }).uncheck()
+  await menu.getByRole('checkbox', { name: '磁盘 /data' }).uncheck()
+  await menu.getByRole('checkbox', { name: 'GPU', exact: true }).uncheck()
+  await menu.getByRole('checkbox', { name: 'Wi-Fi' }).uncheck()
+  await expect(page.locator('.performance-grid .lumina-card')).toHaveCount(2)
+  await expect(page.getByRole('img', { name: 'GPU 使用率趋势' })).toHaveCount(0)
+  await expect(page.getByRole('row', { name: /Wi-Fi/ })).toHaveCount(0)
+  await page.reload()
+  await page.locator('input[name="identifier"]').fill('admin')
+  await page.locator('input[name="password"]').fill('TestPassword123')
+  await page.locator('.login-submit').click()
+  await page.locator('.sidebar nav').getByRole('link', { name: '机器性能' }).click()
+  await expect(page.locator('.performance-grid .lumina-card')).toHaveCount(2)
+  await menuButton.click()
+  await menu.getByRole('checkbox', { name: 'CPU', exact: true }).check()
+  await expect(page.getByRole('heading', { name: 'CPU', exact: true })).toBeVisible()
 })
 
 test('partial unavailable, server restart, request failure retain explicit state', async ({
@@ -248,7 +351,7 @@ test('mobile cards stay inside viewport; dark/full/lite/reduced-motion charts re
   await page.setViewportSize({ width: 390, height: 844 })
   await setup(page)
   await page.locator('.sidebar nav').getByRole('link', { name: '机器性能' }).click()
-  await expect(page.locator('.lumina-chart svg')).toHaveCount(4)
+  await expect(page.locator('.lumina-chart svg')).toHaveCount(6)
   for (const fx of ['lite', 'full']) {
     await page.evaluate((fx) => {
       document.documentElement.dataset.theme = 'dark'
@@ -261,7 +364,7 @@ test('mobile cards stay inside viewport; dark/full/lite/reduced-motion charts re
         .first()
         .evaluate((element) => getComputedStyle(element).backgroundColor),
     ).not.toBe('rgba(0, 0, 0, 0)')
-    await expect(page.locator('.lumina-chart svg')).toHaveCount(4)
+    await expect(page.locator('.lumina-chart svg')).toHaveCount(6)
   }
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
   expect(errors).toEqual([])
@@ -444,7 +547,7 @@ test('unchanged disk charts skip repeated polling updates but retain data, local
     Array.from({ length: 32 }, (_, index) => `/volume-${index}`),
   )
   await page.locator('.sidebar nav').getByRole('link', { name: '机器性能', exact: true }).click()
-  await expect(page.locator('.lumina-chart svg')).toHaveCount(34)
+  await expect(page.locator('.lumina-chart svg')).toHaveCount(36)
   await page.evaluate(async () => {
     const path = '/tests/fixtures/lumina/chartUpdates.ts'
     const { trackChartUpdates } = await import(path)
@@ -475,7 +578,7 @@ test('unchanged disk charts skip repeated polling updates but retain data, local
   await page.getByRole('option', { name: 'English', exact: true }).click()
   await expect.poll(diskCounts).toEqual(Array(32).fill(3))
   await expect(page.getByRole('img', { name: 'CPU usage trend', exact: true })).toBeVisible()
-  await expect(page.locator('.lumina-chart')).toHaveCount(34)
+  await expect(page.locator('.lumina-chart')).toHaveCount(36)
 })
 
 test('page panels share the login theme material in light/dark and lite/full modes', async ({

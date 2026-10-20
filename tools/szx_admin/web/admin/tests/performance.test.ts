@@ -1,12 +1,50 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createMetricsPoller } from '../src/features/performance/poller'
-import { formatBytes, mergeSamples } from '../src/features/performance/model'
-import type { MachineSample } from '../src/api/types'
+import {
+  appendNetworkSample,
+  displayMetricText,
+  formatBytes,
+  mergeSamples,
+} from '../src/features/performance/model'
+import type { MachineSample, MachineSnapshot } from '../src/api/types'
 
 const sample = (sequence: number, time = sequence * 2000) =>
   ({ sequence, sampled_at: time }) as MachineSample
 
 describe('metrics history', () => {
+  it('keeps bounded per-interface receive/send samples', () => {
+    const snapshot = (sequence: number, rx: number) =>
+      ({
+        sequence,
+        sampled_at: sequence * 2000,
+        networks: [{ id: 'nic-1', rx_bytes_per_sec: rx, tx_bytes_per_sec: rx / 2 }],
+      }) as MachineSnapshot
+    let history = appendNetworkSample([], snapshot(1, 100))
+    history = appendNetworkSample(history, snapshot(2, 200))
+    expect(history).toHaveLength(2)
+    expect(history.at(-1)?.rates['nic-1']).toEqual({ rx: 200, tx: 100 })
+    expect(appendNetworkSample(history, snapshot(2, 999))).toBe(history)
+  })
+  it('retains missing rates as null and bounds network history by count and time', () => {
+    const snapshot = (sequence: number, sampledAt: number, rx: number | null) =>
+      ({
+        sequence,
+        sampled_at: sampledAt,
+        networks: [{ id: 'nic-1', rx_bytes_per_sec: rx, tx_bytes_per_sec: null }],
+      }) as MachineSnapshot
+    let history = appendNetworkSample([], snapshot(1, 0, null))
+    expect(history[0]?.rates['nic-1']).toEqual({ rx: null, tx: null })
+    history = appendNetworkSample(history, snapshot(2, 901_000, 0))
+    expect(history).toHaveLength(1)
+    expect(history[0]?.rates['nic-1']?.rx).toBe(0)
+    for (let sequence = 3; sequence <= 480; sequence++)
+      history = appendNetworkSample(
+        history,
+        snapshot(sequence, 901_000 + sequence * 1000, sequence),
+      )
+    expect(history).toHaveLength(450)
+    expect(history.at(-1)?.sequence).toBe(480)
+  })
   it('deduplicates by sequence and bounds rolling history to 450 samples', () => {
     const result = mergeSamples(
       Array.from({ length: 500 }, (_, index) => sample(index)),
@@ -29,6 +67,11 @@ describe('metrics history', () => {
     [-1, '—'],
   ])('formats %s as %s', (input, expected) => {
     expect(formatBytes(input as number | null, 'en-US')).toBe(expected)
+  })
+  it('keeps unavailable table strings out of the rendered values', () => {
+    for (const value of [undefined, null, '', '   ', 'undefined', 'NULL'])
+      expect(displayMetricText(value)).toBe('—')
+    expect(displayMetricText(' Ethernet ')).toBe('Ethernet')
   })
 })
 

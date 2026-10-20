@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, onMounted, shallowRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   LuminaButton as Button,
@@ -12,23 +12,73 @@ import {
 import { usePerformance } from '../features/performance/usePerformance'
 import { formatBytes } from '../features/performance/model'
 import PerformanceHardware from '../features/performance/PerformanceHardware.vue'
+import { usePerformanceCards } from '../features/performance/usePerformanceCards'
 import { formatTime } from '../domain'
 import type { MachineMetric } from '../api/types'
 
 const { t, locale } = useI18n()
-const { snapshot, visibleSamples, error, paused, hidden, windowSeconds, now, stale } =
-  usePerformance()
+const {
+  snapshot,
+  visibleSamples,
+  visibleNetworkSamples,
+  error,
+  paused,
+  hidden,
+  windowSeconds,
+  now,
+  stale,
+} = usePerformance()
+const { hiddenCards, isVisible, toggleCard } = usePerformanceCards()
+const cardsMenuOpen = shallowRef(false)
+const cardsHost = shallowRef<HTMLElement>()
+const visibleDisks = computed(() =>
+  (snapshot.value?.disks ?? []).filter((disk) => isVisible(`disk:${disk.id}`)),
+)
+const cardKeys = computed(() => [
+  ...(isVisible('cpu') ? ['cpu'] : []),
+  ...(isVisible('memory') ? ['memory'] : []),
+  ...visibleDisks.value.map((disk) => `disk:${disk.id}`),
+])
+const cardIndex = (key: string) => cardKeys.value.indexOf(key)
+const displayItems = computed(() => [
+  { key: 'cpu', label: t('performance.cpu') },
+  { key: 'memory', label: t('performance.memory') },
+  ...(snapshot.value?.gpu_count ? [{ key: 'gpu', label: t('performance.gpu') }] : []),
+  ...(snapshot.value?.disks ?? []).map((disk) => ({
+    key: `disk:${disk.id}`,
+    label: `${t('performance.disk')} ${disk.path}`,
+  })),
+  ...(snapshot.value?.networks ?? []).map((network) => ({
+    key: `net:${network.id}`,
+    label: network.name || network.id,
+  })),
+  ...(snapshot.value?.processes?.length
+    ? [{ key: 'processes', label: t('performance.processes') }]
+    : []),
+])
+function closeCardsMenu(event: PointerEvent) {
+  if (cardsMenuOpen.value && !cardsHost.value?.contains(event.target as Node))
+    cardsMenuOpen.value = false
+}
+function closeCardsMenuOnEscape(event: KeyboardEvent) {
+  if (event.key === 'Escape') cardsMenuOpen.value = false
+}
+onMounted(() => {
+  document.addEventListener('pointerdown', closeCardsMenu)
+  document.addEventListener('keydown', closeCardsMenuOnEscape)
+})
+onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', closeCardsMenu)
+  document.removeEventListener('keydown', closeCardsMenuOnEscape)
+})
 const windows = computed(() =>
   [300, 900].map((value) => ({ value, label: t('performance.window', { minutes: value / 60 }) })),
 )
 const numberFormatter = computed(
   () => new Intl.NumberFormat(locale.value, { maximumFractionDigits: 1 }),
 )
-const timeFormatter = computed(
-  () => new Intl.DateTimeFormat(locale.value, { hour: '2-digit', minute: '2-digit' }),
-)
 const percent = (value: number | null | undefined) =>
-  value == null ? '—' : `${numberFormatter.value.format(value)}%`
+  value == null || !Number.isFinite(value) ? '—' : `${numberFormatter.value.format(value)}%`
 const bytes = (value: number | null | undefined) =>
   formatBytes(value ?? null, locale.value, numberFormatter.value)
 // Stable callback identities let the public chart detect equivalent options.
@@ -41,10 +91,6 @@ const bytesTooltip = computed(() => {
   const formatter = numberFormatter.value
   return (value: unknown) =>
     formatBytes(typeof value === 'number' ? value : null, currentLocale, formatter)
-})
-const timeAxisLabel = computed(() => {
-  const formatter = timeFormatter.value
-  return (value: number) => formatter.format(value)
 })
 const state = (metric?: MachineMetric) =>
   !metric
@@ -64,7 +110,7 @@ const stateLabel = (metric?: MachineMetric) =>
   )
 function trend(key: 'cpu' | 'memory' | 'gpu'): LuminaChartOption {
   return {
-    grid: { left: 36, right: 12, top: 12, bottom: 26 },
+    grid: { left: 36, right: 12, top: 12, bottom: 10 },
     tooltip: {
       trigger: 'axis',
       valueFormatter: percentTooltip.value,
@@ -73,10 +119,7 @@ function trend(key: 'cpu' | 'memory' | 'gpu'): LuminaChartOption {
       type: 'time',
       axisLine: { show: false },
       axisTick: { show: false },
-      axisLabel: {
-        color: '#8993b2',
-        formatter: timeAxisLabel.value,
-      },
+      axisLabel: { show: false },
     },
     yAxis: {
       type: 'value',
@@ -92,7 +135,7 @@ function trend(key: 'cpu' | 'memory' | 'gpu'): LuminaChartOption {
         name: t(`performance.${key}`),
         showSymbol: false,
         connectNulls: false,
-        smooth: false,
+        smooth: true,
         areaStyle: { opacity: 0.12 },
         lineStyle: { width: 2 },
         data: visibleSamples.value.map((sample) => [
@@ -104,7 +147,7 @@ function trend(key: 'cpu' | 'memory' | 'gpu'): LuminaChartOption {
   }
 }
 const cpuOption = computed(() => trend('cpu'))
-const cardCount = computed(() => 2 + (snapshot.value?.disks.length ?? 0))
+const cardCount = computed(() => cardKeys.value.length)
 const memoryOption = computed(() => trend('memory'))
 const gpuOption = computed(() => trend('gpu'))
 interface DiskChart {
@@ -174,6 +217,40 @@ function capacity(metric: MachineMetric): LuminaChartOption {
       <Button type="button" :aria-pressed="paused" @click="paused = !paused">{{
         t(paused ? 'performance.resume' : 'performance.pause')
       }}</Button>
+      <div ref="cardsHost" class="performance-cards-host">
+        <Button
+          type="button"
+          :aria-label="t('performance.visibleCards')"
+          :title="t('performance.visibleCards')"
+          :aria-expanded="cardsMenuOpen"
+          aria-haspopup="true"
+          @click="cardsMenuOpen = !cardsMenuOpen"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            aria-hidden="true"
+          >
+            <circle cx="12" cy="12" r="3" />
+            <path
+              d="M19 13.5a7 7 0 0 0 0-3l2-1.5-2-3.4-2.3 1a7 7 0 0 0-2.6-1.5L13.8 2h-4l-.3 3.1a7 7 0 0 0-2.6 1.5l-2.3-1-2 3.4 2 1.5a7 7 0 0 0 0 3l-2 1.5 2 3.4 2.3-1a7 7 0 0 0 2.6 1.5l.3 3.1h4l.3-3.1a7 7 0 0 0 2.6-1.5l2.3 1 2-3.4Z"
+            />
+          </svg>
+        </Button>
+        <div
+          v-if="cardsMenuOpen"
+          class="performance-cards-menu"
+          role="group"
+          :aria-label="t('performance.visibleCards')"
+        >
+          <label v-for="item in displayItems" :key="item.key">
+            <input type="checkbox" :checked="isVisible(item.key)" @change="toggleCard(item.key)" />
+            <span>{{ item.label }}</span>
+          </label>
+        </div>
+      </div>
     </div>
   </header>
   <p v-if="error" class="alert error" role="alert">{{ error }}</p>
@@ -191,8 +268,9 @@ function capacity(metric: MachineMetric): LuminaChartOption {
     :aria-label="t('performance.title')"
   >
     <LuminaCard
+      v-if="isVisible('cpu')"
       variant="glass"
-      :style="cellStyle(0)"
+      :style="cellStyle(cardIndex('cpu'))"
       :title="t('performance.cpu')"
       :subtitle="
         snapshot?.cpu_name || t('performance.cores', { count: snapshot?.logical_cpus ?? '—' })
@@ -221,8 +299,9 @@ function capacity(metric: MachineMetric): LuminaChartOption {
       <template #footer>{{ t('performance.sampleEvery', { seconds: 2 }) }}</template>
     </LuminaCard>
     <LuminaCard
+      v-if="isVisible('memory')"
       variant="glass"
-      :style="cellStyle(1)"
+      :style="cellStyle(cardIndex('memory'))"
       :title="t('performance.memory')"
       :subtitle="snapshot?.memory_spec || t('performance.physicalMemory')"
       :state="state(snapshot?.memory)"
@@ -248,8 +327,8 @@ function capacity(metric: MachineMetric): LuminaChartOption {
     </LuminaCard>
     <LuminaCard
       variant="glass"
-      v-for="(disk, index) in snapshot?.disks ?? []"
-      :style="cellStyle(index + 2)"
+      v-for="disk in visibleDisks"
+      :style="cellStyle(cardIndex(`disk:${disk.id}`))"
       :key="disk.id"
       :title="t('performance.disk')"
       :subtitle="disk.path"
@@ -290,7 +369,12 @@ function capacity(metric: MachineMetric): LuminaChartOption {
     </LuminaCard>
   </LuminaCardGrid>
   <p v-if="snapshot && !snapshot.disks.length" class="hint">{{ t('performance.noDisks') }}</p>
-  <PerformanceHardware :snapshot="snapshot" :gpu-option="gpuOption" />
+  <PerformanceHardware
+    :snapshot="snapshot"
+    :gpu-option="gpuOption"
+    :network-samples="visibleNetworkSamples"
+    :hidden-cards="hiddenCards"
+  />
 </template>
 <style scoped>
 .performance-controls {
@@ -298,6 +382,39 @@ function capacity(metric: MachineMetric): LuminaChartOption {
   flex-wrap: wrap;
   align-items: center;
   gap: var(--lg-s4);
+}
+.performance-cards-host {
+  position: relative;
+}
+.performance-cards-host svg {
+  width: 18px;
+  height: 18px;
+}
+.performance-cards-menu {
+  position: absolute;
+  z-index: 20;
+  inset-inline-end: 0;
+  inset-block-start: calc(100% + var(--lg-s3));
+  min-width: min(280px, 80vw);
+  max-height: min(400px, 70vh);
+  overflow: auto;
+  padding: var(--lg-s3);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--lg-r-lg);
+  box-shadow: var(--lg-sh-card);
+}
+.performance-cards-menu label {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--lg-s4);
+  padding: var(--lg-s3);
+  overflow-wrap: anywhere;
+}
+.performance-cards-menu input {
+  width: auto;
+  flex: none;
 }
 .performance-meta {
   display: flex;

@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, useId, watch } from 'vue'
+import { computed, ref, useId, watch } from 'vue'
 import { LuminaMark, LuminaPopupMenu as Menu } from '../ui/lumina'
 import { useShellViewModel } from '../composables/useAuthViewModel'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import UiPreferences from './UiPreferences.vue'
-const { links, logout, user, title, role, passwordLink, busy, error } = useShellViewModel()
+const { links, logout, user, role, passwordLink, busy, error } = useShellViewModel()
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
@@ -30,21 +30,6 @@ watch(
   () => route.fullPath,
   () => accountMenu.value?.hide(),
 )
-const narrowScreen = ref(false)
-let narrowScreenQuery: MediaQueryList | undefined
-
-function updateNarrowScreen() {
-  accountMenu.value?.hide()
-  narrowScreen.value = narrowScreenQuery?.matches ?? false
-}
-
-onMounted(() => {
-  narrowScreenQuery = window.matchMedia('(max-width: 720px)')
-  updateNarrowScreen()
-  narrowScreenQuery.addEventListener('change', updateNarrowScreen)
-})
-
-onBeforeUnmount(() => narrowScreenQuery?.removeEventListener('change', updateNarrowScreen))
 </script>
 <template>
   <div class="app-shell" :class="{ 'data-shell': route.meta.tableLayout }">
@@ -57,7 +42,6 @@ onBeforeUnmount(() => narrowScreenQuery?.removeEventListener('change', updateNar
             ><small>{{ t('shell.identityManagement') }}</small>
           </div>
         </div>
-        <div id="mobile-topbar" />
       </div>
       <nav :aria-label="t('shell.mainNavigation')">
         <RouterLink
@@ -70,15 +54,10 @@ onBeforeUnmount(() => narrowScreenQuery?.removeEventListener('change', updateNar
           >{{ link.label }}</RouterLink
         >
       </nav>
-    </aside>
-    <div class="workspace">
-      <Teleport to="#mobile-topbar" :disabled="!narrowScreen" defer>
-        <header class="topbar">
-          <span class="breadcrumb"
-            ><strong>{{ title }}</strong></span
-          >
+      <div class="sidebar-foot">
+        <div class="topbar">
+          <UiPreferences />
           <div class="account">
-            <UiPreferences />
             <LuminaMark
               class="avatar"
               interactive
@@ -96,7 +75,7 @@ onBeforeUnmount(() => narrowScreenQuery?.removeEventListener('change', updateNar
               font-size="var(--lg-fs-xl)"
               :font-weight="500"
             />
-            <div>
+            <div class="account-identity">
               {{ user?.display_name }}<small>{{ role }}</small>
             </div>
             <Menu
@@ -109,8 +88,10 @@ onBeforeUnmount(() => narrowScreenQuery?.removeEventListener('change', updateNar
               @hide="accountMenuOpen = false"
             />
           </div>
-        </header>
-      </Teleport>
+        </div>
+      </div>
+    </aside>
+    <div class="workspace">
       <main id="main" class="main lumina-scrollbar">
         <p v-if="error" class="alert error" role="alert">{{ error }}</p>
         <slot />

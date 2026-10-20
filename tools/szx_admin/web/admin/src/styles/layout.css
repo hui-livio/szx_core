@@ -97,6 +97,41 @@
   width: var(--lg-ico-lg);
 }
 
+.sidebar-foot {
+  margin-top: auto;
+  padding-top: var(--lg-s7);
+  border-top: 1px solid var(--line);
+}
+
+.sidebar-foot .topbar {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  display: grid;
+  justify-content: stretch;
+  gap: var(--lg-s5);
+}
+
+.sidebar-foot .account {
+  display: flex;
+  flex-wrap: nowrap;
+  width: 100%;
+}
+
+.sidebar-foot .account-identity {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-foot .account-identity small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .workspace {
   flex: 1;
   min-width: 0;
@@ -394,12 +429,7 @@
     padding: var(--lg-s5) var(--lg-s7) var(--lg-s3);
   }
 
-  .topbar {
-    padding: var(--lg-s7);
-    justify-content: flex-end;
-  }
-
-  .account {
+  .sidebar-foot .account {
     gap: var(--lg-s4);
   }
 
@@ -438,12 +468,6 @@
     flex-shrink: 0;
   }
 
-  #mobile-topbar {
-    display: block;
-    flex: 1 1 auto;
-    min-width: 0;
-  }
-
   .sidebar nav {
     flex-direction: row;
     flex-wrap: wrap;
@@ -458,17 +482,19 @@
     display: none;
   }
 
-  .topbar {
-    min-height: 0;
-    padding: 0;
-    border: 0;
-    border-radius: 0;
-    background: transparent;
-    justify-content: flex-end;
+  .sidebar-foot {
+    margin-top: var(--lg-s7);
   }
 
-  .topbar .account {
-    justify-content: flex-end;
+  .sidebar-foot .topbar {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+  }
+
+  .sidebar-foot .account {
+    width: auto;
+    max-width: 100%;
     gap: var(--lg-s3);
   }
 

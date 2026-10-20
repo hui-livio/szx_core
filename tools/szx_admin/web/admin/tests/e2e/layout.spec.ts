@@ -170,7 +170,7 @@ for (const viewport of [
 }
 
 for (const width of [320, 390, 701, 720]) {
-  test(`narrow header contains account actions and an icon language menu at ${width}px`, async ({
+  test(`sidebar footer contains account actions and an icon language menu at ${width}px`, async ({
     page,
   }) => {
     const errors: string[] = []
@@ -178,37 +178,28 @@ for (const width of [320, 390, 701, 720]) {
     await page.setViewportSize({ width, height: 844 })
     await signInWithRows(page)
     const header = page.locator('.sidebar-header')
-    const topbar = header.locator('.topbar')
+    const footer = page.locator('.sidebar-foot')
+    const topbar = footer.locator('.topbar')
     await expect(topbar).toBeVisible()
     await expect(page.locator('.workspace > .topbar')).toHaveCount(0)
-    await expect(header.locator('.avatar')).toBeVisible()
-    await expect(header.getByRole('link', { name: '修改密码', exact: true })).toHaveCount(0)
-    await expect(header.getByRole('button', { name: '退出', exact: true })).toHaveCount(0)
-    await expect(header.getByRole('button', { name: '账号菜单', exact: true })).toBeVisible()
-    const bounds = await header.evaluate((element) => {
-      const brand = element.querySelector('.brand')!.getBoundingClientRect()
-      const actions = element.querySelector('.topbar')!.getBoundingClientRect()
+    await expect(footer.locator('.avatar')).toBeVisible()
+    await expect(footer.getByRole('link', { name: '修改密码', exact: true })).toHaveCount(0)
+    await expect(footer.getByRole('button', { name: '退出', exact: true })).toHaveCount(0)
+    await expect(footer.getByRole('button', { name: '账号菜单', exact: true })).toBeVisible()
+    const bounds = await footer.evaluate((element) => {
+      const actions = element.getBoundingClientRect()
       const navigation = document.querySelector('.sidebar nav')!.getBoundingClientRect()
-      return { brand: brand.toJSON(), actions: actions.toJSON(), navigation: navigation.toJSON() }
+      return { actions: actions.toJSON(), navigation: navigation.toJSON() }
     })
-    expect(bounds.actions.bottom).toBeLessThanOrEqual(bounds.navigation.top)
-    if (width >= 701) {
-      expect(bounds.actions.left).toBeGreaterThan(bounds.brand.right)
-      expect(
-        Math.abs(
-          (bounds.actions.top + bounds.actions.bottom) / 2 -
-            (bounds.brand.top + bounds.brand.bottom) / 2,
-        ),
-      ).toBeLessThan(2)
-    }
+    expect(bounds.actions.top).toBeGreaterThanOrEqual(bounds.navigation.bottom)
     if (width === 701) {
       await page.screenshot({ path: 'test-results/narrow-header.png' })
     }
-    const language = header.locator('.language-switcher').getByRole('combobox')
+    const language = footer.locator('.language-switcher').getByRole('combobox')
     await expect(language.locator('.language-button-icon')).toBeVisible()
     await expect(language.locator('.language-value')).toBeHidden()
-    await expect(header.locator('.language-icon')).toBeHidden()
-    const size = await header.locator('.language-switcher .p-select').boundingBox()
+    await expect(footer.locator('.language-icon')).toBeHidden()
+    const size = await footer.locator('.language-switcher .p-select').boundingBox()
     expect(Math.abs(size!.width - size!.height)).toBeLessThanOrEqual(1)
     await language.click()
     await expect(page.getByRole('option')).toHaveCount(6)
@@ -229,23 +220,49 @@ for (const width of [320, 390, 701, 720]) {
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
       width,
     )
-    // Reparent the same controls on resize without losing the selected language or preferences.
+    // Resizing keeps the same controls and the selected language.
     await page.setViewportSize({ width: 1440, height: 900 })
-    await expect(page.locator('.workspace > .topbar')).toBeVisible()
+    await expect(page.locator('.sidebar-foot .topbar')).toBeVisible()
     await expect(page.locator('.topbar .language-value')).toBeHidden()
     await expect(page.locator('.topbar .language-value')).toHaveText('English')
     await expect(page.locator('.topbar .language-button-icon')).toBeVisible()
     await page.setViewportSize({ width, height: 844 })
     await expect(topbar).toBeVisible()
-    await expect(header.locator('.language-switcher .p-select')).toHaveAttribute('title', /English/)
+    await expect(footer.locator('.language-switcher .p-select')).toHaveAttribute('title', /English/)
     await page.route('**/api/v1/auth/logout', (route) => route.fulfill({ status: 204 }))
-    await header.locator('.avatar').click()
+    await footer.locator('.avatar').click()
     await page.getByRole('menuitem', { name: 'Log out', exact: true }).click()
     await expect(page).toHaveURL('/login')
     await expect(page.locator('.language-switcher .p-select')).toHaveAttribute('title', /English/)
     expect(errors).toEqual([])
   })
 }
+
+test('desktop account and appearance controls stay at the lower-left of the shell', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await signInWithRows(page)
+  const sidebar = page.locator('.sidebar')
+  const footer = sidebar.locator('.sidebar-foot')
+  await expect(footer.locator('.avatar')).toBeVisible()
+  await expect(footer.locator('.account-identity')).toContainText('系统管理员')
+  await expect(footer.getByRole('switch', { name: '深色主题' })).toBeVisible()
+  await expect(footer.getByRole('switch', { name: '性能模式' })).toBeVisible()
+  const bounds = await sidebar.evaluate((element) => {
+    const nav = element.querySelector('nav')!.getBoundingClientRect()
+    const foot = element.querySelector('.sidebar-foot')!.getBoundingClientRect()
+    const shell = element.getBoundingClientRect()
+    return {
+      navBottom: nav.bottom,
+      footTop: foot.top,
+      footBottom: foot.bottom,
+      shellBottom: shell.bottom,
+    }
+  })
+  expect(bounds.footTop).toBeGreaterThan(bounds.navBottom)
+  expect(bounds.shellBottom - bounds.footBottom).toBeLessThan(80)
+})
 
 for (const viewport of [
   { width: 1440, height: 900 },
