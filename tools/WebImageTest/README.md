@@ -1,4 +1,4 @@
-# WebImageTest：独立加载 + BGRA8 原始像素 HTTP 查看器
+# WebImageTest：独立加载 + BGRA8 原图编码传输查看器
 
 C++ / OpenCV 服务与原生 HTML/CSS/JavaScript 页面，不使用 Vue、数据库或 Qt。复用 `szx::network::HttpServer`、`szx::common` 的文件/路径/JSON/UUID/有界队列。图片目录默认 `/mnt/d/share/images`，优先选择 `moban.png`。
 
@@ -10,9 +10,9 @@ C++ / OpenCV 服务与原生 HTML/CSS/JavaScript 页面，不使用 Vue、数据
    - BGR8 转 BGRA8，gray8 转 BGRA8，原有 BGRA8 保留 Alpha；没有 Alpha 的来源补 255。16-bit/float 返回格式错误，不隐式截断。
    - 浏览器以 GET `/api/image/load` 查询状态。**GET 不读盘、不解码、不提交任务**。
 2. 加载完成后点击 **“获取内存图片”**。
-   - 从已解码快照请求 BGRA8 原始字节，直接作为 `ArrayBuffer` / `Uint8Array` 使用。
-   - **不执行 PNG/JPEG 编码，不传 Base64，不在浏览器执行压缩图解码**。
-   - 原图、预览、瓦片全部是 `application/octet-stream` / BGRA8，不混用压缩图格式。
+   - 在“编码类型”中选择“不编码”“PNG”或“JPG”，三个复选框互斥且始终有一个选中。
+   - 原图快照始终保留为 BGRA8。每次图片、预览或瓦片请求根据选择直接返回 BGRA8 原始字节、PNG 或 JPG；PNG/JPG 从快照按请求编码，不缓存压缩副本。
+   - 浏览器收到 PNG/JPG 后解码到 BGRA8，再交给现有渲染器；接收计时包含服务端请求内编码和传输，不包含浏览器解码。
 
 “刷新列表”查询目录候选图片，不解码。切换文件取消旧加载/传输和瓦片缓存，必须重新完成后端加载；只切换显示模式可复用已就绪的后端快照。加载失败可修复文件后重新点击后端加载。
 
@@ -20,13 +20,13 @@ C++ / OpenCV 服务与原生 HTML/CSS/JavaScript 页面，不使用 Vue、数据
 
 ### 瓦片模式（默认）
 
-小图直接获取 BGRA8 原图，大图先获取最长边 2048px 的 BGRA8 预览，放大后获取原图可见区域的 BGRA8 瓦片。level=0 为原始像素，level=N 为 2^N 降采样，边缘按实际尺寸返回。预览和瓦片是缩放/ROI 像素，**不是 PNG 编码**。
+小图直接获取原图，大图先获取最长边 2048px 的预览，放大后获取原图可见区域瓦片。level=0 为原始像素，level=N 为 2^N 降采样，边缘按实际尺寸返回。选择编码后预览和瓦片也按请求编码。服务端缓存的预览、瓦片来源及原图仍为 BGRA8。
 
-瓦片 HTTP 并发≤4，raw buffer LRU≤64，可见瓦片≤48。WebGL2 复用已上传纹理，切换后删除旧 GPU 纹理并移除 JS 缓冲引用。ROI 可能保留原图 step，因此服务端逐行打包，只返回 `width*4` 个有效字节，绝不发送相邻区域或行间隙。
+瓦片 HTTP 并发≤4，raw buffer LRU≤64，可见瓦片≤48。WebGL2 复用已上传纹理，切换后删除旧 GPU 纹理并移除 JS 缓冲引用。ROI 可能保留原图 step，因此服务端逐行打包，只返回 `width*4` 个有效字节，绝不发送相邻区域或行间隙。编码请求不支持 HTTP Range。
 
 ### 整图模式（非瓦片）
 
-从 `/api/image?name=...&id=...` 读取完整 BGRA8 原始矩阵，不请求预览或空间瓦片。≤16 MiB 直接读取，更大时用≤1 MiB 的 HTTP Range 字节段直接填入**一个最终 Uint8Array**，不先拼接 Blob 再解码，也不再分配一份完整的格式转换副本。
+不请求预览或空间瓦片。选择“不编码”时，≤16 MiB 直接读取，更大时用≤1 MiB 的 HTTP Range 字节段直接填入一个最终 `Uint8Array`。选择 PNG/JPG 时，服务端按请求将 BGRA 快照编码后一次返回，浏览器收到完整编码响应后再解码供渲染；压缩响应暂不支持 Range。
 
 整图依然会占用很高的带宽和内存。例如 moban 为 17952 × 13200：
 
@@ -35,7 +35,13 @@ stride     = 17952 * 4 = 71808 bytes
 byte_length = 71808 * 13200 = 947865600 bytes ≈ 904 MiB
 ```
 
-完整 BGRA8 大于原始 PNG 文件约 258 MiB 的编码大小。改变传输格式不会降低原始纹理尺寸，也不等同于零拷贝。
+不编码时，完整 BGRA8 大于原始 PNG 文件约 258 MiB 的编码大小。PNG/JPG 可降低传输字节量，但编码/解码会增加 CPU 与临时内存开销；JPG 有损且不保留 Alpha。传输编码不改变内存原图格式。
+
+## 获取耗时
+
+点击“获取内存图片”后，工具栏显示“整图获取耗时”，单位为毫秒和秒。使用 `performance.now()`，从第一个 `/api/image` 数据请求发起前开始计时，到最后一个响应体的 `arrayBuffer()` 读取完成时停止。大图分段 Range 请求显示所有分段的总耗时，包含各段之间的等待和处理时间；不包含请求前的缓冲区分配、后端加载解码、数据接收后的纹理上传和画面绘制。
+
+瓦片模式只获取预览图时显示“预览图获取耗时”，不包含后续瓦片请求。PNG/JPG 的耗时在浏览器解码前记录，状态会另行显示正在解码。重新获取时显示“接收中”，请求失败显示“接收失败”；切换图片、编码类型或显示模式时清除上次耗时。
 
 ## 绘制与交互
 
@@ -44,6 +50,9 @@ byte_length = 71808 * 13200 = 947865600 bytes ≈ 904 MiB
 - 只有交互、raw 图像/瓦片就绪或窗口变化时合并绘制，没有常驻 rAF 循环；隐藏页面不绘制。
 - 画布 backing store 限制 DPR≤2、边长≤8192、总像素≤16M；不影响原图坐标与可见瓦片选择。
 - 滚轮以指针为中心缩放、拖动平移、双指缩放、双击或 `0` 适应窗口、`1` 为一个图片像素对应一个 CSS 像素，另有 `+/-`、方向键、全屏。
+- 点击“绘制 ROI”开启框选模式，在图像内按住左键或单指拖拽，松开后保留矩形，并在画布右下角子框显示原图像素 `x / y / w / h`。再次框选替换当前 ROI；点击“清除 ROI”移除矩形与信息。
+- ROI 的原点为原图左上角 `(0, 0)`，x 向右、y 向下；两端吸附到最近的整数像素边界，区域为 `[x, x+w) × [y, y+h)`，超出原图的部分裁到边界，零宽高不生成 ROI。瓦片预览仍使用原图尺寸计算，不受预览分辨率、DPR、缩放或平移影响。
+- 再次点击“绘制 ROI”或在画布按 `Esc` 退出绘制模式，恢复拖动平移。`Esc` 或指针取消会放弃尚未完成的绘制并保留上一次 ROI；绘制过程中暂停缩放。切换图片、重新加载后端或成功获取新图片时清除 ROI。
 - GPU context 恢复时重新上传保留的 raw buffer，不请求后端加载、不调用 `createImageBitmap`。
 
 ## API
@@ -102,7 +111,19 @@ GET /api/image/load?name=moban.png
 
 `GET /api/image/info?name=...` 也只读该 metadata，不触发加载。快照 id 来自 Uuid；每次实际加载生成不同身份，数据请求带 `id` 后必须与快照匹配，防止同名文件重载或其他页面切图时字节段混合。
 
-### BGRA8 数据
+### 编码选择
+
+原图、预览和瓦片数据接口均支持 `encoding=raw|png|jpg` 查询参数，省略时为 `raw`，旧客户端不受影响。未知值返回 `400 {"code":1001}`；编码失败返回 `500 {"code":1006}`。
+
+```http
+GET /api/image?name=example.png&id=snapshot-uuid&encoding=png
+GET /api/image/preview?name=example.png&id=snapshot-uuid&encoding=jpg
+GET /api/image/tile/0/0/0?name=example.png&id=snapshot-uuid&encoding=png
+```
+
+PNG 响应为 `image/png`，保留 Alpha，压缩级别为 3；JPG 响应为 `image/jpeg`，质量为 95，BGRA 临时转换为 BGR 后编码，Alpha 不保留。编码响应包含 `X-Image-Id`、`X-Image-Width`、`X-Image-Height`、`X-Image-Byte-Length`（编码后实际字节数）。编码响应不携带原始像素步长头，也不支持 Range（返回 416），不修改或替换内存 BGRA 快照。`/api/image/info` 始终描述内存 BGRA 原图，与传输编码无关。
+
+### BGRA8 数据（不编码）
 
 | 路径                                                         | 内容                                          |
 | ------------------------------------------------------------ | --------------------------------------------- |
@@ -187,6 +208,7 @@ cd tools/WebImageTest
 npm test
 npm run test:browser       # BGRA8 前端夹具，不代替 C++ 实测
 npm run test:catalog       # 自动启动真实 C++；临时目录、多图片、加载/获取分离和模式切换
+npm run test:encoding      # 自动启动真实 C++；编码互斥、内存快照、预览/瓦片、解码前计时及取消
 npm run test:large         # 实际 moban/JPG 的 BGRA8 预览和瓦片，连接7380
 npm run test:full-large    # 实际 moban 全部947865600字节，连接7380，资源开销较高
 ```

@@ -7,6 +7,7 @@
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 #include <utility>
+#include <vector>
 #include "FileHelper.hpp"
 #include "ImageCatalog.h"
 #include "Serializer.hpp"
@@ -121,6 +122,42 @@ auto rawResponse(const SZX::NETWORK::HttpServerRequest &request, std::string_vie
     result.headers["Content-Range"] =
         "bytes " + std::to_string(first) + "-" + std::to_string(last) + "/" + std::to_string(data.size());
     return result;
+}
+// Encoding is a response representation only; the shared snapshot remains immutable BGRA8.
+auto imageResponse(const SZX::NETWORK::HttpServerRequest &request, std::string_view data, int width, int height,
+                   const std::string &id) -> SZX::NETWORK::HttpServerResponse
+{
+    const auto selected = request.query.find("encoding");
+    const auto encoding = selected == request.query.end() ? std::string_view{"raw"} : std::string_view{selected->second};
+    if (encoding == "raw")
+        return rawResponse(request, data, width, height, id);
+    if (encoding != "png" && encoding != "jpg")
+        return errorResponse(ErrorCode::InvalidConfiguration, 400);
+    if (request.headers.contains("Range"))
+        return errorResponse(ErrorCode::InvalidConfiguration, 416);
+    try
+    {
+        // OpenCV's encoder accepts an InputArray and does not mutate the source view.
+        const cv::Mat bgra(height, width, CV_8UC4, const_cast<char *>(data.data()));
+        cv::Mat bgr;
+        if (encoding == "jpg")
+            cv::cvtColor(bgra, bgr, cv::COLOR_BGRA2BGR);
+        std::vector<unsigned char> encoded;
+        const auto parameters =
+            encoding == "png" ? std::vector<int>{cv::IMWRITE_PNG_COMPRESSION, 3} : std::vector<int>{cv::IMWRITE_JPEG_QUALITY, 95};
+        if (!cv::imencode(encoding == "png" ? ".png" : ".jpg", encoding == "png" ? bgra : bgr, encoded, parameters))
+            return errorResponse(ErrorCode::ImageProcessingFailed, 500);
+        return {.body    = std::string(encoded.begin(), encoded.end()),
+                .headers = {{"Content-Type", encoding == "png" ? "image/png" : "image/jpeg"},
+                            {"Cache-Control", "no-store"},
+                            {"X-Image-Width", std::to_string(width)},
+                            {"X-Image-Height", std::to_string(height)},
+                            {"X-Image-Byte-Length", std::to_string(encoded.size())},
+                            {"X-Image-Id", id}}};
+    } catch (const cv::Exception &)
+    {
+        return errorResponse(ErrorCode::ImageProcessingFailed, 500);
+    }
 }
 } // namespace
 
@@ -327,8 +364,8 @@ auto registerSources(SZX::NETWORK::HttpServer &server, Lookup read, Lookup load,
                                const auto snapshot = read(request);
                                if (!snapshot.ok)
                                    return sourceFailure(snapshot.error);
-                               return rawResponse(request, snapshot.value->raw(), snapshot.value->width(),
-                                                  snapshot.value->height(), snapshot.value->id());
+                               return imageResponse(request, snapshot.value->raw(), snapshot.value->width(),
+                                                    snapshot.value->height(), snapshot.value->id());
                            });
         if (!configured.ok)
             return fail<void>(ErrorCode::NetworkConfigurationFailed);
@@ -338,8 +375,8 @@ auto registerSources(SZX::NETWORK::HttpServer &server, Lookup read, Lookup load,
                                const auto snapshot = read(request);
                                if (!snapshot.ok)
                                    return sourceFailure(snapshot.error);
-                               return rawResponse(request, snapshot.value->preview(), snapshot.value->previewWidth(),
-                                                  snapshot.value->previewHeight(), snapshot.value->id());
+                               return imageResponse(request, snapshot.value->preview(), snapshot.value->previewWidth(),
+                                                    snapshot.value->previewHeight(), snapshot.value->id());
                            });
         if (!configured.ok)
             return fail<void>(ErrorCode::NetworkConfigurationFailed);
@@ -357,8 +394,8 @@ auto registerSources(SZX::NETWORK::HttpServer &server, Lookup read, Lookup load,
                                    return result.ec == std::errc{} && result.ptr == text.data() + text.size() ? value : -1;
                                };
                                const auto tile = snapshot.value->tile(parse("level"), parse("column"), parse("row"));
-                               return tile.ok ? rawResponse(request, tile.value.bytes, tile.value.width, tile.value.height,
-                                                            snapshot.value->id()) :
+                               return tile.ok ? imageResponse(request, tile.value.bytes, tile.value.width, tile.value.height,
+                                                              snapshot.value->id()) :
                                                 sourceFailure(tile.error);
                            });
         if (!configured.ok)

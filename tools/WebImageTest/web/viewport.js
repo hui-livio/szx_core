@@ -72,6 +72,21 @@ export class Viewport {
     this.zoom = next
   }
 
+  /** Convert CSS viewport coordinates to original-image pixel coordinates. */
+  imagePoint({ x, y }) {
+    return {
+      x: (x - this.x) / this.zoom + this.imageWidth / 2,
+      y: (y - this.y) / this.zoom + this.imageHeight / 2,
+    }
+  }
+
+  screenPoint({ x, y }) {
+    return {
+      x: this.x + (x - this.imageWidth / 2) * this.zoom,
+      y: this.y + (y - this.imageHeight / 2) * this.zoom,
+    }
+  }
+
   pan(dx, dy) {
     if (Number.isFinite(dx) && Number.isFinite(dy)) {
       this.x += dx

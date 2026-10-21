@@ -30,9 +30,22 @@
               <option value="tiles">瓦片模式</option>
               <option value="full">整图模式（非瓦片）</option>
             </select>
+            <fieldset id="encoding-options" class="encoding-options">
+              <legend>编码类型</legend>
+              <label><input id="encoding-raw" type="checkbox" value="raw" checked /> 不编码</label>
+              <label><input id="encoding-png" type="checkbox" value="png" /> PNG</label>
+              <label><input id="encoding-jpg" type="checkbox" value="jpg" /> JPG</label>
+            </fieldset>
           </div>
           <button id="load-backend" class="primary" type="button">后端加载并解码 BGRA8</button>
           <button id="load-image" type="button">获取内存图片</button>
+          <output
+            id="transfer-time"
+            class="transfer-time"
+            aria-live="polite"
+            title="从第一个图片数据请求发起，到最后一段响应数据接收完成；不包含后端解码和画面绘制。"
+            >整图获取耗时：—</output
+          >
           <div class="tools" role="group" aria-label="画面操作">
             <button id="zoom-out" type="button" aria-label="缩小" title="缩小 (-)">−</button>
             <output id="zoom-value" aria-label="当前缩放">—</output>
@@ -41,6 +54,8 @@
             <button id="actual-size" type="button" title="一个图片像素对应一个 CSS 像素 (1)">
               1:1
             </button>
+            <button id="draw-roi" type="button" aria-pressed="false" disabled>绘制 ROI</button>
+            <button id="clear-roi" type="button" disabled>清除 ROI</button>
             <button id="fullscreen" type="button">全屏</button>
           </div>
         </div>
@@ -49,19 +64,48 @@
           class="viewport"
           tabindex="0"
           role="region"
-          aria-label="图片画布，可滚轮缩放、拖动平移，双击适应窗口"
+          aria-label="图片画布，可滚轮缩放、拖动平移，双击适应窗口，开启绘制 ROI 后拖动框选"
         >
           <canvas id="image-canvas" aria-label="从服务内存获取的图片"></canvas>
+          <div id="roi-outline" class="roi-outline" aria-hidden="true" hidden></div>
+          <section
+            id="roi-info"
+            class="roi-info"
+            aria-label="ROI 原图坐标"
+            aria-live="polite"
+            hidden
+          >
+            <strong>ROI · 原图像素</strong>
+            <p>左上角为原点 (0, 0)</p>
+            <dl>
+              <div>
+                <dt>x</dt>
+                <dd><output id="roi-x"></output></dd>
+              </div>
+              <div>
+                <dt>y</dt>
+                <dd><output id="roi-y"></output></dd>
+              </div>
+              <div>
+                <dt>w</dt>
+                <dd><output id="roi-w"></output></dd>
+              </div>
+              <div>
+                <dt>h</dt>
+                <dd><output id="roi-h"></output></dd>
+              </div>
+            </dl>
+          </section>
           <div id="empty-state" class="empty-state">
             <span class="empty-icon" aria-hidden="true">▧</span>
             <h1>后端解码 BGRA8，前端按需绘制</h1>
             <p>先选择图片，点击“后端加载并解码 BGRA8”，完成后再获取原始数据。</p>
-            <small>不使用 Vue · 不持续刷新 · 不在每次请求中读盘</small>
+            <small>内存原图始终为 BGRA8 · 获取时选择传输编码</small>
           </div>
         </div>
         <footer class="viewer-footer">
           <span id="image-info">尚未载入图片</span
-          ><span>滚轮缩放 · 拖动平移 · 双指缩放 · 双击适应</span>
+          ><span>滚轮缩放 · 拖动平移 · 双指缩放 · ROI 模式拖动框选 · Esc 退出</span>
         </footer>
       </section>
       <aside class="info-panel">
@@ -74,11 +118,11 @@
           </li>
           <li>
             <strong>HTTP 二进制响应</strong>
-            <p>直接传输连续 BGRA8 字节，不使用 PNG/JPEG、Base64 或浏览器图片解码。</p>
+            <p>可直接传输 BGRA8，或按请求编码为 PNG/JPG；内存原图保持 BGRA8。</p>
           </li>
           <li>
             <strong>GPU 纹理复用</strong>
-            <p>瓦片模式按可见区域加载；整图模式直接加载原图，纹理超限时使用 Canvas2D。</p>
+            <p>按选择接收原始或编码数据；编码图片在接收完成后解码，纹理超限时使用 Canvas2D。</p>
           </li>
           <li>
             <strong>空闲零循环</strong>

@@ -105,7 +105,13 @@ export class TileLayer {
     let image
     try {
       const info = this.info
-      image = await rawTile(`/api/image/tile/${tile.key}`, info.name, info.id, controller.signal)
+      image = await rawTile(
+        `/api/image/tile/${tile.key}`,
+        info.name,
+        info.id,
+        controller.signal,
+        info.encoding,
+      )
       if (this.disposed || generation !== this.generation || controller.signal.aborted) return
       this.cache.set(tile.key, { ...tile, image })
       image = null

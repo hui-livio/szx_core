@@ -44,7 +44,7 @@ struct RawTile final
     std::string bytes;
 };
 
-/** Immutable decoded CV_8UC4 snapshot. No compressed image bytes are retained or served. */
+/** Immutable decoded CV_8UC4 snapshot. Compressed responses are encoded on request; no encoded image cache is retained. */
 class ImageSnapshot final
 {
 public:

@@ -211,7 +211,194 @@ async function pixel(page, screenshot, x, y) {
     { bytes: screenshot.toString('base64'), x, y },
   )
 }
+async function roiValues(page) {
+  return page.evaluate(() =>
+    Object.fromEntries(
+      ['x', 'y', 'w', 'h'].map((key) => [
+        key,
+        Number(document.getElementById(`roi-${key}`).textContent),
+      ]),
+    ),
+  )
+}
+async function roiPoint(page, x, y, width, height, zoom = 1) {
+  const box = await page.locator('#viewport').boundingBox()
+  return {
+    x: box.x + box.width / 2 + (x - width / 2) * zoom,
+    y: box.y + box.height / 2 + (y - height / 2) * zoom,
+  }
+}
+async function dragRoi(page, start, end) {
+  await page.mouse.move(start.x, start.y)
+  await page.mouse.down()
+  await page.mouse.move(end.x, end.y, { steps: 6 })
+  await page.mouse.up()
+}
 try {
+  await run(
+    'full image timing waits for final response bytes, resets and reports failure',
+    async (page) => {
+      await page.locator('#display-mode').selectOption('full')
+      await prepare(page)
+      await page.evaluate(() => {
+        const original = window.fetch
+        window.fetch = async (...args) => {
+          const response = await original(...args)
+          if (new URL(args[0], location.href).pathname === '/api/image') {
+            const read = response.arrayBuffer.bind(response)
+            response.arrayBuffer = async () => {
+              await new Promise((done) => setTimeout(done, 150))
+              return read()
+            }
+          }
+          return response
+        }
+      })
+      await fetchImage(page)
+      const timing = page.locator('#transfer-time')
+      assert.match(await timing.textContent(), /^整图获取耗时：.* ms（.* s）$/)
+      assert.ok(Number(await timing.getAttribute('data-ms')) >= 150)
+      const value = await timing.textContent()
+      await page.locator('#zoom-in').click()
+      assert.equal(await timing.textContent(), value)
+      await page.screenshot({ path: resolve(output, 'full-image-transfer-time.png') })
+      await page.route('**/api/image?*', (route) => route.fulfill({ status: 503 }))
+      await page.locator('#load-image').click()
+      await page.waitForFunction(() =>
+        document.getElementById('transfer-time').textContent.endsWith('接收失败'),
+      )
+      assert.equal(await timing.getAttribute('data-ms'), null)
+      await page.locator('#display-mode').selectOption('tiles')
+      assert.equal(await timing.textContent(), '整图获取耗时：—')
+    },
+  )
+  for (const fallback of [false, true])
+    await run(
+      `ROI drawing, original coordinates, transforms, cancellation and reset (${fallback ? 'Canvas2D' : 'WebGL2'})`,
+      async (page) => {
+        assert.equal(await page.locator('#draw-roi').isDisabled(), true)
+        await prepare(page)
+        await fetchImage(page)
+        await page.locator('#actual-size').click()
+        await page.locator('#draw-roi').click()
+        const start = await roiPoint(page, 20, 30, width, height)
+        const end = await roiPoint(page, 100, 90, width, height)
+        await page.mouse.move(start.x, start.y)
+        await page.mouse.down()
+        await page.mouse.move(end.x, end.y, { steps: 6 })
+        assert.equal(await page.locator('#roi-info').isHidden(), true)
+        await page.mouse.up()
+        await page.locator('#roi-info').waitFor()
+        const expected = { x: 20, y: 30, w: 80, h: 60 }
+        assert.deepEqual(await roiValues(page), expected)
+        await dragRoi(page, end, start)
+        assert.deepEqual(await roiValues(page), expected)
+        const before = await page.locator('#roi-outline').boundingBox()
+        await page.locator('#draw-roi').click()
+        await page.locator('#viewport').press('ArrowRight')
+        await page.waitForFunction(
+          (x) =>
+            Math.abs(document.getElementById('roi-outline').getBoundingClientRect().x - x + 30) < 1,
+          before.x,
+        )
+        await page.locator('#zoom-in').click()
+        await page.waitForFunction(
+          () =>
+            Math.abs(document.getElementById('roi-outline').getBoundingClientRect().width - 100) <
+            1,
+        )
+        assert.deepEqual(await roiValues(page), expected)
+        await page.locator('#actual-size').click()
+        await page.locator('#draw-roi').click()
+        await page.mouse.move(start.x, start.y)
+        await page.mouse.down()
+        await page.mouse.move(end.x, end.y)
+        await page.locator('#viewport').press('Escape')
+        await page.mouse.up()
+        assert.equal(await page.locator('#draw-roi').getAttribute('aria-pressed'), 'false')
+        assert.deepEqual(await roiValues(page), expected)
+        await page.locator('#draw-roi').click()
+        await page.mouse.move(start.x, start.y)
+        await page.mouse.down()
+        await page.mouse.move(end.x, end.y)
+        await page.locator('#viewport').dispatchEvent('pointercancel', { pointerId: 1 })
+        await page.mouse.up()
+        await page.locator('#roi-info').waitFor()
+        assert.deepEqual(await roiValues(page), expected)
+        await page.locator('#clear-roi').click()
+        await page.locator('#roi-info').waitFor({ state: 'hidden' })
+        await page.locator('#roi-outline').waitFor({ state: 'hidden' })
+        await dragRoi(page, start, start)
+        assert.equal(await page.locator('#roi-info').isHidden(), true)
+        await dragRoi(page, end, await roiPoint(page, -10, -10, width, height))
+        await page.locator('#roi-info').waitFor()
+        assert.deepEqual(await roiValues(page), { x: 0, y: 0, w: 100, h: 90 })
+        await page.screenshot({ path: resolve(output, `roi-${fallback ? 'canvas' : 'webgl'}.png`) })
+        await page.locator('#load-backend').click()
+        await page.locator('#roi-info').waitFor({ state: 'hidden' })
+        assert.equal(await page.locator('#clear-roi').isDisabled(), true)
+      },
+      fallback,
+    )
+  await run(
+    'ROI in tiled preview uses original dimensions rather than preview pixels',
+    async (page) => {
+      const scale = 10
+      const originalWidth = width * scale,
+        originalHeight = height * scale
+      const tiledInfo = {
+        ...info,
+        width: originalWidth,
+        height: originalHeight,
+        stride: originalWidth * 4,
+        byte_length: originalWidth * originalHeight * 4,
+        tiled: true,
+        max_level: 4,
+      }
+      await page.route('**/api/image/load?*', (route) =>
+        route.fulfill({
+          contentType: 'application/json',
+          body: JSON.stringify(tiledInfo),
+        }),
+      )
+      await page.route('**/api/image/preview?*', (route) =>
+        route.fulfill({
+          body: Buffer.from(raw),
+          headers: {
+            'content-type': 'application/octet-stream',
+            'x-pixel-format': 'BGRA8',
+            'x-image-id': info.id,
+            'x-image-width': String(width),
+            'x-image-height': String(height),
+            'x-image-stride': String(width * 4),
+            'x-image-byte-length': String(raw.length),
+            'x-image-origin': 'top-left',
+            'x-image-alpha': 'straight',
+          },
+        }),
+      )
+      await page.route('**/api/image/tile/**', (route) => route.fulfill({ status: 503 }))
+      await prepare(page)
+      await fetchImage(page)
+      assert.match(await page.locator('#transfer-time').textContent(), /^预览图获取耗时：.* ms/)
+      await page.locator('#draw-roi').click()
+      const zoom = await page
+        .locator('#viewport')
+        .evaluate(
+          (host, { w, h }) => Math.min(host.clientWidth / w, host.clientHeight / h) * 0.92,
+          { w: originalWidth, h: originalHeight },
+        )
+      await dragRoi(
+        page,
+        await roiPoint(page, 100, 200, originalWidth, originalHeight, zoom),
+        await roiPoint(page, 500, 600, originalWidth, originalHeight, zoom),
+      )
+      await page.locator('#roi-info').waitFor()
+      assert.deepEqual(await roiValues(page), { x: 100, y: 200, w: 400, h: 400 })
+      await page.setViewportSize({ width: 1200, height: 850 })
+      assert.deepEqual(await roiValues(page), { x: 100, y: 200, w: 400, h: 400 })
+    },
+  )
   for (const fallback of [false, true])
     await run(
       `BGRA8 channel/origin correctness and no browser decode (${fallback ? 'Canvas2D' : 'WebGL2'})`,

@@ -124,6 +124,12 @@ main {
   gap: 12px;
   border-bottom: 1px solid var(--line);
 }
+.transfer-time {
+  flex-basis: 100%;
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
 .tools {
   display: flex;
   flex-wrap: wrap;
@@ -353,4 +359,74 @@ dd {
   .image-source #display-mode {
     flex: 1;
   }
+}
+
+button[aria-pressed='true'] {
+  background: #6974ff33;
+  border-color: var(--accent);
+}
+.viewport.roi-mode {
+  cursor: crosshair;
+}
+.roi-outline {
+  position: absolute;
+  pointer-events: none;
+  border: 2px solid #72e6b1;
+  background: #72e6b11a;
+}
+.roi-info {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  max-width: calc(100% - 24px);
+  padding: 12px 16px;
+  border: 1px solid #72e6b166;
+  border-radius: 12px;
+  background: #151a2df2;
+  pointer-events: none;
+  font-size: 12px;
+}
+.roi-info strong {
+  color: #72e6b1;
+}
+.roi-info p {
+  color: var(--muted);
+  margin: 6px 0;
+}
+.roi-info dl {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  margin: 10px 0 0;
+  font-variant-numeric: tabular-nums;
+}
+.roi-info dl div {
+  margin: 0;
+}
+.roi-info dd {
+  color: #e9ebfc;
+}
+
+.encoding-options {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  margin: 0;
+  padding: 6px 12px 10px;
+  min-width: 0;
+}
+.encoding-options legend {
+  padding: 0 4px;
+}
+.encoding-options label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+.encoding-options input {
+  accent-color: var(--accent);
 }

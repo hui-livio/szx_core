@@ -221,6 +221,7 @@ TEST_F(WebImageTest, ReadMetadataAndDataNeverStartDecodeOnlyPostLoadDoes)
         EXPECT_EQ(status(request(http->port(), "GET", "/api/image?name=a.png", {}, std::string("Range: ") + range + "\r\n")),
                   416);
     EXPECT_EQ(status(request(http->port(), "GET", "/api/image?name=a.png&id=old-id")), 409);
+    EXPECT_EQ(status(request(http->port(), "GET", "/api/image?name=a.png&id=old-id&encoding=png")), 409);
     EXPECT_EQ(status(request(http->port(), "GET", "/api/image/info?name=..%2Fa.png")), 400);
     EXPECT_EQ(status(request(http->port(), "GET", "/")), 200);
     EXPECT_EQ(status(request(http->port(), "GET", "/app.js")), 200);
@@ -237,6 +238,55 @@ TEST_F(WebImageTest, ReadMetadataAndDataNeverStartDecodeOnlyPostLoadDoes)
     EXPECT_TRUE(http->stop().ok);
 }
 
+TEST_F(WebImageTest, RequestEncodingDoesNotChangeBgraSnapshotAndWorksWithoutSourceFile)
+{
+    const cv::Mat source(24, 32, CV_8UC4, cv::Scalar(17, 83, 211, 137));
+    const auto path   = writeImage("encoded.png", source);
+    const auto loaded = ImageSnapshot::Load(path);
+    ASSERT_TRUE(loaded.ok);
+    const std::string original(loaded.value->raw());
+    EXPECT_TRUE(SZX::COMMON::FileHelper::RemoveIfExists(path));
+    auto http = server();
+    ASSERT_TRUE(RegisterRoutes(*http, loaded.value, SZX_WEB_IMAGE_SOURCE).ok);
+    ASSERT_TRUE(http->start().ok);
+    for (const auto &endpoint : {"/api/image", "/api/image/preview", "/api/image/tile/0/0/0"})
+    {
+        for (const auto &encoding : {std::string("png"), std::string("jpg")})
+        {
+            SCOPED_TRACE(std::string(endpoint) + encoding);
+            const auto response = request(http->port(), "GET", std::string(endpoint) + "?encoding=" + encoding);
+            EXPECT_EQ(status(response), 200);
+            EXPECT_NE(response.find(encoding == "png" ? "image/png" : "image/jpeg"), response.npos);
+            const auto bytes   = body(response);
+            const auto decoded = cv::imdecode(std::vector<unsigned char>(bytes.begin(), bytes.end()), cv::IMREAD_UNCHANGED);
+            ASSERT_FALSE(decoded.empty());
+            EXPECT_EQ(decoded.cols, source.cols);
+            EXPECT_EQ(decoded.rows, source.rows);
+            if (encoding == "png")
+            {
+                EXPECT_EQ(decoded.type(), CV_8UC4);
+                EXPECT_EQ(cv::norm(decoded, source, cv::NORM_INF), 0);
+            }
+            else
+            {
+                EXPECT_EQ(decoded.type(), CV_8UC3);
+                const auto pixel = decoded.at<cv::Vec3b>(0, 0);
+                EXPECT_NEAR(pixel[0], 17, 3);
+                EXPECT_NEAR(pixel[1], 83, 3);
+                EXPECT_NEAR(pixel[2], 211, 3);
+            }
+            EXPECT_EQ(loaded.value->raw(), original);
+        }
+        const auto invalid = request(http->port(), "GET", std::string(endpoint) + "?encoding=gif");
+        EXPECT_EQ(status(invalid), 400);
+        EXPECT_EQ(body(invalid), R"({"code":1001})");
+    }
+    EXPECT_EQ(status(request(http->port(), "GET", "/api/image?encoding=png", {}, "Range: bytes=0-9\r\n")), 416);
+    EXPECT_EQ(body(request(http->port(), "GET", "/api/image?encoding=raw")), original);
+    EXPECT_EQ(body(request(http->port(), "GET", "/api/image")), original);
+    EXPECT_TRUE(http->stop().ok);
+}
+
 TEST_F(WebImageTest, LargeRawDataRequiresBoundedRangesAndNeverReturnsPng)
 {
     const auto loaded = ImageSnapshot::Load(writeImage("large.png", cv::Mat(2100, 2100, CV_8UC3, cv::Scalar(17, 65, 211))));
@@ -247,6 +297,9 @@ TEST_F(WebImageTest, LargeRawDataRequiresBoundedRangesAndNeverReturnsPng)
     EXPECT_TRUE(RegisterRoutes(*http, loaded.value, SZX_WEB_IMAGE_SOURCE).ok);
     EXPECT_TRUE(http->start().ok);
     EXPECT_EQ(status(request(http->port(), "GET", "/api/image")), 413);
+    const auto png = request(http->port(), "GET", "/api/image?encoding=png");
+    EXPECT_EQ(status(png), 200);
+    EXPECT_NE(png.find("image/png"), png.npos);
     const auto range = request(http->port(), "GET", "/api/image", {}, "Range: bytes=0-1048575\r\n");
     EXPECT_EQ(status(range), 206);
     EXPECT_EQ(body(range), loaded.value->raw().substr(0, 1048576));
