@@ -11,6 +11,7 @@
 #include "FileHelper.hpp"
 #include "ImageCatalog.h"
 #include "Serializer.hpp"
+#include "TimeHelper.hpp"
 #include "UUID.hpp"
 
 namespace SZX::WEBIMAGE
@@ -76,7 +77,7 @@ auto jsonResponse(const std::string &body) -> SZX::NETWORK::HttpServerResponse
     return {.body = body, .headers = {{"Content-Type", "application/json; charset=utf-8"}, {"Cache-Control", "no-store"}}};
 }
 auto rawResponse(const SZX::NETWORK::HttpServerRequest &request, std::string_view data, int width, int height,
-                 const std::string &id) -> SZX::NETWORK::HttpServerResponse
+                 const std::string &id, bool limitFullResponse = true) -> SZX::NETWORK::HttpServerResponse
 {
     constexpr std::size_t maxChunk = 1024U * 1024U;
     SZX::NETWORK::HttpServerResponse result;
@@ -94,7 +95,7 @@ auto rawResponse(const SZX::NETWORK::HttpServerRequest &request, std::string_vie
     const auto range = request.headers.find("Range");
     if (range == request.headers.end())
     {
-        if (data.size() > 16U * maxChunk)
+        if (limitFullResponse && data.size() > 16U * maxChunk)
             return sourceFailure(static_cast<int>(ErrorCode::RangeRequired));
         result.body.assign(data);
         return result;
@@ -122,6 +123,39 @@ auto rawResponse(const SZX::NETWORK::HttpServerRequest &request, std::string_vie
     result.headers["Content-Range"] =
         "bytes " + std::to_string(first) + "-" + std::to_string(last) + "/" + std::to_string(data.size());
     return result;
+}
+// A frame is generated on demand; no background producer or queued stale frames.
+auto liveResponse(const SZX::NETWORK::HttpServerRequest &request) -> SZX::NETWORK::HttpServerResponse
+{
+    if (request.headers.contains("Range"))
+        return errorResponse(ErrorCode::InvalidConfiguration, 416);
+    const auto encoding = request.query.find("encoding");
+    if (encoding != request.query.end() && encoding->second != "raw")
+        return errorResponse(ErrorCode::InvalidConfiguration, 400);
+    try
+    {
+        constexpr int width = 2448, height = 2048;
+        const auto timestamp = SZX::COMMON::TimeHelper::NowTimestamp();
+        const auto text      = SZX::COMMON::TimeHelper::TimestampToString(timestamp) + "." +
+            std::to_string(1000 + timestamp % 1000).substr(1) + " UTC";
+        cv::Mat pixels(height, width, CV_8UC4, cv::Scalar(0, 0, 0, 255));
+        int baseline    = 0;
+        const auto size = cv::getTextSize(text, cv::FONT_HERSHEY_SIMPLEX, 2.0, 3, &baseline);
+        // Draw through a small mask so text rasterization cannot alter BGRA alpha.
+        cv::Mat mask(size.height + baseline + 8, size.width + 8, CV_8UC1, cv::Scalar(0));
+        cv::putText(mask, text, {4, size.height + 4}, cv::FONT_HERSHEY_SIMPLEX, 2.0, cv::Scalar(255), 3, cv::LINE_8);
+        pixels(cv::Rect{(width - mask.cols) / 2, (height - mask.rows) / 2, mask.cols, mask.rows})
+            .setTo(cv::Scalar(255, 255, 255, 255), mask);
+        auto result = rawResponse(request, {reinterpret_cast<const char *>(pixels.data), pixels.total() * pixels.elemSize()},
+                                  width, height, "live-" + std::to_string(timestamp), false);
+        result.headers.erase("Accept-Ranges");
+        result.headers["X-Frame-Timestamp-Ms"] = std::to_string(timestamp);
+        result.headers["X-Frame-Time"]         = text;
+        return result;
+    } catch (const cv::Exception &)
+    {
+        return errorResponse(ErrorCode::ImageProcessingFailed, 500);
+    }
 }
 // Encoding is a response representation only; the shared snapshot remains immutable BGRA8.
 auto imageResponse(const SZX::NETWORK::HttpServerRequest &request, std::string_view data, int width, int height,
@@ -331,6 +365,9 @@ auto registerSources(SZX::NETWORK::HttpServer &server, Lookup read, Lookup load,
                                     }
                                 });
         };
+        configured = route("GET", "/api/live/frame", liveResponse);
+        if (!configured.ok)
+            return fail<void>(ErrorCode::NetworkConfigurationFailed);
         configured = route("GET", "/api/images",
                            [list](const auto &)
                            {

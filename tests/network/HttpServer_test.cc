@@ -767,3 +767,32 @@ TEST(HttpServerTest, StaticMountIsConfinedAndFallbackStaysWithinPrefix)
         EXPECT_EQ(status(request(server->port(), "GET", "/ui/escape.txt")), 403);
     EXPECT_TRUE(server->stop().ok);
 }
+
+TEST(HttpServerTest, LargeResponseExceedingLibhvDefaultBufferIsCompleteAndKeepsConnectionUsable)
+{
+    auto server = makeServer();
+    std::string expected(2448U * 2048U * 4U, '\0');
+    expected.front()              = 'a';
+    expected[16U * 1024U * 1024U] = 'b';
+    expected.back()               = 'z';
+    EXPECT_TRUE(server->get("/large", [&expected](const auto &) { return HttpServerResponse{.body = expected}; }).ok);
+    EXPECT_TRUE(server->get("/ok", ok).ok);
+    EXPECT_TRUE(server->start().ok);
+    Client client(server->port());
+    client.send("GET /large HTTP/1.1\r\nHost: localhost\r\n\r\n");
+    const auto first = client.read();
+    EXPECT_EQ(status(first), 200);
+    EXPECT_EQ(body(first), expected);
+    // The larger queue allowance must remain valid for later small/large responses and HEAD.
+    client.send("HEAD /large HTTP/1.1\r\nHost: localhost\r\n\r\n"
+                "GET /ok HTTP/1.1\r\nHost: localhost\r\n\r\n");
+    const auto head = client.read(true);
+    EXPECT_EQ(status(head), 200);
+    EXPECT_NE(head.find("Content-Length: 20054016"), head.npos);
+    EXPECT_TRUE(body(head).empty());
+    EXPECT_EQ(body(client.read()), "ok");
+    client.send("GET /large HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n");
+    EXPECT_EQ(body(client.read()), expected);
+    EXPECT_TRUE(client.peerClosed());
+    EXPECT_TRUE(server->stop().ok);
+}

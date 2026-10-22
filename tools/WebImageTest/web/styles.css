@@ -430,3 +430,28 @@ button[aria-pressed='true'] {
 .encoding-options input {
   accent-color: var(--accent);
 }
+
+.live-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+}
+#live-fps {
+  width: 72px;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #20263b;
+  color: #e9ebfc;
+  font: inherit;
+}
+#live-stats {
+  flex-basis: 100%;
+  font-variant-numeric: tabular-nums;
+}

@@ -3,6 +3,7 @@ import { pixelRoi } from './roi.js'
 import { createRenderer } from './renderer.js'
 import { TileLayer } from './tiles.js'
 import { loadBackend, imageData } from './images.js'
+import { LiveStream } from './live.js'
 
 const $ = (id) => document.getElementById(id)
 const host = $('viewport')
@@ -26,6 +27,15 @@ let listController
 let requestedMode = 'tiles'
 let encoding = 'raw'
 let suspended = false
+let liveActive = false
+let liveFirstFrame = true
+let liveStatsStart = 0
+let liveFrames = 0
+let liveFps = 0
+const live = new LiveStream(showLiveFrame, (error) => {
+  stopLive()
+  setStatus(error.message || '实时画面接收失败，请重新启动。', true)
+})
 const pointers = new Map()
 let gesture = null
 let roiMode = false
@@ -42,11 +52,15 @@ function syncButtons() {
     $(id).disabled = !image || lost
   $('draw-roi').disabled = !image || lost || loading || backendLoading
   $('clear-roi').disabled = !roi && !roiDrag
-  $('load-backend').disabled = backendLoading || loading || !catalogReady || lost
-  $('load-image').disabled = loading || backendLoading || lost || !catalogReady || !readyInfo
-  $('image-select').disabled = !catalogReady || lost
-  $('refresh-images').disabled = listLoading
-  $('display-mode').disabled = lost
+  $('load-backend').disabled = liveActive || backendLoading || loading || !catalogReady || lost
+  $('load-image').disabled =
+    liveActive || loading || backendLoading || lost || !catalogReady || !readyInfo
+  $('image-select').disabled = liveActive || !catalogReady || lost
+  $('refresh-images').disabled = liveActive || listLoading
+  $('display-mode').disabled = liveActive || lost
+  $('encoding-options').disabled = liveActive
+  $('start-live').disabled = liveActive || lost
+  $('stop-live').disabled = !liveActive
 }
 function draw() {
   frame = 0
@@ -73,6 +87,7 @@ function attachContextEvents() {
     event.preventDefault()
     if (renderer.canvas !== canvas || disposed) return
     lost = true
+    live.stop()
     cancelInteraction()
     sequence++
     controller?.abort()
@@ -91,11 +106,13 @@ function attachContextEvents() {
       lost = false
       $('renderer-name').textContent = renderer.name
       setStatus('绘制器已恢复。')
+      resumeLive()
       syncButtons()
       invalidate()
     } catch {
       useCanvasFallback()
       lost = false
+      resumeLive()
       syncButtons()
       invalidate()
     }
@@ -167,6 +184,74 @@ function stopTransfer() {
   cancelInteraction()
 }
 
+function updateLiveStats(next) {
+  liveFrames++
+  const now = performance.now()
+  const elapsed = now - liveStatsStart
+  if (elapsed >= 1000) {
+    liveFps = (liveFrames * 1000) / elapsed
+    liveFrames = 0
+    liveStatsStart = now
+  }
+  $('live-stats').textContent =
+    `目标 ${live.fps} FPS · 接收 ${liveFps.toFixed(1)} FPS · 单帧 ${next.transferMs.toFixed(1)} ms · ${next.time}`
+  host.dataset.liveFrames = String(Number(host.dataset.liveFrames || 0) + 1)
+}
+function showLiveFrame(next) {
+  if (!liveActive || disposed || lost || document.hidden) return
+  try {
+    renderer.setImage(next, true)
+  } catch {
+    useCanvasFallback()
+    renderer.setImage(next)
+  }
+  image = next
+  if (liveFirstFrame) {
+    view.setImage(next.width, next.height)
+    liveFirstFrame = false
+  }
+  $('empty-state').hidden = true
+  $('image-info').textContent =
+    `实时画面 · ${next.width} × ${next.height} px · BGRA8 裸数据 · ${(next.data.length / 1048576).toFixed(2)} MiB/帧 · UTC 时间`
+  $('renderer-name').textContent = renderer.name
+  host.dataset.loaded = 'true'
+  host.dataset.mode = 'live'
+  host.dataset.format = 'BGRA8'
+  host.dataset.encoding = 'raw'
+  host.dataset.snapshot = next.id
+  delete host.dataset.name
+  updateLiveStats(next)
+  syncButtons()
+  invalidate()
+}
+function startLive() {
+  if (!$('live-fps').reportValidity()) return
+  live.setFps(Number($('live-fps').value))
+  stopSelection()
+  liveActive = true
+  liveFirstFrame = true
+  host.dataset.liveFrames = '0'
+  host.dataset.live = 'running'
+  resumeLive()
+  syncButtons()
+}
+function resumeLive() {
+  if (!liveActive || disposed || lost || document.hidden) return
+  liveStatsStart = performance.now()
+  liveFrames = 0
+  liveFps = 0
+  live.start()
+  $('live-stats').textContent = `目标 ${live.fps} FPS · 等待实时画面…`
+  setStatus('正在接收后端黑底白色时间画面；目标帧率受带宽、生成和绘制耗时限制。')
+}
+function stopLive() {
+  live.stop()
+  liveActive = false
+  host.dataset.live = 'stopped'
+  $('live-stats').textContent = '实时画面已停止'
+  syncButtons()
+}
+
 async function refreshImages() {
   listController?.abort()
   const current = new AbortController()
@@ -199,15 +284,15 @@ async function refreshImages() {
     catalogReady = !!selected
     if (selected) $('image-select').value = selected.value
     else $('image-select').replaceChildren(new Option('目录中没有可加载的图片', ''))
-    if (previous && previous !== selected?.value) stopSelection()
-    if (!loading)
+    if (previous && previous !== selected?.value && !liveActive) stopSelection()
+    if (!loading && !liveActive)
       setStatus(
         selected
           ? `发现 ${options.length} 张候选图片，选择后点击获取。`
           : '目录中没有可加载的图片，请添加图片后刷新列表。',
       )
   } catch (error) {
-    if (!disposed && current === listController && error.name !== 'AbortError')
+    if (!disposed && !liveActive && current === listController && error.name !== 'AbortError')
       setStatus(error.message, true)
   } finally {
     if (current === listController) {
@@ -466,6 +551,21 @@ $('draw-roi').addEventListener('click', () => {
   host.focus({ preventScroll: true })
 })
 $('clear-roi').addEventListener('click', clearRoi)
+$('start-live').addEventListener('click', startLive)
+$('stop-live').addEventListener('click', () => {
+  stopLive()
+  setStatus('实时画面已停止，保留最后一帧。')
+})
+$('live-fps').addEventListener('change', () => {
+  if (!$('live-fps').reportValidity()) return
+  live.setFps(Number($('live-fps').value))
+  if (liveActive) {
+    liveStatsStart = performance.now()
+    liveFrames = 0
+    liveFps = 0
+    $('live-stats').textContent = `目标 ${live.fps} FPS · 正在调整接收帧率…`
+  }
+})
 $('load-backend').addEventListener('click', prepareBackend)
 $('load-image').addEventListener('click', loadImage)
 $('refresh-images').addEventListener('click', refreshImages)
@@ -531,15 +631,21 @@ const resize = new ResizeObserver(() => {
 })
 function visibility() {
   if (document.hidden) {
+    live.stop()
+    if (liveActive) $('live-stats').textContent = '页面隐藏，实时画面已暂停'
     if (frame) cancelAnimationFrame(frame)
     frame = 0
-  } else invalidate()
+  } else {
+    resumeLive()
+    invalidate()
+  }
 }
 function windowResize() {
   invalidate()
 }
 function dispose() {
   disposed = true
+  live.stop()
   backendSequence++
   backendController?.abort()
   sequence++
@@ -571,4 +677,5 @@ try {
   setStatus('无法创建绘制器，请更新浏览器或启用硬件加速。', true)
   $('load-image').disabled = true
   $('load-backend').disabled = true
+  $('start-live').disabled = true
 }

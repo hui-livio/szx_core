@@ -94,13 +94,38 @@ class WebGLRenderer {
     gl.clearColor(11 / 255, 14 / 255, 25 / 255, 1)
   }
 
-  setImage(image) {
+  setImage(image, reuseTexture = false) {
     const gl = this.gl
     if (image.width > this.limit || image.height > this.limit)
       throw new Error(`图片超过 GPU 纹理上限 ${this.limit}。`)
-    const next = this.upload(image)
-    if (this.texture) gl.deleteTexture(this.texture)
-    this.texture = next
+    if (
+      reuseTexture &&
+      this.texture &&
+      this.image?.width === image.width &&
+      this.image?.height === image.height
+    ) {
+      if (image.format !== 'BGRA8' || image.data.byteLength !== image.width * image.height * 4)
+        throw new Error('GPU 输入不是连续 BGRA8 数据。')
+      gl.activeTexture(gl.TEXTURE0)
+      gl.bindTexture(gl.TEXTURE_2D, this.texture)
+      gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4)
+      gl.texSubImage2D(
+        gl.TEXTURE_2D,
+        0,
+        0,
+        0,
+        image.width,
+        image.height,
+        gl.RGBA,
+        gl.UNSIGNED_BYTE,
+        image.data,
+      )
+      if (gl.getError() !== gl.NO_ERROR) throw new Error('GPU 纹理更新失败。')
+    } else {
+      const next = this.upload(image)
+      if (this.texture) gl.deleteTexture(this.texture)
+      this.texture = next
+    }
     this.image = image
     for (const tile of this.tiles.values()) gl.deleteTexture(tile.texture)
     this.tiles.clear()

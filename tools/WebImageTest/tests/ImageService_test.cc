@@ -382,3 +382,54 @@ TEST_F(WebImageTest, FailedDecodeNeedsExplicitNewPostAndCanRecover)
         EXPECT_EQ(static_cast<unsigned char>(recovered.value->raw()[3]), 255);
     }
 }
+
+TEST_F(WebImageTest, LiveFramesAreFreshFiveMegapixelBlackWhitePackedBgraWithoutLoadingFiles)
+{
+    const auto catalog = ImageCatalog::Create(directory, "missing.png");
+    EXPECT_TRUE(catalog.ok);
+    if (!catalog.ok)
+        return;
+    auto http = server();
+    EXPECT_TRUE(RegisterCatalogRoutes(*http, catalog.value, SZX_WEB_IMAGE_SOURCE).ok);
+    EXPECT_TRUE(http->start().ok);
+    const auto response = request(http->port(), "GET", "/api/live/frame");
+    EXPECT_EQ(status(response), 200);
+    const auto pixels = body(response);
+    EXPECT_EQ(pixels.size(), 2448U * 2048U * 4U);
+    EXPECT_NE(response.find("X-Image-Width: 2448"), response.npos);
+    EXPECT_NE(response.find("X-Image-Height: 2048"), response.npos);
+    EXPECT_NE(response.find("X-Image-Stride: 9792"), response.npos);
+    EXPECT_NE(response.find("X-Image-Byte-Length: 20054016"), response.npos);
+    EXPECT_NE(response.find("X-Pixel-Format: BGRA8"), response.npos);
+    EXPECT_NE(response.find("application/octet-stream"), response.npos);
+    EXPECT_NE(response.find("Cache-Control: no-store"), response.npos);
+    EXPECT_NE(response.find("X-Frame-Time: "), response.npos);
+    EXPECT_NE(response.find(" UTC\r\n"), response.npos);
+    EXPECT_NE(response.find("X-Frame-Timestamp-Ms: "), response.npos);
+    EXPECT_EQ(response.find("Accept-Ranges:"), response.npos);
+    bool validPixels        = true;
+    std::size_t whitePixels = 0;
+    for (std::size_t i = 0; i + 3 < pixels.size(); i += 4)
+    {
+        const auto b = static_cast<unsigned char>(pixels[i]);
+        validPixels  = validPixels && (b == 0 || b == 255) && pixels[i] == pixels[i + 1] && pixels[i] == pixels[i + 2] &&
+            static_cast<unsigned char>(pixels[i + 3]) == 255;
+        if (b == 255)
+            ++whitePixels;
+    }
+    EXPECT_TRUE(validPixels);
+    EXPECT_GT(whitePixels, 1000U);
+    EXPECT_LT(whitePixels, pixels.size() / 40);
+    const auto next = request(http->port(), "GET", "/api/live/frame?encoding=raw");
+    EXPECT_EQ(status(next), 200);
+    EXPECT_NE(body(next), pixels);
+    EXPECT_EQ(catalog.value->get("missing.png").error, static_cast<int>(ErrorCode::ImageNotLoaded));
+    for (const auto &encoding : {"png", "jpg", "unknown"})
+    {
+        const auto invalid = request(http->port(), "GET", std::string("/api/live/frame?encoding=") + encoding);
+        EXPECT_EQ(status(invalid), 400);
+        EXPECT_EQ(body(invalid), R"({"code":1001})");
+    }
+    EXPECT_EQ(status(request(http->port(), "GET", "/api/live/frame", {}, "Range: bytes=0-99\r\n")), 416);
+    EXPECT_TRUE(http->stop().ok);
+}

@@ -37,6 +37,14 @@
               <label><input id="encoding-jpg" type="checkbox" value="jpg" /> JPG</label>
             </fieldset>
           </div>
+          <div class="live-controls" role="group" aria-label="实时画面">
+            <button id="start-live" class="primary" type="button">开始实时画面</button>
+            <button id="stop-live" type="button" disabled>停止实时画面</button>
+            <label for="live-fps">目标帧率</label>
+            <input id="live-fps" type="number" min="1" max="60" step="1" value="10" required />
+            <span>FPS · 2448 × 2048 · BGRA8</span>
+            <output id="live-stats" aria-live="off">实时画面未启动</output>
+          </div>
           <button id="load-backend" class="primary" type="button">后端加载并解码 BGRA8</button>
           <button id="load-image" type="button">获取内存图片</button>
           <output
@@ -125,8 +133,8 @@
             <p>按选择接收原始或编码数据；编码图片在接收完成后解码，纹理超限时使用 Canvas2D。</p>
           </li>
           <li>
-            <strong>空闲零循环</strong>
-            <p>仅交互、图片载入或尺寸变化时合并绘制，没有常驻渲染循环。</p>
+            <strong>按需刷新</strong>
+            <p>静态图片仅按需绘制；实时画面按目标帧率请求，页面隐藏时暂停。</p>
           </li>
         </ol>
         <div class="status-box">
@@ -134,6 +142,10 @@
           <p id="status" role="status" aria-live="polite">就绪，请获取图片。</p>
         </div>
         <dl>
+          <div>
+            <dt>实时画面</dt>
+            <dd><code>GET /api/live/frame</code></dd>
+          </div>
           <div>
             <dt>图片接口</dt>
             <dd><code>GET /api/image</code></dd>

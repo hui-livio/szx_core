@@ -5,6 +5,7 @@
 #include "hv/TcpServer.h"
 
 #include <atomic>
+#include <climits>
 #include <utility>
 
 namespace SZX::NETWORK::v1::detail
@@ -243,8 +244,24 @@ public:
             output.SetHeader("Connection", keepAlive ? "keep-alive" : "close");
             // HEAD has the same representation headers but never sends a body.
             // Returning normally lets the incremental parser begin the next pipelined request.
-            write(output.Dump(true, false));
-            if (!stopped_ && parser_.method != HTTP_HEAD && !output.body.empty())
+            const auto headers   = output.Dump(true, false);
+            const auto bodyBytes = parser_.method == HTTP_HEAD ? std::size_t{0} : output.body.size();
+            if (headers.size() > INT_MAX || bodyBytes > INT_MAX - headers.size())
+            {
+                owner_.report(NetworkError::MessageTooLarge);
+                close();
+                return;
+            }
+            // libhv defaults to a 16 MiB write queue. Allow one complete response, including
+            // its headers, without making pipelined/slow-reader backlogs unbounded.
+            const auto responseBytes = static_cast<std::uint32_t>(headers.size() + bodyBytes);
+            if (responseBytes > maxWriteBufferBytes_)
+            {
+                maxWriteBufferBytes_ = responseBytes;
+                channel_.setMaxWriteBufsize(maxWriteBufferBytes_);
+            }
+            write(headers);
+            if (!stopped_ && bodyBytes != 0)
                 write(output.body);
             if (!keepAlive)
                 close();
@@ -280,8 +297,9 @@ public:
         std::string target_;
         std::string field_;
         std::string value_;
-        bool readingValue_ = false;
-        bool stopped_      = false;
+        bool readingValue_                 = false;
+        bool stopped_                      = false;
+        std::uint32_t maxWriteBufferBytes_ = 16U * 1024U * 1024U;
     };
 
     Impl(HttpServerOptions value, std::uint32_t maxConnections, Handler callback, ErrorHandler onError,

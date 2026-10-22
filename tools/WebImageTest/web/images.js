@@ -298,3 +298,36 @@ export async function rawTile(path, name, id, signal, encoding = 'raw') {
   if (data.byteLength !== shape.length) throw new Error('BGRA8 瓦片长度不匹配。')
   return { ...shape, format: 'BGRA8', data }
 }
+
+/** One complete, freshly generated 5MP BGRA8 frame; never uses encoding or Range. */
+export async function liveFrame(signal) {
+  const started = performance.now()
+  const response = await fetch('/api/live/frame', { signal, cache: 'no-store' })
+  await assertOk(response, 200)
+  const id = response.headers.get('x-image-id')
+  if (!id?.startsWith('live-')) throw new Error('实时画面帧标识无效。')
+  const shape = rawHeaders(response, id)
+  const timestamp = Number(response.headers.get('x-frame-timestamp-ms'))
+  const time = response.headers.get('x-frame-time')
+  if (
+    shape.width !== 2448 ||
+    shape.height !== 2048 ||
+    !Number.isSafeInteger(timestamp) ||
+    timestamp <= 0 ||
+    !time
+  )
+    throw new Error('实时画面尺寸或时间信息无效。')
+  const data = new Uint8Array(await response.arrayBuffer())
+  if (data.length !== shape.length) throw new Error('实时 BGRA8 数据长度不匹配。')
+  return {
+    width: shape.width,
+    height: shape.height,
+    format: 'BGRA8',
+    data,
+    id,
+    timestamp,
+    time,
+    transferMs: performance.now() - started,
+    transferBytes: data.length,
+  }
+}
